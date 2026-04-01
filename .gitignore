@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+build/
+.cache
+.kdev4
+*.kdev4
+*.kate-swp
+*.bak
+compile_commands.json

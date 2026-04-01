@@ -1,0 +1,591 @@
+{
+  "version": 1,
+  "global_qemu_defaults": {
+    "use_kvm": true,
+    "ram": 4096,
+    "use_balloon": true,
+    "use_prealloc": false,
+    "cpu_model": "host",
+    "cpu_cores": 2,
+    "disk_size_gb": 40,
+    "machine_type": "q35",
+    "gpu_type": "virtio",
+    "gpu_3d_acceleration": true,
+    "gpu_mem": 64,
+    "display_type": "sdl",
+    "display_width": 1280,
+    "display_height": 720,
+    "spice_agent": true,
+    "spice_usb_redir": false,
+    "spice_usb_redir_count": 2,
+    "audio_device": "hda",
+    "disk_interface": "virtio",
+    "net_card": "virtio",
+    "network_mode": "passt",
+    "usb_controller": "xhci",
+    "use_usb_tablet": true,
+    "use_usb_keyboard": false,
+    "use_uefi": true,
+    "use_tpm": false,
+    "use_secureboot": false,
+    "use_localtime": false,
+    "use_acpi": true
+  },
+  "templates": [
+    {
+      "id": "ubuntu",
+      "display_name": "Ubuntu",
+      "cloud_init_template": "ubuntu",
+      "network_template": "network-v2",
+      "os_type": "linux",
+      "homepage": "https://ubuntu.com",
+      "icon_hint": "ubuntu",
+      "releases": [
+        {
+          "version": "25.10",
+          "quick_deploy": true,
+          "codename": "Questing Quokka",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://cloud-images.ubuntu.com/questing/current/questing-server-cloudimg-amd64.img",
+              "format": "qcow2",
+              "checksum_url": "https://cloud-images.ubuntu.com/questing/current/SHA256SUMS",
+              "default_user": "ubuntu"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://cloud-images.ubuntu.com/questing/current/questing-server-cloudimg-arm64.img",
+              "format": "qcow2",
+              "checksum_url": "https://cloud-images.ubuntu.com/questing/current/SHA256SUMS",
+              "default_user": "ubuntu"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
+          "version": "24.04",
+          "quick_deploy": true,
+          "codename": "Noble Numbat",
+          "lts": true,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img",
+              "format": "qcow2",
+              "checksum_url": "https://cloud-images.ubuntu.com/noble/current/SHA256SUMS",
+              "default_user": "ubuntu"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-arm64.img",
+              "format": "qcow2",
+              "checksum_url": "https://cloud-images.ubuntu.com/noble/current/SHA256SUMS",
+              "default_user": "ubuntu"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
+          "version": "22.04",
+          "quick_deploy": true,
+          "codename": "Jammy Jellyfish",
+          "lts": true,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img",
+              "format": "qcow2",
+              "checksum_url": "https://cloud-images.ubuntu.com/jammy/current/SHA256SUMS",
+              "default_user": "ubuntu"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-arm64.img",
+              "format": "qcow2",
+              "checksum_url": "https://cloud-images.ubuntu.com/jammy/current/SHA256SUMS",
+              "default_user": "ubuntu"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 40
+      }
+    },
+    {
+      "id": "debian",
+      "display_name": "Debian",
+      "cloud_init_template": "debian",
+      "network_template": "network-v2",
+      "os_type": "linux",
+      "homepage": "https://www.debian.org",
+      "icon_hint": "debian",
+      "releases": [
+        {
+          "version": "12",
+          "quick_deploy": true,
+          "codename": "Bookworm",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS",
+              "default_user": "debian"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS",
+              "default_user": "debian"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 8
+        },
+        {
+          "version": "13",
+          "quick_deploy": true,
+          "codename": "Trixie",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS",
+              "default_user": "debian"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS",
+              "default_user": "debian"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 8
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 30
+      }
+    },
+    {
+      "id": "fedora",
+      "display_name": "Fedora",
+      "cloud_init_template": "fedora",
+      "network_template": "network-v2",
+      "os_type": "linux",
+      "homepage": "https://fedoraproject.org",
+      "icon_hint": "fedora",
+      "releases": [
+        {
+          "version": "43",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://mirror.netzwerge.de/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "fedora"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://mirror.netzwerge.de/fedora/linux/releases/43/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-43-1.6.aarch64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "fedora"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
+          "version": "42",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://mirrors.n-ix.net/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "fedora"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://mirrors.n-ix.net/fedora/linux/releases/42/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-42-1.1.aarch64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "fedora"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
+          "version": "41",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "fedora"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-41-1.4.aarch64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "fedora"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 40
+      }
+    },
+    {
+      "id": "opensuse-leap",
+      "display_name": "openSUSE Leap",
+      "cloud_init_template": "opensuse-leap",
+      "network_template": "network-v1",
+      "os_type": "linux",
+      "homepage": "https://www.opensuse.org",
+      "icon_hint": "opensuse",
+      "releases": [
+        {
+          "version": "15.6",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://download.opensuse.org/repositories/Cloud:/Images:/Leap_15.6/images/openSUSE-Leap-15.6.x86_64-NoCloud.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "opensuse"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://download.opensuse.org/repositories/Cloud:/Images:/Leap_15.6/images/openSUSE-Leap-15.6.aarch64-NoCloud.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "opensuse"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 40
+      }
+    },
+    {
+      "id": "archlinux",
+      "display_name": "Arch Linux",
+      "cloud_init_template": "archlinux",
+      "network_template": "network-v1",
+      "os_type": "linux",
+      "homepage": "https://archlinux.org",
+      "icon_hint": "archlinux",
+      "releases": [
+        {
+          "version": "latest",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "arch"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 8
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 30
+      }
+    },
+    {
+      "id": "almalinux",
+      "display_name": "AlmaLinux",
+      "cloud_init_template": "rhel",
+      "network_template": "network-v1",
+      "os_type": "linux",
+      "homepage": "https://almalinux.org",
+      "icon_hint": "almalinux",
+      "releases": [
+        {
+          "version": "9",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "almalinux"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://repo.almalinux.org/almalinux/9/cloud/aarch64/images/AlmaLinux-9-GenericCloud-latest.aarch64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "almalinux"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 40
+      }
+    },
+    {
+      "id": "rockylinux",
+      "display_name": "Rocky Linux",
+      "cloud_init_template": "rhel",
+      "network_template": "network-v1",
+      "os_type": "linux",
+      "homepage": "https://rockylinux.org",
+      "icon_hint": "rockylinux",
+      "releases": [
+        {
+          "version": "9",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "rocky"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://download.rockylinux.org/pub/rocky/9/images/aarch64/Rocky-9-GenericCloud-Base.latest.aarch64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "rocky"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 40
+      }
+    },
+    {
+      "id": "freebsd",
+      "display_name": "FreeBSD",
+      "cloud_init_template": "freebsd",
+      "network_template": "network-v2",
+      "os_type": "bsd",
+      "homepage": "https://www.freebsd.org",
+      "icon_hint": "freebsd",
+      "releases": [
+        {
+          "version": "14.2",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://download.freebsd.org/releases/VM-IMAGES/14.2-RELEASE/amd64/Latest/FreeBSD-14.2-RELEASE-amd64.qcow2.xz",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "freebsd"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://download.freebsd.org/releases/VM-IMAGES/14.2-RELEASE/aarch64/Latest/FreeBSD-14.2-RELEASE-aarch64.qcow2.xz",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "freebsd"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 30
+      }
+    },
+    {
+      "id": "windows11",
+      "display_name": "Windows 11",
+      "os_type": "windows",
+      "homepage": "https://www.microsoft.com/windows",
+      "icon_hint": "windows",
+      "releases": [
+        {
+          "version": "24H2",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "x86_64",
+              "edition": "Consumer",
+              "url": "",
+              "note": "Download from microsoft.com required"
+            },
+            {
+              "arch": "aarch64",
+              "edition": "Consumer",
+              "url": "",
+              "note": "Download from microsoft.com required (Windows on ARM)"
+            }
+          ],
+          "min_disk_gb": 60
+        }
+      ],
+      "qemu_defaults": {
+        "ram": 8192,
+        "cpu_cores": 4,
+        "disk_size_gb": 160,
+        "disk_interface": "nvme",
+        "net_card": "e1000",
+        "usb_controller": "xhci",
+        "use_tpm": true,
+        "use_secureboot": true,
+        "use_localtime": true
+      }
+    },
+    {
+      "id": "windows10",
+      "display_name": "Windows 10",
+      "os_type": "windows",
+      "homepage": "https://www.microsoft.com/windows",
+      "icon_hint": "windows",
+      "releases": [
+        {
+          "version": "22H2",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "x86_64",
+              "edition": "Consumer",
+              "url": "",
+              "note": "Download from microsoft.com required"
+            }
+          ],
+          "min_disk_gb": 40
+        }
+      ],
+      "qemu_defaults": {
+        "ram": 4096,
+        "cpu_cores": 2,
+        "disk_size_gb": 100,
+        "gpu_type": "qxl",
+        "gpu_3d_acceleration": false,
+        "display_type": "spice",
+        "disk_interface": "sata",
+        "net_card": "e1000",
+        "usb_controller": "xhci",
+        "use_tpm": true,
+        "use_secureboot": true,
+        "use_localtime": true
+      }
+    },
+    {
+      "id": "windowsnt4",
+      "display_name": "Windows NT 4.0",
+      "os_type": "windows",
+      "homepage": "https://en.wikipedia.org/wiki/Windows_NT_4.0",
+      "icon_hint": "windows",
+      "releases": [
+        {
+          "version": "4.0",
+          "quick_deploy": false,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "i386",
+              "edition": "Workstation",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "i386",
+              "edition": "Server",
+              "url": "",
+              "note": "Installation media required"
+            }
+          ],
+          "min_disk_gb": 1
+        }
+      ],
+      "qemu_defaults": {
+        "use_kvm": false,
+        "ram": 128,
+        "use_balloon": false,
+        "cpu_model": "pentium",
+        "cpu_cores": 1,
+        "disk_size_gb": 4,
+        "machine_type": "pc",
+        "gpu_type": "vga",
+        "gpu_3d_acceleration": false,
+        "gpu_mem": 8,
+        "audio_device": "sb16",
+        "sb16_config": {
+          "irq": 7,
+          "dma": 1,
+          "dma16": 5,
+          "iobase": 544
+        },
+        "disk_interface": "sataide",
+        "net_card": "pcnet",
+        "usb_controller": "none",
+        "use_usb_tablet": false,
+        "use_uefi": false,
+        "use_acpi": false,
+        "extra_args": "-serial none"
+      }
+    }
+  ]
+}

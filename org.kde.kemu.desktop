@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[Desktop Entry]
+Type=Application
+Name=KEMU
+Name[de]=KEMU
+GenericName=QEMU Virtual Machine Manager
+GenericName[de]=Verwaltung virtueller Maschinen
+Comment=A KDE-based QEMU Local Virtual Machine Manager
+Comment[de]=Ein KDE-basierter Manager für lokale QEMU-Maschinen
+Icon=org.kde.kemu
+Terminal=false
+StartupWMClass=kemu
+Exec=kemu
+StartupNotify=true
+Categories=System;

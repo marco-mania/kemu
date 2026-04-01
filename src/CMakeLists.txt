@@ -1,0 +1,104 @@
+# SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+add_executable(${PROJECT_NAME})
+
+target_compile_definitions(${PROJECT_NAME}
+                           PRIVATE TRANSLATION_DOMAIN=\"${PROJECT_NAME}\")
+
+target_sources(
+  ${PROJECT_NAME}
+  PRIVATE main.cpp
+          mainwindow.cpp
+          mainwindow.h
+          const.h
+          utils/utils.cpp
+          utils/utils.h
+          utils/vmconfig.cpp
+          utils/vmconfig.h
+          utils/qmpclient.cpp
+          utils/qmpclient.h
+          utils/externaltools.cpp
+          utils/externaltools.h
+          utils/qemucommandbuilder.cpp
+          utils/qemucommandbuilder.h
+          utils/snapshotmanager.cpp
+          utils/snapshotmanager.h
+          utils/imagedatabase.cpp
+          utils/imagedatabase.h
+          utils/cloudimagedeployer.cpp
+          utils/cloudimagedeployer.h
+          utils/cloudinittemplates.h
+          utils/virtualnetwork.h
+          utils/virtualnetworkmanager.cpp
+          utils/virtualnetworkmanager.h
+          utils/namespacehelper.cpp
+          utils/namespacehelper.h
+          utils/usbenumerator.h
+          utils/usbenumerator.cpp
+          models/vmmodel.cpp
+          models/vmmodel.h
+          jobs/createvmjob.cpp
+          jobs/createvmjob.h
+          jobs/shrinkjob.cpp
+          jobs/shrinkjob.h
+          jobs/exportjob.cpp
+          jobs/exportjob.h
+          jobs/importjob.cpp
+          jobs/importjob.h
+          jobs/ovaexportjob.cpp
+          jobs/ovaexportjob.h
+          jobs/ovaimportjob.cpp
+          jobs/ovaimportjob.h
+          jobs/downloadjob.cpp
+          jobs/downloadjob.h
+          jobs/clonejob.h
+          jobs/clonejob.cpp
+          dialogs/createvmdialog.cpp
+          dialogs/createvmdialog.h
+          dialogs/settingsdialog.cpp
+          dialogs/settingsdialog.h
+          dialogs/iconchooserdialog.cpp
+          dialogs/iconchooserdialog.h
+          dialogs/takesnapshotdialog.cpp
+          dialogs/takesnapshotdialog.h
+          dialogs/snapshotdialog.cpp
+          dialogs/snapshotdialog.h
+          dialogs/cloudconfigdialog.cpp
+          dialogs/cloudconfigdialog.h
+          widgets/vmitemdelegate.cpp
+          widgets/vmitemdelegate.h
+          widgets/vmtreeview.h
+          widgets/performancemonitorwidget.h
+          widgets/performancemonitorwidget.cpp
+          widgets/ramspinbox.h)
+
+target_include_directories(
+  ${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MNL_INCLUDE_DIRS}
+                          ${NFTNL_INCLUDE_DIRS})
+
+target_link_libraries(
+  ${PROJECT_NAME}
+  ${CRYPT_LIBRARY}
+  ${MNL_LIBRARIES}
+  ${NFTNL_LIBRARIES}
+  ${UDEV_LIBRARIES}
+  LibArchive::LibArchive
+  Qt6::Core
+  Qt6::Gui
+  Qt6::Widgets
+  Qt6::Network
+  Qt6::Svg
+  KF6::CoreAddons
+  KF6::I18n
+  KF6::WidgetsAddons
+  KF6::ConfigCore
+  KF6::XmlGui
+  KF6::ConfigWidgets
+  KF6::IconThemes
+  KF6::IconWidgets
+  KF6::JobWidgets
+  KF6::KIOWidgets
+  KF6::TextTemplate
+  KF6::Crash)

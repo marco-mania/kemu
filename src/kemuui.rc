@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+
+<!--
+SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
+
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+<!DOCTYPE gui SYSTEM "kpartgui.dtd">
+<gui name="kemu" version="1">
+  <MenuBar>
+    <Menu name="file">
+      <Action name="vm_new"/>
+      <Action name="vm_import"/>
+      <Separator/>
+      <Action name="file_quit"/>
+    </Menu>
+    <Menu name="vm_menu">
+      <text>&amp;VM</text>
+      <Action name="vm_start"/>
+      <Action name="vm_start_headless"/>
+      <Action name="vm_reconnect_spice"/>
+      <Action name="vm_shutdown"/>
+      <Action name="vm_reset"/>
+      <Action name="vm_kill"/>
+      <Separator/>
+      <Action name="vm_edit"/>
+      <Action name="vm_delete"/>
+      <Action name="vm_clone"/>
+      <Separator/>
+      <Action name="vm_usb_devices"/>
+      <Separator/>
+      <Action name="vm_change_iso"/>
+      <Action name="vm_eject_iso"/>
+      <Separator/>
+      <Action name="vm_shrink"/>
+      <Action name="vm_manage_snapshots"/>
+      <Action name="vm_export"/>
+      <Separator/>
+      <Action name="vm_show_cmd"/>
+      <Action name="vm_network_shell"/>
+      <Action name="vm_screenshot"/>
+    </Menu>
+  </MenuBar>
+</gui>

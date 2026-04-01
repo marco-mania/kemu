@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
+
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+<component type="desktop-application">
+  <id>org.kde.kemu</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>KEMU</name>
+  <summary>KDE QEMU Virtual Machine Manager</summary>
+  <developer id="kde.org">
+    <name>Marco Nelles</name>
+  </developer>
+  <description>
+    <p>
+      KEMU is a KDE desktop frontend for QEMU, developed using Qt6 and KDE Frameworks 6. It provides a simple, fast, and intuitive graphical interface to manage your local virtual machines without the overhead of libvirt.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Create, edit, and delete QEMU virtual machines through a graphical interface</li>
+      <li>Automated Deploy feature with Cloud-Init support</li>
+      <li>Snapshot support (QCOW2)</li>
+      <li>Hot-swap ISO images</li>
+      <li>USB device passthrough support</li>
+      <li>User-mode networking via passt or rootless virtual networks within Linux user namespaces</li>
+      <li>Shared folders via 9p/VirtFS (Linux/BSD) and virtio-fs (Windows)</li>
+      <li>Portable VM directories with config.json + disk images</li>
+      <li>Export and import VMs as compressed archives (.kemu.tar.zst)</li>
+      <li>OVA export and import for interoperability</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">org.kde.kemu.desktop</launchable>
+  <url type="homepage">https://invent.kde.org/marcon/kemu</url>
+  <screenshots>
+    <screenshot type="default">
+      <image type="source">https://invent.kde.org/marcon/kemu/-/raw/master/screenshots/mainwindow.png</image>
+      <caption>The main window of KEMU showing the virtual machine overview</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source">https://invent.kde.org/marcon/kemu/-/raw/master/screenshots/vmsettings1.png</image>
+      <caption>The settings for a virtual machine</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source">https://invent.kde.org/marcon/kemu/-/raw/master/screenshots/vmsettings2.png</image>
+      <caption>The settings for a virtual machine</caption>
+    </screenshot>
+  </screenshots>
+  <provides>
+    <binary>kemu</binary>
+  </provides>
+  <requires>
+    <display_length compare="ge">1024</display_length>
+  </requires>
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-03-31">
+      <description>
+        <p>Initial release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

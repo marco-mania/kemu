@@ -1,0 +1,22 @@
+version = 1
+SPDX-PackageName = "Papirus Icon Theme"
+SPDX-PackageSupplier = "https://github.com/PapirusDevelopmentTeam/papirus-icon-theme"
+
+[[annotations]]
+path = "assets/3rdparty/papirus-icons/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2016-2024 Papirus Development Team"
+SPDX-License-Identifier = "GPL-3.0-only"
+
+[[annotations]]
+path = "data/cloud-init-templates/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Marco Nelles <marco@maniatek.de>"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+path = "screenshots/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Marco Nelles <marco@maniatek.de>"
+SPDX-License-Identifier = "CC0-1.0"
+
