@@ -350,9 +350,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
 
     usbTabletCheck = new QCheckBox(i18n("USB tablet (absolute mouse positioning)"));
     usbTabletCheck->setChecked(true);
-    usbTabletCheck->setToolTip(
-        i18n("Provides seamless mouse integration without grabbing. "
-             "Disable for guest OSes without USB support (e.g. DOS, Windows 9x, Windows NT4)."));
+    usbTabletCheck->setToolTip(i18n("Appends a USB HID mouse device. Provides seamless mouse integration without grabbing. Default: PS/2."));
     hwLayout->addRow({ }, usbTabletCheck);
 
     usbKeyboardCheck = new QCheckBox(i18n("USB keyboard"));
