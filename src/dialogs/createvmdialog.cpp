@@ -357,7 +357,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
 
     usbKeyboardCheck = new QCheckBox(i18n("USB keyboard"));
     usbKeyboardCheck->setChecked(false);
-    usbKeyboardCheck->setToolTip(i18n("Adds a dedicated USB keyboard device for better input handling."));
+    usbKeyboardCheck->setToolTip(i18n("Appends a USB HID keyboard device. Recommended for modern guests to avoid PS/2 interrupt latency. Default: PS/2."));
     hwLayout->addRow({ }, usbKeyboardCheck);
 
     displayCombo = new QComboBox();
