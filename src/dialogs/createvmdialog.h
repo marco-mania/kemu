@@ -179,6 +179,7 @@ private:
     QPointer<QPushButton> sb16ConfigButton;
     QPointer<QComboBox> diskInterfaceCombo;
     QPointer<QLabel> diskHintLabel;
+    QPointer<QLabel> usbControllerLabel;
     QPointer<QComboBox> usbCombo;
     QPointer<QCheckBox> usbTabletCheck;
     QPointer<QCheckBox> usbKeyboardCheck;

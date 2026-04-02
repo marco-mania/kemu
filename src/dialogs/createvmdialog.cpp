@@ -346,6 +346,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Ehci), static_cast<int>(VMSpecs::UsbController::Ehci));
     usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Default), static_cast<int>(VMSpecs::UsbController::Default));
     hwLayout->addRow(i18n("USB Controller:"), usbCombo);
+    usbControllerLabel = qobject_cast<QLabel*>(hwLayout->labelForField(usbCombo));
 
     usbTabletCheck = new QCheckBox(i18n("USB tablet (absolute mouse positioning)"));
     usbTabletCheck->setChecked(true);
@@ -1810,11 +1811,22 @@ void CreateVmDialog::updateDeviceAvailability()
                 usbCombo->setItemData(i, supportsPci ? QString() : pciReqMsg, Qt::ToolTipRole);
             }
         }
-        // Basic fallback to 'None' for USB if PCI is missing
-        if (!supportsPci && static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None) {
+        if (!supportsPci) {
             int noneIdx = usbCombo->findData(static_cast<int>(VMSpecs::UsbController::None));
             if (noneIdx != -1)
                 usbCombo->setCurrentIndex(noneIdx);
+            usbCombo->setEnabled(false);
+            usbControllerLabel->setEnabled(false);
+            usbTabletCheck->setChecked(false);
+            usbTabletCheck->setEnabled(false);
+            usbKeyboardCheck->setChecked(false);
+            usbKeyboardCheck->setEnabled(false);
+        } else {
+            usbCombo->setEnabled(true);
+            usbControllerLabel->setEnabled(true);
+            bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
+            usbTabletCheck->setEnabled(hasUsb);
+            usbKeyboardCheck->setEnabled(hasUsb);
         }
     }
 
