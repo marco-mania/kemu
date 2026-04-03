@@ -26,6 +26,8 @@ int main(int argc, char* argv[])
 
     KLocalizedString::setApplicationDomain("kemu"_ba);
 
+    const QIcon appIcon = QIcon::fromTheme(u"org.kde.kemu"_s);
+
     KAboutData aboutData(
         "kemu"_L1,
         QApplication::applicationName(),
@@ -41,13 +43,19 @@ int main(int argc, char* argv[])
         { },
         u"https://github.com/PapirusDevelopmentTeam/papirus-icon-theme"_s);
 
+    aboutData.addCredit(
+        u"Marshall Kirk McKusick"_s,
+        i18n("BSD Daemon Copyright 1988 by Marshall Kirk McKusick. All Rights Reserved."),
+        { },
+        u"https://www.mckusick.com/beastie/mainpage/copyright.html"_s);
+
+    aboutData.setProgramLogo(appIcon.pixmap(128, 128));
+
     KAboutData::setApplicationData(aboutData);
 
-    KCrash::initialize();
+    QGuiApplication::setWindowIcon(appIcon);
 
-    QIcon appIcon = QIcon::fromTheme(u"org.kde.kemu"_s, QIcon(u":/icons/org.kde.kemu.svg"_s));
-    app.setWindowIcon(appIcon);
-    aboutData.setProgramLogo(appIcon.pixmap(128, 128));
+    KCrash::initialize();
 
     auto* mainwindow = new MainWindow();
     mainwindow->show();

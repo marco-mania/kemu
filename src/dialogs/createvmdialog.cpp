@@ -84,6 +84,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     osTypeCombo->addItem(i18n("GNU/Linux"), static_cast<int>(VMSpecs::OsType::Linux));
     osTypeCombo->addItem(i18n("Microsoft Windows"), static_cast<int>(VMSpecs::OsType::Windows));
     osTypeCombo->addItem(i18n("BSD"), static_cast<int>(VMSpecs::OsType::BSD));
+    osTypeCombo->addItem(i18n("DOS"), static_cast<int>(VMSpecs::OsType::DOS));
     osTypeCombo->addItem(i18n("Other"), static_cast<int>(VMSpecs::OsType::Other));
     osTypeCombo->insertItem(0, i18n("— Please select —"), -1);
     osTypeCombo->setCurrentIndex(0);
@@ -269,8 +270,8 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     uefiCheck->setToolTip(i18n("Required for Windows 11. Creates a separate VARS file."));
     sysLayout->addRow({ }, uefiCheck);
 
-    localTimeCheck = new QCheckBox(i18n("Use local time (Windows)"));
-    localTimeCheck->setToolTip(i18n("Sets the hardware clock to local time instead of UTC."));
+    localTimeCheck = new QCheckBox(i18n("Use local time"));
+    localTimeCheck->setToolTip(i18n("Sets the hardware clock to local time instead of UTC.\nThis should be set for Windows/DOS guests."));
     sysLayout->addRow({ }, localTimeCheck);
 
     tpmCheck = new QCheckBox(i18n("Emulate TPM 2.0 (swtpm)"));

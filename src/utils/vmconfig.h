@@ -103,6 +103,7 @@ enum class NetworkMode { Passt,
 
 enum class OsType { Linux,
     Windows,
+    DOS,
     BSD,
     Other };
 

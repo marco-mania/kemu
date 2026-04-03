@@ -352,16 +352,19 @@ QString VMConfig::defaultIconForType(VMSpecs::OsType type)
     QString filename;
     switch (type) {
     case VMSpecs::OsType::Linux:
-        filename = u"linux-generic.png"_s;
+        filename = u"tux.svg"_s;
         break;
     case VMSpecs::OsType::Windows:
-        filename = u"distributor-logo-windows.png"_s;
+        filename = u"distributor-logo-windows.svg"_s;
+        break;
+    case VMSpecs::OsType::DOS:
+        filename = u"dos.svg"_s;
         break;
     case VMSpecs::OsType::BSD:
-        filename = u"bsd-generic.png"_s;
+        filename = u"beastie.svg"_s;
         break;
     case VMSpecs::OsType::Other:
-        filename = u"generic.png"_s;
+        filename = u"generic-vm.svg"_s;
         break;
     }
 
@@ -378,37 +381,47 @@ QString VMConfig::defaultIconFor(VMSpecs::OsType type, const QString& variant)
     QString filename;
 
     if (lv.contains(u"debian"_s))
-        filename = u"distributor-logo-debian.png"_s;
+        filename = u"distributor-logo-debian.svg"_s;
     else if (lv.contains(u"ubuntu"_s))
-        filename = u"distributor-logo-ubuntu.png"_s;
+        filename = u"distributor-logo-ubuntu.svg"_s;
     else if (lv.contains(u"archlinux"_s))
-        filename = u"distributor-logo-archlinux.png"_s;
+        filename = u"distributor-logo-archlinux.svg"_s;
     else if (lv.contains(u"fedora"_s))
-        filename = u"distributor-logo-fedora.png"_s;
+        filename = u"distributor-logo-fedora.svg"_s;
     else if (lv.contains(u"redhat"_s) || lv.contains(u"rhel"_s))
-        filename = u"distributor-logo-redhat.png"_s;
+        filename = u"distributor-logo-redhat.svg"_s;
     else if (lv.contains(u"opensuse"_s))
-        filename = u"distributor-logo-opensuse.png"_s;
+        filename = u"distributor-logo-opensuse.svg"_s;
     else if (lv.contains(u"manjaro"_s))
-        filename = u"distributor-logo-manjaro.png"_s;
+        filename = u"distributor-logo-manjaro.svg"_s;
     else if (lv.contains(u"linuxmint"_s) || lv.contains(u"mint"_s))
-        filename = u"distributor-logo-linuxmint.png"_s;
+        filename = u"distributor-logo-linuxmint.svg"_s;
     else if (lv.contains(u"nixos"_s))
-        filename = u"distributor-logo-nixos.png"_s;
+        filename = u"distributor-logo-nixos.svg"_s;
     else if (lv.contains(u"gentoo"_s))
-        filename = u"distributor-logo-gentoo.png"_s;
+        filename = u"distributor-logo-gentoo.svg"_s;
     else if (lv.contains(u"voidlinux"_s) || lv.contains(u"void"_s))
-        filename = u"distributor-logo-voidlinux.png"_s;
+        filename = u"distributor-logo-voidlinux.svg"_s;
     else if (lv.contains(u"centos"_s))
-        filename = u"distributor-logo-centos.png"_s;
+        filename = u"distributor-logo-centos.svg"_s;
+    else if (lv.contains(u"deepin"_s))
+        filename = u"distributor-logo-deepin.svg"_s;
+    else if (lv.contains(u"devuan"_s))
+        filename = u"distributor-logo-devuan.svg"_s;
     else if (lv.contains(u"windows"_s))
-        filename = u"distributor-logo-windows.png"_s;
+        filename = u"distributor-logo-windows.svg"_s;
+    else if (lv.contains(u"msdos"_s) || lv.contains(u"ms-dos"_s))
+        filename = u"distributor-logo-ms-dos.svg"_s;
+    else if (lv.contains(u"freedos"_s))
+        filename = u"distributor-logo-freedos.svg"_s;
     else if (lv.contains(u"freebsd"_s))
-        filename = u"distributor-logo-freebsd.png"_s;
+        filename = u"distributor-logo-freebsd.svg"_s;
     else if (lv.contains(u"openbsd"_s))
-        filename = u"distributor-logo-openbsd.png"_s;
+        filename = u"distributor-logo-openbsd.svg"_s;
     else if (lv.contains(u"netbsd"_s))
-        filename = u"distributor-logo-netbsd.png"_s;
+        filename = u"distributor-logo-netbsd.svg"_s;
+    else if (lv.contains(u"midnightbsd"_s))
+        filename = u"distributor-logo-midnightbsd.svg"_s;
 
     if (filename.isEmpty())
         return defaultIconForType(type);
@@ -707,6 +720,8 @@ QString VMConfig::toUIString(VMSpecs::OsType type)
         return i18n("GNU/Linux");
     case VMSpecs::OsType::Windows:
         return i18n("Microsoft Windows");
+    case VMSpecs::OsType::DOS:
+        return i18n("DOS");
     case VMSpecs::OsType::BSD:
         return i18n("BSD");
     case VMSpecs::OsType::Other:
@@ -884,6 +899,8 @@ QString VMConfig::toString(VMSpecs::OsType type)
         return u"linux"_s;
     if (type == VMSpecs::OsType::Windows)
         return u"windows"_s;
+    if (type == VMSpecs::OsType::DOS)
+        return u"dos"_s;
     if (type == VMSpecs::OsType::BSD)
         return u"bsd"_s;
     if (type == VMSpecs::OsType::Other)
@@ -1099,6 +1116,8 @@ VMSpecs::OsType VMConfig::parseOsType(const QString& str)
     str_l.remove(u' ');
     if (str_l == u"windows"_s)
         return VMSpecs::OsType::Windows;
+    if (str_l == u"dos"_s)
+        return VMSpecs::OsType::DOS;
     if (str_l == u"bsd"_s)
         return VMSpecs::OsType::BSD;
     if (str_l == u"other"_s)
@@ -1205,6 +1224,13 @@ QPair<VMSpecs::OsType, QString> VMConfig::guessOSFromText(const QString& string,
         if (found)
             *found = true;
         return { VMSpecs::OsType::BSD, u"openbsd"_s };
+    }
+
+    // DOS
+    if (lowerz.contains(u"dos"_s) || lowerz.contains(u"freedos"_s)) {
+        if (found)
+            *found = true;
+        return { VMSpecs::OsType::DOS, lowerz.contains(u"freedos"_s) ? u"freedos"_s : u"msdos"_s };
     }
 
     if (found)

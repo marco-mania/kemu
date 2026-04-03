@@ -52,10 +52,10 @@ add_subdirectory(src)
 install(TARGETS ${PROJECT_NAME} ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
 install(FILES kemuui.rc DESTINATION ${KDE_INSTALL_KXMLGUIDIR}/${PROJECT_NAME})
 install(
-  DIRECTORY assets/3rdparty/papirus-icons
+  DIRECTORY assets/3rdparty/papirus-icons assets/3rdparty/misc
   DESTINATION ${KDE_INSTALL_DATADIR}/${PROJECT_NAME}/icons
   FILES_MATCHING
-  PATTERN "*.png")
+  PATTERN "*.svg")
 install(DIRECTORY data/ DESTINATION ${KDE_INSTALL_DATADIR}/${PROJECT_NAME}/data)
 
 install(FILES org.kde.kemu.desktop DESTINATION ${KDE_INSTALL_APPDIR})
