@@ -994,7 +994,11 @@ VMSpecs::DisplayType VMConfig::parseDisplayType(const QString& str)
 
 VMSpecs::MachineType VMConfig::parseMachineType(const QString& str)
 {
-    return (str == u"pc"_s) ? VMSpecs::MachineType::Pc : VMSpecs::MachineType::Q35;
+    if (str == u"pc_isa"_s)
+        return VMSpecs::MachineType::PcISA;
+    if (str == u"q35"_s)
+        return VMSpecs::MachineType::Q35;
+    return VMSpecs::MachineType::Pc;
 }
 
 VMSpecs::GpuType VMConfig::parseGpuType(const QString& str)

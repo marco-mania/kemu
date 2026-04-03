@@ -627,10 +627,16 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     connect(cpuCombo, &QComboBox::currentIndexChanged, this, [this]() {
         const auto selectedCpu = static_cast<VMSpecs::CpuModel>(cpuCombo->currentData().toInt());
         cpuSpin->setMaximum(VMConfig::maxCoresForModel(selectedCpu));
-        const auto recommendedMachine = VMConfig::recommendedMachineType(selectedCpu);
-        const int idx = machineCombo->findData(static_cast<int>(recommendedMachine));
-        if (idx >= 0) {
-            machineCombo->setCurrentIndex(idx);
+
+        const auto currentMachine = static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt());
+
+        // Only switch the chipset automatically if the new CPU is incompatible with the currently selected chipset.
+        if (!VMConfig::isCpuCompatible(selectedCpu, currentMachine)) {
+            const auto recommendedMachine = VMConfig::recommendedMachineType(selectedCpu);
+            const int idx = machineCombo->findData(static_cast<int>(recommendedMachine));
+            if (idx >= 0) {
+                machineCombo->setCurrentIndex(idx);
+            }
         }
     });
 
@@ -1911,6 +1917,9 @@ void CreateVmDialog::updateDeviceAvailability()
         secureBootCheck->setChecked(false);
     }
 
+    if (!supportsPci) {
+        balloonCheck->setChecked(false);
+    }
     balloonCheck->setEnabled(supportsPci);
 
     updateDiskInterfaceHint();
