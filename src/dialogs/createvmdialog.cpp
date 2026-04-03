@@ -475,6 +475,8 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     netCombo->addItem(VMConfig::toUIString(VMSpecs::NetworkCard::E1000), static_cast<int>(VMSpecs::NetworkCard::E1000));
     netCombo->addItem(VMConfig::toUIString(VMSpecs::NetworkCard::Rtl8139), static_cast<int>(VMSpecs::NetworkCard::Rtl8139));
     netCombo->addItem(VMConfig::toUIString(VMSpecs::NetworkCard::Pcnet), static_cast<int>(VMSpecs::NetworkCard::Pcnet));
+    netCombo->addItem(VMConfig::toUIString(VMSpecs::NetworkCard::Rtl8029), static_cast<int>(VMSpecs::NetworkCard::Rtl8029));
+    netCombo->addItem(VMConfig::toUIString(VMSpecs::NetworkCard::Ne2000), static_cast<int>(VMSpecs::NetworkCard::Ne2000));
     netFormLayout->addRow(i18n("Network Adapter:"), netCombo);
 
     networkModeCombo = new QComboBox();
@@ -1783,6 +1785,41 @@ void CreateVmDialog::updateDeviceAvailability()
             combo->setCurrentIndex(firstValidIdx);
         }
     };
+
+    // --- Update CPU Availability ---
+    if (auto* cpuModelItem = qobject_cast<QStandardItemModel*>(cpuCombo->model())) {
+        bool currentCpuValid = false;
+        int firstValidCpuIdx = -1;
+
+        const QString cpuReqMsg = i18n("CPU is not compatible with the selected chipset.");
+
+        for (int i = 0; i < cpuCombo->count(); ++i) {
+            const auto cpuVal = static_cast<VMSpecs::CpuModel>(cpuCombo->itemData(i).toInt());
+            bool shouldShow = VMConfig::isCpuCompatible(cpuVal, machine);
+
+            // Respect KVM state for "Host" CPU
+            if (cpuVal == VMSpecs::CpuModel::Host && !kvmCheck->isChecked()) {
+                shouldShow = false;
+            }
+
+            cpuModelItem->item(i)->setEnabled(shouldShow);
+            cpuCombo->setItemData(i, shouldShow ? QString() : cpuReqMsg, Qt::ToolTipRole);
+
+            if (shouldShow) {
+                if (firstValidCpuIdx == -1) {
+                    firstValidCpuIdx = i;
+                }
+                if (i == cpuCombo->currentIndex()) {
+                    currentCpuValid = true;
+                }
+            }
+        }
+
+        // Fallback if current CPU becomes invalid
+        if (!currentCpuValid && firstValidCpuIdx != -1) {
+            cpuCombo->setCurrentIndex(firstValidCpuIdx);
+        }
+    }
 
     // --- Update Standard Devices ---
 

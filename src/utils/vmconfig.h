@@ -353,6 +353,7 @@ public:
     [[nodiscard]] static bool isIsaDevice(VMSpecs::NetworkCard card);
     [[nodiscard]] static bool supportsIsaBus(VMSpecs::MachineType type);
     [[nodiscard]] static bool supportsPciBus(VMSpecs::MachineType type);
+    [[nodiscard]] static bool isCpuCompatible(VMSpecs::CpuModel cpu, VMSpecs::MachineType machine);
 
     // --- Icon Helpers ---
     [[nodiscard]] QIcon icon(int size) const;

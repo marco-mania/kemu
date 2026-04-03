@@ -144,6 +144,24 @@ bool VMConfig::supportsPciBus(VMSpecs::MachineType type)
         || type == VMSpecs::MachineType::Pc;
 }
 
+bool VMConfig::isCpuCompatible(VMSpecs::CpuModel cpu, VMSpecs::MachineType machine)
+{
+    // Ultra legacy CPUs suitable for pure ISA (isapc)
+    const bool isUltraLegacy = (cpu == VMSpecs::CpuModel::I486 || cpu == VMSpecs::CpuModel::Pentium || cpu == VMSpecs::CpuModel::Qemu32);
+
+    // Pre-PCIe CPUs
+    const bool isPreCore = isUltraLegacy || cpu == VMSpecs::CpuModel::Pentium2 || cpu == VMSpecs::CpuModel::Pentium3 || cpu == VMSpecs::CpuModel::Pentium4;
+
+    if (machine == VMSpecs::MachineType::Q35) {
+        return !isPreCore;
+    } else if (machine == VMSpecs::MachineType::PcISA) {
+        return isUltraLegacy;
+    }
+
+    // Standard PC (i440FX) fallback
+    return true;
+}
+
 // --- Icon Helpers ---
 
 QIcon VMConfig::icon(int size) const
@@ -569,7 +587,7 @@ QString VMConfig::toUIString(VMSpecs::NetworkCard card)
     case VMSpecs::NetworkCard::Pcnet:
         return i18n("AMD PCnet-Fast III");
     case VMSpecs::NetworkCard::Rtl8029:
-        return i18n("Realtek RTL8029 (NE2000 comp.)");
+        return i18n("Realtek RTL8029");
     case VMSpecs::NetworkCard::Ne2000:
         return i18n("Novell NE2000");
     }
@@ -616,7 +634,7 @@ QString VMConfig::toUIString(VMSpecs::GpuType type)
     case VMSpecs::GpuType::Vga:
         return i18n("Standard VGA");
     case VMSpecs::GpuType::VgaISA:
-        return i18n("Standard VGA (ISA)");
+        return i18n("Standard VGA ISA");
     case VMSpecs::GpuType::CirrusGD5446:
         return i18n("Cirrus Logic GD5446");
     case VMSpecs::GpuType::CirrusGD5430:
