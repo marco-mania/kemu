@@ -478,6 +478,12 @@ QString VMConfig::toQemuString(VMSpecs::NetworkCard card)
         return u"ne2k_pci"_s;
     case VMSpecs::NetworkCard::Ne2000:
         return u"ne2k_isa"_s;
+    case VMSpecs::NetworkCard::I82551:
+        return u"i82551"_s;
+    case VMSpecs::NetworkCard::I82557b:
+        return u"i82557b"_s;
+    case VMSpecs::NetworkCard::I82559er:
+        return u"i82559er"_s;
     case VMSpecs::NetworkCard::None:
         return { };
     }
@@ -588,6 +594,12 @@ QString VMConfig::toUIString(VMSpecs::NetworkCard card)
         return i18n("AMD PCnet-Fast III");
     case VMSpecs::NetworkCard::Rtl8029:
         return i18n("Realtek RTL8029");
+    case VMSpecs::NetworkCard::I82551:
+        return i18n("Intel PRO/100 (i82551)");
+    case VMSpecs::NetworkCard::I82557b:
+        return i18n("Intel PRO/100 (i82557b)");
+    case VMSpecs::NetworkCard::I82559er:
+        return i18n("Intel PRO/100 (i82559er)");
     case VMSpecs::NetworkCard::Ne2000:
         return i18n("Novell NE2000");
     }
@@ -683,7 +695,7 @@ QString VMConfig::toUIString(VMSpecs::MachineType type)
     case VMSpecs::MachineType::Pc:
         return i18n("Standard PC Legacy (i440FX + PIIX)");
     case VMSpecs::MachineType::PcISA:
-        return i18n("ISA-only PC (IBM PC/AT)");
+        return i18n("ISA-only PC Vintage (IBM PC/AT)");
     }
     return { };
 }
@@ -830,6 +842,12 @@ QString VMConfig::toString(VMSpecs::NetworkCard type)
         return u"rtl8029"_s;
     if (type == VMSpecs::NetworkCard::Ne2000)
         return u"ne2000"_s;
+    if (type == VMSpecs::NetworkCard::I82551)
+        return u"i82551"_s;
+    if (type == VMSpecs::NetworkCard::I82557b)
+        return u"i82557b"_s;
+    if (type == VMSpecs::NetworkCard::I82559er)
+        return u"i82559er"_s;
     if (type == VMSpecs::NetworkCard::None)
         return u"none"_s;
     return u"virtio"_s;
@@ -1029,6 +1047,12 @@ VMSpecs::NetworkCard VMConfig::parseNetworkCard(const QString& str)
         return VMSpecs::NetworkCard::Rtl8029;
     if (str_l == u"ne20000"_s)
         return VMSpecs::NetworkCard::Ne2000;
+    if (str_l == u"i82551"_s)
+        return VMSpecs::NetworkCard::I82551;
+    if (str_l == u"i82557b"_s)
+        return VMSpecs::NetworkCard::I82557b;
+    if (str_l == u"i82559er"_s)
+        return VMSpecs::NetworkCard::I82559er;
     if (str_l == u"none"_s)
         return VMSpecs::NetworkCard::None;
     return VMSpecs::NetworkCard::Virtio;

@@ -92,7 +92,10 @@ enum class NetworkCard { None,
     Rtl8139, // PCI
     Pcnet, // PCI
     Rtl8029, // PCI (NE2000 comp.)
-    Ne2000 // ISA
+    Ne2000, // ISA
+    I82551, // PCI (Intel PRO/100)
+    I82557b, // PCI (Intel PRO/100)
+    I82559er // PCI (Intel PRO/100)
 };
 
 enum class NetworkMode { Passt,
