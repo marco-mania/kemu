@@ -1715,6 +1715,11 @@ void CreateVmDialog::updateDiskInterfaceHint()
             diskHintLabel->setText(u"<i>"_s
                 + i18n("Q35 chipset: disk attached via AHCI (SATA).")
                 + u"</i>"_s);
+        } else if (machine == VMSpecs::MachineType::PcISA) {
+            // Explicitly handle the ISA-only machine type
+            diskHintLabel->setText(u"<i>"_s
+                + i18n("ISA-only PC: disk attached via legacy ISA IDE.")
+                + u"</i>"_s);
         } else {
             diskHintLabel->setText(u"<i>"_s
                 + i18n("PC (i440FX) chipset: disk attached via PIIX3 (IDE).")
