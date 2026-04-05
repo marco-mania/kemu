@@ -89,6 +89,8 @@ private Q_SLOTS:
     void killVM();
     void changeISO();
     void ejectISO();
+    void changeFloppy();
+    void ejectFloppy();
     void shrinkDisk();
     void manageSnapshots();
     void exportVM();

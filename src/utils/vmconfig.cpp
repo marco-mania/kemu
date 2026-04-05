@@ -81,8 +81,13 @@ VMSpecs::MachineType VMConfig::recommendedMachineType(VMSpecs::CpuModel type)
 
 int VMConfig::vgaMemMbLowerLimit(const VMSpecs::GpuType& type)
 {
-    Q_UNUSED(type);
-    return 1;
+    switch (type) {
+    case VMSpecs::GpuType::CirrusGD5430:
+    case VMSpecs::GpuType::CirrusGD5446:
+        return 4;
+    default:
+        return 1;
+    }
 }
 
 int VMConfig::vgaMemMbUpperLimit(const VMSpecs::GpuType& type)
@@ -91,9 +96,9 @@ int VMConfig::vgaMemMbUpperLimit(const VMSpecs::GpuType& type)
     case VMSpecs::GpuType::VgaISA:
         return 2;
     case VMSpecs::GpuType::CirrusGD5430:
-        return 2;
+        return 16;
     case VMSpecs::GpuType::CirrusGD5446:
-        return 8;
+        return 16;
         break;
     case VMSpecs::GpuType::Virtio:
         return 2048;
@@ -1260,6 +1265,8 @@ QJsonObject VMConfig::toJson() const
     j[u"cpu_cores"_s] = m_cpuCoreCount;
     j[u"iso"_s] = m_isoPath;
     j[u"boot_iso"_s] = m_bootFromIso;
+    j[u"floppy"_s] = m_floppyPath;
+    j[u"boot_floppy"_s] = m_bootFromFloppy;
     j[u"extra_args"_s] = m_extraArgs;
     j[u"disk_file"_s] = u"disk.qcow2"_s;
     j[u"disk_size_gb"_s] = m_diskSizeGb;
@@ -1342,6 +1349,8 @@ VMConfig VMConfig::fromJson(const QJsonObject& j)
     c.m_diskSizeGb = j[u"disk_size_gb"_s].toInt(GlobalDefaults.diskSizeGb);
     c.m_isoPath = j[u"iso"_s].toString();
     c.m_bootFromIso = j[u"boot_iso"_s].toBool(false);
+    c.m_floppyPath = j[u"floppy"_s].toString();
+    c.m_bootFromFloppy = j[u"boot_floppy"_s].toBool(false);
     c.m_extraArgs = j[u"extra_args"_s].toString();
     c.m_diskPath = j[u"disk_file"_s].toString(KEMUConst::VMDiskFileName);
 

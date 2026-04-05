@@ -148,35 +148,63 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
              << u"%1,drive=%2"_s.arg(VMConfig::toQemuString(config.diskInterface()), driveId);
 
     // --- ISO ---
-    const bool useScsiCd = (config.machineType() == VMSpecs::MachineType::Q35);
-    const QString cdDeviceType = useScsiCd ? u"scsi-cd"_s : u"ide-cd"_s;
-
-    if (useScsiCd) {
+    if (config.machineType() == VMSpecs::MachineType::Q35) {
         args << u"-device"_s << u"virtio-scsi-pci,id=scsi0"_s;
+
+        if (!config.isoPath().isEmpty()) {
+            args << u"-drive"_s
+                 << u"file=%1,format=raw,if=none,id=drive-cdrom0,media=cdrom,readonly=on"_s
+                        .arg(relativePaths ? QFileInfo(config.isoPath()).fileName() : config.isoPath());
+            args << u"-device"_s << u"scsi-cd,drive=drive-cdrom0,id=cdrom0"_s;
+        } else {
+            args << u"-drive"_s << u"if=none,id=drive-cdrom0,media=cdrom"_s;
+            args << u"-device"_s << u"scsi-cd,drive=drive-cdrom0,id=cdrom0"_s;
+        }
+    } else {
+        if (!config.isoPath().isEmpty()) {
+            args << u"-drive"_s
+                 << u"file=%1,format=raw,if=none,id=drive-cdrom0,media=cdrom,readonly=on"_s
+                        .arg(relativePaths ? QFileInfo(config.isoPath()).fileName() : config.isoPath());
+            args << u"-device"_s << u"ide-cd,drive=drive-cdrom0,id=cdrom0"_s;
+        } else {
+            args << u"-drive"_s << u"if=none,id=drive-cdrom0,media=cdrom"_s;
+            args << u"-device"_s << u"ide-cd,drive=drive-cdrom0,id=cdrom0"_s;
+        }
     }
 
-    // --- Main ISO ---
-    if (!config.isoPath().isEmpty()) {
-        args << u"-drive"_s
-             << u"file=%1,format=raw,if=none,id=drive-cdrom0,media=cdrom,readonly=on"_s
-                    .arg(relativePaths ? QDir(config.isoPath()).dirName() : config.isoPath());
-        args << u"-device"_s << u"%1,drive=drive-cdrom0,id=cdrom0"_s.arg(cdDeviceType);
-    } else {
-        args << u"-drive"_s << u"if=none,id=drive-cdrom0,media=cdrom"_s;
-        args << u"-device"_s << u"%1,drive=drive-cdrom0,id=cdrom0"_s.arg(cdDeviceType);
+    // --- Floppy ---
+    if (config.machineType() != VMSpecs::MachineType::Q35) {
+        if (!config.floppyPath().isEmpty()) {
+            args << u"-drive"_s
+                 << u"file=%1,format=raw,if=none,id=drive-fda,readonly=off"_s
+                        .arg(relativePaths ? QFileInfo(config.floppyPath()).fileName() : config.floppyPath());
+        } else {
+            args << u"-drive"_s << u"if=none,id=drive-fda"_s;
+        }
+        args << u"-device"_s << u"floppy,drive=drive-fda,id=fda"_s;
     }
 
     // --- Cloud-Init NoCloud ISO ---
     const QString cidataIso = vmDir.absoluteFilePath(u"cidata.iso"_s);
     if (QFile::exists(cidataIso)) {
+        const QString ciDevType = (config.machineType() == VMSpecs::MachineType::Q35)
+            ? u"scsi-cd"_s
+            : u"ide-cd"_s;
         args << u"-drive"_s
              << u"file=%1,format=raw,if=none,id=drive-cidata,media=cdrom,readonly=on"_s
                     .arg(relativePaths ? QDir(cidataIso).dirName() : cidataIso);
-        args << u"-device"_s << u"%1,drive=drive-cidata,id=cidata"_s.arg(cdDeviceType);
+        args << u"-device"_s << u"%1,drive=drive-cidata,id=cidata"_s.arg(ciDevType);
     }
 
-    // boot order: ISO (d) only when explicitly requested, otherwise disk (c)
-    args << u"-boot"_s << (config.bootFromIso() ? u"d"_s : u"c"_s);
+    // Boot order: Floppy (a), Disk (c) or ISO (d)
+    QString bootOrder;
+    if (config.bootFromFloppy())
+        bootOrder = u"a"_s;
+    else if (config.bootFromIso())
+        bootOrder = u"d"_s;
+    else
+        bootOrder = u"c"_s;
+    args << u"-boot"_s << bootOrder;
 
     // -- Shared Folders ---
     if (!config.sharedPath().isEmpty()) {

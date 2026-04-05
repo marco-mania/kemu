@@ -161,6 +161,9 @@ private:
     QPointer<KUrlRequester> isoPathRequester;
     QPointer<QLabel> isoPathLabel;
     QPointer<QCheckBox> bootFromIsoCheck;
+    QPointer<KUrlRequester> floppyPathRequester;
+    QPointer<QLabel> floppyPathLabel;
+    QPointer<QCheckBox> bootFromFloppyCheck;
     QPointer<QLineEdit> extraArgsEdit;
     QPointer<QComboBox> displayCombo;
     QPointer<QCheckBox> spiceAgentCheck;

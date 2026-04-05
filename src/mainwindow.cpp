@@ -586,6 +586,16 @@ void MainWindow::setupActions()
     actionEjectISO->setText(i18n("Eject ISO"));
     connect(actionEjectISO, &QAction::triggered, this, &MainWindow::ejectISO);
 
+    auto* actionChangeFloppy = ac->addAction(u"vm_change_floppy"_s);
+    actionChangeFloppy->setIcon(QIcon::fromTheme(u"media-floppy"_s));
+    actionChangeFloppy->setText(i18n("Change Floppy"));
+    connect(actionChangeFloppy, &QAction::triggered, this, &MainWindow::changeFloppy);
+
+    auto* actionEjectFloppy = ac->addAction(u"vm_eject_floppy"_s);
+    actionEjectFloppy->setIcon(QIcon::fromTheme(u"media-eject"_s));
+    actionEjectFloppy->setText(i18n("Eject Floppy"));
+    connect(actionEjectFloppy, &QAction::triggered, this, &MainWindow::ejectFloppy);
+
     auto* actionReset = ac->addAction(u"vm_reset"_s);
     actionReset->setIcon(QIcon::fromTheme(u"system-reboot"_s));
     actionReset->setText(i18n("Reset"));
@@ -670,6 +680,7 @@ void MainWindow::setupActions()
     vmActionBar->addAction(actionKill);
     vmActionBar->addSeparator();
     vmActionBar->addAction(actionChangeISO);
+    vmActionBar->addAction(actionChangeFloppy);
     vmActionBar->addSeparator();
     vmActionBar->addAction(snapshotsAction);
     auto* spacer = new QWidget();
@@ -703,6 +714,8 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_kill"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
     actionCollection()->action(u"vm_change_iso"_s)->setEnabled(hasSelection && isRunning);
     actionCollection()->action(u"vm_eject_iso"_s)->setEnabled(hasSelection && isRunning);
+    actionCollection()->action(u"vm_change_floppy"_s)->setEnabled(hasSelection && isRunning);
+    actionCollection()->action(u"vm_eject_floppy"_s)->setEnabled(hasSelection && isRunning);
     actionCollection()->action(u"vm_shrink"_s)->setEnabled(hasSelection && !isBusy);
     actionCollection()->action(u"vm_manage_snapshots"_s)->setEnabled(hasSelection && hasDisk && !isBusy);
     actionCollection()->action(u"vm_export"_s)->setEnabled(hasSelection && !isBusy);
@@ -815,6 +828,14 @@ void MainWindow::updateDetails()
     if (currentConfig.gpu3dAcceleration())
         gpuVal += i18n(" (3D)");
     QString audioVal = VMConfig::toUIString(currentConfig.audioDevice());
+    if (currentConfig.audioDevice() == VMSpecs::AudioDevice::Sb16) {
+        const auto& sb = currentConfig.sb16Config();
+        audioVal += u" (IRQ %1, DMA %2/%3, I/O 0x%4)"_s
+                        .arg(sb.irq)
+                        .arg(sb.dma)
+                        .arg(sb.dma16)
+                        .arg(sb.iobase, 0, 16);
+    }
     QString netVal;
     if (currentConfig.networkCard() == VMSpecs::NetworkCard::None) {
         netVal = VMConfig::toUIString(VMSpecs::NetworkCard::None);
@@ -845,6 +866,8 @@ void MainWindow::updateDetails()
     QString usbVal = VMConfig::toUIString(currentConfig.usbController());
     QString displayVal = VMConfig::toUIString(currentConfig.displayType());
 
+    QString resolutionVal = u"%1×%2"_s.arg(currentConfig.displayResolution().width()).arg(currentConfig.displayResolution().height());
+
     QString firmwareVal = VMConfig::firmwareToUIString(currentConfig.useUefi(), currentConfig.useSecureBoot());
     QString chipsetVal = VMConfig::toUIString(currentConfig.machineType());
 
@@ -863,11 +886,15 @@ void MainWindow::updateDetails()
     if (!memFlags.isEmpty())
         memVal += i18n("  [%1]", memFlags.join(u", "));
 
-    QString cpuVal = i18n("%1, %2 core(s)", VMConfig::toUIString(currentConfig.cpuModel()), currentConfig.cpuCoreCount());
+    QString cpuVal = i18n("%1, %2 core(s), %3", VMConfig::toUIString(currentConfig.cpuModel()), currentConfig.cpuCoreCount(), currentConfig.useKvm() ? i18n("KVM") : i18n("TCG"));
 
     QString cdVal = currentConfig.isoPath().isEmpty()
         ? i18n("No disc inserted")
         : QFileInfo(currentConfig.isoPath()).fileName();
+
+    QString floppyVal = currentConfig.floppyPath().isEmpty()
+        ? i18n("No disk inserted")
+        : QFileInfo(currentConfig.floppyPath()).fileName();
 
     QString sharedVal;
     if (currentConfig.sharedPath().isEmpty()) {
@@ -1032,9 +1059,10 @@ void MainWindow::updateDetails()
 
         { u"&#x1F4BE;"_s, i18n("Hard Disk"), diskVal, true, false },
         { u"&#x1F4BF;"_s, i18n("CD/DVD"), cdVal, false, currentConfig.isoPath().isEmpty() },
+        { u"&#x1F4BE;"_s, i18n("Floppy"), floppyVal, false, currentConfig.floppyPath().isEmpty() },
 
         { u"&#x1F5B5;"_s, i18n("Display"),
-            gpuVal + u", "_s + displayVal + u"  (%1×%2)"_s.arg(currentConfig.displayResolution().width()).arg(currentConfig.displayResolution().height()),
+            gpuVal + u", "_s + displayVal + (currentConfig.displayType() != VMSpecs::DisplayType::Spice ? u" (%1)"_s.arg(resolutionVal) : QString()),
             true, false },
 
         { u"&#x1F50A;"_s, i18n("Sound Card"), audioVal, true, currentConfig.audioDevice() == VMSpecs::AudioDevice::None },
@@ -1323,6 +1351,8 @@ void MainWindow::changeISO()
         return;
     }
 
+    currentConfig.setISOPath(isoPath);
+
     statusBar()->showMessage(i18n("ISO changed successfully."));
     updateDetails();
 }
@@ -1348,7 +1378,68 @@ void MainWindow::ejectISO()
         return;
     }
 
+    currentConfig.clearISOPath();
+
     statusBar()->showMessage(i18n("ISO ejected."));
+    updateDetails();
+}
+
+void MainWindow::changeFloppy()
+{
+    if (currentConfig.name().isEmpty() || !vmModel->isRunning(currentConfig.name()))
+        return;
+
+    const QString path = QFileDialog::getOpenFileName(this, i18n("Select Floppy Image"), QDir::homePath(), i18n("Floppy Images (*.img *.ima *.flp *.vfd);;All Files (*)"));
+    if (path.isEmpty())
+        return;
+
+    const VmEntry* entry = vmModel->entryByName(currentConfig.name());
+    if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
+        KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+        return;
+    }
+
+    QMPResult result = entry->qmpClient->sendCommandSync(
+        u"blockdev-change-medium"_s,
+        { { u"id"_s, u"fda"_s },
+            { u"filename"_s, path },
+            { u"format"_s, u"raw"_s } });
+
+    if (!result.success) {
+        KMessageBox::error(this, i18n("Changing floppy image failed"), result.errorMessage);
+        return;
+    }
+
+    currentConfig.setFloppyPath(path);
+
+    statusBar()->showMessage(i18n("Floppy image changed successfully."));
+    updateDetails();
+}
+
+void MainWindow::ejectFloppy()
+{
+    if (currentConfig.name().isEmpty() || !vmModel->isRunning(currentConfig.name()))
+        return;
+
+    const VmEntry* entry = vmModel->entryByName(currentConfig.name());
+    if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
+        KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+        return;
+    }
+
+    QJsonObject ejectArgs;
+    ejectArgs.insert(u"id"_s, u"fda"_s);
+
+    QMPResult result = entry->qmpClient->sendCommandSync(u"eject"_s, ejectArgs);
+
+    if (!result.success) {
+        KMessageBox::error(this, i18n("Eject floppy failed"), result.errorMessage);
+        return;
+    }
+
+    currentConfig.clearFloppyPath();
+
+    statusBar()->showMessage(i18n("Floppy ejected."));
     updateDetails();
 }
 
@@ -1810,8 +1901,17 @@ void MainWindow::showContextMenu(const QPoint& pos)
             } else {
                 if (actionCollection()->action(u"vm_reconnect_spice"_s)->isEnabled())
                     contextMenu.addAction(actionCollection()->action(u"vm_reconnect_spice"_s));
+
                 contextMenu.addAction(actionCollection()->action(u"vm_shutdown"_s));
                 contextMenu.addAction(actionCollection()->action(u"vm_reset"_s));
+
+                contextMenu.addSeparator();
+
+                contextMenu.addAction(actionCollection()->action(u"vm_change_iso"_s));
+                contextMenu.addAction(actionCollection()->action(u"vm_eject_iso"_s));
+                contextMenu.addAction(actionCollection()->action(u"vm_change_floppy"_s));
+                contextMenu.addAction(actionCollection()->action(u"vm_eject_floppy"_s));
+
                 contextMenu.addSeparator();
                 contextMenu.addAction(usbActionMenu);
                 contextMenu.addSeparator();
@@ -1820,6 +1920,7 @@ void MainWindow::showContextMenu(const QPoint& pos)
                 if (actionCollection()->action(u"vm_network_shell"_s)->isEnabled())
                     contextMenu.addAction(actionCollection()->action(u"vm_network_shell"_s));
                 contextMenu.addSeparator();
+
                 contextMenu.addAction(actionCollection()->action(u"vm_kill"_s));
             }
         }
@@ -1905,6 +2006,34 @@ void MainWindow::startVM(bool headless)
 
     if (currentConfig.useKvm() && !QFile::exists(u"/dev/kvm"_s))
         KMessageBox::error(this, i18n("/dev/kvm not found. Hardware virtualization may be disabled in BIOS."), i18n("KVM not available"));
+
+    if (currentConfig.gpuType() == VMSpecs::GpuType::VgaISA) {
+        const QString qemuDataDir = QFileInfo(ExternalTools::instance().path(ExternalTools::QemuSystem))
+                                        .absoluteDir()
+                                        .absoluteFilePath(u"../share/qemu"_s);
+        const QString romPath = QDir(qemuDataDir).absoluteFilePath(u"vgabios.bin"_s);
+        if (!QFile::exists(romPath)) {
+            const QString isavgaRom = QDir(qemuDataDir).absoluteFilePath(u"vgabios-isavga.bin"_s);
+            QString detail;
+            if (QFile::exists(isavgaRom)) {
+                detail = i18n("<p>A compatible ROM was found at:<br/>"
+                              "<tt>%1</tt></p>"
+                              "<p>To fix this, create a symbolic link:</p>"
+                              "<pre>sudo ln -s vgabios-isavga.bin %2</pre>",
+                    isavgaRom, romPath);
+            } else {
+                detail = i18n("Please install the QEMU VGA BIOS package for your distribution.");
+            }
+            KMessageBox::error(this,
+                u"<p>"_s
+                    + i18n("The ISA VGA device requires %1 which was not found in:",
+                        u"<tt>vgabios.bin</tt><br/>"_s)
+                    + u"<tt>"_s + qemuDataDir + u"</tt></p>"_s
+                    + detail,
+                i18n("Missing VGA BIOS ROM"));
+            return;
+        }
+    }
 
     QFile::remove(monitorSocketPath(vmName));
 
@@ -2545,7 +2674,7 @@ void MainWindow::createNewVM()
 
     baseDir.mkdir(newConfig.name());
     const QString vmPath = baseDir.filePath(newConfig.name());
-    const QString diskPath = vmPath + KEMUConst::VMDiskFileName;
+    const QString diskPath = QDir(vmPath).filePath(KEMUConst::VMDiskFileName);
 
     if (!dialog.isCloudDeployRequested()) {
         KProcess imgProcess;

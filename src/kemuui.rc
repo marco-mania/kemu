@@ -1,11 +1,9 @@
 <?xml version="1.0"?>
-
 <!--
 SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
 
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
-
 <!DOCTYPE gui SYSTEM "kpartgui.dtd">
 <gui name="kemu" version="1">
   <MenuBar>
@@ -32,6 +30,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <Separator/>
       <Action name="vm_change_iso"/>
       <Action name="vm_eject_iso"/>
+      <Action name="vm_change_floppy"/>
+      <Action name="vm_eject_floppy"/>
       <Separator/>
       <Action name="vm_shrink"/>
       <Action name="vm_manage_snapshots"/>

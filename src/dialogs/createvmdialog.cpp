@@ -208,6 +208,19 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     bootFromIsoCheck->setEnabled(!isoPathRequester->text().isEmpty());
     genLayout->addRow({ }, bootFromIsoCheck);
 
+    floppyPathRequester = new KUrlRequester();
+    floppyPathRequester->lineEdit()->setPlaceholderText(i18n("Leave empty if not needed"));
+    floppyPathRequester->lineEdit()->setClearButtonEnabled(true);
+    floppyPathRequester->setMode(KFile::File | KFile::ExistingOnly | KFile::LocalOnly);
+    floppyPathRequester->setNameFilter(i18n("Floppy Images (*.img *.ima *.flp *.vfd);;All Files (*)"));
+    genLayout->addRow(i18n("Floppy Image:"), floppyPathRequester);
+    floppyPathLabel = qobject_cast<QLabel*>(genLayout->labelForField(floppyPathRequester));
+
+    bootFromFloppyCheck = new QCheckBox(i18n("Boot from Floppy"));
+    bootFromFloppyCheck->setToolTip(i18n("If checked, the VM boots from the floppy image (drive A:)."));
+    bootFromFloppyCheck->setEnabled(false);
+    genLayout->addRow({ }, bootFromFloppyCheck);
+
     auto* shareLayout = new QHBoxLayout();
     sharedPathEdit = new QLineEdit();
     sharedPathEdit->setPlaceholderText(i18n("Host directory"));
@@ -593,6 +606,26 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
         bootFromIsoCheck->setEnabled(hasIso);
         bootFromIsoCheck->setChecked(hasIso);
     });
+
+    connect(floppyPathRequester, &KUrlRequester::textChanged, this, [this]() {
+        bool hasFloppy = !floppyPathRequester->text().trimmed().isEmpty();
+        bootFromFloppyCheck->setEnabled(hasFloppy);
+        if (!hasFloppy)
+            bootFromFloppyCheck->setChecked(false);
+        if (hasFloppy)
+            bootFromFloppyCheck->setChecked(true);
+        validateForm();
+    });
+
+    connect(bootFromFloppyCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        if (checked)
+            bootFromIsoCheck->setChecked(false);
+    });
+    connect(bootFromIsoCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        if (checked)
+            bootFromFloppyCheck->setChecked(false);
+    });
+
     connect(btnBrowseShare, &QPushButton::clicked, this, &CreateVmDialog::browseSharedDir);
     connect(sharedPathEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
         sharedNameEdit->setEnabled(!text.isEmpty());
@@ -1050,7 +1083,12 @@ void CreateVmDialog::onOsNameChanged(int index)
         cloudImageCombo->setEnabled(false);
         cloudImageLabel->setEnabled(false);
         cloudImageStatusLabel->clear();
-        diskSpin->setMinimum(10);
+        int minDiskGb = KEMUConst::DefaultMinDiskSizeGB;
+        if (m_imageDatabase) {
+            int templateMin = m_imageDatabase->minDiskGbFor(distroId, { });
+            minDiskGb = qMin(minDiskGb, templateMin);
+        }
+        diskSpin->setMinimum(minDiskGb);
         updateAutomatedDeployWidgets();
     }
 
@@ -1074,6 +1112,19 @@ void CreateVmDialog::onGpuDisplayChanged()
     const bool isWindows = (osType == VMSpecs::OsType::Windows);
 
     gpuMemSpin->setRange(VMConfig::vgaMemMbLowerLimit(gpu), VMConfig::vgaMemMbUpperLimit(gpu));
+    if (gpu == VMSpecs::GpuType::CirrusGD5430 || gpu == VMSpecs::GpuType::CirrusGD5446) {
+        gpuMemSpin->setSingleStep(4);
+        // Snap to nearest valid value
+        int val = gpuMemSpin->value();
+        if (val <= 4)
+            gpuMemSpin->setValue(4);
+        else if (val <= 8)
+            gpuMemSpin->setValue(8);
+        else
+            gpuMemSpin->setValue(16);
+    } else {
+        gpuMemSpin->setSingleStep(1);
+    }
     gpuMemSpin->setEnabled(true);
     vgaMemLabel->setEnabled(true);
 
@@ -1163,7 +1214,7 @@ void CreateVmDialog::onAutomatedDeployToggled(bool checked)
     if (checked) {
         populateVersions();
     } else {
-        diskSpin->setMinimum(10);
+        diskSpin->setMinimum(KEMUConst::DefaultMinDiskSizeGB);
     }
     updateAutomatedDeployWidgets();
     validateForm();
@@ -1380,6 +1431,8 @@ void CreateVmDialog::setupForEdit(const VMConfig& config)
     preallocCheck->setChecked(config.preallocMemory());
     isoPathRequester->setText(config.isoPath());
     bootFromIsoCheck->setChecked(config.bootFromIso());
+    floppyPathRequester->setText(config.floppyPath());
+    bootFromFloppyCheck->setChecked(config.bootFromFloppy());
     macEdit->setText(config.macAddress());
     for (const auto& rule : config.portForwards()) {
         addPortForwardRow();
@@ -1560,6 +1613,8 @@ VMConfig CreateVmDialog::getResult() const
     c.setDiskSizeGb(diskSpin->value());
     c.setISOPath(isoPathRequester->text());
     c.setBootFromIso(bootFromIsoCheck->isChecked());
+    c.setFloppyPath(floppyPathRequester->text());
+    c.setBootFromFloppy(bootFromFloppyCheck->isChecked());
     c.setExtraArgs(extraArgsEdit->text());
     c.setMachineType(static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt()));
     c.setUseUefi(uefiCheck->isChecked());
@@ -1670,17 +1725,23 @@ void CreateVmDialog::updateAutomatedDeployWidgets()
 
     // ISO path: visible only for distros without cloud images (e.g. Windows)
     adIsoPathRequester->setEnabled(qdActive && !hasCloud);
-    if (adIsoLabel)
-        adIsoLabel->setEnabled(qdActive && !hasCloud);
     adIsoPathRequester->setVisible(!hasCloud);
-    if (adIsoLabel)
+    if (adIsoLabel) {
+        adIsoLabel->setEnabled(qdActive && !hasCloud);
         adIsoLabel->setVisible(!hasCloud);
+    }
 
     cloudInitButton->setEnabled(qdActive);
 
     isoPathRequester->setEnabled(!qdActive);
-    isoPathLabel->setEnabled(!qdActive);
+    if (isoPathLabel)
+        isoPathLabel->setEnabled(!qdActive);
     bootFromIsoCheck->setEnabled(!qdActive && !isoPathRequester->text().trimmed().isEmpty());
+
+    floppyPathRequester->setEnabled(!qdActive);
+    if (floppyPathLabel)
+        floppyPathLabel->setEnabled(!qdActive);
+    bootFromFloppyCheck->setEnabled(!qdActive && !floppyPathRequester->text().trimmed().isEmpty());
 }
 
 void CreateVmDialog::updateCloudImageStatus()
@@ -1922,6 +1983,15 @@ void CreateVmDialog::updateDeviceAvailability()
         balloonCheck->setChecked(false);
     }
     balloonCheck->setEnabled(supportsPci);
+
+    const bool hasFloppy = (machine != VMSpecs::MachineType::Q35);
+    floppyPathRequester->setEnabled(hasFloppy);
+    floppyPathLabel->setEnabled(hasFloppy);
+    bootFromFloppyCheck->setEnabled(hasFloppy && !floppyPathRequester->text().trimmed().isEmpty());
+    if (!hasFloppy) {
+        floppyPathRequester->clear();
+        bootFromFloppyCheck->setChecked(false);
+    }
 
     updateDiskInterfaceHint();
     onGpuDisplayChanged();

@@ -120,12 +120,21 @@ bool ImageDatabase::hasCloudImages(const QString& tplId) const
 int ImageDatabase::minDiskGbFor(const QString& tplId, const QString& version) const
 {
     auto* d = findById(tplId);
-    if (d)
+    if (!d || d->releases.isEmpty())
+        return KEMUConst::DefaultMinDiskSizeGB;
+
+    if (!version.isEmpty()) {
         for (const auto& r : d->releases) {
             if (r.version == version)
                 return r.minDiskGb;
-        };
-    return KEMUConst::DefaultMinDiskSizeGB;
+        }
+    }
+
+    // No version specified or not found: return minimum across all releases
+    int minGb = d->releases.first().minDiskGb;
+    for (const auto& r : d->releases)
+        minGb = qMin(minGb, r.minDiskGb);
+    return minGb;
 }
 
 QString ImageDatabase::hostArch()

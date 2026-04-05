@@ -241,6 +241,8 @@ public:
     [[nodiscard]] int diskSizeGb() const { return m_diskSizeGb; }
     [[nodiscard]] QString isoPath() const { return m_isoPath; }
     [[nodiscard]] bool bootFromIso() const { return m_bootFromIso; }
+    [[nodiscard]] QString floppyPath() const { return m_floppyPath; }
+    [[nodiscard]] bool bootFromFloppy() const { return m_bootFromFloppy; }
     [[nodiscard]] QString extraArgs() const { return m_extraArgs; }
     [[nodiscard]] QString diskPath() const { return m_diskPath; }
 
@@ -307,6 +309,9 @@ public:
     void setISOPath(const QString& path) { m_isoPath = path; }
     void setBootFromIso(const bool bfi) { m_bootFromIso = bfi; }
     void clearISOPath() { m_isoPath.clear(); }
+    void setFloppyPath(const QString& path) { m_floppyPath = path; }
+    void setBootFromFloppy(const bool bff) { m_bootFromFloppy = bff; }
+    void clearFloppyPath() { m_floppyPath.clear(); }
     void setExtraArgs(const QString& args) { m_extraArgs = args; }
     void setDiskPath(const QString& path) { m_diskPath = path; }
 
@@ -453,6 +458,8 @@ private:
     int m_diskSizeGb = GlobalDefaults.diskSizeGb;
     QString m_isoPath;
     bool m_bootFromIso = false;
+    QString m_floppyPath;
+    bool m_bootFromFloppy = false;
     QString m_extraArgs;
     QString m_diskPath;
 
