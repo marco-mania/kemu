@@ -6,16 +6,16 @@
 
 #include "vmitemdelegate.h"
 
-void VMItemDelegate::paint(QPainter* painter,
-    const QStyleOptionViewItem& option,
-    const QModelIndex& index) const
+#include "models/vmmodel.h"
+
+void VMItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
     QStyleOptionViewItem opt = option;
     initStyleOption(&opt, index);
     opt.text.clear();
     opt.widget->style()->drawControl(QStyle::CE_ItemViewItem, &opt, painter, opt.widget);
 
-    const int itemType = index.data(ItemTypeRole).toInt();
+    const int itemType = index.data(VmModel::ItemTypeRole).toInt();
     const QIcon icon = index.data(Qt::DecorationRole).value<QIcon>();
     const QString title = index.data(Qt::DisplayRole).toString();
     const int margin = 4;
@@ -28,14 +28,21 @@ void VMItemDelegate::paint(QPainter* painter,
     icon.paint(painter, iconRect);
 
     int textLeft = iconRect.right() + margin + 2;
-    int textWidth = opt.rect.right() - textLeft - margin;
+    int mediaReserved = 0;
+    if (itemType == VmModel::Vm) {
+        bool hasCd = index.data(VmModel::MediaCdRole).toBool();
+        bool hasFloppy = index.data(VmModel::MediaFloppyRole).toBool();
+        int iconCount = (hasCd ? 1 : 0) + (hasFloppy ? 1 : 0);
+        mediaReserved = iconCount * (MediaIconSize + MediaIconMargin) + MediaIconMargin;
+    }
+    int textWidth = opt.rect.right() - textLeft - margin - mediaReserved;
 
     painter->save();
 
     QPen textPen = opt.palette.color(
         (opt.state & QStyle::State_Selected) ? QPalette::HighlightedText : QPalette::Text);
 
-    if (itemType == Folder) {
+    if (itemType == VmModel::Folder) {
         // --- Folder: single-line, bold---
         QFont folderFont = opt.font;
         folderFont.setBold(true);
@@ -56,7 +63,7 @@ void VMItemDelegate::paint(QPainter* painter,
 
     } else {
         // --- VM: two-line (title + subtitle) ---
-        const QString subtitle = index.data(SubtitleRole).toString();
+        const QString subtitle = index.data(VmModel::SubtitleRole).toString();
 
         QFont titleFont = opt.font;
         QFontMetrics titleFm(titleFont);
@@ -64,8 +71,7 @@ void VMItemDelegate::paint(QPainter* painter,
 
         painter->setFont(titleFont);
         painter->setPen(textPen);
-        painter->drawText(textLeft, titleY,
-            titleFm.elidedText(title, Qt::ElideRight, textWidth));
+        painter->drawText(textLeft, titleY, titleFm.elidedText(title, Qt::ElideRight, textWidth));
 
         if (!subtitle.isEmpty()) {
             QFont subFont = titleFont;
@@ -77,20 +83,32 @@ void VMItemDelegate::paint(QPainter* painter,
             painter->setPen(opt.palette.color((opt.state & QStyle::State_Selected) ? QPalette::HighlightedText : QPalette::Mid));
             painter->drawText(textLeft, subY, subFm.elidedText(subtitle, Qt::ElideRight, textWidth));
         }
+
+        // --- Media indicator icons (right-aligned) ---
+        const bool hasCd = index.data(VmModel::MediaCdRole).toBool();
+        const bool hasFloppy = index.data(VmModel::MediaFloppyRole).toBool();
+
+        if (hasFloppy) {
+            QRect r = mediaIconRect(opt, MediaType::Floppy, false);
+            QIcon::fromTheme(u"media-floppy"_s).paint(painter, r);
+        }
+        if (hasCd) {
+            QRect r = mediaIconRect(opt, MediaType::Cd, hasFloppy);
+            QIcon::fromTheme(u"media-optical"_s).paint(painter, r);
+        }
     }
 
     painter->restore();
 }
 
-QSize VMItemDelegate::sizeHint(const QStyleOptionViewItem& option,
-    const QModelIndex& index) const
+QSize VMItemDelegate::sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
     QStyleOptionViewItem opt = option;
     initStyleOption(&opt, index);
 
-    int itemType = index.data(ItemTypeRole).toInt();
+    int itemType = index.data(VmModel::ItemTypeRole).toInt();
 
-    if (itemType == Folder) {
+    if (itemType == VmModel::Folder) {
         QFont folderFont = opt.font;
         folderFont.setBold(true);
         QFontMetrics fm(folderFont);
@@ -107,4 +125,17 @@ QSize VMItemDelegate::sizeHint(const QStyleOptionViewItem& option,
     int textHeight = titleFm.height() + 2 + subFm.height();
     int h = qMax(textHeight, opt.decorationSize.height()) + 8;
     return QSize(opt.rect.width(), h);
+}
+
+QRect VMItemDelegate::mediaIconRect(const QStyleOptionViewItem& option, MediaType type, bool hasOther)
+{
+    const int y = option.rect.top() + (option.rect.height() - MediaIconSize) / 2;
+    const int rightEdge = option.rect.right() - MediaIconMargin;
+
+    if (type == MediaType::Floppy)
+        return { rightEdge - MediaIconSize, y, MediaIconSize, MediaIconSize };
+
+    // CD: rightmost if no floppy, otherwise left of floppy
+    int offset = hasOther ? (MediaIconSize + MediaIconMargin) : 0;
+    return { rightEdge - MediaIconSize - offset, y, MediaIconSize, MediaIconSize };
 }

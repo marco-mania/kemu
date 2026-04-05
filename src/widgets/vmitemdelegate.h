@@ -10,21 +10,24 @@
 #include <QStyledItemDelegate>
 #include <QTreeView>
 
+using namespace Qt::StringLiterals;
+
 class VMItemDelegate : public QStyledItemDelegate {
+
     Q_OBJECT
+
 public:
-    // Custom Roles
-    static constexpr int SubtitleRole = Qt::UserRole + 100;
-    static constexpr int ItemTypeRole = Qt::UserRole + 101;
-    static constexpr int VmNameRole = Qt::UserRole + 102;
-
-    // Item-Typen
-    enum ItemType { Folder = 0,
-        Vm = 1 };
-
     using QStyledItemDelegate::QStyledItemDelegate;
 
     void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
 
     QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override;
+
+    static constexpr int MediaIconSize = 20;
+    static constexpr int MediaIconMargin = 4;
+
+    enum class MediaType { Cd,
+        Floppy };
+
+    static QRect mediaIconRect(const QStyleOptionViewItem& option, MediaType type, bool hasOther);
 };

@@ -167,6 +167,8 @@ private:
     void saveFolderStructure() const;
     QMap<QString, QString> loadFolderAssignments() const;
 
+    QMap<QString, QDir> m_lastMediaDir;
+
     QPointer<QTextBrowser> detailsBrowser;
     QPointer<PerformanceMonitorWidget> perfMonitor;
     QPointer<QToolBar> vmActionBar;

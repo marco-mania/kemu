@@ -18,7 +18,6 @@
 #include "utils/imagedatabase.h"
 #include "utils/qmpclient.h"
 #include "utils/vmconfig.h"
-#include "widgets/vmitemdelegate.h"
 
 using namespace Qt::StringLiterals;
 
@@ -67,11 +66,17 @@ class VmModel : public QAbstractItemModel {
     Q_OBJECT
 
 public:
+    // Item-Typen
+    enum ItemType { Folder = 0,
+        Vm = 1 };
+
     enum Role {
-        ItemTypeRole = VMItemDelegate::ItemTypeRole,
-        SubtitleRole = VMItemDelegate::SubtitleRole,
-        VmNameRole = VMItemDelegate::VmNameRole,
+        ItemTypeRole = Qt::UserRole + 100,
+        SubtitleRole = Qt::UserRole + 101,
+        VmNameRole = Qt::UserRole + 102,
         VmStateRole = Qt::UserRole + 200,
+        MediaCdRole = Qt::UserRole + 201,
+        MediaFloppyRole = Qt::UserRole + 202,
     };
 
     explicit VmModel(ImageDatabase* imageDb, QObject* parent = nullptr);

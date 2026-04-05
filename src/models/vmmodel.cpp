@@ -77,7 +77,7 @@ QVariant VmModel::data(const QModelIndex& index, int role) const
         case Qt::DecorationRole:
             return QIcon::fromTheme(u"folder"_s);
         case ItemTypeRole:
-            return VMItemDelegate::Folder;
+            return Folder;
         default:
             return { };
         }
@@ -91,7 +91,7 @@ QVariant VmModel::data(const QModelIndex& index, int role) const
         case Qt::DecorationRole:
             return VMConfig::styledVmIcon(vm.config.icon(KEMUConst::ListViewIconSize), vm.state == VmEntry::State::Running, vm.isHeadless, KEMUConst::ListViewIconSize);
         case ItemTypeRole:
-            return VMItemDelegate::Vm;
+            return Vm;
         case VmNameRole:
             return vm.name;
         case SubtitleRole: {
@@ -107,6 +107,10 @@ QVariant VmModel::data(const QModelIndex& index, int role) const
         }
         case VmStateRole:
             return static_cast<int>(vm.state);
+        case MediaCdRole:
+            return !vm.config.isoPath().isEmpty();
+        case MediaFloppyRole:
+            return !vm.config.floppyPath().isEmpty() && vm.config.machineType() != VMSpecs::MachineType::Q35;
         default:
             return { };
         }
