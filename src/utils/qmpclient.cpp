@@ -441,77 +441,96 @@ VmMemoryUsage QMPClient::getMemoryUsageSync(int timeoutMs)
 
 void QMPClient::performMemorySample()
 {
-    if (m_memoryInFlight)
+    if (!isConnected())
         return;
-    m_memoryInFlight = true;
 
-    // Step 1: Discover balloon path (once).
     if (m_balloonPath.isEmpty()) {
-        sendCommand(u"qom-list"_s,
-            QJsonObject { { u"path"_s, u"/machine/peripheral-anon"_s } },
-            [this](QMPResult result) {
-                if (result.success) {
-                    for (const auto& val : result.dataArray) {
-                        QJsonObject obj = val.toObject();
-                        // FIX: check type, not name
-                        QString type = obj.value(u"type"_s).toString();
-                        if (type.contains(u"balloon"_s, Qt::CaseInsensitive)) {
-                            QString name = obj.value(u"name"_s).toString();
-                            m_balloonPath = u"/machine/peripheral-anon/%1"_s.arg(name);
-                            break;
-                        }
+        m_memorySampleState = MemorySampleState::Discovering;
+        startBalloonDiscovery();
+    } else if (!m_guestStatsEnabled) {
+        m_memorySampleState = MemorySampleState::Enabling;
+        enableGuestStats();
+    } else {
+        m_memorySampleState = MemorySampleState::Reading;
+        readGuestStats();
+    }
+}
+
+void QMPClient::startBalloonDiscovery()
+{
+    m_memorySampleState = MemorySampleState::Discovering;
+
+    sendCommand(u"qom-list"_s,
+        QJsonObject { { u"path"_s, u"/machine/peripheral-anon"_s } },
+        [this](QMPResult result) {
+            if (result.success) {
+                for (const auto& val : result.dataArray) {
+                    QJsonObject obj = val.toObject();
+                    QString type = obj.value(u"type"_s).toString();
+                    if (type.contains(u"balloon"_s, Qt::CaseInsensitive)) {
+                        m_balloonPath = u"/machine/peripheral-anon/%1"_s.arg(obj.value(u"name"_s).toString());
+                        break;
                     }
                 }
+            }
 
-                if (m_balloonPath.isEmpty()) {
-                    sendCommand(u"qom-list"_s,
-                        QJsonObject { { u"path"_s, u"/machine/peripheral"_s } },
-                        [this](QMPResult r2) {
-                            if (r2.success) {
-                                for (const auto& val : r2.dataArray) {
-                                    QJsonObject obj = val.toObject();
-                                    // FIX: check type, not name
-                                    QString type = obj.value(u"type"_s).toString();
-                                    if (type.contains(u"balloon"_s, Qt::CaseInsensitive)) {
-                                        QString name = obj.value(u"name"_s).toString();
-                                        m_balloonPath = u"/machine/peripheral/%1"_s.arg(name);
-                                        break;
-                                    }
+            if (m_balloonPath.isEmpty()) {
+                sendCommand(u"qom-list"_s,
+                    QJsonObject { { u"path"_s, u"/machine/peripheral"_s } },
+                    [this](QMPResult r2) {
+                        if (r2.success) {
+                            for (const auto& val : r2.dataArray) {
+                                QJsonObject obj = val.toObject();
+                                QString type = obj.value(u"type"_s).toString();
+                                if (type.contains(u"balloon"_s, Qt::CaseInsensitive)) {
+                                    m_balloonPath = u"/machine/peripheral/%1"_s.arg(obj.value(u"name"_s).toString());
+                                    break;
                                 }
                             }
-                            m_memoryInFlight = false;
-                        });
-                    return;
-                }
-                m_memoryInFlight = false;
-            });
-        return;
-    }
-
-    // Step 2: Enable guest stats polling (once).
-    if (!m_guestStatsEnabled) {
-        m_guestStatsEnabled = true;
-        QJsonObject enableArgs;
-        enableArgs[u"path"_s] = m_balloonPath;
-        enableArgs[u"property"_s] = u"guest-stats-polling-interval"_s;
-        enableArgs[u"value"_s] = 2;
-        sendCommand(u"qom-set"_s, enableArgs, [this](QMPResult result) {
-            if (!result.success) {
-                qDebug() << "Failed to enable guest stats polling:" << result.errorMessage;
-                m_guestStatsEnabled = false;
+                        }
+                        m_memorySampleState = MemorySampleState::Idle;
+                        startBalloonDiscovery();
+                    });
+                return;
             }
-            m_memoryInFlight = false;
-        });
-        return;
-    }
 
-    // Step 3: Read guest stats.
+            m_memorySampleState = MemorySampleState::Idle;
+            performMemorySample();
+        });
+}
+
+void QMPClient::enableGuestStats()
+{
+    m_memorySampleState = MemorySampleState::Enabling;
+
+    QJsonObject args;
+    args[u"path"_s] = m_balloonPath;
+    args[u"property"_s] = u"guest-stats-polling-interval"_s;
+    args[u"value"_s] = 2;
+
+    sendCommand(u"qom-set"_s, args, [this](QMPResult result) {
+        if (!result.success) {
+            qDebug() << "Failed to enable guest stats polling:" << result.errorMessage;
+            m_guestStatsEnabled = false;
+            m_memorySampleState = MemorySampleState::Idle;
+        } else {
+            m_guestStatsEnabled = true;
+            m_memorySampleState = MemorySampleState::Idle;
+            performMemorySample();
+        }
+    });
+}
+
+void QMPClient::readGuestStats()
+{
+    m_memorySampleState = MemorySampleState::Reading;
+
     QJsonObject args;
     args[u"path"_s] = m_balloonPath;
     args[u"property"_s] = u"guest-stats"_s;
 
     sendCommand(u"qom-get"_s, args, [this](QMPResult result) {
-        m_memoryInFlight = false;
+        m_memorySampleState = MemorySampleState::Idle;
 
         if (result.success) {
             QJsonObject stats = result.data.value(u"stats"_s).toObject();
@@ -520,10 +539,9 @@ void QMPClient::performMemorySample()
             qint64 freeMem = stats.value(u"stat-free-memory"_s).toInteger();
 
             if (totalMem > 0) {
-                // Prefer available-memory (excludes reclaimable caches),
-                // fall back to free-memory for older kernels/QEMU
                 qint64 effectiveFree = (availableMem > 0) ? availableMem : freeMem;
                 qint64 usedMem = totalMem - effectiveFree;
+
                 VmMemoryUsage usage;
                 usage.maxBytes = totalMem;
                 usage.actualBytes = usedMem;
@@ -534,8 +552,6 @@ void QMPClient::performMemorySample()
             }
         }
 
-        // Fallback: query-balloon.
-        // Only report if balloon is actively deflated (actual < max).
         sendCommand(u"query-balloon"_s, { }, [this](QMPResult fbResult) {
             VmMemoryUsage usage;
             if (fbResult.success) {
@@ -549,7 +565,6 @@ void QMPClient::performMemorySample()
                     usage.usagePercent = static_cast<double>(actual) / m_maxMemoryBytes * 100.0;
                     usage.isValid = true;
                 }
-                // actual == max → isValid stays false → RAM graph stays empty
             }
             Q_EMIT memoryUsageUpdated(usage);
         });
@@ -736,7 +751,7 @@ void QMPClient::performBlockStatsSample()
 void QMPClient::startPerformanceTimer(int intervalMs)
 {
     m_cpuUsageInFlight = false;
-    m_memoryInFlight = false;
+    // m_memoryInFlight = false;
     m_blockStatsInFlight = false;
     m_lastCpuSamples.clear();
     m_lastBlockSamples.clear();
@@ -744,6 +759,7 @@ void QMPClient::startPerformanceTimer(int intervalMs)
     m_guestStatsEnabled = false;
 
     m_balloonPath.clear();
+    m_memorySampleState = MemorySampleState::Idle;
     m_cpuSampleClock.restart();
     m_blockSampleClock.restart();
 
@@ -755,10 +771,11 @@ void QMPClient::stopPerformanceTimer()
 {
     m_perfTimer.stop();
     m_cpuUsageInFlight = false;
-    m_memoryInFlight = false;
+    // m_memoryInFlight = false;
     m_blockStatsInFlight = false;
     m_lastCpuSamples.clear();
     m_lastBlockSamples.clear();
+    m_memorySampleState = MemorySampleState::Idle;
 }
 
 bool QMPClient::isPerformanceTimerActive() const
@@ -803,8 +820,15 @@ QMPResult QMPClient::detachUsbDevice(const QString& id)
 
 void QMPClient::onReadyRead()
 {
-    while (m_socket.canReadLine()) {
-        QByteArray line = m_socket.readLine();
+    m_buffer.append(m_socket.readAll());
+
+    while (true) {
+        int newlinePos = m_buffer.indexOf('\n');
+        if (newlinePos < 0)
+            break;
+
+        const QByteArray line = m_buffer.left(newlinePos);
+        m_buffer.remove(0, newlinePos + 1);
         processLine(line);
     }
 }

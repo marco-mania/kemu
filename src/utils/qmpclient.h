@@ -184,11 +184,19 @@ private:
     static ProcCpuSample readProcStat(qint64 tid);
 
     // RAM usage
+    enum class MemorySampleState { Idle,
+        Discovering,
+        Enabling,
+        Reading };
+    MemorySampleState m_memorySampleState = MemorySampleState::Idle;
     qint64 m_maxMemoryBytes = 0; // cached from first balloon query
-    bool m_memoryInFlight = false;
+    // bool m_memoryInFlight = false;
     bool m_guestStatsEnabled = false;
     QString m_balloonPath;
     void performMemorySample();
+    void startBalloonDiscovery();
+    void enableGuestStats();
+    void readGuestStats();
 
     // Block I/O
     struct BlockIoSnapshot {
