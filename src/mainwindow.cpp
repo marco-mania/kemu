@@ -62,8 +62,7 @@ MainWindow::MainWindow(QWidget* parent)
 
     ExternalTools::instance().refresh();
 
-    QString dbPath = QStandardPaths::locate(QStandardPaths::AppDataLocation, u"data/templates.json"_s);
-    m_imageDatabase.loadFromFile(dbPath);
+    m_imageDatabase.loadFromFile(QStandardPaths::locate(QStandardPaths::AppDataLocation, u"data/templates.json"_s));
 
     m_networkManager = new VirtualNetworkManager(this);
     m_networkManager->load();

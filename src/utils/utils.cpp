@@ -62,24 +62,27 @@ bool waitForSocket(const QString& sockPath, int timeoutMs)
 
     watcher.addPath(dirPath);
 
-    if (QFile::exists(sockPath)) {
-        return true;
-    }
-
     bool found = false;
 
     QObject::connect(&watcher, &QFileSystemWatcher::directoryChanged, [&]() {
         if (QFile::exists(sockPath)) {
             found = true;
+            timer.stop();
             loop.quit();
         }
     });
 
     timer.setSingleShot(true);
-    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    QObject::connect(&timer, &QTimer::timeout, [&]() {
+        watcher.disconnect();
+        loop.quit();
+    });
 
     timer.start(timeoutMs);
     loop.exec();
+
+    // Cleanup: remove path and clear watcher
+    watcher.removePath(dirPath);
 
     return found;
 }
@@ -133,7 +136,7 @@ OvmfPaths findOvmfPaths(bool secureBoot, const QString& customDir)
 
     if (secureBoot) {
         // Secure Boot
-        QList<QPair<QString, QString>> sbPairs = {
+        const QList<QPair<QString, QString>> sbPairs = {
             // Arch / edk2-ovmf
             { u"/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.4m.fd"_s },
             { u"/usr/share/edk2/x64/OVMF_CODE.4m.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.4m.fd"_s },
@@ -154,7 +157,7 @@ OvmfPaths findOvmfPaths(bool secureBoot, const QString& customDir)
                 return { pair.first, pair.second };
     }
 
-    QList<QPair<QString, QString>> ovmfPairs = {
+    const QList<QPair<QString, QString>> ovmfPairs = {
         { u"/usr/share/edk2/x64/OVMF_CODE.4m.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.4m.fd"_s },
         { u"/usr/share/edk2/x64/OVMF_CODE.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.fd"_s },
         { u"/usr/share/OVMF/OVMF_CODE.fd"_s, u"/usr/share/OVMF/OVMF_VARS.fd"_s },
@@ -177,7 +180,7 @@ QString detectHostKeyboardLayout()
 
     KConfigGroup layoutGroup(config, u"Layout"_s);
 
-    QStringList layouts = layoutGroup.readEntry(u"LayoutList"_s, QStringList());
+    const QStringList layouts = layoutGroup.readEntry(u"LayoutList"_s, QStringList());
 
     if (!layouts.isEmpty())
         return layouts.first().left(2);
@@ -201,8 +204,7 @@ QString generateRandomMac(const QStringList& excludes)
 
 bool isValidMacAddress(const QString& mac)
 {
-    static const QRegularExpression re(
-        u"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"_s);
+    static const QRegularExpression re(u"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"_s);
     return re.match(mac).hasMatch();
 }
 
