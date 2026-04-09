@@ -713,6 +713,7 @@ void MainWindow::updateActionStates()
     const bool isDeploying = entry && entry->state == VmEntry::State::Deploying;
     const bool isBusy = entry && entry->state != VmEntry::State::Stopped;
     const bool hasDisk = entry && !entry->config.diskPath().isEmpty();
+    const bool canChangeMedia = hasSelection && entry && (entry->state == VmEntry::State::Stopped || entry->state == VmEntry::State::Running);
 
     actionCollection()->action(u"vm_edit"_s)->setEnabled(hasSelection && !isBusy);
     actionCollection()->action(u"vm_delete"_s)->setEnabled(hasSelection && !isBusy);
@@ -723,10 +724,10 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_shutdown"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
     actionCollection()->action(u"vm_reset"_s)->setEnabled(hasSelection && isRunning);
     actionCollection()->action(u"vm_kill"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
-    actionCollection()->action(u"vm_change_iso"_s)->setEnabled(hasSelection && !isBusy);
-    actionCollection()->action(u"vm_eject_iso"_s)->setEnabled(hasSelection && !isBusy && !currentConfig.isoPath().isEmpty());
-    actionCollection()->action(u"vm_change_floppy"_s)->setEnabled(hasSelection && !isBusy);
-    actionCollection()->action(u"vm_eject_floppy"_s)->setEnabled(hasSelection && !isBusy && !currentConfig.floppyPath().isEmpty());
+    actionCollection()->action(u"vm_change_iso"_s)->setEnabled(canChangeMedia);
+    actionCollection()->action(u"vm_eject_iso"_s)->setEnabled(canChangeMedia && !currentConfig.isoPath().isEmpty());
+    actionCollection()->action(u"vm_change_floppy"_s)->setEnabled(canChangeMedia);
+    actionCollection()->action(u"vm_eject_floppy"_s)->setEnabled(canChangeMedia && !currentConfig.floppyPath().isEmpty());
     actionCollection()->action(u"vm_shrink"_s)->setEnabled(hasSelection && !isBusy);
     actionCollection()->action(u"vm_manage_snapshots"_s)->setEnabled(hasSelection && hasDisk && !isBusy);
     actionCollection()->action(u"vm_export"_s)->setEnabled(hasSelection && !isBusy);
