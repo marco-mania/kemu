@@ -16,7 +16,9 @@
 #include <QObject>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QString>
+#include <QTimeZone>
 
 #include "qmpclient.h"
 
@@ -105,7 +107,8 @@ private:
     };
     ProcResult runQemuImg(const QStringList& args) const;
 
-    QList<SnapshotInfo> parseSnapshotList(const QString& output) const;
+    QList<SnapshotInfo> parseSnapshotListJson(const QString& output) const;
+    QList<SnapshotInfo> parseSnapshotListText(const QString& output) const;
 
     QJsonObject hmc(const QString& cmd) const;
 
