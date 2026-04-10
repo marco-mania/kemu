@@ -14,7 +14,8 @@ This tool prioritizes speed and simplicity - built entirely without libvirt.
 ## Features
 
 - Create, edit, and delete QEMU virtual machines
-- Supports display types GTK, SDL, SPICE (via `virt-viewer (remote-viewer)`), and integrated D-Bus viewer with audio and clipboard sharing (**experimental**)
+- Supports display types GTK, SDL, SPICE (via `virt-viewer (remote-viewer)`)
+- Integrated D-Bus viewer with audio and clipboard sharing (**experimental**)
 - Automated Deploy feature (Cloud-Init support)
 - Snapshot support (QCOW2)
 - Hot-swap ISO and Floppy images

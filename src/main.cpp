@@ -35,7 +35,7 @@ int main(int argc, char* argv[])
         i18n("A KDE-based QEMU Virtual Machine Manager"),
         KAboutLicense::GPL_V3,
         i18n("© 2021-2026"));
-    aboutData.addAuthor(u"Marco Nelles"_s, i18n("Developer"));
+    aboutData.addAuthor(u"Marco Nelles"_s, i18n("Main Developer"));
 
     aboutData.addCredit(
         u"Papirus Development Team"_s,
