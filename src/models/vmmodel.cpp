@@ -356,6 +356,12 @@ void VmModel::setSpiceViewerProcess(const QString& name, KProcess* process)
         e->spiceViewerProcess = process;
 }
 
+void VmModel::setDBusDaemonProcess(const QString& name, KProcess* process)
+{
+    if (VmEntry* e = entryByName(name))
+        e->dbusDaemonProcess = process;
+}
+
 void VmModel::setQmpClient(const QString& name, QMPClient* c)
 {
     if (VmEntry* e = entryByName(name))

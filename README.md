@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # KEMU – KDE QEMU Virtual Machine Manager
 
-A traditional desktop frontend for QEMU, developed using Qt6 and KDE Frameworks 6.
+A traditional desktop frontend for QEMU on Linux, developed using Qt6 and KDE Frameworks 6.
 This tool prioritizes speed and simplicity - built entirely without libvirt.
 
 **Disclaimer:** Early-stage development.
@@ -14,10 +14,10 @@ This tool prioritizes speed and simplicity - built entirely without libvirt.
 ## Features
 
 - Create, edit, and delete QEMU virtual machines
-- Supports display types GTK, SDL and SPICE (via `virt-viewer (remote-viewer)`)
+- Supports display types GTK, SDL, SPICE (via `virt-viewer (remote-viewer)`), and integrated D-Bus viewer with audio and clipboard sharing (**experimental**)
 - Automated Deploy feature (Cloud-Init support)
 - Snapshot support (QCOW2)
-- Hot-swap ISO images
+- Hot-swap ISO and Floppy images
 - Networking: User-mode networking via passt, or rootless virtual networks within Linux user namespaces
 - Shared folders via 9p/VirtFS (Linux/BSD) and virtio-fs (Windows)
 - VMs stored as portable directories with `config.json` + `disk.qcow2` + `qemu.sh` start script with relative paths
@@ -26,11 +26,7 @@ This tool prioritizes speed and simplicity - built entirely without libvirt.
 
 ## Limitations
 
-- By now only one drive 
-
-## In Progress
-
-- DBUS display type with full integration
+- Currently limited to a single storage drive per VM
 
 ## Gallery
 
@@ -55,6 +51,7 @@ This tool prioritizes speed and simplicity - built entirely without libvirt.
 - Optional: `virtiofsd` (for shared folders with Windows guests)
 - Optional: `dnsmasq` (for DHCP in virtual networks)
 - Optional: `virt-viewer (remote-viewer)` (for SPICE support)
+- Optional: `dbus-daemon` (for the integrated D-Bus display viewer)
 
 ### Arch Linux
 
@@ -67,7 +64,7 @@ sudo pacman -S qt6-base qt6-declarative extra-cmake-modules \
 Optional:
 
 ```bash
-sudo pacman -S swtpm virtiofsd dnsmasq virt-viewer
+sudo pacman -S swtpm virtiofsd dnsmasq virt-viewer dbus
 ```
 
 ### Debian 13+ / Ubuntu 24.04+
@@ -82,7 +79,7 @@ sudo apt install qt6-base-dev qt6-declarative-dev extra-cmake-modules \
 Optional:
 
 ```bash
-sudo apt install ovmf swtpm virtiofsd dnsmasq virt-viewer
+sudo apt install ovmf swtpm virtiofsd dnsmasq virt-viewer dbus-daemon
 ```
 
 ### Fedora 40+
@@ -97,7 +94,7 @@ sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel extra-cmake-modules \
 Optional:
 
 ```bash
-sudo dnf install edk2-ovmf swtpm virtiofsd dnsmasq virt-viewer
+sudo dnf install edk2-ovmf swtpm virtiofsd dnsmasq virt-viewer dbus-daemon
 ```
 
 ## Building and running
@@ -156,6 +153,52 @@ Each VM is stored as a subdirectory containing `config.json`, `disk.qcow2`, `OVM
 | **Fedora**        | `edk2-ovmf`        | `/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd`   |
 | **openSUSE**      | `qemu-ovmf-x86_64` | `/usr/share/qemu/ovmf-x86_64-smm-ms-code.bin` |
 
+## Display Backends
+
+KEMU supports four display backends, selectable per VM in the VM settings:
+
+| Backend          | Window           | 3D Acceleration | Audio Routing      | Clipboard Sharing | External Process |
+|------------------|------------------|-----------------|--------------------|-------------------|------------------|
+| **GTK**          | QEMU built-in    | Yes (Virtio)    | System (PipeWire)  | No                | None             |
+| **SDL**          | QEMU built-in    | Yes (Virtio)    | System (PipeWire)  | No                | None             |
+| **SPICE**        | `remote-viewer`  | No              | System (PipeWire)  | Via SPICE agent   | `virt-viewer`    |
+| **D-Bus**        | KEMU integrated  | Yes (Virtio)    | Routed via D-Bus   | Yes (built-in)    | `dbus-daemon`    |
+
+GTK and SDL are the simplest options - QEMU opens its own window directly, with optional OpenGL passthrough for hardware-accelerated graphics. SPICE adds remote-display capability and SPICE-agent integration but requires the external `virt-viewer` package and offers no 3D acceleration. The D-Bus backend combines the strengths of both: hardware-accelerated rendering inside a viewer window managed by KEMU itself, with audio and clipboard sharing built in.
+
+### D-Bus Display
+
+> **Highly Experimental:** The D-Bus display backend is under active development and should be considered unstable. Expect bugs, missing features, and breaking changes between versions. Not recommended for production use.
+
+The D-Bus display backend embeds the VM's framebuffer directly into a KEMU-managed Qt window. It uses QEMU's `-display dbus` interface to receive video, send keyboard and mouse events, and exchange audio and clipboard data - all over a private D-Bus session per VM.
+
+**Architecture:**
+
+```
+┌─── KEMU process ───┐         ┌─── per-VM dbus-daemon ───┐         ┌─── QEMU process ───┐
+│                    │         │                          │         │                    │
+│  DbusViewerWindow ─┼────────►│                          │◄────────┼─ -display dbus     │
+│   ├─ DisplayWidget │         │   private bus, listening │         │   (registers as    │
+│   ├─ Audio in/out  │         │   on dbus-bus.sock       │         │    org.qemu)       │
+│   └─ Clipboard     │         │                          │         │                    │
+│                    │         │                          │         │                    │
+└────────────────────┘         └──────────────────────────┘         └────────────────────┘
+```
+
+Each D-Bus VM gets its own isolated `dbus-daemon` instance with a private socket inside the VM directory. KEMU and QEMU connect as clients to this private bus and exchange D-Bus messages directly.
+
+**Features:**
+
+- **Hardware-accelerated graphics**: When the VM uses Virtio-GPU with 3D acceleration, frames are passed as DMA-BUF descriptors over D-Bus and imported directly into the viewer's OpenGL context - zero-copy, GPU-to-GPU.
+- **Bidirectional audio**: Playback (host speakers) and capture (host microphone) routed through D-Bus to QEMU's `audiodev=dbus` backend, using PipeWire on the host side via Qt Multimedia.
+- **Clipboard synchronization**: Toggle between off, guest->host, host->guest, or <->bidirectional in the viewer's Devices menu. Requires a clipboard agent in the guest (e.g. `qemu-guest-agent` with the appropriate addon, or the SPICE vdagent which works on the D-Bus interface as well).
+- **Reconnect support**: Closing the viewer window switches the VM to headless mode instead of terminating it. Reconnect later via the VM context menu.
+
+**Requirements:**
+
+- `dbus-daemon` must be installed on the host. KEMU detects this at startup and disables the D-Bus display option if missing.
+- The guest needs no special drivers for video or input - QEMU handles everything on its side. For clipboard and SPICE-agent features, install the standard SPICE vdagent in the guest.
+
 ## Networking
 
 KEMU offers two network modes, both running entirely in userspace without root privileges.
@@ -165,13 +208,13 @@ KEMU offers two network modes, both running entirely in userspace without root p
 | **User Mode (passt)** | `passt`                               | No       | N/A (host stack) | Yes            | Yes             |
 | **Virtual Network**   | User namespaces + `pasta` + `dnsmasq` | Yes      | Yes (optional)   | Yes (optional) | Yes             |
 
-### User Mode (passt) — Default
+### User Mode (passt) - Default
 
 Each VM gets its own isolated network connection through `passt`, which translates between the VM's network stack and the host's. This is the simplest mode and requires no additional setup. Port forwarding rules can be configured per VM to expose guest services on the host.
 
 ### Virtual Network
 
-Virtual networks connect multiple VMs to a shared private subnet. The entire stack runs rootless using Linux user namespaces — no libvirt, no root, no system-wide configuration changes.
+Virtual networks connect multiple VMs to a shared private subnet. The entire stack runs rootless using Linux user namespaces - no libvirt, no root, no system-wide configuration changes.
 
 **Architecture:**
 
@@ -204,7 +247,7 @@ Each virtual network creates an isolated Linux network namespace containing a br
 - `dnsmasq` must be installed for DHCP. Without it, VMs need static IPs (manual or via Cloud-Init).
 - `pasta` (part of the `passt` package) must be installed for NAT. Without it, virtual networks are isolated from the internet.
 
-**Automatic cleanup:** When all VMs disconnect from a virtual network, KEMU stops the network. Killing the namespace anchor process causes the kernel to automatically destroy all interfaces, bridges, and routes — no manual cleanup or leftover state.
+**Automatic cleanup:** When all VMs disconnect from a virtual network, KEMU stops the network. Killing the namespace anchor process causes the kernel to automatically destroy all interfaces, bridges, and routes - no manual cleanup or leftover state.
 
 **Shared folders:** Since QEMU runs as mapped root inside the namespace, 9p shared folders use `mapped-xattr` security model automatically (instead of `none` in user mode). See the [Shared Folders](#shared-folders) section for details.
 
@@ -314,7 +357,7 @@ Operating system icons used within KEMU are provided by the [Papirus Icon Theme]
 **Trademark Disclaimer:**
 Any trademarks, logos, and brand names used in this software are the property of their respective owners. The use of third-party logos within the KEMU user interface is for identification and descriptive purposes only to represent the guest operating system of a virtual machine.
 
-KEMU is an independent open-source project and is not affiliated with, endorsed by, or sponsored by Microsoft Corporation, Canonical Ltd., Red Hat Inc., Apple Inc., or any other trademark holder.
+KEMU is an independent open-source project and is not affiliated with, endorsed by, or sponsored by any mentioned trademark holder.
 
 ## License
 

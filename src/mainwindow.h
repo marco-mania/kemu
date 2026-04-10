@@ -11,6 +11,13 @@
 #include <QClipboard>
 #include <QCloseEvent>
 #include <QCursor>
+#include <QDBusConnection>
+#include <QDBusInterface>
+#include <QDBusPendingCall>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
+#include <QDBusReply>
+#include <QDBusUnixFileDescriptor>
 #include <QDateTime>
 #include <QDebug>
 #include <QDesktopServices>
@@ -45,6 +52,7 @@
 #include <KUiServerV2JobTracker>
 #include <KXmlGuiWindow>
 
+#include "dbusdisplay/dbusviewerwindow.h"
 #include "dialogs/settingsdialog.h"
 #include "jobs/createvmjob.h"
 #include "models/vmmodel.h"
@@ -97,7 +105,7 @@ private Q_SLOTS:
     void importVM();
     void saveScreenshot();
     void openNetworkShell();
-    void reconnectSpiceViewer();
+    void reconnectViewer();
 
     void onTreeSelectionChanged();
     void onTreeDoubleClicked(const QModelIndex& index);
@@ -149,8 +157,25 @@ private:
     bool startVirtiofsd(const QString& vmName);
     bool startPasst(const QString& vmName, const QList<PortForwardRule>& portForwards = QList<PortForwardRule>());
     bool startSpiceViewer(const QString& vmName);
+    bool startDbusDaemon(const QString& vmName);
+    QString dbusBusAddress(const QString& vmName) const;
 
-    bool requireTool(ExternalTools::Tool tool);
+    // D-Bus integrated viewer lifecycle
+    bool startDbusViewer(const QString& vmName);
+    void stopDbusViewer(const QString& vmName);
+    void cleanupDbusSocket(const QString& vmName);
+
+    struct DbusViewerState {
+        QPointer<DbusViewerWindow> window;
+        QemuDisplayListener* displayListener = nullptr;
+        QemuAudioListener* audioOut = nullptr;
+        QemuAudioInListener* audioIn = nullptr;
+        QString connectionName;
+    };
+    QMap<QString, DbusViewerState> m_dbusViewers;
+
+    bool requireTool(const ExternalTools::Tool tool);
+    bool isDisplayTypeAvailable(const VMSpecs::DisplayType type);
 
     QPointer<VMTreeView> vmTreeView;
     QPointer<VmModel> vmModel;

@@ -34,7 +34,9 @@ Q_NAMESPACE
 
 enum class DisplayType { Gtk,
     Sdl,
-    Spice };
+    Spice,
+    Dbus
+};
 
 enum class GpuType { Vga, // PCI
     VgaISA, // ISA

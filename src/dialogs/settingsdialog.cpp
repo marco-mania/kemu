@@ -243,6 +243,12 @@ void SettingsDialog::setupDisplayPage()
     spiceCloseActionCombo->setCurrentIndex(static_cast<int>(spiceViewerCloseAction()));
     layout->addRow(i18n("When SPICE viewer is closed:"), spiceCloseActionCombo);
 
+    dbusDisplayCheck = new QCheckBox(i18n("Enable D-Bus display support (experimental)"));
+    dbusDisplayCheck->setToolTip(i18n("Allows VMs to use D-Bus as display backend. "
+                                      "Requires dbus-daemon and enables an embedded viewer window."));
+    dbusDisplayCheck->setChecked(enableDbusDisplay());
+    layout->addRow(dbusDisplayCheck);
+
     auto* item = addPage(page, i18n("Display"));
     item->setIcon(QIcon::fromTheme(u"preferences-desktop-display"_s));
     m_pages[Display] = item;
@@ -352,6 +358,7 @@ void SettingsDialog::saveSettings()
     const QSize res = resolutionCombo->currentData().toSize();
     general.writeEntry("DisplayWidth", res.width());
     general.writeEntry("DisplayHeight", res.height());
+    general.writeEntry("EnableDBusDisplay", dbusDisplayCheck->isChecked());
     general.writeEntry("ShowAllArchitectures", allArchCheck->isChecked());
     general.writeEntry("CloneRegenerateMac", cloneRegenerateMacCheck->isChecked());
     general.writeEntry("ImportRegenerateMac", importRegenerateMacCheck->isChecked());
@@ -392,6 +399,13 @@ QSize SettingsDialog::getDefaultResolution()
     int w = general.readEntry("DisplayWidth", KEMUConst::DefaultDisplaySize.width());
     int h = general.readEntry("DisplayHeight", KEMUConst::DefaultDisplaySize.height());
     return QSize(w, h);
+}
+
+bool SettingsDialog::enableDbusDisplay()
+{
+    KConfig config(u"kemurc"_s);
+    KConfigGroup general = config.group(u"General"_s);
+    return general.readEntry("EnableDBusDisplay", false);
 }
 
 bool SettingsDialog::showAllArchitectures()

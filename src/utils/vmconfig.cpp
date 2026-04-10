@@ -530,6 +530,8 @@ QString VMConfig::toQemuString(VMSpecs::DisplayType type)
         return u"sdl"_s;
     case VMSpecs::DisplayType::Spice:
         return u"none"_s; // SPICE uses -display none; the viewer is separate
+    case VMSpecs::DisplayType::Dbus:
+        return u"dbus"_s;
     }
     return { };
 }
@@ -686,6 +688,8 @@ QString VMConfig::toUIString(VMSpecs::DisplayType type)
         return i18n("SDL");
     case VMSpecs::DisplayType::Spice:
         return i18n("SPICE (Remote Viewer)");
+    case VMSpecs::DisplayType::Dbus:
+        return i18n("D-Bus (Integrated Viewer)");
     }
     return { };
 }
@@ -804,6 +808,8 @@ QString VMConfig::toString(VMSpecs::DisplayType type)
         return u"sdl"_s;
     case VMSpecs::DisplayType::Spice:
         return u"spice"_s;
+    case VMSpecs::DisplayType::Dbus:
+        return u"dbus"_s;
     default:
         return u"gtk"_s;
     }
@@ -969,37 +975,38 @@ QString VMConfig::toString(IconSource source)
 
 VMSpecs::CpuModel VMConfig::parseCpuModel(const QString& str)
 {
-    if (str == i18n("host"))
+    const QString str_l_t = str.toLower().trimmed();
+    if (str_l_t == i18n("host"))
         return VMSpecs::CpuModel::Host;
-    if (str == i18n("qemu64"))
+    if (str_l_t == i18n("qemu64"))
         return VMSpecs::CpuModel::Qemu64;
-    if (str == i18n("qemu32"))
+    if (str_l_t == i18n("qemu32"))
         return VMSpecs::CpuModel::Qemu32;
-    if (str == i18n("i486"))
+    if (str_l_t == i18n("i486"))
         return VMSpecs::CpuModel::I486;
-    if (str == i18n("pentium"))
+    if (str_l_t == i18n("pentium"))
         return VMSpecs::CpuModel::Pentium;
-    if (str == i18n("pentium2"))
+    if (str_l_t == i18n("pentium2"))
         return VMSpecs::CpuModel::Pentium2;
-    if (str == i18n("pentium3"))
+    if (str_l_t == i18n("pentium3"))
         return VMSpecs::CpuModel::Pentium3;
-    if (str == i18n("pentium4"))
+    if (str_l_t == i18n("pentium4"))
         return VMSpecs::CpuModel::Pentium4;
-    if (str == i18n("coreduo"))
+    if (str_l_t == i18n("coreduo"))
         return VMSpecs::CpuModel::CoreDuo;
-    if (str == i18n("core2duo"))
+    if (str_l_t == i18n("core2duo"))
         return VMSpecs::CpuModel::Core2Duo;
-    if (str == i18n("corei1"))
+    if (str_l_t == i18n("corei1"))
         return VMSpecs::CpuModel::Nehalem;
-    if (str == i18n("corei2"))
+    if (str_l_t == i18n("corei2"))
         return VMSpecs::CpuModel::SandyBridge;
-    if (str == i18n("corei4"))
+    if (str_l_t == i18n("corei4"))
         return VMSpecs::CpuModel::Haswell;
-    if (str == i18n("corei6"))
+    if (str_l_t == i18n("corei6"))
         return VMSpecs::CpuModel::Skylake;
-    if (str == i18n("phenom"))
+    if (str_l_t == i18n("phenom"))
         return VMSpecs::CpuModel::Phenom;
-    if (str == i18n("ryzen"))
+    if (str_l_t == i18n("ryzen"))
         return VMSpecs::CpuModel::Epyc;
 
     return VMSpecs::CpuModel::Host;
@@ -1007,163 +1014,171 @@ VMSpecs::CpuModel VMConfig::parseCpuModel(const QString& str)
 
 VMSpecs::DisplayType VMConfig::parseDisplayType(const QString& str)
 {
-    if (str == u"sdl"_s)
+    const QString str_l_t = str.toLower().trimmed();
+    if (str_l_t == u"sdl"_s)
         return VMSpecs::DisplayType::Sdl;
-    if (str == u"spice"_s)
+    if (str_l_t == u"spice"_s)
         return VMSpecs::DisplayType::Spice;
-    return VMSpecs::DisplayType::Gtk;
+    if (str_l_t == u"dbus"_s)
+        return VMSpecs::DisplayType::Dbus;
+    if (str_l_t == u"gtk"_s)
+        return VMSpecs::DisplayType::Gtk;
+
+    if (str_l_t == KEMUConst::DefaultDisplayType) {
+        return VMSpecs::DisplayType::Gtk;
+    }
+
+    return parseDisplayType(KEMUConst::DefaultDisplayType);
 }
 
 VMSpecs::MachineType VMConfig::parseMachineType(const QString& str)
 {
-    if (str == u"pc_isa"_s)
+    const QString str_l_t = str.toLower().trimmed();
+    if (str_l_t == u"pc_isa"_s)
         return VMSpecs::MachineType::PcISA;
-    if (str == u"q35"_s)
+    if (str_l_t == u"q35"_s)
         return VMSpecs::MachineType::Q35;
     return VMSpecs::MachineType::Pc;
 }
 
 VMSpecs::GpuType VMConfig::parseGpuType(const QString& str)
 {
-    QString str_l = str.toLower();
-    str_l.remove(u' ');
-    if (str_l == u"vga_isa"_s)
+    const QString str_l_t = str.toLower().trimmed();
+    if (str_l_t == u"vga_isa"_s)
         return VMSpecs::GpuType::VgaISA;
-    if (str_l == u"virtio"_s)
+    if (str_l_t == u"virtio"_s)
         return VMSpecs::GpuType::Virtio;
-    if (str_l == u"qxl"_s)
+    if (str_l_t == u"qxl"_s)
         return VMSpecs::GpuType::Qxl;
-    if (str_l == u"cirrus"_s)
+    if (str_l_t == u"cirrus"_s)
         return VMSpecs::GpuType::CirrusGD5446;
-    if (str_l == u"cirrus_isa"_s)
+    if (str_l_t == u"cirrus_isa"_s)
         return VMSpecs::GpuType::CirrusGD5430;
     return VMSpecs::GpuType::Vga;
 }
 
 VMSpecs::AudioDevice VMConfig::parseAudioDevice(const QString& str)
 {
-    QString str_l = str.toLower();
-    str_l.remove(u' ');
-    if (str_l == u"none"_s)
+    const QString str_l_t = str.toLower().trimmed();
+    if (str_l_t == u"none"_s)
         return VMSpecs::AudioDevice::None;
-    if (str_l == u"ac97"_s)
+    if (str_l_t == u"ac97"_s)
         return VMSpecs::AudioDevice::Ac97;
-    if (str_l == u"es1370"_s)
+    if (str_l_t == u"es1370"_s)
         return VMSpecs::AudioDevice::Es1370;
-    if (str_l == u"sb16"_s)
+    if (str_l_t == u"sb16"_s)
         return VMSpecs::AudioDevice::Sb16;
-    if (str_l == u"adlib"_s)
+    if (str_l_t == u"adlib"_s)
         return VMSpecs::AudioDevice::Adlib;
-    if (str_l == u"pcspkr"_s)
+    if (str_l_t == u"pcspkr"_s)
         return VMSpecs::AudioDevice::PcSpkr;
     return VMSpecs::AudioDevice::Hda;
 }
 
 VMSpecs::NetworkCard VMConfig::parseNetworkCard(const QString& str)
 {
-    QString str_l = str.toLower();
-    str_l.remove(u' ');
-    if (str_l == u"e1000"_s)
+    const QString str_l_t = str.toLower().trimmed();
+    if (str_l_t == u"e1000"_s)
         return VMSpecs::NetworkCard::E1000;
-    if (str_l == u"rtl8139"_s)
+    if (str_l_t == u"rtl8139"_s)
         return VMSpecs::NetworkCard::Rtl8139;
-    if (str_l == u"pcnet"_s)
+    if (str_l_t == u"pcnet"_s)
         return VMSpecs::NetworkCard::Pcnet;
-    if (str_l == u"rtl8029"_s)
+    if (str_l_t == u"rtl8029"_s)
         return VMSpecs::NetworkCard::Rtl8029;
-    if (str_l == u"ne20000"_s)
+    if (str_l_t == u"ne20000"_s)
         return VMSpecs::NetworkCard::Ne2000;
-    if (str_l == u"i82551"_s)
+    if (str_l_t == u"i82551"_s)
         return VMSpecs::NetworkCard::I82551;
-    if (str_l == u"i82557b"_s)
+    if (str_l_t == u"i82557b"_s)
         return VMSpecs::NetworkCard::I82557b;
-    if (str_l == u"i82559er"_s)
+    if (str_l_t == u"i82559er"_s)
         return VMSpecs::NetworkCard::I82559er;
-    if (str_l == u"none"_s)
+    if (str_l_t == u"none"_s)
         return VMSpecs::NetworkCard::None;
     return VMSpecs::NetworkCard::Virtio;
 }
 
 VMSpecs::DiskInterface VMConfig::parseDiskInterface(const QString& str)
 {
-    QString str_l = str.toLower();
-    str_l.remove(u' ');
-    if (str_l == u"nvme"_s)
+    const QString str_l_t = str.toLower().trimmed();
+    if (str_l_t == u"nvme"_s)
         return VMSpecs::DiskInterface::Nvme;
-    if (str_l == u"sataide"_s)
+    if (str_l_t == u"sataide"_s)
         return VMSpecs::DiskInterface::SataIde;
     return VMSpecs::DiskInterface::Virtio;
 }
 
 VMSpecs::UsbController VMConfig::parseUSBController(const QString& str)
 {
-    QString str_l = str.toLower();
-    str_l.remove(u' ');
-    if (str_l == u"ehci"_s)
+    const QString str_l_t = str.toLower().trimmed();
+    if (str_l_t == u"ehci"_s)
         return VMSpecs::UsbController::Ehci;
-    if (str_l == u"xhci"_s)
+    if (str_l_t == u"xhci"_s)
         return VMSpecs::UsbController::Xhci;
-    if (str_l == u"default"_s)
+    if (str_l_t == u"default"_s)
         return VMSpecs::UsbController::Default;
     return VMSpecs::UsbController::None;
 }
 
 PortForwardRule::Protocol VMConfig::parseProtocol(const QString& str)
 {
-    return (str.toLower() == u"udp"_s)
+    return (str.toLower().trimmed() == u"udp"_s)
         ? PortForwardRule::Protocol::Udp
         : PortForwardRule::Protocol::Tcp;
 }
 
 VMSpecs::OsType VMConfig::parseOsType(const QString& str)
 {
-    QString str_l = str.toLower();
-    str_l.remove(u' ');
-    if (str_l == u"windows"_s)
+    const QString str_l_t = str.toLower().trimmed();
+    if (str_l_t == u"windows"_s)
         return VMSpecs::OsType::Windows;
-    if (str_l == u"dos"_s)
+    if (str_l_t == u"dos"_s)
         return VMSpecs::OsType::DOS;
-    if (str_l == u"bsd"_s)
+    if (str_l_t == u"bsd"_s)
         return VMSpecs::OsType::BSD;
-    if (str_l == u"other"_s)
+    if (str_l_t == u"other"_s)
         return VMSpecs::OsType::Other;
     return VMSpecs::OsType::Linux;
 }
 
 VMSpecs::NetworkMode VMConfig::parseNetworkMode(const QString& str)
 {
-    if (str == u"virtual_network"_s)
+    if (str.toLower().trimmed() == u"virtual_network"_s)
         return VMSpecs::NetworkMode::VirtualNetwork;
     return VMSpecs::NetworkMode::Passt;
 }
 
 VMConfig::ImageType VMConfig::parseImageType(const QString& str)
 {
-    if (str == u"cloud"_s)
+    const QString str_l_t = str.toLower().trimmed();
+    if (str_l_t == u"cloud"_s)
         return ImageType::CloudImage;
-    if (str == u"installer"_s)
+    if (str_l_t == u"installer"_s)
         return ImageType::InstallerIso;
     return ImageType::Manual;
 }
 
 VMConfig::DeployState VMConfig::parseDeployState(const QString& str)
 {
-    if (str == u"deploying"_s)
+    const QString str_l_t = str.toLower().trimmed();
+    if (str_l_t == u"deploying"_s)
         return DeployState::Deploying;
-    if (str == u"firstboot"_s)
+    if (str_l_t == u"firstboot"_s)
         return DeployState::FirstBoot;
-    if (str == u"complete"_s)
+    if (str_l_t == u"complete"_s)
         return DeployState::Complete;
     return DeployState::None;
 }
 
 VMConfig::IconSource VMConfig::parseIconSource(const QString& str)
 {
-    if (str == u"custom"_s)
+    const QString str_l_t = str.toLower().trimmed();
+    if (str_l_t == u"custom"_s)
         return IconSource::Custom;
-    if (str == u"system"_s)
+    if (str_l_t == u"system"_s)
         return IconSource::SystemTheme;
-    if (str == u"iconset"_s)
+    if (str_l_t == u"iconset"_s)
         return IconSource::IconSet;
     return IconSource::None;
 }

@@ -38,12 +38,14 @@ struct VmEntry {
 
     bool isHeadless = false;
 
+    QPointer<QMPClient> qmpClient;
+
     QPointer<KProcess> qemuProcess;
     QPointer<KProcess> swtpmProcess;
     QPointer<KProcess> virtiofsdProcess;
     QPointer<KProcess> passtProcess;
     QPointer<KProcess> spiceViewerProcess;
-    QPointer<QMPClient> qmpClient;
+    QPointer<KProcess> dbusDaemonProcess;
 
     QVector<double> cpuHistory;
     QVector<double> ramHistory;
@@ -115,6 +117,7 @@ public:
     void setVirtiofsdProcess(const QString& name, KProcess* process);
     void setPasstProcess(const QString& name, KProcess* process);
     void setSpiceViewerProcess(const QString& name, KProcess* process);
+    void setDBusDaemonProcess(const QString& name, KProcess* process);
     void setQmpClient(const QString& name, QMPClient* client);
     void updateConfig(const QString& name, const VMConfig& config);
     void appendPerfSample(const QString& name, int channel, double value);

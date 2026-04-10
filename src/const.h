@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#include <QSize>
-
 #pragma once
+
+#include <QSize>
 
 using namespace Qt::StringLiterals;
 
@@ -28,5 +28,6 @@ inline constexpr auto OsIconDirPath = "kemu/icons"_L1;
 inline constexpr auto DefaultMinDiskSizeGB = 8;
 inline constexpr auto DefaultZSTDCompressionLevelForExport = 10;
 inline constexpr auto DefaultDisplaySize = QSize(1280, 780);
+inline constexpr auto DefaultDisplayType = "GTK"_L1; //
 
 }

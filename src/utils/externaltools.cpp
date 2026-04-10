@@ -28,6 +28,7 @@ ExternalTools::ExternalTools(QObject* parent)
     registerTool(Pasta, u"PastaPath"_s, u"pasta"_s);
     registerTool(Dnsmasq, u"DnsmasqPath"_s, u"dnsmasq"_s);
     registerTool(RemoteViewer, u"RemoteViewerPath"_s, u"remote-viewer"_s);
+    registerTool(DbusDaemon, u"DbusDaemonPath"_s, u"dbus-daemon"_s);
 }
 
 // --- Registration ---
@@ -102,7 +103,7 @@ void ExternalTools::probeVersion(Tool tool, ToolInfo& info)
 
     info.detectedVersion = probeVersionString(tool, info.resolvedPath);
 
-    QFileInfo fi(info.resolvedPath);
+    const QFileInfo fi(info.resolvedPath);
     info.available = fi.exists() && fi.isExecutable();
 }
 
@@ -121,6 +122,14 @@ QString ExternalTools::version(Tool tool) const
 bool ExternalTools::isAvailable(Tool tool) const
 {
     return m_tools.value(tool).available;
+}
+
+bool ExternalTools::isAvailable(const QList<ExternalTools::Tool> tools) const
+{
+    for (auto const tool : tools)
+        if (!m_tools.value(tool).available)
+            return false;
+    return true;
 }
 
 QString ExternalTools::configKey(Tool tool) const
@@ -154,6 +163,8 @@ QString ExternalTools::displayName(Tool tool)
         return i18n("dnsmasq DHCP/DNS Server");
     case RemoteViewer:
         return i18n("SPICE Remote Viewer");
+    case DbusDaemon:
+        return i18n("D-Bus Daemon");
     }
     return { };
 }
@@ -161,7 +172,7 @@ QString ExternalTools::displayName(Tool tool)
 QList<ExternalTools::Tool> ExternalTools::allTools()
 {
     return { QemuSystem, QemuImg, Swtpm, Virtiofsd, GenIsoImage,
-        Passt, Pasta, Dnsmasq, RemoteViewer };
+        Passt, Pasta, Dnsmasq, RemoteViewer, DbusDaemon };
 }
 
 QList<ExternalTools::Tool> ExternalTools::coreTools()
@@ -172,6 +183,16 @@ QList<ExternalTools::Tool> ExternalTools::coreTools()
 QList<ExternalTools::Tool> ExternalTools::virtualNetworkTools()
 {
     return { Pasta, Dnsmasq };
+}
+
+[[nodiscard]] QList<ExternalTools::Tool> ExternalTools::spiceDisplayTools()
+{
+    return { RemoteViewer };
+}
+
+QList<ExternalTools::Tool> ExternalTools::dbusDisplayTools()
+{
+    return { DbusDaemon };
 }
 
 QString ExternalTools::probeVersionString(Tool tool, const QString& path)

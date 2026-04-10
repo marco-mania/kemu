@@ -290,6 +290,26 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
                 args << u"-chardev"_s << u"spicevmc,id=%1,name=usbredir"_s.arg(id);
             }
         }
+    } else if (config.displayType() == VMSpecs::DisplayType::Dbus) {
+        if (headless) {
+            args << u"-display"_s << u"none"_s;
+        } else {
+            const QString busSock = vmDir.absoluteFilePath(u"dbus-bus.sock"_s);
+            const QString sockArg = relativePaths
+                ? u"dbus-bus.sock"_s
+                : busSock;
+
+            QString displayOpt = u"dbus,addr=unix:path=%1"_s.arg(QString::fromLatin1(sockArg.toUtf8().toPercentEncoding()));
+            if (effective3d)
+                displayOpt += u",gl=on"_s;
+            if (config.audioDevice() != VMSpecs::AudioDevice::None) {
+                const QString audioId = (config.audioDevice() == VMSpecs::AudioDevice::Hda)
+                    ? u"audio0"_s
+                    : u"snd0"_s;
+                displayOpt += u",audiodev=%1"_s.arg(audioId);
+            }
+            args << u"-display"_s << displayOpt;
+        }
     } else if (headless) {
         args << u"-display"_s << u"none"_s;
     } else {
@@ -300,18 +320,23 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
     }
 
     // --- Audio ---
-    if (config.audioDevice() == VMSpecs::AudioDevice::Hda) {
-        args << u"-audiodev"_s << u"pipewire,id=audio0"_s;
-        args << u"-device"_s << VMConfig::toQemuString(VMSpecs::AudioDevice::Hda);
-        args << u"-device"_s << u"hda-duplex,audiodev=audio0"_s;
-    } else if (config.audioDevice() != VMSpecs::AudioDevice::None) {
-        args << u"-audiodev"_s << u"pipewire,id=snd0"_s;
-        QString audioDevice = u"%1,audiodev=snd0"_s.arg(
-            VMConfig::toQemuString(config.audioDevice()));
-        if (config.audioDevice() == VMSpecs::AudioDevice::Sb16 && !config.sb16Config().isDefault()) {
-            audioDevice += u",%1"_s.arg(config.sb16Config().toPropertyString());
+    if (config.audioDevice() != VMSpecs::AudioDevice::None) {
+        const bool useDbusAudio = (config.displayType() == VMSpecs::DisplayType::Dbus && !headless);
+        const QString audioBackend = useDbusAudio ? u"dbus"_s : u"pipewire"_s;
+
+        if (config.audioDevice() == VMSpecs::AudioDevice::Hda) {
+            args << u"-audiodev"_s << u"%1,id=audio0"_s.arg(audioBackend);
+            args << u"-device"_s << VMConfig::toQemuString(VMSpecs::AudioDevice::Hda);
+            args << u"-device"_s << u"hda-duplex,audiodev=audio0"_s;
+        } else {
+            args << u"-audiodev"_s << u"%1,id=snd0"_s.arg(audioBackend);
+            QString audioDevice = u"%1,audiodev=snd0"_s.arg(VMConfig::toQemuString(config.audioDevice()));
+            if (config.audioDevice() == VMSpecs::AudioDevice::Sb16
+                && !config.sb16Config().isDefault()) {
+                audioDevice += u",%1"_s.arg(config.sb16Config().toPropertyString());
+            }
+            args << u"-device"_s << audioDevice;
         }
-        args << u"-device"_s << audioDevice;
     }
 
     // --- Network ---
@@ -568,6 +593,14 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig& config,
         script += u"# Start SPICE viewer (will connect once QEMU is ready)\n"_s
             + u"( sleep 2 && %1 %2 ) &\n\n"_s
                   .arg(viewerPath, vvFile);
+    } else if (config.displayType() == VMSpecs::DisplayType::Dbus) {
+        const QString sockArg = relativePaths
+            ? u"dbus-display.sock"_s
+            : vmDir.absoluteFilePath(u"dbus-display.sock"_s);
+        script += u"# D-Bus display: QEMU listens on a private Unix socket.\n"_s;
+        script += u"# Inside KEMU, the integrated viewer connects automatically.\n"_s;
+        script += u"# For standalone use, connect with a D-Bus display viewer:\n"_s;
+        script += u"#   <viewer> --dbus-address unix:path=%1\n\n"_s.arg(sockArg);
     }
 
     if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork

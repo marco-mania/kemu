@@ -12,6 +12,7 @@
 #include "dialogs/settingsdialog.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
+#include <kmessagebox.h>
 
 CreateVmDialog::CreateVmDialog(QWidget* parent)
     : QDialog(parent)
@@ -375,7 +376,10 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     displayCombo = new QComboBox();
     displayCombo->addItem(VMConfig::toUIString(VMSpecs::DisplayType::Gtk), static_cast<int>(VMSpecs::DisplayType::Gtk));
     displayCombo->addItem(VMConfig::toUIString(VMSpecs::DisplayType::Sdl), static_cast<int>(VMSpecs::DisplayType::Sdl));
-    displayCombo->addItem(VMConfig::toUIString(VMSpecs::DisplayType::Spice), static_cast<int>(VMSpecs::DisplayType::Spice));
+    if (ExternalTools::instance().isAvailable(ExternalTools::spiceDisplayTools()))
+        displayCombo->addItem(VMConfig::toUIString(VMSpecs::DisplayType::Spice), static_cast<int>(VMSpecs::DisplayType::Spice));
+    if (ExternalTools::instance().isAvailable(ExternalTools::dbusDisplayTools()) && SettingsDialog::enableDbusDisplay())
+        displayCombo->addItem(VMConfig::toUIString(VMSpecs::DisplayType::Dbus), static_cast<int>(VMSpecs::DisplayType::Dbus));
     hwLayout->addRow(i18n("Display:"), displayCombo);
 
     gpuCombo = new QComboBox();
@@ -1109,6 +1113,7 @@ void CreateVmDialog::onGpuDisplayChanged()
     const bool isQxl = (gpu == VMSpecs::GpuType::Qxl);
     const bool isVirtio = (gpu == VMSpecs::GpuType::Virtio);
     const bool isSpice = (display == VMSpecs::DisplayType::Spice);
+    const bool isDBus = (display == VMSpecs::DisplayType::Dbus);
     const bool isWindows = (osType == VMSpecs::OsType::Windows);
 
     gpuMemSpin->setRange(VMConfig::vgaMemMbLowerLimit(gpu), VMConfig::vgaMemMbUpperLimit(gpu));
@@ -1131,7 +1136,7 @@ void CreateVmDialog::onGpuDisplayChanged()
     resolutionCombo->setEnabled(isVirtio);
     resolutionLabel->setEnabled(isVirtio);
 
-    const bool can3d = isVirtio && !isSpice;
+    const bool can3d = (isDBus || isVirtio) && !isSpice;
     accel3dCheck->setEnabled(can3d);
     if (!can3d)
         accel3dCheck->setChecked(false);
@@ -1459,6 +1464,17 @@ void CreateVmDialog::setupForEdit(const VMConfig& config)
     setCombo(machineCombo, config.machineType());
 
     updateDeviceAvailability();
+
+    if (!isDisplayTypeAvailable(config.displayType())) {
+        const auto configuredType = config.displayType();
+        const auto fallbackType = VMSpecs::DisplayType::Gtk;
+        KMessageBox::information(this,
+            i18n("The configured display type '%1' is currently not available.\n"
+                 "KEMU will set to '%2' instead.\n\n",
+                VMConfig::toUIString(configuredType),
+                VMConfig::toUIString(fallbackType)),
+            i18n("Display Type Unavailable"));
+    }
 
     setCombo(displayCombo, config.displayType());
     spiceAgentCheck->setChecked(config.spiceAgent());
@@ -1995,6 +2011,21 @@ void CreateVmDialog::updateDeviceAvailability()
 
     updateDiskInterfaceHint();
     onGpuDisplayChanged();
+}
+
+bool CreateVmDialog::isDisplayTypeAvailable(const VMSpecs::DisplayType type)
+{
+    switch (type) {
+    case VMSpecs::DisplayType::Spice:
+        return ExternalTools::instance().isAvailable(ExternalTools::spiceDisplayTools());
+    case VMSpecs::DisplayType::Dbus:
+        return ExternalTools::instance().isAvailable(ExternalTools::DbusDaemon) && SettingsDialog::enableDbusDisplay();
+    case VMSpecs::DisplayType::Gtk:
+    case VMSpecs::DisplayType::Sdl:
+        return true;
+    default:
+        return false;
+    }
 }
 
 void CreateVmDialog::validateForm()

@@ -17,7 +17,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <text>&amp;VM</text>
       <Action name="vm_start"/>
       <Action name="vm_start_headless"/>
-      <Action name="vm_reconnect_spice"/>
+      <Action name="vm_reconnect"/>
       <Action name="vm_shutdown"/>
       <Action name="vm_reset"/>
       <Action name="vm_kill"/>

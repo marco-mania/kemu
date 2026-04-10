@@ -24,8 +24,17 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions")
 
 find_package(PkgConfig REQUIRED)
-find_package(Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED COMPONENTS Core Gui Widgets
-                                                              Network Svg)
+find_package(
+  Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED
+  COMPONENTS Core
+             Gui
+             Widgets
+             Network
+             Svg
+             DBus
+             Multimedia
+             OpenGL
+             OpenGLWidgets)
 find_package(
   KF6 ${KF_MIN_VERSION} REQUIRED
   COMPONENTS CoreAddons
@@ -46,6 +55,8 @@ find_library(CRYPT_LIBRARY NAMES crypt REQUIRED)
 pkg_check_modules(MNL REQUIRED libmnl)
 pkg_check_modules(NFTNL REQUIRED libnftnl)
 pkg_check_modules(UDEV REQUIRED libudev)
+pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0 gio-unix-2.0)
+pkg_check_modules(EGL REQUIRED IMPORTED_TARGET egl)
 
 add_subdirectory(src)
 

@@ -63,6 +63,7 @@ public:
     static QString getOvmfPath();
     static bool isPerformanceMonitorEnabled();
     static QSize getDefaultResolution();
+    static bool enableDbusDisplay();
     static bool showAllArchitectures();
     static bool cloneRegenerateMac();
     static bool importRegenerateMac();
@@ -113,6 +114,7 @@ private:
 
     QPointer<QCheckBox> perfMonitorCheck;
     QPointer<QComboBox> resolutionCombo;
+    QPointer<QCheckBox> dbusDisplayCheck;
 
     QPointer<QCheckBox> allArchCheck;
     QPointer<QCheckBox> cloneRegenerateMacCheck;

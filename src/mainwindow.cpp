@@ -7,7 +7,9 @@
 #include "mainwindow.h"
 
 #include "const.h"
+#include "dbusdisplay/dbusdisplayconst.h"
 #include "dialogs/createvmdialog.h"
+#include "dialogs/settingsdialog.h"
 #include "dialogs/snapshotdialog.h"
 #include "jobs/clonejob.h"
 #include "jobs/downloadjob.h"
@@ -155,6 +157,18 @@ MainWindow::~MainWindow()
                 e->spiceViewerProcess->kill();
             delete e->spiceViewerProcess;
         }
+
+        if (e->dbusDaemonProcess) {
+            e->dbusDaemonProcess->terminate();
+            if (!e->dbusDaemonProcess->waitForFinished(2000))
+                e->dbusDaemonProcess->kill();
+            delete e->dbusDaemonProcess;
+            QFile::remove(getVmBaseDir().filePath(name) + u"/dbus-bus.sock"_s);
+            QFile::remove(getVmBaseDir().filePath(name) + u"/dbus-bus.conf"_s);
+        }
+
+        stopDbusViewer(name);
+        cleanupDbusSocket(name);
 
         releaseNetwork(e->config);
     }
@@ -554,13 +568,314 @@ bool MainWindow::startSpiceViewer(const QString& vmName)
     return true;
 }
 
-bool MainWindow::requireTool(ExternalTools::Tool tool)
+bool MainWindow::startDbusDaemon(const QString& vmName)
+{
+    if (!requireTool(ExternalTools::DbusDaemon))
+        return false;
+
+    VmEntry* entry = vmModel->entryByName(vmName);
+    if (!entry)
+        return false;
+
+    const QString sockPath = getVmDir(vmName).absoluteFilePath(u"dbus-bus.sock"_s);
+    qDebug() << "D-Bus raw sockPath:" << sockPath;
+    qDebug() << "D-Bus escaped:" << QString::fromLatin1(sockPath.toUtf8().toPercentEncoding());
+
+    // Stale socket cleanup
+    QFile::remove(sockPath);
+
+    // Per-VM dbus-daemon config: minimal session bus, no fork.
+    // Written into the VM directory so it lives alongside other state.
+    const QString configPath = getVmDir(vmName).absoluteFilePath(u"dbus-bus.conf"_s);
+
+    QFile cfg(configPath);
+    if (!cfg.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        KMessageBox::error(this,
+            i18n("Failed to write D-Bus daemon config."));
+        return false;
+    }
+
+    QString content = QStringLiteral(
+        "<!DOCTYPE busconfig PUBLIC\n"
+        " \"-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN\"\n"
+        " \"http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd\">\n"
+        "<busconfig>\n"
+        "  <type>session</type>\n"
+        "  <listen>unix:path=%1</listen>\n"
+        "  <auth>EXTERNAL</auth>\n"
+        "  <policy context=\"default\">\n"
+        "    <allow send_destination=\"*\" eavesdrop=\"true\"/>\n"
+        "    <allow eavesdrop=\"true\"/>\n"
+        "    <allow own=\"*\"/>\n"
+        "  </policy>\n"
+        "</busconfig>\n")
+                          .arg(QString::fromLatin1(sockPath.toUtf8().toPercentEncoding()));
+    qDebug() << "D-Bus daemon config will be written:\n"
+             << content;
+    cfg.write(content.toUtf8());
+    cfg.close();
+
+    auto* daemon = new KProcess(this);
+    daemon->setProgram(ExternalTools::instance().path(ExternalTools::DbusDaemon));
+    daemon->setArguments({ u"--config-file=%1"_s.arg(configPath), u"--nofork"_s });
+
+    daemon->start();
+    if (!daemon->waitForStarted(3000)) {
+        KMessageBox::error(this,
+            i18n("Failed to start D-Bus daemon: %1",
+                daemon->errorString()));
+        delete daemon;
+        return false;
+    }
+
+    // Wait for the socket to actually appear
+    if (!Utils::waitForSocket(sockPath, 3000)) {
+        KMessageBox::error(this,
+            i18n("D-Bus daemon socket was not created in time."));
+        daemon->terminate();
+        if (!daemon->waitForFinished(2000))
+            daemon->kill();
+        delete daemon;
+        return false;
+    }
+
+    vmModel->setDBusDaemonProcess(vmName, daemon);
+    return true;
+}
+
+QString MainWindow::dbusBusAddress(const QString& vmName) const
+{
+    const QString sockPath = getVmDir(vmName).absoluteFilePath(u"dbus-bus.sock"_s);
+    return u"unix:path=%1"_s.arg(QString::fromLatin1(sockPath.toUtf8().toPercentEncoding()));
+}
+
+bool MainWindow::startDbusViewer(const QString& vmName)
+{
+    // Already running? Just bring the existing window to the front.
+    if (m_dbusViewers.contains(vmName)) {
+        auto& existing = m_dbusViewers[vmName];
+        if (existing.window) {
+            existing.window->raise();
+            existing.window->activateWindow();
+            return true;
+        }
+    }
+
+    // --- Connect to the per-VM private D-Bus ---
+    const QString busAddress = dbusBusAddress(vmName);
+    const QString connName = u"kemu-dbus-%1"_s.arg(vmName);
+
+    QDBusConnection bus = QDBusConnection::connectToBus(busAddress, connName);
+    if (!bus.isConnected()) {
+        KMessageBox::error(this,
+            i18n("Failed to connect to the D-Bus session for '%1': %2", vmName, bus.lastError().message()),
+            i18n("Viewer Error"));
+        QDBusConnection::disconnectFromBus(connName);
+        return false;
+    }
+
+    // --- Locate QEMU's Console object ---
+    // QEMU needs a brief moment after startup to claim the "org.qemu" name
+    // on the bus. Retry for up to 3 seconds.
+    const QString consolePath = KemuDbusDisplayConst::ConsolePathPrefix + u"0"_s;
+
+    QScopedPointer<QDBusInterface> console(new QDBusInterface(
+        KemuDbusDisplayConst::ServiceName, consolePath,
+        KemuDbusDisplayConst::ConsoleIface, bus));
+
+    for (int i = 0; i < 30 && !console->isValid(); ++i) {
+        QThread::msleep(100);
+        console.reset(new QDBusInterface(
+            KemuDbusDisplayConst::ServiceName, consolePath,
+            KemuDbusDisplayConst::ConsoleIface, bus));
+    }
+
+    if (!console->isValid()) {
+        KMessageBox::error(this,
+            i18n("QEMU console interface not available for '%1'.", vmName),
+            i18n("Viewer Error"));
+        QDBusConnection::disconnectFromBus(connName);
+        return false;
+    }
+
+    DbusViewerState state;
+    state.connectionName = connName;
+
+    // --- Display listener ---
+    state.displayListener = new QemuDisplayListener(this);
+    int listenerFd = state.displayListener->createSocketPair();
+    if (listenerFd < 0) {
+        delete state.displayListener;
+        QDBusConnection::disconnectFromBus(connName);
+        return false;
+    }
+
+    QDBusUnixFileDescriptor fdWrapper(listenerFd);
+    QDBusReply<void> reply = console->call(u"RegisterListener"_s, QVariant::fromValue(fdWrapper));
+    ::close(listenerFd);
+
+    if (!reply.isValid()) {
+        qWarning() << "RegisterListener failed:" << reply.error().message();
+        delete state.displayListener;
+        QDBusConnection::disconnectFromBus(connName);
+        return false;
+    }
+
+    if (!state.displayListener->connectListener()) {
+        delete state.displayListener;
+        QDBusConnection::disconnectFromBus(connName);
+        return false;
+    }
+
+    // --- Audio listeners (created up front, registered async below) ---
+    state.audioOut = new QemuAudioListener(this);
+    state.audioIn = new QemuAudioInListener(this);
+
+    // --- Viewer window ---
+    state.window = new DbusViewerWindow(
+        state.displayListener, bus, consolePath,
+        state.audioOut, state.audioIn,
+        false, false, nullptr);
+    state.window->setWindowTitle(vmName);
+    state.window->setAttribute(Qt::WA_DeleteOnClose, false);
+    state.window->displayWidget()->watchGLibFd(state.displayListener->socketFd());
+    state.window->show();
+
+    // --- Async audio registration ---
+    QDBusInterface* audioIface = new QDBusInterface(
+        KemuDbusDisplayConst::ServiceName,
+        KemuDbusDisplayConst::AudioPath,
+        KemuDbusDisplayConst::AudioIface, bus);
+
+    if (audioIface->isValid()) {
+        // Audio output
+        int outFd = state.audioOut->createSocketPair();
+        if (outFd >= 0) {
+            QDBusUnixFileDescriptor outFdW(outFd);
+            QDBusPendingCall pending = audioIface->asyncCall(u"RegisterOutListener"_s, QVariant::fromValue(outFdW));
+            ::close(outFd);
+
+            auto* w = new QDBusPendingCallWatcher(pending, this);
+            connect(w, &QDBusPendingCallWatcher::finished, this,
+                [this, vmName](QDBusPendingCallWatcher* watcher) {
+                    watcher->deleteLater();
+                    QDBusPendingReply<> r = *watcher;
+                    if (r.isError() || !m_dbusViewers.contains(vmName)) {
+                        if (r.isError())
+                            qWarning() << "RegisterOutListener failed:"
+                                       << r.error().message();
+                        return;
+                    }
+                    auto& s = m_dbusViewers[vmName];
+                    if (!s.audioOut->connectListener())
+                        return;
+                    if (s.window) {
+                        s.window->audioOutReady();
+                        s.window->displayWidget()->watchGLibFd(s.audioOut->socketFd());
+                    }
+                });
+        }
+
+        // Audio input
+        int inFd = state.audioIn->createSocketPair();
+        if (inFd >= 0) {
+            QDBusUnixFileDescriptor inFdW(inFd);
+            QDBusPendingCall pending = audioIface->asyncCall(u"RegisterInListener"_s, QVariant::fromValue(inFdW));
+            ::close(inFd);
+
+            auto* w = new QDBusPendingCallWatcher(pending, this);
+            connect(w, &QDBusPendingCallWatcher::finished, this,
+                [this, vmName](QDBusPendingCallWatcher* watcher) {
+                    watcher->deleteLater();
+                    QDBusPendingReply<> r = *watcher;
+                    if (r.isError() || !m_dbusViewers.contains(vmName)) {
+                        if (r.isError())
+                            qWarning() << "RegisterInListener failed:"
+                                       << r.error().message();
+                        return;
+                    }
+                    auto& s = m_dbusViewers[vmName];
+                    if (!s.audioIn->connectListener())
+                        return;
+                    if (s.window) {
+                        s.window->audioInReady();
+                        s.window->displayWidget()->watchGLibFd(s.audioIn->socketFd());
+                    }
+                });
+        }
+    } else {
+        qWarning() << "Audio interface not available on private bus";
+    }
+    delete audioIface;
+
+    // Auto-cleanup when QEMU's display connection drops
+    connect(state.displayListener, &QemuDisplayListener::connectionLost, this,
+        [this, vmName]() { stopDbusViewer(vmName); });
+
+    // Mirror SPICE behavior: when the user closes the viewer window,
+    // switch the VM to headless instead of killing it.
+    connect(state.window, &QObject::destroyed, this,
+        [this, vmName](QObject*) {
+            VmEntry* entry = vmModel->entryByName(vmName);
+            if (entry && entry->state == VmEntry::State::Running)
+                vmModel->setHeadless(vmName, true);
+            if (selectedVmName() == vmName) {
+                updateDetails();
+                updateActionStates();
+            }
+        });
+
+    m_dbusViewers.insert(vmName, state);
+    return true;
+}
+
+void MainWindow::stopDbusViewer(const QString& vmName)
+{
+    if (!m_dbusViewers.contains(vmName))
+        return;
+
+    auto state = m_dbusViewers.take(vmName);
+
+    if (state.window) {
+        state.window->displayWidget()->stopAllGLibWatching();
+        state.window->close();
+        delete state.window;
+    }
+    delete state.audioOut;
+    delete state.audioIn;
+    delete state.displayListener;
+
+    if (!state.connectionName.isEmpty())
+        QDBusConnection::disconnectFromPeer(state.connectionName);
+}
+
+void MainWindow::cleanupDbusSocket(const QString& vmName)
+{
+    QFile::remove(getVmDir(vmName).absoluteFilePath(u"dbus-display.sock"_s));
+}
+
+bool MainWindow::requireTool(const ExternalTools::Tool tool)
 {
     if (ExternalTools::instance().isAvailable(tool))
         return true;
 
     KMessageBox::error(this, i18n("%1 not found. Please set the path in Settings.", ExternalTools::displayName(tool)));
     return false;
+}
+
+bool MainWindow::isDisplayTypeAvailable(const VMSpecs::DisplayType type)
+{
+    switch (type) {
+    case VMSpecs::DisplayType::Spice:
+        return ExternalTools::instance().isAvailable(ExternalTools::spiceDisplayTools());
+    case VMSpecs::DisplayType::Dbus:
+        return ExternalTools::instance().isAvailable(ExternalTools::DbusDaemon) && SettingsDialog::enableDbusDisplay();
+    case VMSpecs::DisplayType::Gtk:
+    case VMSpecs::DisplayType::Sdl:
+        return true;
+    default:
+        return false;
+    }
 }
 
 void MainWindow::setupActions()
@@ -674,11 +989,11 @@ void MainWindow::setupActions()
     actionNetShell->setToolTip(i18n("Open a terminal (konsole) inside the virtual network namespace"));
     connect(actionNetShell, &QAction::triggered, this, &MainWindow::openNetworkShell);
 
-    auto* actionReconnect = ac->addAction(u"vm_reconnect_spice"_s);
+    auto* actionReconnect = ac->addAction(u"vm_reconnect"_s);
     actionReconnect->setIcon(QIcon::fromTheme(u"view-fullscreen"_s));
     actionReconnect->setText(i18n("Reconnect Viewer"));
-    actionReconnect->setToolTip(i18n("Re-open the SPICE viewer for a running headless VM"));
-    connect(actionReconnect, &QAction::triggered, this, &MainWindow::reconnectSpiceViewer);
+    actionReconnect->setToolTip(i18n("Re-open the viewer for a running headless VM"));
+    connect(actionReconnect, &QAction::triggered, this, &MainWindow::reconnectViewer);
 
     // USB passthrough submenu
     usbActionMenu = new KActionMenu(QIcon::fromTheme(u"drive-removable-media-usb"_s), i18n("&USB Devices"), this);
@@ -735,7 +1050,14 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_screenshot"_s)->setEnabled(hasSelection && isRunning && vmSupportsScreendump());
     bool hasUsbController = hasSelection && entry && entry->config.usbController() != VMSpecs::UsbController::None;
     usbActionMenu->setEnabled(hasUsbController && isRunning);
-    actionCollection()->action(u"vm_reconnect_spice"_s)->setEnabled(hasSelection && isRunning && entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Spice && !entry->spiceViewerProcess);
+
+    const bool canReconnectSpice = isRunning && entry->isHeadless
+        && entry->config.displayType() == VMSpecs::DisplayType::Spice
+        && !entry->spiceViewerProcess;
+    const bool canReconnectDbus = isRunning && entry->isHeadless
+        && entry->config.displayType() == VMSpecs::DisplayType::Dbus
+        && !m_dbusViewers.contains(entry->config.name());
+    actionCollection()->action(u"vm_reconnect"_s)->setEnabled(hasSelection && (canReconnectSpice || canReconnectDbus));
 
     const bool hasActiveNamespace = hasSelection
         && (isRunning || isDeploying)
@@ -1829,7 +2151,7 @@ void MainWindow::openNetworkShell()
     }
 }
 
-void MainWindow::reconnectSpiceViewer()
+void MainWindow::reconnectViewer()
 {
     const QString vmName = selectedVmName();
     if (vmName.isEmpty())
@@ -1839,19 +2161,32 @@ void MainWindow::reconnectSpiceViewer()
     if (!entry || entry->state != VmEntry::State::Running)
         return;
 
-    if (entry->config.displayType() != VMSpecs::DisplayType::Spice)
-        return;
-
-    if (entry->spiceViewerProcess) {
-        statusBar()->showMessage(i18n("Viewer is already running for '%1'.", vmName));
+    if (entry->config.displayType() == VMSpecs::DisplayType::Spice) {
+        if (entry->spiceViewerProcess) {
+            statusBar()->showMessage(i18n("Viewer is already running for '%1'.", vmName));
+            return;
+        }
+        if (startSpiceViewer(vmName)) {
+            vmModel->setHeadless(vmName, false);
+            statusBar()->showMessage(i18n("Viewer reconnected to '%1'.", vmName));
+            updateDetails();
+            updateActionStates();
+        }
         return;
     }
 
-    if (startSpiceViewer(vmName)) {
-        vmModel->setHeadless(vmName, false);
-        statusBar()->showMessage(i18n("Viewer reconnected to '%1'.", vmName));
-        updateDetails();
-        updateActionStates();
+    if (entry->config.displayType() == VMSpecs::DisplayType::Dbus) {
+        if (m_dbusViewers.contains(vmName)) {
+            statusBar()->showMessage(i18n("Viewer is already running for '%1'.", vmName));
+            return;
+        }
+        if (startDbusViewer(vmName)) {
+            vmModel->setHeadless(vmName, false);
+            statusBar()->showMessage(i18n("Viewer reconnected to '%1'.", vmName));
+            updateDetails();
+            updateActionStates();
+        }
+        return;
     }
 }
 
@@ -1869,12 +2204,21 @@ void MainWindow::onTreeDoubleClicked(const QModelIndex& index)
     } else {
         const QString vmName = index.data(VmModel::VmNameRole).toString();
         const VmEntry* entry = vmModel->entryByName(vmName);
-        if (entry
+
+        const bool spiceReconnect = entry
             && entry->state == VmEntry::State::Running
             && entry->isHeadless
             && entry->config.displayType() == VMSpecs::DisplayType::Spice
-            && !entry->spiceViewerProcess) {
-            reconnectSpiceViewer();
+            && !entry->spiceViewerProcess;
+
+        const bool dbusReconnect = entry
+            && entry->state == VmEntry::State::Running
+            && entry->isHeadless
+            && entry->config.displayType() == VMSpecs::DisplayType::Dbus
+            && !m_dbusViewers.contains(vmName);
+
+        if (spiceReconnect || dbusReconnect) {
+            reconnectViewer();
         } else {
             startVM();
         }
@@ -1939,8 +2283,8 @@ void MainWindow::showContextMenu(const QPoint& pos)
                 contextMenu.addSeparator();
                 contextMenu.addAction(actionCollection()->action(u"vm_delete"_s));
             } else {
-                if (actionCollection()->action(u"vm_reconnect_spice"_s)->isEnabled())
-                    contextMenu.addAction(actionCollection()->action(u"vm_reconnect_spice"_s));
+                if (actionCollection()->action(u"vm_reconnect"_s)->isEnabled())
+                    contextMenu.addAction(actionCollection()->action(u"vm_reconnect"_s));
 
                 contextMenu.addAction(actionCollection()->action(u"vm_shutdown"_s));
                 contextMenu.addAction(actionCollection()->action(u"vm_reset"_s));
@@ -2073,7 +2417,33 @@ void MainWindow::startVM(bool headless)
         }
     }
 
+    if (!isDisplayTypeAvailable(currentConfig.displayType())) {
+        const auto configuredType = currentConfig.displayType();
+        const auto fallbackType = VMSpecs::DisplayType::Gtk;
+
+        const auto result = KMessageBox::warningTwoActions(this,
+            i18n("The configured display type '%1' is currently not available.\n"
+                 "KEMU will use '%2' instead.\n\n",
+                VMConfig::toUIString(configuredType),
+                VMConfig::toUIString(fallbackType)),
+            i18n("Display Type Unavailable"),
+            KStandardGuiItem::cont(),
+            KStandardGuiItem::cancel());
+
+        if (result != KMessageBox::PrimaryAction)
+            return;
+    }
+
     QFile::remove(monitorSocketPath(vmName));
+
+    // Remove any stale D-Bus display socket from a previous run
+    if (currentConfig.displayType() == VMSpecs::DisplayType::Dbus)
+        cleanupDbusSocket(vmName);
+
+    if (!headless && currentConfig.displayType() == VMSpecs::DisplayType::Dbus) {
+        if (!startDbusDaemon(vmName))
+            return;
+    }
 
     if (currentConfig.useTpm()) {
         if (!startSwtpm(vmName))
@@ -2135,6 +2505,13 @@ void MainWindow::startVM(bool headless)
         // Launch SPICE viewer if configured
         if (!headless && currentConfig.displayType() == VMSpecs::DisplayType::Spice) {
             startSpiceViewer(vmName);
+        }
+
+        // Launch integrated D-Bus viewer if configured
+        if (!headless && currentConfig.displayType() == VMSpecs::DisplayType::Dbus) {
+            QTimer::singleShot(500, this, [this, vmName]() {
+                startDbusViewer(vmName);
+            });
         }
 
     } else {
@@ -2424,6 +2801,18 @@ void MainWindow::onProcessFinished(int, KProcess::ExitStatus)
                 entry->spiceViewerProcess->kill();
             delete entry->spiceViewerProcess;
         }
+        if (entry->dbusDaemonProcess) {
+            entry->dbusDaemonProcess->terminate();
+            if (!entry->dbusDaemonProcess->waitForFinished(2000))
+                entry->dbusDaemonProcess->kill();
+            delete entry->dbusDaemonProcess;
+            QFile::remove(getVmBaseDir().filePath(vmName) + u"/dbus-bus.sock"_s);
+            QFile::remove(getVmBaseDir().filePath(vmName) + u"/dbus-bus.conf"_s);
+        }
+        // D-Bus integrated viewer cleanup
+        stopDbusViewer(vmName);
+        cleanupDbusSocket(vmName);
+
         QFile::remove(monitorSocketPath(vmName));
         releaseNetwork(entry->config);
         vmModel->clearRuntimeState(vmName);
@@ -2470,6 +2859,18 @@ void MainWindow::onProcessFinished(int, KProcess::ExitStatus)
         delete entry->passtProcess;
         QFile::remove(getVmBaseDir().filePath(vmName) + u"/passt.sock"_s);
     }
+
+    if (entry->dbusDaemonProcess) {
+        entry->dbusDaemonProcess->terminate();
+        if (!entry->dbusDaemonProcess->waitForFinished(2000))
+            entry->dbusDaemonProcess->kill();
+        delete entry->dbusDaemonProcess;
+        QFile::remove(getVmBaseDir().filePath(vmName) + u"/dbus-bus.sock"_s);
+        QFile::remove(getVmBaseDir().filePath(vmName) + u"/dbus-bus.conf"_s);
+    }
+
+    stopDbusViewer(vmName);
+    cleanupDbusSocket(vmName);
 
     QFile::remove(monitorSocketPath(vmName));
     releaseNetwork(entry->config);

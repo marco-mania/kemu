@@ -44,7 +44,8 @@ public:
         Passt, // passt -- single-VM user-mode networking (unchanged)
         Pasta, // pasta -- namespace-to-host NAT connector (from passt project)
         Dnsmasq, // dnsmasq -- lightweight DHCP/DNS for virtual networks
-        RemoteViewer // remote-viewer (virt-viewer, for SPICE display)
+        RemoteViewer, // remote-viewer (virt-viewer, for SPICE display)
+        DbusDaemon // dbus-daemon for per-VM private bus
     };
     Q_ENUM(Tool)
 
@@ -53,6 +54,7 @@ public:
     [[nodiscard]] QString path(Tool tool) const;
     [[nodiscard]] QString version(Tool tool) const;
     [[nodiscard]] bool isAvailable(Tool tool) const;
+    [[nodiscard]] bool isAvailable(const QList<Tool> tools) const;
     [[nodiscard]] QString configKey(Tool tool) const;
     [[nodiscard]] QString defaultBinary(Tool tool) const;
 
@@ -67,6 +69,9 @@ public:
 
     /// Tools required only for the virtual-network feature.
     [[nodiscard]] static QList<Tool> virtualNetworkTools();
+
+    [[nodiscard]] static QList<Tool> spiceDisplayTools();
+    [[nodiscard]] static QList<Tool> dbusDisplayTools();
 
     /**
      * Probe the version string for a given tool at an arbitrary path.

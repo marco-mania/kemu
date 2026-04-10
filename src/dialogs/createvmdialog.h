@@ -114,6 +114,8 @@ private:
     void updateDiskInterfaceHint();
     void updateDeviceAvailability();
 
+    bool isDisplayTypeAvailable(const VMSpecs::DisplayType type);
+
     void validateForm();
 
     QStringList existingVmNames;

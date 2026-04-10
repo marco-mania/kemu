@@ -72,7 +72,19 @@ target_sources(
           widgets/vmtreeview.h
           widgets/performancemonitorwidget.h
           widgets/performancemonitorwidget.cpp
-          widgets/ramspinbox.h)
+          widgets/ramspinbox.h
+          dbusdisplay/dbusviewerwindow.cpp
+          dbusdisplay/dbusviewerwindow.h
+          dbusdisplay/displaywidget.cpp
+          dbusdisplay/displaywidget.h
+          dbusdisplay/listener.cpp
+          dbusdisplay/listener.h
+          dbusdisplay/audiolistener.cpp
+          dbusdisplay/audiolistener.h
+          dbusdisplay/audioinlistener.cpp
+          dbusdisplay/audioinlistener.h
+          dbusdisplay/clipboard.cpp
+          dbusdisplay/clipboard.h)
 
 target_include_directories(
   ${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MNL_INCLUDE_DIRS}
@@ -85,11 +97,17 @@ target_link_libraries(
   ${NFTNL_LIBRARIES}
   ${UDEV_LIBRARIES}
   LibArchive::LibArchive
+  PkgConfig::GIO
+  PkgConfig::EGL
   Qt6::Core
   Qt6::Gui
   Qt6::Widgets
   Qt6::Network
   Qt6::Svg
+  Qt6::Multimedia
+  Qt6::DBus
+  Qt6::OpenGL
+  Qt6::OpenGLWidgets
   KF6::CoreAddons
   KF6::I18n
   KF6::WidgetsAddons
