@@ -27,11 +27,14 @@ IconChooserDialog::IconChooserDialog(QWidget* parent)
 
     QString dir = VMConfig::osIconDir();
     if (!dir.isEmpty()) {
-        QDir iconDir(dir);
-        const QStringList files = iconDir.entryList({ u"*.svg"_s }, QDir::Files, QDir::Name);
-        for (const QString& file : files) {
-            QString path = iconDir.filePath(file);
-            QString label = file.chopped(4); // strip .svg
+        QDirIterator it(dir, { u"*.svg"_s }, QDir::Files, QDirIterator::Subdirectories);
+
+        while (it.hasNext()) {
+            QString path = it.next();
+            QFileInfo info = it.fileInfo();
+
+            QString label = info.completeBaseName();
+
             auto* item = new QListWidgetItem(QIcon(path), label);
             item->setData(Qt::UserRole, path);
             item->setToolTip(label);
