@@ -61,7 +61,8 @@ pkg_check_modules(EGL REQUIRED IMPORTED_TARGET egl)
 add_subdirectory(src)
 
 install(TARGETS ${PROJECT_NAME} ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
-install(FILES kemuui.rc DESTINATION ${KDE_INSTALL_KXMLGUIDIR}/${PROJECT_NAME})
+install(FILES src/kemuui.rc
+        DESTINATION ${KDE_INSTALL_KXMLGUIDIR}/${PROJECT_NAME})
 install(
   DIRECTORY assets/3rdparty/papirus-icons assets/3rdparty/misc
   DESTINATION ${KDE_INSTALL_DATADIR}/${PROJECT_NAME}/icons
@@ -72,7 +73,7 @@ install(DIRECTORY data/ DESTINATION ${KDE_INSTALL_DATADIR}/${PROJECT_NAME}/data)
 install(FILES org.kde.kemu.desktop DESTINATION ${KDE_INSTALL_APPDIR})
 install(FILES assets/org.kde.kemu.svg
         DESTINATION ${KDE_INSTALL_ICONDIR}/hicolor/scalable/apps)
-install(FILES org.kde.kemu.appdata.xml DESTINATION ${KDE_INSTALL_METAINFODIR})
+install(FILES org.kde.kemu.metainfo.xml DESTINATION ${KDE_INSTALL_METAINFODIR})
 
 ki18n_install(po)
 
