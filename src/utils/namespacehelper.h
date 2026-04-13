@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <QFile>
 #include <QProcess>
 #include <QString>
 #include <QStringList>

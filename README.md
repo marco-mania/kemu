@@ -71,10 +71,11 @@ sudo pacman -S swtpm virtiofsd dnsmasq virt-viewer dbus
 ### Debian 13+ / Ubuntu 24.04+
 
 ```bash
-sudo apt install qt6-base-dev qt6-declarative-dev extra-cmake-modules \
-  libkf6config-dev libkf6coreaddons-dev libkf6i18n-dev libkf6xmlgui-dev \
-  libkf6widgetsaddons-dev libkf6iconthemes-dev qemu-system libarchive-dev \
-  passt libmnl-dev libnftnl-dev libudev-dev build-essential cmake
+sudo apt install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-multimedia-dev \
+  libkf6config-dev libkf6coreaddons-dev libkf6i18n-dev libkf6kio-dev libkf6crash-dev \
+  libkf6xmlgui-dev libkf6widgetsaddons-dev libkf6iconthemes-dev libkf6texttemplate-dev \
+  qemu-system extra-cmake-modules libegl1-mesa-dev libarchive-dev passt libmnl-dev \
+  libnftnl-dev libudev-dev build-essential cmake
 ```
 
 Optional:

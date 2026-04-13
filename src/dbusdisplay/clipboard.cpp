@@ -57,7 +57,7 @@ bool ClipboardDBusHandler::handleMessage(const QDBusMessage& message, const QDBu
         else if (a.typeId() == QMetaType::QByteArray)
             argStrings << u"ay:%1B"_s.arg(a.toByteArray().size());
         else
-            argStrings << u"%1"_s.arg(a.typeName());
+            argStrings << u"%1"_s.arg(QLatin1StringView(a.typeName()));
     }
     qDebug() << "Clipboard D-Bus ←" << iface << "::" << method
              << "sig:" << message.signature()

@@ -6,8 +6,6 @@
 
 #include "namespacehelper.h"
 
-#include <QFile>
-
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -20,6 +18,7 @@ extern "C" {
 #include <linux/if_tun.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <linux/sockios.h>
 #include <net/if.h>
 #include <sched.h>
 #include <sys/ioctl.h>

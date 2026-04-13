@@ -322,7 +322,7 @@ void MainWindow::setupUi()
     detailsBrowser->setOpenLinks(false);
     connect(detailsBrowser, &QTextBrowser::anchorClicked, this, [this](const QUrl& url) {
         Q_UNUSED(this);
-        if (url.scheme() == QLatin1String("copy-pid")) {
+        if (url.scheme() == "copy-pid"_L1) {
             QString pidString = url.path();
             QGuiApplication::clipboard()->setText(pidString);
             QToolTip::showText(
@@ -331,7 +331,7 @@ void MainWindow::setupUi()
                 detailsBrowser,
                 QRect(),
                 2000);
-        } else if (url.scheme() == QLatin1String("http") || url.scheme() == QLatin1String("https")) {
+        } else if (url.scheme() == "http"_L1 || url.scheme() == "https"_L1) {
             QDesktopServices::openUrl(url);
         }
     });
@@ -2344,7 +2344,7 @@ void MainWindow::showCommand()
     t->setFont(QFont(u"monospace"_s, 10));
     l->addWidget(t);
 
-    if (cmd.contains(QLatin1String("UEFI_CODE_NOT_FOUND")) || cmd.contains(QLatin1String("VM_VARS_FILE_MISSING"))) {
+    if (cmd.contains("UEFI_CODE_NOT_FOUND"_L1) || cmd.contains("VM_VARS_FILE_MISSING"_L1)) {
         QString warnText = currentConfig.useSecureBoot()
             ? i18n("WARNING: UEFI Secure Boot firmware not found! "
                    "Make sure a Secure Boot-capable OVMF package is installed "
