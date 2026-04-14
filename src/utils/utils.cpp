@@ -7,7 +7,7 @@
 #include "utils.h"
 
 extern "C" {
-#include <crypt.h>
+char* __crypt_sha512(const char* key, const char* setting, char* output);
 }
 
 namespace Utils {
@@ -29,22 +29,21 @@ QString generateCloudInitPasswordHash(const QString& password)
     }
     salt.append(u"$"_s); // Salt terminator
 
-    // Prepare for the thread-safe crypt_r variant
-    struct crypt_data cdata;
-    cdata.initialized = 0; // Important: Must be set to 0 before the call!
-
     // Convert Qt strings to proper C strings (UTF-8)
     QByteArray passBytes = password.toUtf8();
     QByteArray saltBytes = salt.toUtf8();
 
-    char* hashResult = crypt_r(passBytes.constData(), saltBytes.constData(), &cdata);
+    char outputBuffer[128] = { 0 };
 
-    if (hashResult) {
+    char* hashResult = __crypt_sha512(passBytes.constData(), saltBytes.constData(), outputBuffer);
+
+    if (hashResult && qstrcmp(hashResult, "*") != 0) {
         return QString::fromUtf8(hashResult);
     }
 
-    // Fallback in case crypt_r fails for any reason
-    return password;
+    qWarning() << "Failed to generate cloud-init hash via __crypt_sha512!";
+
+    return u"!"_s;
 }
 
 bool waitForSocket(const QString& sockPath, int timeoutMs)

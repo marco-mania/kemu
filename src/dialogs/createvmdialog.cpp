@@ -839,11 +839,13 @@ void CreateVmDialog::chooseFromIconSet()
     if (dlg.exec() != QDialog::Accepted)
         return;
 
-    QString path = dlg.selectedIconPath();
+    const QString path = dlg.selectedIconPath();
     if (path.isEmpty())
         return;
 
-    selectedIconSetFilename = QFileInfo(path).fileName();
+    const QDir baseDir(VMConfig::osIconDir());
+    selectedIconSetFilename = baseDir.relativeFilePath(path);
+
     customIcon = { };
     selectedIconName.clear();
     iconManuallySet = true;
@@ -1321,7 +1323,8 @@ void CreateVmDialog::autoSetIconFromOS()
     customIcon = { };
 
     if (!path.isEmpty() && QFile::exists(path)) {
-        selectedIconSetFilename = QFileInfo(path).fileName();
+        const QDir baseDir(VMConfig::osIconDir());
+        selectedIconSetFilename = baseDir.relativeFilePath(path);
     }
 
     updateIconDisplay();

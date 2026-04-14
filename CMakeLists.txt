@@ -50,7 +50,6 @@ find_package(
              Crash)
 
 find_package(LibArchive REQUIRED)
-find_library(CRYPT_LIBRARY NAMES crypt REQUIRED)
 
 pkg_check_modules(MNL REQUIRED libmnl)
 pkg_check_modules(NFTNL REQUIRED libnftnl)
@@ -64,7 +63,8 @@ install(TARGETS ${PROJECT_NAME} ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
 install(FILES src/kemuui.rc
         DESTINATION ${KDE_INSTALL_KXMLGUIDIR}/${PROJECT_NAME})
 install(
-  DIRECTORY assets/3rdparty/papirus-icons assets/3rdparty/misc
+  DIRECTORY assets/3rdparty/papirus-icons assets/3rdparty/misc-icons
+            assets/kemu-icons
   DESTINATION ${KDE_INSTALL_DATADIR}/${PROJECT_NAME}/icons
   FILES_MATCHING
   PATTERN "*.svg")

@@ -37,6 +37,7 @@ target_sources(
           utils/namespacehelper.h
           utils/usbenumerator.h
           utils/usbenumerator.cpp
+          utils/3rdparty/crypt_sha512.c
           models/vmmodel.cpp
           models/vmmodel.h
           jobs/createvmjob.cpp
@@ -92,7 +93,6 @@ target_include_directories(
 
 target_link_libraries(
   ${PROJECT_NAME}
-  ${CRYPT_LIBRARY}
   ${MNL_LIBRARIES}
   ${NFTNL_LIBRARIES}
   ${UDEV_LIBRARIES}

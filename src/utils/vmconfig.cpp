@@ -357,19 +357,19 @@ QString VMConfig::defaultIconForType(VMSpecs::OsType type)
     QString filename;
     switch (type) {
     case VMSpecs::OsType::Linux:
-        filename = u"tux.svg"_s;
+        filename = u"papirus-icons/tux.svg"_s;
         break;
     case VMSpecs::OsType::Windows:
-        filename = u"distributor-logo-windows.svg"_s;
+        filename = u"papirus-icons/distributor-logo-windows.svg"_s;
         break;
     case VMSpecs::OsType::DOS:
-        filename = u"dos.svg"_s;
+        filename = u"kemu-icons/dos.svg"_s;
         break;
     case VMSpecs::OsType::BSD:
-        filename = u"beastie.svg"_s;
+        filename = u"misc-icons/beastie.svg"_s;
         break;
     case VMSpecs::OsType::Other:
-        filename = u"generic-vm.svg"_s;
+        filename = u"misc-icons/generic-vm.svg"_s;
         break;
     }
 
@@ -386,47 +386,47 @@ QString VMConfig::defaultIconFor(VMSpecs::OsType type, const QString& variant)
     QString filename;
 
     if (lv.contains(u"debian"_s))
-        filename = u"distributor-logo-debian.svg"_s;
+        filename = u"papirus-icons/distributor-logo-debian.svg"_s;
     else if (lv.contains(u"ubuntu"_s))
-        filename = u"distributor-logo-ubuntu.svg"_s;
+        filename = u"papirus-icons/distributor-logo-ubuntu.svg"_s;
     else if (lv.contains(u"archlinux"_s))
-        filename = u"distributor-logo-archlinux.svg"_s;
+        filename = u"papirus-icons/distributor-logo-archlinux.svg"_s;
     else if (lv.contains(u"fedora"_s))
-        filename = u"distributor-logo-fedora.svg"_s;
+        filename = u"papirus-icons/distributor-logo-fedora.svg"_s;
     else if (lv.contains(u"redhat"_s) || lv.contains(u"rhel"_s))
-        filename = u"distributor-logo-redhat.svg"_s;
+        filename = u"papirus-icons/distributor-logo-redhat.svg"_s;
     else if (lv.contains(u"opensuse"_s))
-        filename = u"distributor-logo-opensuse.svg"_s;
+        filename = u"papirus-icons/distributor-logo-opensuse.svg"_s;
     else if (lv.contains(u"manjaro"_s))
-        filename = u"distributor-logo-manjaro.svg"_s;
+        filename = u"papirus-icons/distributor-logo-manjaro.svg"_s;
     else if (lv.contains(u"linuxmint"_s) || lv.contains(u"mint"_s))
-        filename = u"distributor-logo-linuxmint.svg"_s;
+        filename = u"papirus-icons/distributor-logo-linuxmint.svg"_s;
     else if (lv.contains(u"nixos"_s))
-        filename = u"distributor-logo-nixos.svg"_s;
+        filename = u"papirus-icons/distributor-logo-nixos.svg"_s;
     else if (lv.contains(u"gentoo"_s))
-        filename = u"distributor-logo-gentoo.svg"_s;
+        filename = u"papirus-icons/distributor-logo-gentoo.svg"_s;
     else if (lv.contains(u"voidlinux"_s) || lv.contains(u"void"_s))
-        filename = u"distributor-logo-voidlinux.svg"_s;
+        filename = u"papirus-icons/distributor-logo-voidlinux.svg"_s;
     else if (lv.contains(u"centos"_s))
-        filename = u"distributor-logo-centos.svg"_s;
+        filename = u"papirus-icons/distributor-logo-centos.svg"_s;
     else if (lv.contains(u"deepin"_s))
-        filename = u"distributor-logo-deepin.svg"_s;
+        filename = u"papirus-icons/distributor-logo-deepin.svg"_s;
     else if (lv.contains(u"devuan"_s))
-        filename = u"distributor-logo-devuan.svg"_s;
+        filename = u"papirus-icons/distributor-logo-devuan.svg"_s;
     else if (lv.contains(u"windows"_s))
-        filename = u"distributor-logo-windows.svg"_s;
+        filename = u"papirus-icons/distributor-logo-windows.svg"_s;
     else if (lv.contains(u"msdos"_s) || lv.contains(u"ms-dos"_s))
-        filename = u"distributor-logo-ms-dos.svg"_s;
+        filename = u"papirus-icons/distributor-logo-ms-dos.svg"_s;
     else if (lv.contains(u"freedos"_s))
-        filename = u"distributor-logo-freedos.svg"_s;
+        filename = u"papirus-icons/distributor-logo-freedos.svg"_s;
     else if (lv.contains(u"freebsd"_s))
-        filename = u"distributor-logo-freebsd.svg"_s;
+        filename = u"papirus-icons/distributor-logo-freebsd.svg"_s;
     else if (lv.contains(u"openbsd"_s))
-        filename = u"distributor-logo-openbsd.svg"_s;
+        filename = u"papirus-icons/distributor-logo-openbsd.svg"_s;
     else if (lv.contains(u"netbsd"_s))
-        filename = u"distributor-logo-netbsd.svg"_s;
+        filename = u"papirus-icons/distributor-logo-netbsd.svg"_s;
     else if (lv.contains(u"midnightbsd"_s))
-        filename = u"distributor-logo-midnightbsd.svg"_s;
+        filename = u"papirus-icons/distributor-logo-midnightbsd.svg"_s;
 
     if (filename.isEmpty())
         return defaultIconForType(type);

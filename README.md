@@ -68,14 +68,14 @@ Optional:
 sudo pacman -S swtpm virtiofsd dnsmasq virt-viewer dbus
 ```
 
-### Debian 13+ / Ubuntu 24.04+
+### Debian 13+ / (K)Ubuntu 26.04+
 
 ```bash
 sudo apt install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-multimedia-dev \
-  libkf6config-dev libkf6coreaddons-dev libkf6i18n-dev libkf6kio-dev libkf6crash-dev \
-  libkf6xmlgui-dev libkf6widgetsaddons-dev libkf6iconthemes-dev libkf6texttemplate-dev \
-  qemu-system extra-cmake-modules libegl1-mesa-dev libarchive-dev passt libmnl-dev \
-  libnftnl-dev libudev-dev build-essential cmake
+  libkf6config-dev libkf6coreaddons-dev libkf6i18n-dev libkf6kio-dev \
+  libkf6crash-dev libkf6xmlgui-dev libkf6widgetsaddons-dev libkf6iconthemes-dev \
+  libkf6texttemplate-dev qemu-system extra-cmake-modules libegl1-mesa-dev \
+  libarchive-dev passt libmnl-dev libnftnl-dev libudev-dev build-essential cmake
 ```
 
 Optional:
@@ -87,10 +87,12 @@ sudo apt install ovmf swtpm virtiofsd dnsmasq virt-viewer dbus-daemon
 ### Fedora 40+
 
 ```bash
-sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel extra-cmake-modules \
-  kf6-kconfig-devel kf6-kcoreaddons-devel kf6-ki18n-devel kf6-kxmlgui-devel \
-  kf6-kwidgetsaddons-devel kf6-kiconthemes-devel qemu-system-x86 libarchive-devel \
-  passt libmnl-devel libnftnl-devel systemd-devel gcc-c++ cmake
+sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
+  qt6-qtmultimedia-devel kf6-kconfig-devel kf6-kcoreaddons-devel kf6-ki18n-devel \
+  kf6-kio-devel kf6-kcrash-devel kf6-kxmlgui-devel kf6-kwidgetsaddons-devel \
+  kf6-kiconthemes-devel kf6-ktexttemplate-devel extra-cmake-modules \
+  qemu-system-x86 mesa-libEGL-devel libarchive-devel passt \
+  libmnl-devel libnftnl-devel systemd-devel gcc-c++ make cmake
 ```
 
 Optional:
@@ -119,7 +121,7 @@ cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=~/.local -B build/
 cmake --build build/ --target install
 ```
 
-Note: Ensure ~/.local/bin is in your system's `$PATH`. You can then simply run kemu from anywhere.
+Note: Ensure ~/.local/bin is in your system's `$PATH`.
 
 ### System-wide Installation
 

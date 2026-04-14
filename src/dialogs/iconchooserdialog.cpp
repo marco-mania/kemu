@@ -30,10 +30,10 @@ IconChooserDialog::IconChooserDialog(QWidget* parent)
         QDirIterator it(dir, { u"*.svg"_s }, QDir::Files, QDirIterator::Subdirectories);
 
         while (it.hasNext()) {
-            QString path = it.next();
-            QFileInfo info = it.fileInfo();
+            const QString path = it.next();
+            const QFileInfo info = it.fileInfo();
 
-            QString label = info.completeBaseName();
+            const QString label = info.completeBaseName();
 
             auto* item = new QListWidgetItem(QIcon(path), label);
             item->setData(Qt::UserRole, path);
