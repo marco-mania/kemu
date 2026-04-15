@@ -10,10 +10,10 @@
 #include <QStandardItem>
 #include <QTreeView>
 
-#include "models/vmmodel.h"
-#include "vmitemdelegate.h"
+#include "models/virtualenvironmentmodel.h"
+#include "widgets/virtualenvironmentitemdelegate.h"
 
-class VMTreeView : public QTreeView {
+class VirtualEnvironmentTreeView : public QTreeView {
 
     Q_OBJECT
 
@@ -23,7 +23,7 @@ public:
 Q_SIGNALS:
     void itemDropped();
     void mediaIconClicked(const QString& vmName,
-        VMItemDelegate::MediaType mediaType,
+        VirtualEnvironmentItemDelegate::MediaType mediaType,
         const QPoint& globalPos);
 
 protected:
@@ -39,10 +39,10 @@ protected:
         if (event->button() == Qt::RightButton) {
             QModelIndex index = indexAt(event->pos());
             if (index.isValid()) {
-                int itemType = index.data(VmModel::ItemTypeRole).toInt();
-                if (itemType == VmModel::Vm) {
-                    const bool hasCd = index.data(VmModel::MediaCdRole).toBool();
-                    const bool hasFloppy = index.data(VmModel::MediaFloppyRole).toBool();
+                int itemType = index.data(VirtualEnvironmentModel::ItemTypeRole).toInt();
+                if (itemType == VirtualEnvironmentModel::Vm) {
+                    const bool hasCd = index.data(VirtualEnvironmentModel::MediaCdRole).toBool();
+                    const bool hasFloppy = index.data(VirtualEnvironmentModel::MediaFloppyRole).toBool();
 
                     if (hasCd || hasFloppy) {
                         QStyleOptionViewItem opt;
@@ -51,11 +51,11 @@ protected:
                         opt.decorationSize = iconSize();
                         opt.font = font();
 
-                        QString vmName = index.data(VmModel::VmNameRole).toString();
+                        QString vmName = index.data(VirtualEnvironmentModel::VmNameRole).toString();
 
-                        auto checkIcon = [&](VMItemDelegate::MediaType type) {
-                            bool hasOther = (type == VMItemDelegate::MediaType::Cd) ? hasFloppy : false;
-                            QRect r = VMItemDelegate::mediaIconRect(opt, type, hasOther);
+                        auto checkIcon = [&](VirtualEnvironmentItemDelegate::MediaType type) {
+                            bool hasOther = (type == VirtualEnvironmentItemDelegate::MediaType::Cd) ? hasFloppy : false;
+                            QRect r = VirtualEnvironmentItemDelegate::mediaIconRect(opt, type, hasOther);
                             if (r.contains(event->pos())) {
                                 Q_EMIT mediaIconClicked(vmName, type,
                                     event->globalPosition().toPoint());
@@ -65,9 +65,9 @@ protected:
                             return false;
                         };
 
-                        if (hasFloppy && checkIcon(VMItemDelegate::MediaType::Floppy))
+                        if (hasFloppy && checkIcon(VirtualEnvironmentItemDelegate::MediaType::Floppy))
                             return;
-                        if (hasCd && checkIcon(VMItemDelegate::MediaType::Cd))
+                        if (hasCd && checkIcon(VirtualEnvironmentItemDelegate::MediaType::Cd))
                             return;
                     }
                 }

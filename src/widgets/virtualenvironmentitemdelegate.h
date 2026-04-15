@@ -12,7 +12,7 @@
 
 using namespace Qt::StringLiterals;
 
-class VMItemDelegate : public QStyledItemDelegate {
+class VirtualEnvironmentItemDelegate : public QStyledItemDelegate {
 
     Q_OBJECT
 

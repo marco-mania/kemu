@@ -41,26 +41,26 @@ MainWindow::MainWindow(QWidget* parent)
     loadVmList();
 
     // Preselect first VM
-    if (vmModel->rowCount() > 0) {
-        QModelIndex firstIndex = vmModel->index(0, 0);
+    if (veModel->rowCount() > 0) {
+        QModelIndex firstIndex = veModel->index(0, 0);
 
-        if (vmModel->hasChildren(firstIndex) && vmModel->data(firstIndex, VmModel::ItemTypeRole).toInt() == VmModel::Folder) {
+        if (veModel->hasChildren(firstIndex) && veModel->data(firstIndex, VirtualEnvironmentModel::ItemTypeRole).toInt() == VirtualEnvironmentModel::Folder) {
 
-            if (vmTreeView->isExpanded(firstIndex)) {
-                QModelIndex firstChild = vmModel->index(0, 0, firstIndex);
+            if (veTreeView->isExpanded(firstIndex)) {
+                QModelIndex firstChild = veModel->index(0, 0, firstIndex);
                 if (firstChild.isValid())
                     firstIndex = firstChild;
             }
         }
 
-        vmTreeView->setCurrentIndex(firstIndex);
+        veTreeView->setCurrentIndex(firstIndex);
     }
 
     updateActionStates();
 
     // coming from setupUi()
-    connect(vmTreeView, &VMTreeView::expanded, this, [this]() { saveFolderStructure(); });
-    connect(vmTreeView, &VMTreeView::collapsed, this, [this]() { saveFolderStructure(); });
+    connect(veTreeView, &VirtualEnvironmentTreeView::expanded, this, [this]() { saveFolderStructure(); });
+    connect(veTreeView, &VirtualEnvironmentTreeView::collapsed, this, [this]() { saveFolderStructure(); });
 
     ExternalTools::instance().refresh();
 
@@ -106,8 +106,8 @@ MainWindow::~MainWindow()
     }
     activeImports.clear();
 
-    for (const QString& name : vmModel->vmNames()) {
-        VmEntry* e = vmModel->entryByName(name);
+    for (const QString& name : veModel->vmNames()) {
+        VmEntry* e = veModel->entryByName(name);
         if (!e)
             continue;
 
@@ -177,8 +177,8 @@ MainWindow::~MainWindow()
 bool MainWindow::queryClose()
 {
     bool hasShrinking = false, hasRunning = false;
-    for (const QString& name : vmModel->vmNames()) {
-        const VmEntry* e = vmModel->entryByName(name);
+    for (const QString& name : veModel->vmNames()) {
+        const VmEntry* e = veModel->entryByName(name);
         if (!e)
             continue;
         if (e->state == VmEntry::State::Shrinking)
@@ -261,38 +261,38 @@ void MainWindow::setupUi()
     leftHeaderLayout->addWidget(addVmButton);
 
     // --- VM-Tree ---
-    vmModel = new VmModel(&m_imageDatabase, this);
+    veModel = new VirtualEnvironmentModel(&m_imageDatabase, this);
 
-    vmTreeView = new VMTreeView();
-    vmTreeView->setModel(vmModel);
-    vmTreeView->setHeaderHidden(true);
-    vmTreeView->setRootIsDecorated(true);
-    vmTreeView->setIconSize(QSize(32, 32));
-    vmTreeView->setItemDelegate(new VMItemDelegate(vmTreeView));
-    vmTreeView->setAlternatingRowColors(true);
-    vmTreeView->setMinimumWidth(220);
-    vmTreeView->setContextMenuPolicy(Qt::CustomContextMenu);
-    vmTreeView->setSelectionMode(QAbstractItemView::SingleSelection);
-    vmTreeView->setAnimated(true);
-    vmTreeView->setIndentation(16);
+    veTreeView = new VirtualEnvironmentTreeView();
+    veTreeView->setModel(veModel);
+    veTreeView->setHeaderHidden(true);
+    veTreeView->setRootIsDecorated(true);
+    veTreeView->setIconSize(QSize(32, 32));
+    veTreeView->setItemDelegate(new VirtualEnvironmentItemDelegate(veTreeView));
+    veTreeView->setAlternatingRowColors(true);
+    veTreeView->setMinimumWidth(220);
+    veTreeView->setContextMenuPolicy(Qt::CustomContextMenu);
+    veTreeView->setSelectionMode(QAbstractItemView::SingleSelection);
+    veTreeView->setAnimated(true);
+    veTreeView->setIndentation(16);
 
     // Drag & Drop
-    vmTreeView->setDragEnabled(true);
-    vmTreeView->setAcceptDrops(true);
-    vmTreeView->setDropIndicatorShown(true);
-    vmTreeView->setDragDropMode(QAbstractItemView::DragDrop);
-    vmTreeView->setDefaultDropAction(Qt::MoveAction);
+    veTreeView->setDragEnabled(true);
+    veTreeView->setAcceptDrops(true);
+    veTreeView->setDropIndicatorShown(true);
+    veTreeView->setDragDropMode(QAbstractItemView::DragDrop);
+    veTreeView->setDefaultDropAction(Qt::MoveAction);
 
-    connect(vmTreeView->selectionModel(), &QItemSelectionModel::currentChanged, this, &MainWindow::onTreeSelectionChanged);
-    connect(vmTreeView, &VMTreeView::doubleClicked, this, &MainWindow::onTreeDoubleClicked);
-    connect(vmTreeView, &VMTreeView::customContextMenuRequested, this, &MainWindow::showContextMenu);
-    connect(vmTreeView, &VMTreeView::itemDropped, this, &MainWindow::onDropCompleted);
+    connect(veTreeView->selectionModel(), &QItemSelectionModel::currentChanged, this, &MainWindow::onTreeSelectionChanged);
+    connect(veTreeView, &VirtualEnvironmentTreeView::doubleClicked, this, &MainWindow::onTreeDoubleClicked);
+    connect(veTreeView, &VirtualEnvironmentTreeView::customContextMenuRequested, this, &MainWindow::showContextMenu);
+    connect(veTreeView, &VirtualEnvironmentTreeView::itemDropped, this, &MainWindow::onDropCompleted);
 
-    connect(vmTreeView, &VMTreeView::mediaIconClicked, this, [this](const QString& vmName, VMItemDelegate::MediaType type, const QPoint& pos) {
+    connect(veTreeView, &VirtualEnvironmentTreeView::mediaIconClicked, this, [this](const QString& vmName, VirtualEnvironmentItemDelegate::MediaType type, const QPoint& pos) {
         selectVmByName(vmName);
 
         QMenu menu(this);
-        if (type == VMItemDelegate::MediaType::Cd) {
+        if (type == VirtualEnvironmentItemDelegate::MediaType::Cd) {
             menu.addAction(actionCollection()->action(u"vm_change_iso"_s));
             menu.addAction(actionCollection()->action(u"vm_eject_iso"_s));
         } else {
@@ -303,7 +303,7 @@ void MainWindow::setupUi()
     });
 
     leftLayout->addLayout(leftHeaderLayout);
-    leftLayout->addWidget(vmTreeView);
+    leftLayout->addWidget(veTreeView);
 
     // --- RIGHT ---
     auto* rightContainer = new QWidget(splitter);
@@ -379,7 +379,7 @@ bool MainWindow::startSwtpm(const QString& vmName)
     }
 
     if (Utils::waitForSocket(sockPath, 5000)) {
-        vmModel->setSwtpmProcess(vmName, process);
+        veModel->setSwtpmProcess(vmName, process);
         return true;
     }
 
@@ -418,7 +418,7 @@ bool MainWindow::startVirtiofsd(const QString& vmName)
     }
 
     if (Utils::waitForSocket(sockPath, 5000)) {
-        vmModel->setVirtiofsdProcess(vmName, process);
+        veModel->setVirtiofsdProcess(vmName, process);
         return true;
     }
 
@@ -474,7 +474,7 @@ bool MainWindow::startPasst(const QString& vmName, const QList<PortForwardRule>&
     }
 
     if (Utils::waitForSocket(sockPath, 5000)) {
-        vmModel->setPasstProcess(vmName, process);
+        veModel->setPasstProcess(vmName, process);
         return true;
     }
 
@@ -523,7 +523,7 @@ bool MainWindow::startSpiceViewer(const QString& vmName)
 
     connect(viewer, &QProcess::finished, viewer, [this, vmName, viewer, vvFile]() {
         QFile::remove(vvFile);
-        VmEntry* entry = vmModel->entryByName(vmName);
+        VmEntry* entry = veModel->entryByName(vmName);
         if (entry && entry->spiceViewerProcess == viewer)
             entry->spiceViewerProcess = nullptr;
         viewer->deleteLater();
@@ -543,7 +543,7 @@ bool MainWindow::startSpiceViewer(const QString& vmName)
         }
 
         // SwitchToHeadless (default)
-        vmModel->setHeadless(vmName, true);
+        veModel->setHeadless(vmName, true);
         statusBar()->showMessage(
             i18n("SPICE viewer closed — '%1' continues headless.", vmName));
 
@@ -564,7 +564,7 @@ bool MainWindow::startSpiceViewer(const QString& vmName)
         return false;
     }
 
-    vmModel->setSpiceViewerProcess(vmName, viewer);
+    veModel->setSpiceViewerProcess(vmName, viewer);
     return true;
 }
 
@@ -573,7 +573,7 @@ bool MainWindow::startDbusDaemon(const QString& vmName)
     if (!requireTool(ExternalTools::DbusDaemon))
         return false;
 
-    VmEntry* entry = vmModel->entryByName(vmName);
+    VmEntry* entry = veModel->entryByName(vmName);
     if (!entry)
         return false;
 
@@ -639,7 +639,7 @@ bool MainWindow::startDbusDaemon(const QString& vmName)
         return false;
     }
 
-    vmModel->setDBusDaemonProcess(vmName, daemon);
+    veModel->setDBusDaemonProcess(vmName, daemon);
     return true;
 }
 
@@ -816,9 +816,9 @@ bool MainWindow::startDbusViewer(const QString& vmName)
     // switch the VM to headless instead of killing it.
     connect(state.window, &QObject::destroyed, this,
         [this, vmName](QObject*) {
-            VmEntry* entry = vmModel->entryByName(vmName);
+            VmEntry* entry = veModel->entryByName(vmName);
             if (entry && entry->state == VmEntry::State::Running)
-                vmModel->setHeadless(vmName, true);
+                veModel->setHeadless(vmName, true);
             if (selectedVmName() == vmName) {
                 updateDetails();
                 updateActionStates();
@@ -1023,7 +1023,7 @@ void MainWindow::updateActionStates()
     const QString name = selectedVmName();
     const bool hasSelection = !name.isEmpty();
 
-    const VmEntry* entry = hasSelection ? vmModel->entryByName(name) : nullptr;
+    const VmEntry* entry = hasSelection ? veModel->entryByName(name) : nullptr;
     const bool isRunning = entry && entry->state == VmEntry::State::Running;
     const bool isDeploying = entry && entry->state == VmEntry::State::Deploying;
     const bool isBusy = entry && entry->state != VmEntry::State::Stopped;
@@ -1129,7 +1129,7 @@ void MainWindow::updateDetails()
         return;
     }
 
-    const VmEntry* entry = vmModel->entryByName(currentConfig.name());
+    const VmEntry* entry = veModel->entryByName(currentConfig.name());
     const bool isRunning = entry && entry->state == VmEntry::State::Running;
     const bool isHeadless = entry && entry->isHeadless;
     const bool isShrinking = entry && entry->state == VmEntry::State::Shrinking;
@@ -1457,7 +1457,7 @@ void MainWindow::onVmSelectionChanged()
     updateActionStates();
 
     if (perfMonitor) {
-        const VmEntry* entry = vmModel->entryByName(name);
+        const VmEntry* entry = veModel->entryByName(name);
         if (entry && entry->state == VmEntry::State::Running) {
             perfMonitor->setHistory(PerformanceMonitorWidget::Cpu, entry->cpuHistory);
             perfMonitor->setHistory(PerformanceMonitorWidget::Ram, entry->ramHistory);
@@ -1559,13 +1559,13 @@ void MainWindow::loadVmList()
 {
     const QMap<QString, QString> assignments = loadFolderAssignments();
 
-    vmModel->reload(getVmBaseDir(), assignments,
+    veModel->reload(getVmBaseDir(), assignments,
         [this](const QString& vmPath) {
             return loadVmConfig(vmPath);
         });
 
     QStringList macs = usedMacAddresses();
-    for (const QString& name : vmModel->vmNames()) {
+    for (const QString& name : veModel->vmNames()) {
         const QString vmPath = getVmDir(name).absolutePath();
         VMConfig cfg = loadVmConfig(vmPath);
         if (cfg.networkCard() != VMSpecs::NetworkCard::None && cfg.macAddress().isEmpty()) {
@@ -1578,13 +1578,13 @@ void MainWindow::loadVmList()
     KConfig kconfig(u"kemurc"_s);
     const QStringList collapsed = kconfig.group(u"Folders"_s).readEntry(u"collapsed"_s, QStringList());
 
-    for (const QString& folder : vmModel->folderNames()) {
-        QModelIndex idx = vmModel->indexForFolder(folder);
+    for (const QString& folder : veModel->folderNames()) {
+        QModelIndex idx = veModel->indexForFolder(folder);
         if (idx.isValid() && !collapsed.contains(folder))
-            vmTreeView->expand(idx);
+            veTreeView->expand(idx);
     }
 
-    statusBar()->showMessage(i18n("%1 virtual machine(s) found.", vmModel->vmNames().size()));
+    statusBar()->showMessage(i18n("%1 virtual machine(s) found.", veModel->vmNames().size()));
 }
 
 DiskInfo MainWindow::getDiskInfo(const QString& diskPath)
@@ -1675,8 +1675,8 @@ void MainWindow::changeISO()
 
     m_lastMediaDir[currentConfig.name()] = QFileInfo(isoPath).absolutePath();
 
-    if (vmModel->isRunning(currentConfig.name())) {
-        const VmEntry* entry = vmModel->entryByName(currentConfig.name());
+    if (veModel->isRunning(currentConfig.name())) {
+        const VmEntry* entry = veModel->entryByName(currentConfig.name());
         if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
             KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
             return;
@@ -1697,7 +1697,7 @@ void MainWindow::changeISO()
 
     m_lastMediaDir[currentConfig.name()] = QFileInfo(isoPath).absolutePath();
     currentConfig.setISOPath(isoPath);
-    vmModel->updateConfig(currentConfig.name(), currentConfig);
+    veModel->updateConfig(currentConfig.name(), currentConfig);
     saveVmConfig(getVmDir(currentConfig.name()).absolutePath(), currentConfig);
     updateActionStates();
     updateDetails();
@@ -1708,8 +1708,8 @@ void MainWindow::ejectISO()
     if (currentConfig.name().isEmpty())
         return;
 
-    if (vmModel->isRunning(currentConfig.name())) {
-        const VmEntry* entry = vmModel->entryByName(currentConfig.name());
+    if (veModel->isRunning(currentConfig.name())) {
+        const VmEntry* entry = veModel->entryByName(currentConfig.name());
         if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
             KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
             return;
@@ -1728,7 +1728,7 @@ void MainWindow::ejectISO()
 
     currentConfig.clearISOPath();
     currentConfig.setBootFromIso(false);
-    vmModel->updateConfig(currentConfig.name(), currentConfig);
+    veModel->updateConfig(currentConfig.name(), currentConfig);
     saveVmConfig(getVmDir(currentConfig.name()).absolutePath(), currentConfig);
     updateActionStates();
     updateDetails();
@@ -1746,8 +1746,8 @@ void MainWindow::changeFloppy()
 
     m_lastMediaDir[currentConfig.name()] = QFileInfo(imagePath).absolutePath();
 
-    if (vmModel->isRunning(currentConfig.name())) {
-        const VmEntry* entry = vmModel->entryByName(currentConfig.name());
+    if (veModel->isRunning(currentConfig.name())) {
+        const VmEntry* entry = veModel->entryByName(currentConfig.name());
         if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
             KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
             return;
@@ -1769,7 +1769,7 @@ void MainWindow::changeFloppy()
     m_lastMediaDir[currentConfig.name()] = QFileInfo(imagePath).absolutePath();
     currentConfig.setFloppyPath(imagePath);
     currentConfig.setBootFromFloppy(false);
-    vmModel->updateConfig(currentConfig.name(), currentConfig);
+    veModel->updateConfig(currentConfig.name(), currentConfig);
     saveVmConfig(getVmDir(currentConfig.name()).absolutePath(), currentConfig);
     updateActionStates();
     updateDetails();
@@ -1780,8 +1780,8 @@ void MainWindow::ejectFloppy()
     if (currentConfig.name().isEmpty())
         return;
 
-    if (vmModel->isRunning(currentConfig.name())) {
-        const VmEntry* entry = vmModel->entryByName(currentConfig.name());
+    if (veModel->isRunning(currentConfig.name())) {
+        const VmEntry* entry = veModel->entryByName(currentConfig.name());
         if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
             KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
             return;
@@ -1799,7 +1799,7 @@ void MainWindow::ejectFloppy()
     }
 
     currentConfig.clearFloppyPath();
-    vmModel->updateConfig(currentConfig.name(), currentConfig);
+    veModel->updateConfig(currentConfig.name(), currentConfig);
     saveVmConfig(getVmDir(currentConfig.name()).absolutePath(), currentConfig);
     updateActionStates();
     updateDetails();
@@ -1810,7 +1810,7 @@ void MainWindow::shrinkDisk()
     if (currentConfig.name().isEmpty())
         return;
 
-    if (vmModel->isBusy(currentConfig.name()))
+    if (veModel->isBusy(currentConfig.name()))
         return;
 
     DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
@@ -1840,7 +1840,7 @@ void MainWindow::shrinkDisk()
         jobTracker->registerJob(job);
     }
 
-    vmModel->setVmState(currentConfig.name(), VmEntry::State::Shrinking);
+    veModel->setVmState(currentConfig.name(), VmEntry::State::Shrinking);
 
     connect(job, &ShrinkJob::finished, this, [this](KJob* kjob) {
         auto* shrinkJob = qobject_cast<ShrinkJob*>(kjob);
@@ -1848,7 +1848,7 @@ void MainWindow::shrinkDisk()
             return;
 
         QString vmName = shrinkJob->vmName();
-        vmModel->setVmState(vmName, VmEntry::State::Stopped);
+        veModel->setVmState(vmName, VmEntry::State::Stopped);
 
         if (shrinkJob->error()) {
             statusBar()->showMessage(i18n("Disk compaction of VM '%1' failed: %2", vmName, shrinkJob->errorText()));
@@ -1892,7 +1892,7 @@ void MainWindow::manageSnapshots()
         return;
     }
 
-    const VmEntry* entry = vmModel->entryByName(vmName);
+    const VmEntry* entry = veModel->entryByName(vmName);
     QPointer<QMPClient> qmp = entry ? entry->qmpClient : nullptr;
 
     auto* dlg = new SnapshotDialog(vmName, cfg.diskPath(), qmp, this);
@@ -1905,7 +1905,7 @@ void MainWindow::exportVM()
     if (currentConfig.name().isEmpty())
         return;
 
-    if (vmModel->isBusy(currentConfig.name())) {
+    if (veModel->isBusy(currentConfig.name())) {
         KMessageBox::error(this, i18n("The VM '%1' is currently busy. Please wait.", currentConfig.name()), i18n("Busy"));
         return;
     }
@@ -1936,7 +1936,7 @@ void MainWindow::exportVM()
         if (jobTracker) {
             jobTracker->registerJob(job);
         }
-        vmModel->setVmState(currentConfig.name(), VmEntry::State::Exporting);
+        veModel->setVmState(currentConfig.name(), VmEntry::State::Exporting);
 
         connect(job, &ExportJob::finished, this, [this](KJob* kjob) {
             auto* exportJob = qobject_cast<ExportJob*>(kjob);
@@ -1944,7 +1944,7 @@ void MainWindow::exportVM()
                 return;
 
             QString vmName = exportJob->vmName();
-            vmModel->setVmState(vmName, VmEntry::State::Stopped);
+            veModel->setVmState(vmName, VmEntry::State::Stopped);
 
             if (exportJob->error()) {
                 statusBar()->showMessage(
@@ -2030,7 +2030,7 @@ void MainWindow::importVM()
 void MainWindow::saveScreenshot()
 {
     const QString vmName = currentConfig.name();
-    if (vmName.isEmpty() || !vmModel->isRunning(vmName))
+    if (vmName.isEmpty() || !veModel->isRunning(vmName))
         return;
 
     if (!vmSupportsScreendump()) {
@@ -2044,7 +2044,7 @@ void MainWindow::saveScreenshot()
         return;
     }
 
-    const VmEntry* entry = vmModel->entryByName(vmName);
+    const VmEntry* entry = veModel->entryByName(vmName);
     if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
         KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
         return;
@@ -2157,7 +2157,7 @@ void MainWindow::reconnectViewer()
     if (vmName.isEmpty())
         return;
 
-    VmEntry* entry = vmModel->entryByName(vmName);
+    VmEntry* entry = veModel->entryByName(vmName);
     if (!entry || entry->state != VmEntry::State::Running)
         return;
 
@@ -2167,7 +2167,7 @@ void MainWindow::reconnectViewer()
             return;
         }
         if (startSpiceViewer(vmName)) {
-            vmModel->setHeadless(vmName, false);
+            veModel->setHeadless(vmName, false);
             statusBar()->showMessage(i18n("Viewer reconnected to '%1'.", vmName));
             updateDetails();
             updateActionStates();
@@ -2181,7 +2181,7 @@ void MainWindow::reconnectViewer()
             return;
         }
         if (startDbusViewer(vmName)) {
-            vmModel->setHeadless(vmName, false);
+            veModel->setHeadless(vmName, false);
             statusBar()->showMessage(i18n("Viewer reconnected to '%1'.", vmName));
             updateDetails();
             updateActionStates();
@@ -2197,13 +2197,13 @@ void MainWindow::onTreeSelectionChanged()
 
 void MainWindow::onTreeDoubleClicked(const QModelIndex& index)
 {
-    const int itemType = index.data(VmModel::ItemTypeRole).toInt();
+    const int itemType = index.data(VirtualEnvironmentModel::ItemTypeRole).toInt();
 
-    if (itemType == VmModel::Folder) {
-        vmTreeView->setExpanded(index, !vmTreeView->isExpanded(index));
+    if (itemType == VirtualEnvironmentModel::Folder) {
+        veTreeView->setExpanded(index, !veTreeView->isExpanded(index));
     } else {
-        const QString vmName = index.data(VmModel::VmNameRole).toString();
-        const VmEntry* entry = vmModel->entryByName(vmName);
+        const QString vmName = index.data(VirtualEnvironmentModel::VmNameRole).toString();
+        const VmEntry* entry = veModel->entryByName(vmName);
 
         const bool spiceReconnect = entry
             && entry->state == VmEntry::State::Running
@@ -2232,26 +2232,26 @@ void MainWindow::onDropCompleted()
 
 void MainWindow::showContextMenu(const QPoint& pos)
 {
-    QModelIndex idx = vmTreeView->indexAt(pos);
+    QModelIndex idx = veTreeView->indexAt(pos);
     QMenu contextMenu(this);
 
     if (idx.isValid()) {
-        int itemType = idx.data(VmModel::ItemTypeRole).toInt();
+        int itemType = idx.data(VirtualEnvironmentModel::ItemTypeRole).toInt();
 
-        if (itemType == VmModel::Folder) {
+        if (itemType == VirtualEnvironmentModel::Folder) {
             auto* renameAction = contextMenu.addAction(QIcon::fromTheme(u"edit-rename"_s), i18n("Rename Folder"));
             connect(renameAction, &QAction::triggered, this, &MainWindow::renameFolder);
 
             auto* deleteAction = contextMenu.addAction(QIcon::fromTheme(u"edit-delete"_s), i18n("Delete Folder"));
             connect(deleteAction, &QAction::triggered, this, &MainWindow::deleteFolder);
-            deleteAction->setEnabled(vmModel->rowCount(idx) == 0);
+            deleteAction->setEnabled(veModel->rowCount(idx) == 0);
 
             contextMenu.addSeparator();
             contextMenu.addAction(actionCollection()->action(u"vm_new"_s));
 
         } else {
-            const QString vmName = idx.data(VmModel::VmNameRole).toString();
-            const VmEntry* entry = vmModel->entryByName(vmName);
+            const QString vmName = idx.data(VirtualEnvironmentModel::VmNameRole).toString();
+            const VmEntry* entry = veModel->entryByName(vmName);
             bool isRunning = entry && entry->state == VmEntry::State::Running;
             bool isDeploying = entry && entry->state == VmEntry::State::Deploying;
             bool isShrinking = entry && entry->state == VmEntry::State::Shrinking;
@@ -2315,7 +2315,7 @@ void MainWindow::showContextMenu(const QPoint& pos)
         contextMenu.addAction(actionCollection()->action(u"vm_import"_s));
     }
 
-    contextMenu.exec(vmTreeView->viewport()->mapToGlobal(pos));
+    contextMenu.exec(veTreeView->viewport()->mapToGlobal(pos));
 }
 
 void MainWindow::showCommand()
@@ -2381,7 +2381,7 @@ void MainWindow::startVM(bool headless)
     if (vmName.isEmpty())
         return;
 
-    if (vmModel->isBusy(vmName)) {
+    if (veModel->isBusy(vmName)) {
         KMessageBox::error(this, i18n("The VM '%1' is currently busy.", vmName), i18n("Busy"));
         return;
     }
@@ -2495,9 +2495,9 @@ void MainWindow::startVM(bool headless)
     process->start();
 
     if (process->waitForStarted()) {
-        vmModel->setHeadless(vmName, headless);
-        vmModel->setQemuProcess(vmName, process);
-        vmModel->setVmState(vmName, VmEntry::State::Running);
+        veModel->setHeadless(vmName, headless);
+        veModel->setQemuProcess(vmName, process);
+        veModel->setVmState(vmName, VmEntry::State::Running);
         statusBar()->showMessage(i18n("VM '%1' started.", vmName));
         updateDetails();
         updateActionStates();
@@ -2521,7 +2521,7 @@ void MainWindow::startVM(bool headless)
     }
 
     QPointer<QMPClient> client = new QMPClient(this);
-    vmModel->setQmpClient(vmName, client);
+    veModel->setQmpClient(vmName, client);
     connect(client, &QMPClient::eventReceived, this,
         [this, vmName](const QString& eventName, const QJsonObject& data) {
             this->onQMPEvent(vmName, eventName, data);
@@ -2538,7 +2538,7 @@ void MainWindow::startVM(bool headless)
         client->sendCommand(u"qom-set"_s, balloonArgs);
 
         if (selectedVmName() == vmName && perfMonitor) {
-            const VmEntry* e = vmModel->entryByName(vmName);
+            const VmEntry* e = veModel->entryByName(vmName);
             if (e) {
                 perfMonitor->setHistory(PerformanceMonitorWidget::Cpu, e->cpuHistory);
                 perfMonitor->setHistory(PerformanceMonitorWidget::Ram, e->ramHistory);
@@ -2552,7 +2552,7 @@ void MainWindow::startVM(bool headless)
         [this, vmName](const VmCpuUsage& usage) {
             if (!usage.isValid)
                 return;
-            vmModel->appendPerfSample(vmName, 0, usage.averagePercent);
+            veModel->appendPerfSample(vmName, 0, usage.averagePercent);
             if (selectedVmName() == vmName && perfMonitor)
                 perfMonitor->addSample(PerformanceMonitorWidget::Cpu,
                     usage.averagePercent);
@@ -2562,7 +2562,7 @@ void MainWindow::startVM(bool headless)
         [this, vmName](const VmMemoryUsage& usage) {
             if (!usage.isValid)
                 return;
-            vmModel->appendPerfSample(vmName, 1, usage.usagePercent);
+            veModel->appendPerfSample(vmName, 1, usage.usagePercent);
             if (selectedVmName() == vmName && perfMonitor)
                 perfMonitor->addSample(PerformanceMonitorWidget::Ram,
                     usage.usagePercent);
@@ -2572,7 +2572,7 @@ void MainWindow::startVM(bool headless)
         [this, vmName](const VmBlockStats& stats) {
             if (!stats.isValid)
                 return;
-            VmEntry* e = vmModel->entryByName(vmName);
+            VmEntry* e = veModel->entryByName(vmName);
             if (!e)
                 return;
 
@@ -2583,7 +2583,7 @@ void MainWindow::startVM(bool headless)
                 ? (totalBps / e->ioPeakBytesPerSec * 100.0)
                 : 0.0;
 
-            vmModel->appendPerfSample(vmName, 2, pct);
+            veModel->appendPerfSample(vmName, 2, pct);
             if (selectedVmName() == vmName && perfMonitor)
                 perfMonitor->addSample(PerformanceMonitorWidget::Io, pct);
         });
@@ -2602,13 +2602,13 @@ void MainWindow::startVMHeadless()
 
 void MainWindow::shutdownVM()
 {
-    if (!vmModel->isRunning(currentConfig.name())
-        && !(vmModel->entryByName(currentConfig.name())
-            && vmModel->entryByName(currentConfig.name())->state == VmEntry::State::Deploying))
+    if (!veModel->isRunning(currentConfig.name())
+        && !(veModel->entryByName(currentConfig.name())
+            && veModel->entryByName(currentConfig.name())->state == VmEntry::State::Deploying))
         return;
 
     // Handle deployment shutdown
-    const VmEntry* deployEntry = vmModel->entryByName(currentConfig.name());
+    const VmEntry* deployEntry = veModel->entryByName(currentConfig.name());
     if (deployEntry && deployEntry->state == VmEntry::State::Deploying) {
         auto answer = KMessageBox::questionTwoActionsCancel(this,
             i18n("VM '%1' is currently being deployed.\n\n"
@@ -2627,7 +2627,7 @@ void MainWindow::shutdownVM()
         return;
     }
 
-    const VmEntry* entry = vmModel->entryByName(currentConfig.name());
+    const VmEntry* entry = veModel->entryByName(currentConfig.name());
     if (!entry)
         return;
     QPointer<QMPClient> client = entry->qmpClient;
@@ -2648,9 +2648,9 @@ void MainWindow::shutdownVM()
 
 void MainWindow::resetVM()
 {
-    if (!vmModel->isRunning(currentConfig.name()))
+    if (!veModel->isRunning(currentConfig.name()))
         return;
-    const VmEntry* entry = vmModel->entryByName(currentConfig.name());
+    const VmEntry* entry = veModel->entryByName(currentConfig.name());
     if (!entry)
         return;
     QPointer<QMPClient> client = entry->qmpClient;
@@ -2671,7 +2671,7 @@ void MainWindow::resetVM()
 
 void MainWindow::killVM()
 {
-    const VmEntry* killEntry = vmModel->entryByName(currentConfig.name());
+    const VmEntry* killEntry = veModel->entryByName(currentConfig.name());
     if (!killEntry || (killEntry->state != VmEntry::State::Running && killEntry->state != VmEntry::State::Deploying))
         return;
 
@@ -2694,7 +2694,7 @@ void MainWindow::killVM()
         return;
     }
 
-    const VmEntry* entry = vmModel->entryByName(currentConfig.name());
+    const VmEntry* entry = veModel->entryByName(currentConfig.name());
     if (!entry)
         return;
 
@@ -2753,8 +2753,8 @@ void MainWindow::onProcessFinished(int, KProcess::ExitStatus)
         return;
 
     QString vmName;
-    for (const QString& name : vmModel->vmNames()) {
-        const VmEntry* e = vmModel->entryByName(name);
+    for (const QString& name : veModel->vmNames()) {
+        const VmEntry* e = veModel->entryByName(name);
         if (e && e->qemuProcess == p) {
             vmName = name;
             break;
@@ -2766,7 +2766,7 @@ void MainWindow::onProcessFinished(int, KProcess::ExitStatus)
         return;
     }
 
-    VmEntry* entry = vmModel->entryByName(vmName);
+    VmEntry* entry = veModel->entryByName(vmName);
 
     // Deployment finalization
     if (entry->state == VmEntry::State::Deploying) {
@@ -2815,7 +2815,7 @@ void MainWindow::onProcessFinished(int, KProcess::ExitStatus)
 
         QFile::remove(monitorSocketPath(vmName));
         releaseNetwork(entry->config);
-        vmModel->clearRuntimeState(vmName);
+        veModel->clearRuntimeState(vmName);
 
         finalizeDeployment(vmName);
 
@@ -2874,7 +2874,7 @@ void MainWindow::onProcessFinished(int, KProcess::ExitStatus)
 
     QFile::remove(monitorSocketPath(vmName));
     releaseNetwork(entry->config);
-    vmModel->clearRuntimeState(vmName);
+    veModel->clearRuntimeState(vmName);
     statusBar()->showMessage(i18n("VM '%1' stopped.", vmName));
 
     if (selectedVmName() == vmName) {
@@ -2921,7 +2921,7 @@ void MainWindow::onUsbMenuAboutToShow()
     usbActionMenu->menu()->clear();
 
     QString vmName = selectedVmName();
-    VmEntry* entry = vmModel ? vmModel->entryByName(vmName) : nullptr;
+    VmEntry* entry = veModel ? veModel->entryByName(vmName) : nullptr;
 
     if (!entry || entry->state != VmEntry::State::Running || !entry->qmpClient) {
         auto* a = usbActionMenu->menu()->addAction(i18n("VM not running"));
@@ -2964,7 +2964,7 @@ void MainWindow::onUsbActionTriggered()
     QString qemuId = d[3].toString();
 
     QString vmName = selectedVmName();
-    VmEntry* entry = vmModel ? vmModel->entryByName(vmName) : nullptr;
+    VmEntry* entry = veModel ? veModel->entryByName(vmName) : nullptr;
     if (!entry || !entry->qmpClient)
         return;
 
@@ -3053,7 +3053,7 @@ void MainWindow::exportOVA(const QString& filePath)
     if (jobTracker) {
         jobTracker->registerJob(job);
     }
-    vmModel->setVmState(currentConfig.name(), VmEntry::State::Exporting);
+    veModel->setVmState(currentConfig.name(), VmEntry::State::Exporting);
 
     connect(job, &OvaExportJob::finished, this, [this](KJob* kjob) {
         auto* exportJob = qobject_cast<OvaExportJob*>(kjob);
@@ -3061,7 +3061,7 @@ void MainWindow::exportOVA(const QString& filePath)
             return;
 
         QString vmName = exportJob->vmName();
-        vmModel->setVmState(vmName, VmEntry::State::Stopped);
+        veModel->setVmState(vmName, VmEntry::State::Stopped);
 
         if (exportJob->error()) {
             statusBar()->showMessage(
@@ -3175,7 +3175,7 @@ void MainWindow::createNewVM()
         pd.cloudConfig = cloudCfg;
         m_pendingDeployments.insert(newConfig.name(), pd);
 
-        vmModel->setVmState(newConfig.name(), VmEntry::State::Deploying);
+        veModel->setVmState(newConfig.name(), VmEntry::State::Deploying);
         updateDetails();
         updateActionStates();
 
@@ -3225,7 +3225,7 @@ void MainWindow::createNewVM()
         pd.type = PendingDeployment::Type::ManualIso;
         m_pendingDeployments.insert(newConfig.name(), pd);
 
-        vmModel->setVmState(newConfig.name(), VmEntry::State::Deploying);
+        veModel->setVmState(newConfig.name(), VmEntry::State::Deploying);
         startDeployment(newConfig.name());
         return;
     }
@@ -3242,7 +3242,7 @@ void MainWindow::editVM()
 {
     if (currentConfig.name().isEmpty())
         return;
-    if (vmModel->isBusy(currentConfig.name())) {
+    if (veModel->isBusy(currentConfig.name())) {
         KMessageBox::error(this, i18n("Please stop the VM before editing."), i18n("Busy"));
         return;
     }
@@ -3316,7 +3316,7 @@ void MainWindow::deleteVM()
 {
     if (currentConfig.name().isEmpty())
         return;
-    if (vmModel->isBusy(currentConfig.name()))
+    if (veModel->isBusy(currentConfig.name()))
         return;
 
     auto answer = KMessageBox::questionTwoActions(
@@ -3341,7 +3341,7 @@ void MainWindow::cloneVM()
     if (srcName.isEmpty())
         return;
 
-    if (vmModel->isBusy(srcName)) {
+    if (veModel->isBusy(srcName)) {
         KMessageBox::error(this, i18n("The VM '%1' is currently busy.", srcName), i18n("Busy"));
         return;
     }
@@ -3376,7 +3376,7 @@ void MainWindow::cloneVM()
     if (jobTracker)
         jobTracker->registerJob(job);
 
-    vmModel->setVmState(srcName, VmEntry::State::Cloning);
+    veModel->setVmState(srcName, VmEntry::State::Cloning);
 
     connect(job, &CloneJob::finished, this,
         [this, srcName, cloneName, dstPath](KJob* kjob) {
@@ -3384,7 +3384,7 @@ void MainWindow::cloneVM()
             if (!cloneJob)
                 return;
 
-            vmModel->setVmState(srcName, VmEntry::State::Stopped);
+            veModel->setVmState(srcName, VmEntry::State::Stopped);
 
             if (cloneJob->error()) {
                 statusBar()->showMessage(i18n("Cloning of VM '%1' failed: %2", srcName, cloneJob->errorText()));
@@ -3465,17 +3465,17 @@ void MainWindow::createFolder()
     if (!ok || name.trimmed().isEmpty())
         return;
 
-    QModelIndex idx = vmModel->createFolder(name.trimmed());
+    QModelIndex idx = veModel->createFolder(name.trimmed());
     if (idx.isValid()) {
-        vmTreeView->expand(idx);
+        veTreeView->expand(idx);
         saveFolderStructure();
     }
 }
 
 void MainWindow::deleteFolder()
 {
-    QModelIndex idx = vmTreeView->currentIndex();
-    if (vmModel->removeFolder(idx))
+    QModelIndex idx = veTreeView->currentIndex();
+    if (veModel->removeFolder(idx))
         saveFolderStructure();
     else
         KMessageBox::error(this, i18n("The folder is not empty. Move all VMs out first."), i18n("Cannot Delete Folder"));
@@ -3483,46 +3483,46 @@ void MainWindow::deleteFolder()
 
 void MainWindow::renameFolder()
 {
-    QModelIndex idx = vmTreeView->currentIndex();
+    QModelIndex idx = veTreeView->currentIndex();
     if (!idx.isValid()
-        || idx.data(VmModel::ItemTypeRole).toInt() != VmModel::Folder)
+        || idx.data(VirtualEnvironmentModel::ItemTypeRole).toInt() != VirtualEnvironmentModel::Folder)
         return;
 
     bool ok = false;
     QString newName = QInputDialog::getText(this, i18n("Rename Folder"), i18n("New name:"), QLineEdit::Normal, idx.data(Qt::DisplayRole).toString(), &ok);
     if (ok && !newName.trimmed().isEmpty()) {
-        vmModel->renameFolder(idx, newName.trimmed());
+        veModel->renameFolder(idx, newName.trimmed());
         saveFolderStructure();
     }
 }
 
 void MainWindow::selectVmByName(const QString& vmName)
 {
-    const QModelIndex idx = vmModel->indexForVm(vmName);
+    const QModelIndex idx = veModel->indexForVm(vmName);
     if (!idx.isValid())
         return;
     const QModelIndex parentIdx = idx.parent();
     if (parentIdx.isValid())
-        vmTreeView->expand(parentIdx);
-    vmTreeView->setCurrentIndex(idx);
+        veTreeView->expand(parentIdx);
+    veTreeView->setCurrentIndex(idx);
 }
 
 QString MainWindow::selectedVmName() const
 {
-    const QModelIndex idx = vmTreeView->currentIndex();
+    const QModelIndex idx = veTreeView->currentIndex();
     if (!idx.isValid())
         return { };
-    if (idx.data(VmModel::ItemTypeRole).toInt() != VmModel::Vm)
+    if (idx.data(VirtualEnvironmentModel::ItemTypeRole).toInt() != VirtualEnvironmentModel::Vm)
         return { };
-    return idx.data(VmModel::VmNameRole).toString();
+    return idx.data(VirtualEnvironmentModel::VmNameRole).toString();
 }
 
 bool MainWindow::isCurrentItemFolder() const
 {
-    const QModelIndex idx = vmTreeView->currentIndex();
+    const QModelIndex idx = veTreeView->currentIndex();
     if (!idx.isValid())
         return false;
-    return idx.data(VmModel::ItemTypeRole).toInt() == VmModel::Folder;
+    return idx.data(VirtualEnvironmentModel::ItemTypeRole).toInt() == VirtualEnvironmentModel::Folder;
 }
 
 QMap<QString, QString> MainWindow::loadFolderAssignments() const
@@ -3547,14 +3547,14 @@ void MainWindow::saveFolderStructure() const
     for (const QString& key : grp.keyList())
         grp.deleteEntry(key);
 
-    const QMap<QString, QString> assignments = vmModel->folderAssignments();
+    const QMap<QString, QString> assignments = veModel->folderAssignments();
     for (auto it = assignments.cbegin(); it != assignments.cend(); ++it)
         grp.writeEntry(it.key(), it.value());
 
     QStringList collapsedFolders;
-    for (const QString& name : vmModel->folderNames()) {
-        QModelIndex idx = vmModel->indexForFolder(name);
-        if (idx.isValid() && !vmTreeView->isExpanded(idx))
+    for (const QString& name : veModel->folderNames()) {
+        QModelIndex idx = veModel->indexForFolder(name);
+        if (idx.isValid() && !veTreeView->isExpanded(idx))
             collapsedFolders << name;
     }
     grp.writeEntry(u"collapsed"_s, collapsedFolders);
@@ -3563,7 +3563,7 @@ void MainWindow::saveFolderStructure() const
 
 void MainWindow::startDeployment(const QString& vmName, const bool disable_headless)
 {
-    VmEntry* entry = vmModel->entryByName(vmName);
+    VmEntry* entry = veModel->entryByName(vmName);
     if (!entry || entry->state != VmEntry::State::Deploying)
         return;
 
@@ -3650,8 +3650,8 @@ void MainWindow::startDeployment(const QString& vmName, const bool disable_headl
         startSpiceViewer(vmName);
     }
 
-    vmModel->setHeadless(vmName, headless);
-    vmModel->setQemuProcess(vmName, process);
+    veModel->setHeadless(vmName, headless);
+    veModel->setQemuProcess(vmName, process);
     // State stays Deploying (not Running)
 
     statusBar()->showMessage(i18n("Deploying '%1' — unattended installation running…", vmName));
@@ -3660,7 +3660,7 @@ void MainWindow::startDeployment(const QString& vmName, const bool disable_headl
 
     // QMP connection for monitoring shutdown
     QPointer<QMPClient> client = new QMPClient(this);
-    vmModel->setQmpClient(vmName, client);
+    veModel->setQmpClient(vmName, client);
 
     connect(client, &QMPClient::eventReceived, this,
         [this, vmName](const QString& eventName, const QJsonObject& data) {
@@ -3692,7 +3692,7 @@ void MainWindow::finalizeDeployment(const QString& vmName)
     config.setDeployState(VMConfig::DeployState::Complete);
     saveVmConfig(vmPath, config);
 
-    vmModel->updateConfig(vmName, config);
+    veModel->updateConfig(vmName, config);
 
     if (selectedVmName() == vmName) {
         currentConfig = config;
@@ -3707,7 +3707,7 @@ void MainWindow::abortDeployment(const QString& vmName, bool deleteVm)
 {
     m_pendingDeployments.remove(vmName);
 
-    VmEntry* entry = vmModel->entryByName(vmName);
+    VmEntry* entry = veModel->entryByName(vmName);
     if (!entry)
         return;
 
@@ -3768,7 +3768,7 @@ void MainWindow::abortDeployment(const QString& vmName, bool deleteVm)
         statusBar()->showMessage(
             i18n("Deployment of '%1' cancelled. VM deleted.", vmName));
     } else {
-        vmModel->clearRuntimeState(vmName);
+        veModel->clearRuntimeState(vmName);
         updateDetails();
         updateActionStates();
         statusBar()->showMessage(
@@ -3793,7 +3793,7 @@ void MainWindow::deployCloudImage(const QString& vmName)
         m_pendingDeployments.remove(vmName);
 
         if (selectedVmName() == vmName) {
-            vmTreeView->clearSelection();
+            veTreeView->clearSelection();
             currentConfig = VMConfig();
         }
 

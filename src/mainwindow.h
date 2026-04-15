@@ -55,14 +55,14 @@
 #include "dbusdisplay/dbusviewerwindow.h"
 #include "dialogs/settingsdialog.h"
 #include "jobs/createvmjob.h"
-#include "models/vmmodel.h"
+#include "models/virtualenvironmentmodel.h"
 #include "utils/cloudimagedeployer.h"
 #include "utils/externaltools.h"
 #include "utils/imagedatabase.h"
 #include "utils/virtualnetworkmanager.h"
 #include "utils/vmconfig.h"
 #include "widgets/performancemonitorwidget.h"
-#include "widgets/vmtreeview.h"
+#include "widgets/virtualenvironmenttreeview.h"
 
 using namespace Qt::StringLiterals;
 
@@ -177,8 +177,8 @@ private:
     bool requireTool(const ExternalTools::Tool tool);
     bool isDisplayTypeAvailable(const VMSpecs::DisplayType type);
 
-    QPointer<VMTreeView> vmTreeView;
-    QPointer<VmModel> vmModel;
+    QPointer<VirtualEnvironmentTreeView> veTreeView;
+    QPointer<VirtualEnvironmentModel> veModel;
 
     QPointer<KActionMenu> usbActionMenu;
 

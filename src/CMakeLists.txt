@@ -38,8 +38,8 @@ target_sources(
           utils/usbenumerator.h
           utils/usbenumerator.cpp
           utils/3rdparty/crypt_sha512.c
-          models/vmmodel.cpp
-          models/vmmodel.h
+          models/virtualenvironmentmodel.cpp
+          models/virtualenvironmentmodel.h
           jobs/createvmjob.cpp
           jobs/createvmjob.h
           jobs/shrinkjob.cpp
@@ -68,9 +68,9 @@ target_sources(
           dialogs/snapshotdialog.h
           dialogs/cloudconfigdialog.cpp
           dialogs/cloudconfigdialog.h
-          widgets/vmitemdelegate.cpp
-          widgets/vmitemdelegate.h
-          widgets/vmtreeview.h
+          widgets/virtualenvironmentitemdelegate.cpp
+          widgets/virtualenvironmentitemdelegate.h
+          widgets/virtualenvironmenttreeview.h
           widgets/performancemonitorwidget.h
           widgets/performancemonitorwidget.cpp
           widgets/ramspinbox.h

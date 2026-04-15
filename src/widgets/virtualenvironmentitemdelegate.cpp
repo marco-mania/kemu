@@ -4,18 +4,18 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#include "vmitemdelegate.h"
+#include "virtualenvironmentitemdelegate.h"
 
-#include "models/vmmodel.h"
+#include "models/virtualenvironmentmodel.h"
 
-void VMItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
+void VirtualEnvironmentItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
     QStyleOptionViewItem opt = option;
     initStyleOption(&opt, index);
     opt.text.clear();
     opt.widget->style()->drawControl(QStyle::CE_ItemViewItem, &opt, painter, opt.widget);
 
-    const int itemType = index.data(VmModel::ItemTypeRole).toInt();
+    const int itemType = index.data(VirtualEnvironmentModel::ItemTypeRole).toInt();
     const QIcon icon = index.data(Qt::DecorationRole).value<QIcon>();
     const QString title = index.data(Qt::DisplayRole).toString();
     const int margin = 4;
@@ -29,9 +29,9 @@ void VMItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option
 
     int textLeft = iconRect.right() + margin + 2;
     int mediaReserved = 0;
-    if (itemType == VmModel::Vm) {
-        bool hasCd = index.data(VmModel::MediaCdRole).toBool();
-        bool hasFloppy = index.data(VmModel::MediaFloppyRole).toBool();
+    if (itemType == VirtualEnvironmentModel::Vm) {
+        bool hasCd = index.data(VirtualEnvironmentModel::MediaCdRole).toBool();
+        bool hasFloppy = index.data(VirtualEnvironmentModel::MediaFloppyRole).toBool();
         int iconCount = (hasCd ? 1 : 0) + (hasFloppy ? 1 : 0);
         mediaReserved = iconCount * (MediaIconSize + MediaIconMargin) + MediaIconMargin;
     }
@@ -42,7 +42,7 @@ void VMItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option
     QPen textPen = opt.palette.color(
         (opt.state & QStyle::State_Selected) ? QPalette::HighlightedText : QPalette::Text);
 
-    if (itemType == VmModel::Folder) {
+    if (itemType == VirtualEnvironmentModel::Folder) {
         // --- Folder: single-line, bold---
         QFont folderFont = opt.font;
         folderFont.setBold(true);
@@ -63,7 +63,7 @@ void VMItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option
 
     } else {
         // --- VM: two-line (title + subtitle) ---
-        const QString subtitle = index.data(VmModel::SubtitleRole).toString();
+        const QString subtitle = index.data(VirtualEnvironmentModel::SubtitleRole).toString();
 
         QFont titleFont = opt.font;
         QFontMetrics titleFm(titleFont);
@@ -85,8 +85,8 @@ void VMItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option
         }
 
         // --- Media indicator icons (right-aligned) ---
-        const bool hasCd = index.data(VmModel::MediaCdRole).toBool();
-        const bool hasFloppy = index.data(VmModel::MediaFloppyRole).toBool();
+        const bool hasCd = index.data(VirtualEnvironmentModel::MediaCdRole).toBool();
+        const bool hasFloppy = index.data(VirtualEnvironmentModel::MediaFloppyRole).toBool();
 
         if (hasFloppy) {
             QRect r = mediaIconRect(opt, MediaType::Floppy, false);
@@ -101,14 +101,14 @@ void VMItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option
     painter->restore();
 }
 
-QSize VMItemDelegate::sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const
+QSize VirtualEnvironmentItemDelegate::sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
     QStyleOptionViewItem opt = option;
     initStyleOption(&opt, index);
 
-    int itemType = index.data(VmModel::ItemTypeRole).toInt();
+    int itemType = index.data(VirtualEnvironmentModel::ItemTypeRole).toInt();
 
-    if (itemType == VmModel::Folder) {
+    if (itemType == VirtualEnvironmentModel::Folder) {
         QFont folderFont = opt.font;
         folderFont.setBold(true);
         QFontMetrics fm(folderFont);
@@ -127,7 +127,7 @@ QSize VMItemDelegate::sizeHint(const QStyleOptionViewItem& option, const QModelI
     return QSize(opt.rect.width(), h);
 }
 
-QRect VMItemDelegate::mediaIconRect(const QStyleOptionViewItem& option, MediaType type, bool hasOther)
+QRect VirtualEnvironmentItemDelegate::mediaIconRect(const QStyleOptionViewItem& option, MediaType type, bool hasOther)
 {
     const int y = option.rect.top() + (option.rect.height() - MediaIconSize) / 2;
     const int rightEdge = option.rect.right() - MediaIconMargin;

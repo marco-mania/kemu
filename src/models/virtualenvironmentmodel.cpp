@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#include "models/vmmodel.h"
+#include "models/virtualenvironmentmodel.h"
 #include "const.h"
 
-VmModel::VmModel(ImageDatabase* imageDb, QObject* parent)
+VirtualEnvironmentModel::VirtualEnvironmentModel(ImageDatabase* imageDb, QObject* parent)
     : QAbstractItemModel(parent)
     , m_imageDatabase(imageDb)
     , m_root(new Node)
@@ -15,14 +15,14 @@ VmModel::VmModel(ImageDatabase* imageDb, QObject* parent)
     m_root->type = Node::RootNode;
 }
 
-VmModel::~VmModel()
+VirtualEnvironmentModel::~VirtualEnvironmentModel()
 {
     delete m_root;
 }
 
 // -- QAbstractItemModel interface --
 
-QModelIndex VmModel::index(int row, int column,
+QModelIndex VirtualEnvironmentModel::index(int row, int column,
     const QModelIndex& parent) const
 {
     if (column != 0)
@@ -35,7 +35,7 @@ QModelIndex VmModel::index(int row, int column,
     return createIndex(row, 0, parentNode->children.at(row));
 }
 
-QModelIndex VmModel::parent(const QModelIndex& child) const
+QModelIndex VirtualEnvironmentModel::parent(const QModelIndex& child) const
 {
     if (!child.isValid())
         return { };
@@ -47,7 +47,7 @@ QModelIndex VmModel::parent(const QModelIndex& child) const
     return indexFromNode(node->parent);
 }
 
-int VmModel::rowCount(const QModelIndex& parent) const
+int VirtualEnvironmentModel::rowCount(const QModelIndex& parent) const
 {
     if (parent.column() > 0)
         return 0;
@@ -55,12 +55,12 @@ int VmModel::rowCount(const QModelIndex& parent) const
     return node ? node->children.size() : 0;
 }
 
-int VmModel::columnCount(const QModelIndex&) const
+int VirtualEnvironmentModel::columnCount(const QModelIndex&) const
 {
     return 1;
 }
 
-QVariant VmModel::data(const QModelIndex& index, int role) const
+QVariant VirtualEnvironmentModel::data(const QModelIndex& index, int role) const
 {
     if (!index.isValid())
         return { };
@@ -119,7 +119,7 @@ QVariant VmModel::data(const QModelIndex& index, int role) const
     return { };
 }
 
-Qt::ItemFlags VmModel::flags(const QModelIndex& index) const
+Qt::ItemFlags VirtualEnvironmentModel::flags(const QModelIndex& index) const
 {
     if (!index.isValid())
         return Qt::ItemIsDropEnabled;
@@ -138,17 +138,17 @@ Qt::ItemFlags VmModel::flags(const QModelIndex& index) const
 
 // -- Drag & Drop --
 
-Qt::DropActions VmModel::supportedDropActions() const
+Qt::DropActions VirtualEnvironmentModel::supportedDropActions() const
 {
     return Qt::MoveAction;
 }
 
-QStringList VmModel::mimeTypes() const
+QStringList VirtualEnvironmentModel::mimeTypes() const
 {
     return { u"application/x-kemu-vm"_s };
 }
 
-QMimeData* VmModel::mimeData(const QModelIndexList& indexes) const
+QMimeData* VirtualEnvironmentModel::mimeData(const QModelIndexList& indexes) const
 {
     if (indexes.isEmpty())
         return nullptr;
@@ -162,7 +162,7 @@ QMimeData* VmModel::mimeData(const QModelIndexList& indexes) const
     return md;
 }
 
-bool VmModel::dropMimeData(const QMimeData* data, Qt::DropAction action,
+bool VirtualEnvironmentModel::dropMimeData(const QMimeData* data, Qt::DropAction action,
     int, int, const QModelIndex& parent)
 {
     if (action != Qt::MoveAction)
@@ -185,7 +185,7 @@ bool VmModel::dropMimeData(const QMimeData* data, Qt::DropAction action,
 
 // -- VM access --
 
-VmEntry* VmModel::entryByName(const QString& name)
+VmEntry* VirtualEnvironmentModel::entryByName(const QString& name)
 {
     for (auto& vm : m_vms)
         if (vm.name == name)
@@ -193,7 +193,7 @@ VmEntry* VmModel::entryByName(const QString& name)
     return nullptr;
 }
 
-const VmEntry* VmModel::entryByName(const QString& name) const
+const VmEntry* VirtualEnvironmentModel::entryByName(const QString& name) const
 {
     for (const auto& vm : m_vms)
         if (vm.name == name)
@@ -201,19 +201,19 @@ const VmEntry* VmModel::entryByName(const QString& name) const
     return nullptr;
 }
 
-QModelIndex VmModel::indexForVm(const QString& name) const
+QModelIndex VirtualEnvironmentModel::indexForVm(const QString& name) const
 {
     Node* node = findVmNode(name);
     return node ? indexFromNode(node) : QModelIndex();
 }
 
-QModelIndex VmModel::indexForFolder(const QString& folderName) const
+QModelIndex VirtualEnvironmentModel::indexForFolder(const QString& folderName) const
 {
     Node* node = findFolderNode(folderName);
     return node ? indexFromNode(node) : QModelIndex();
 }
 
-QStringList VmModel::vmNames() const
+QStringList VirtualEnvironmentModel::vmNames() const
 {
     QStringList names;
     names.reserve(m_vms.size());
@@ -224,7 +224,7 @@ QStringList VmModel::vmNames() const
 
 // -- Loading --
 
-void VmModel::loadFromDisk(
+void VirtualEnvironmentModel::loadFromDisk(
     const QDir& baseDir,
     const QMap<QString, QString>& folderAssignments,
     std::function<VMConfig(const QString&)> loader)
@@ -255,7 +255,7 @@ void VmModel::loadFromDisk(
     endResetModel();
 }
 
-void VmModel::reload(
+void VirtualEnvironmentModel::reload(
     const QDir& baseDir,
     const QMap<QString, QString>& folderAssignments,
     std::function<VMConfig(const QString&)> loader)
@@ -310,7 +310,7 @@ void VmModel::reload(
 
 // -- State management --
 
-void VmModel::setVmState(const QString& name, VmEntry::State state)
+void VirtualEnvironmentModel::setVmState(const QString& name, VmEntry::State state)
 {
     VmEntry* e = entryByName(name);
     if (!e || e->state == state)
@@ -320,55 +320,55 @@ void VmModel::setVmState(const QString& name, VmEntry::State state)
     Q_EMIT vmStateChanged(name, state);
 }
 
-void VmModel::setHeadless(const QString& name, const bool headless)
+void VirtualEnvironmentModel::setHeadless(const QString& name, const bool headless)
 {
     if (VmEntry* e = entryByName(name))
         e->isHeadless = headless;
 }
 
-void VmModel::setQemuProcess(const QString& name, KProcess* p)
+void VirtualEnvironmentModel::setQemuProcess(const QString& name, KProcess* p)
 {
     if (VmEntry* e = entryByName(name))
         e->qemuProcess = p;
 }
 
-void VmModel::setSwtpmProcess(const QString& name, KProcess* p)
+void VirtualEnvironmentModel::setSwtpmProcess(const QString& name, KProcess* p)
 {
     if (VmEntry* e = entryByName(name))
         e->swtpmProcess = p;
 }
 
-void VmModel::setVirtiofsdProcess(const QString& name, KProcess* p)
+void VirtualEnvironmentModel::setVirtiofsdProcess(const QString& name, KProcess* p)
 {
     if (VmEntry* e = entryByName(name))
         e->virtiofsdProcess = p;
 }
 
-void VmModel::setPasstProcess(const QString& name, KProcess* process)
+void VirtualEnvironmentModel::setPasstProcess(const QString& name, KProcess* process)
 {
     if (VmEntry* e = entryByName(name))
         e->passtProcess = process;
 }
 
-void VmModel::setSpiceViewerProcess(const QString& name, KProcess* process)
+void VirtualEnvironmentModel::setSpiceViewerProcess(const QString& name, KProcess* process)
 {
     if (VmEntry* e = entryByName(name))
         e->spiceViewerProcess = process;
 }
 
-void VmModel::setDBusDaemonProcess(const QString& name, KProcess* process)
+void VirtualEnvironmentModel::setDBusDaemonProcess(const QString& name, KProcess* process)
 {
     if (VmEntry* e = entryByName(name))
         e->dbusDaemonProcess = process;
 }
 
-void VmModel::setQmpClient(const QString& name, QMPClient* c)
+void VirtualEnvironmentModel::setQmpClient(const QString& name, QMPClient* c)
 {
     if (VmEntry* e = entryByName(name))
         e->qmpClient = c;
 }
 
-void VmModel::updateConfig(const QString& name, const VMConfig& config)
+void VirtualEnvironmentModel::updateConfig(const QString& name, const VMConfig& config)
 {
     VmEntry* e = entryByName(name);
     if (!e)
@@ -377,7 +377,7 @@ void VmModel::updateConfig(const QString& name, const VMConfig& config)
     emitVmChanged(name);
 }
 
-void VmModel::appendPerfSample(const QString& name, int channel, double value)
+void VirtualEnvironmentModel::appendPerfSample(const QString& name, int channel, double value)
 {
     VmEntry* e = entryByName(name);
     if (!e)
@@ -403,19 +403,19 @@ void VmModel::appendPerfSample(const QString& name, int channel, double value)
         hist->removeFirst();
 }
 
-bool VmModel::isRunning(const QString& name) const
+bool VirtualEnvironmentModel::isRunning(const QString& name) const
 {
     const VmEntry* e = entryByName(name);
     return e && e->state == VmEntry::State::Running;
 }
 
-bool VmModel::isBusy(const QString& name) const
+bool VirtualEnvironmentModel::isBusy(const QString& name) const
 {
     const VmEntry* e = entryByName(name);
     return e && e->state != VmEntry::State::Stopped;
 }
 
-void VmModel::clearRuntimeState(const QString& name)
+void VirtualEnvironmentModel::clearRuntimeState(const QString& name)
 {
     VmEntry* e = entryByName(name);
     if (!e)
@@ -438,7 +438,7 @@ void VmModel::clearRuntimeState(const QString& name)
     Q_EMIT vmStateChanged(name, VmEntry::State::Stopped);
 }
 
-bool VmModel::isHeadless(const QString& name) const
+bool VirtualEnvironmentModel::isHeadless(const QString& name) const
 {
     const VmEntry* e = entryByName(name);
     return e && e->isHeadless;
@@ -446,7 +446,7 @@ bool VmModel::isHeadless(const QString& name) const
 
 // -- Folder management --
 
-QModelIndex VmModel::createFolder(const QString& name)
+QModelIndex VirtualEnvironmentModel::createFolder(const QString& name)
 {
     for (const auto& f : std::as_const(m_folders))
         if (f.name == name)
@@ -478,7 +478,7 @@ QModelIndex VmModel::createFolder(const QString& name)
     return indexFromNode(node);
 }
 
-bool VmModel::removeFolder(const QModelIndex& index)
+bool VirtualEnvironmentModel::removeFolder(const QModelIndex& index)
 {
     if (!index.isValid())
         return false;
@@ -497,7 +497,7 @@ bool VmModel::removeFolder(const QModelIndex& index)
     return true;
 }
 
-bool VmModel::renameFolder(const QModelIndex& index, const QString& newName)
+bool VirtualEnvironmentModel::renameFolder(const QModelIndex& index, const QString& newName)
 {
     if (!index.isValid())
         return false;
@@ -514,7 +514,7 @@ bool VmModel::renameFolder(const QModelIndex& index, const QString& newName)
     return true;
 }
 
-void VmModel::moveVmToFolder(const QString& vmName, const QString& folderName)
+void VirtualEnvironmentModel::moveVmToFolder(const QString& vmName, const QString& folderName)
 {
     Node* vmNode = findVmNode(vmName);
     Node* folderNode = findFolderNode(folderName);
@@ -544,7 +544,7 @@ void VmModel::moveVmToFolder(const QString& vmName, const QString& folderName)
     m_vms[vmNode->vmIndex].folderName = folderName;
 }
 
-void VmModel::moveVmToRoot(const QString& vmName)
+void VirtualEnvironmentModel::moveVmToRoot(const QString& vmName)
 {
     Node* vmNode = findVmNode(vmName);
     if (!vmNode || vmNode->parent == m_root)
@@ -569,7 +569,7 @@ void VmModel::moveVmToRoot(const QString& vmName)
 
 // -- Persistence --
 
-QMap<QString, QString> VmModel::folderAssignments() const
+QMap<QString, QString> VirtualEnvironmentModel::folderAssignments() const
 {
     QMap<QString, QString> map;
     for (const auto& vm : m_vms)
@@ -578,7 +578,7 @@ QMap<QString, QString> VmModel::folderAssignments() const
     return map;
 }
 
-QStringList VmModel::folderNames() const
+QStringList VirtualEnvironmentModel::folderNames() const
 {
     QStringList names;
     for (const auto& f : m_folders)
@@ -588,14 +588,14 @@ QStringList VmModel::folderNames() const
 
 // -- Private helpers --
 
-VmModel::Node* VmModel::nodeFromIndex(const QModelIndex& index) const
+VirtualEnvironmentModel::Node* VirtualEnvironmentModel::nodeFromIndex(const QModelIndex& index) const
 {
     if (!index.isValid())
         return m_root;
     return static_cast<Node*>(index.internalPointer());
 }
 
-QModelIndex VmModel::indexFromNode(Node* node) const
+QModelIndex VirtualEnvironmentModel::indexFromNode(Node* node) const
 {
     if (!node || node == m_root)
         return { };
@@ -606,7 +606,7 @@ QModelIndex VmModel::indexFromNode(Node* node) const
     return (row < 0) ? QModelIndex() : createIndex(row, 0, node);
 }
 
-VmModel::Node* VmModel::findVmNode(const QString& name) const
+VirtualEnvironmentModel::Node* VirtualEnvironmentModel::findVmNode(const QString& name) const
 {
     std::function<Node*(Node*)> search = [&](Node* parent) -> Node* {
         for (Node* child : std::as_const(parent->children)) {
@@ -622,7 +622,7 @@ VmModel::Node* VmModel::findVmNode(const QString& name) const
     return search(m_root);
 }
 
-VmModel::Node* VmModel::findFolderNode(const QString& folderName) const
+VirtualEnvironmentModel::Node* VirtualEnvironmentModel::findFolderNode(const QString& folderName) const
 {
     for (Node* child : std::as_const(m_root->children))
         if (child->type == Node::FolderNode
@@ -631,14 +631,14 @@ VmModel::Node* VmModel::findFolderNode(const QString& folderName) const
     return nullptr;
 }
 
-void VmModel::emitVmChanged(const QString& name)
+void VirtualEnvironmentModel::emitVmChanged(const QString& name)
 {
     QModelIndex idx = indexForVm(name);
     if (idx.isValid())
         Q_EMIT dataChanged(idx, idx);
 }
 
-void VmModel::rebuildTree(const QMap<QString, QString>& folderAssignments)
+void VirtualEnvironmentModel::rebuildTree(const QMap<QString, QString>& folderAssignments)
 {
     QSet<QString> fNames;
     for (auto it = folderAssignments.cbegin(); it != folderAssignments.cend(); ++it)

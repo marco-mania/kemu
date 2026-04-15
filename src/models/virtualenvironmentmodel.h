@@ -63,7 +63,7 @@ struct FolderEntry {
     QVector<int> vmIndices;
 };
 
-class VmModel : public QAbstractItemModel {
+class VirtualEnvironmentModel : public QAbstractItemModel {
 
     Q_OBJECT
 
@@ -81,8 +81,8 @@ public:
         MediaFloppyRole = Qt::UserRole + 202,
     };
 
-    explicit VmModel(ImageDatabase* imageDb, QObject* parent = nullptr);
-    ~VmModel() override;
+    explicit VirtualEnvironmentModel(ImageDatabase* imageDb, QObject* parent = nullptr);
+    ~VirtualEnvironmentModel() override;
 
     // QAbstractItemModel interface
     QModelIndex index(int row, int column, const QModelIndex& parent = { }) const override;
