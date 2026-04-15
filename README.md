@@ -6,8 +6,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # KEMU – KDE QEMU Virtual Machine Manager
 
-A traditional desktop frontend for QEMU on Linux, developed using Qt6 and KDE Frameworks 6.
-This tool prioritizes speed and simplicity - built entirely without libvirt.
+A traditional desktop frontend for QEMU on Linux, developed using Qt6 Widgets and KDE Frameworks 6.
+This tool prioritizes desktop integration - built without libvirt.
 
 **Disclaimer:** Early-stage development.
 
