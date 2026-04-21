@@ -7,6 +7,7 @@
 #pragma once
 
 #include <QSize>
+#include <QStringList>
 
 using namespace Qt::StringLiterals;
 
@@ -29,5 +30,14 @@ inline constexpr auto DefaultMinDiskSizeGB = 8;
 inline constexpr auto DefaultZSTDCompressionLevelForExport = 10;
 inline constexpr auto DefaultDisplaySize = QSize(1280, 780);
 inline constexpr auto DefaultDisplayType = "GTK"_L1; //
+
+// Hardcoded custom paths for external tools not included in $PATH
+inline const QStringList FallbackPaths = {
+    u"/usr/libexec"_s, // Fedora, RHEL, openSUSE
+    u"/usr/lib/qemu"_s, // Debian, Ubuntu
+    u"/usr/lib"_s, // General lib directory
+    u"/usr/local/libexec"_s, // Custom builds
+    u"/usr/sbin"_s
+};
 
 }

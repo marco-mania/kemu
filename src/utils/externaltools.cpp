@@ -6,6 +6,8 @@
 
 #include "externaltools.h"
 
+#include "const.h"
+
 // --- Singleton ---
 
 ExternalTools& ExternalTools::instance()
@@ -57,7 +59,7 @@ void ExternalTools::detectPath(ToolInfo& info)
     // 1) User override from KConfig
     KConfig config(u"kemurc"_s);
     KConfigGroup general = config.group(u"General"_s);
-    QString configured = general.readEntry(info.configKey, { });
+    const QString configured = general.readEntry(info.configKey, { });
 
     if (!configured.isEmpty() && QFileInfo::exists(configured)) {
         info.resolvedPath = configured;
@@ -71,26 +73,19 @@ void ExternalTools::detectPath(ToolInfo& info)
         return;
     }
 
-    // 2b) Special case: try alternative binary names for ISO tools
-    if (found.isEmpty() && info.configKey == u"GenIsoImagePath"_s) {
+    // 2b) Special case: try alternative binary names for ISO tools.
+    //     Must return-on-success, otherwise step 3 overwrites our result.
+    if (info.configKey == u"GenIsoImagePath"_s) {
         found = QStandardPaths::findExecutable(u"mkisofs"_s);
         if (found.isEmpty())
             found = QStandardPaths::findExecutable(u"xorriso"_s);
+        if (!found.isEmpty()) {
+            info.resolvedPath = found;
+            return;
+        }
     }
 
-    // 3) Fallback: Hardcoded custom paths for tools not included in $PATH
-    static const QStringList fallbackPaths = {
-        u"/usr/libexec"_s, // Fedora, RHEL, openSUSE
-        u"/usr/lib/qemu"_s, // Debian, Ubuntu
-        u"/usr/lib"_s, // General lib directory
-        u"/usr/local/libexec"_s, // Custom builds
-        u"/usr/sbin"_s
-    };
-
-    // findExecutable now specifically searches within our custom path list
-    found = QStandardPaths::findExecutable(info.defaultBinary, fallbackPaths);
-
-    info.resolvedPath = found;
+    info.resolvedPath = QStandardPaths::findExecutable(info.defaultBinary, KEMUConst::FallbackPaths);
 }
 
 void ExternalTools::probeVersion(Tool tool, ToolInfo& info)
@@ -124,9 +119,9 @@ bool ExternalTools::isAvailable(Tool tool) const
     return m_tools.value(tool).available;
 }
 
-bool ExternalTools::isAvailable(const QList<ExternalTools::Tool> tools) const
+bool ExternalTools::isAvailable(const QList<ExternalTools::Tool>& tools) const
 {
-    for (auto const tool : tools)
+    for (const auto tool : tools)
         if (!m_tools.value(tool).available)
             return false;
     return true;
@@ -185,7 +180,7 @@ QList<ExternalTools::Tool> ExternalTools::virtualNetworkTools()
     return { Pasta, Dnsmasq };
 }
 
-[[nodiscard]] QList<ExternalTools::Tool> ExternalTools::spiceDisplayTools()
+QList<ExternalTools::Tool> ExternalTools::spiceDisplayTools()
 {
     return { RemoteViewer };
 }

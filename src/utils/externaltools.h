@@ -54,7 +54,7 @@ public:
     [[nodiscard]] QString path(Tool tool) const;
     [[nodiscard]] QString version(Tool tool) const;
     [[nodiscard]] bool isAvailable(Tool tool) const;
-    [[nodiscard]] bool isAvailable(const QList<Tool> tools) const;
+    [[nodiscard]] bool isAvailable(const QList<Tool>& tools) const;
     [[nodiscard]] QString configKey(Tool tool) const;
     [[nodiscard]] QString defaultBinary(Tool tool) const;
 
