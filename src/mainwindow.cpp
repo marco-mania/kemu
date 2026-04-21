@@ -227,7 +227,7 @@ QDir MainWindow::getVmDir(const QString& vmName) const
 
 QString MainWindow::monitorSocketPath(const QString& vmName) const
 {
-    return getVmBaseDir().filePath(vmName) + u"/monitor.sock"_s;
+    return getVmDir(vmName).absoluteFilePath(u"qemu-monitor.sock"_s);
 }
 
 void MainWindow::setupUi()
