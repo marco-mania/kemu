@@ -7,12 +7,15 @@
 #pragma once
 
 #include <QDir>
+#include <QFile>
 #include <QHash>
 #include <QList>
 #include <QObject>
 #include <QPointer>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QString>
+#include <QThread>
 
 #include <KConfig>
 #include <KConfigGroup>

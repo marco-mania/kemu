@@ -21,7 +21,9 @@ extern "C" {
 #include <linux/sockios.h>
 #include <net/if.h>
 #include <sched.h>
+#include <signal.h>
 #include <sys/ioctl.h>
+#include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -182,6 +184,11 @@ qint64 NamespaceHelper::createNamespace(QString* error)
         (void)write(syncPipe[1], &ready, 1);
         close(syncPipe[1]);
 
+        // Die with our creator. When KEMU exits the kernel sends SIGTERM,
+        // the anchor dies, and the kernel tears down the namespace — which
+        // in turn destroys every tap device, bridge and route inside it.
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+
         // Hold the namespace alive until killed
         for (;;)
             pause();
@@ -262,7 +269,7 @@ bool NamespaceHelper::isUserNamespaceSupported()
 // Process Launch in Namespace
 // ============================================================================
 
-bool NamespaceHelper::prepareProcessForNamespace(QProcess* process, qint64 nsPid)
+bool NamespaceHelper::prepareProcessForNamespace(KProcess* process, qint64 nsPid)
 {
     char userPath[64], netPath[64];
     snprintf(userPath, sizeof(userPath), "/proc/%lld/ns/user", (long long)nsPid);
@@ -288,10 +295,13 @@ bool NamespaceHelper::prepareProcessForNamespace(QProcess* process, qint64 nsPid
         setns(netFd, CLONE_NEWNET);
         close(userFd);
         close(netFd);
+        // Die with our creator (KEMU). Preserved across exec() so QEMU
+        // inherits this property.
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
     });
 
     // Close FDs in parent after the process has started
-    QObject::connect(process, &QProcess::started, process, [userFd, netFd]() {
+    QObject::connect(process, &KProcess::started, process, [userFd, netFd]() {
         close(userFd);
         close(netFd);
     });

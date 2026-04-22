@@ -6,11 +6,11 @@
 
 #include "virtualnetworkmanager.h"
 
+extern "C" {
+#include <signal.h>
+#include <sys/prctl.h>
 #include <sys/wait.h>
-
-#include <QFile>
-#include <QRegularExpression>
-#include <QThread>
+}
 
 #include "utils/externaltools.h"
 #include "utils/namespacehelper.h"

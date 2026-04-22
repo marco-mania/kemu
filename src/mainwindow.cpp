@@ -24,6 +24,11 @@
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
 
+extern "C" {
+#include <signal.h>
+#include <sys/prctl.h>
+}
+
 MainWindow::MainWindow(QWidget* parent)
     : KXmlGuiWindow(parent)
 {
@@ -364,6 +369,12 @@ bool MainWindow::startSwtpm(const QString& vmName)
     QFile::remove(sockPath);
 
     QPointer<KProcess> process = new KProcess(this);
+    process->setChildProcessModifier([] {
+        // Ask the kernel to SIGTERM us if our parent (KEMU) dies, for any
+        // reason -- including SIGKILL, SEGV, OOM-kill. This is a reliable
+        // cleanup without any supervision.
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+    });
     process->setProgram(ExternalTools::instance().path(ExternalTools::Swtpm));
     process->setArguments({ u"socket"_s,
         u"--ctrl"_s, u"type=unixio,path=%1"_s.arg(sockPath),
@@ -404,6 +415,9 @@ bool MainWindow::startVirtiofsd(const QString& vmName)
     QFile::remove(sockPath);
 
     auto* process = new KProcess(this);
+    process->setChildProcessModifier([] {
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+    });
     process->setProgram(ExternalTools::instance().path(ExternalTools::Virtiofsd));
     process->setArguments({ u"--socket-path=%1"_s.arg(sockPath),
         u"--shared-dir=%1"_s.arg(sharedPath),
@@ -463,6 +477,9 @@ bool MainWindow::startPasst(const QString& vmName, const QList<PortForwardRule>&
         passtArgs << u"-u"_s << udpPorts.join(u","_s);
 
     auto* process = new KProcess(this);
+    process->setChildProcessModifier([] {
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+    });
     process->setProgram(ExternalTools::instance().path(ExternalTools::Passt));
     process->setArguments(passtArgs);
     process->start();
@@ -616,6 +633,9 @@ bool MainWindow::startDbusDaemon(const QString& vmName)
     cfg.close();
 
     auto* daemon = new KProcess(this);
+    daemon->setChildProcessModifier([] {
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+    });
     daemon->setProgram(ExternalTools::instance().path(ExternalTools::DbusDaemon));
     daemon->setArguments({ u"--config-file=%1"_s.arg(configPath), u"--nofork"_s });
 
@@ -2483,10 +2503,15 @@ void MainWindow::startVM(bool headless)
 
     if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
         && !tapDevice.isEmpty()) {
-        const qint64 nsPid = m_networkManager->namespacePid(
-            currentConfig.virtualNetworkName());
+        const qint64 nsPid = m_networkManager->namespacePid(currentConfig.virtualNetworkName());
         NamespaceHelper::prepareProcessForNamespace(process, nsPid);
+        // PR_SET_PDEATHSIG is handled inside prepareProcessForNamespace.
+    } else {
+        process->setChildProcessModifier([] {
+            prctl(PR_SET_PDEATHSIG, SIGTERM);
+        });
     }
+
     process->setProgram(ExternalTools::instance().path(ExternalTools::QemuSystem));
     process->setArguments(args);
 

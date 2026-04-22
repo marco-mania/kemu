@@ -11,6 +11,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <KProcess>
+
 /**
  * @brief Low-level helper for rootless virtual networking via Linux namespaces.
  *
@@ -54,7 +56,7 @@ public:
      *
      * Call BEFORE process->start(). Works with both QProcess and KProcess.
      */
-    static bool prepareProcessForNamespace(QProcess* process, qint64 nsPid);
+    static bool prepareProcessForNamespace(KProcess* process, qint64 nsPid);
 
     // ---- Interface Management (Netlink) ----
 
