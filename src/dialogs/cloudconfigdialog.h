@@ -17,7 +17,6 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
-#include <QPointer>
 #include <QPushButton>
 #include <QRegularExpressionValidator>
 #include <QTimeZone>
@@ -85,41 +84,41 @@ inline QList<LocaleInfo> availableLocales()
 inline QList<KeyboardInfo> availableKeyboards()
 {
     return {
-        { u"us"_s, {}, i18n("English (US)") },
-        { u"gb"_s, {}, i18n("English (UK)") },
-        { u"de"_s, {}, i18n("German") },
+        { u"us"_s, { }, i18n("English (US)") },
+        { u"gb"_s, { }, i18n("English (UK)") },
+        { u"de"_s, { }, i18n("German") },
         { u"de"_s, u"nodeadkeys"_s, i18n("German (no dead keys)") },
-        { u"at"_s, {}, i18n("Austrian") },
+        { u"at"_s, { }, i18n("Austrian") },
         { u"ch"_s, u"de"_s, i18n("Swiss German") },
         { u"ch"_s, u"fr"_s, i18n("Swiss French") },
-        { u"fr"_s, {}, i18n("French") },
-        { u"be"_s, {}, i18n("Belgian") },
-        { u"es"_s, {}, i18n("Spanish") },
-        { u"latam"_s, {}, i18n("Latin American") },
-        { u"it"_s, {}, i18n("Italian") },
-        { u"br"_s, {}, i18n("Portuguese (Brazil)") },
-        { u"pt"_s, {}, i18n("Portuguese") },
-        { u"jp"_s, {}, i18n("Japanese") },
-        { u"kr"_s, {}, i18n("Korean") },
-        { u"cn"_s, {}, i18n("Chinese") },
-        { u"tw"_s, {}, i18n("Chinese (Taiwan)") },
-        { u"ru"_s, {}, i18n("Russian") },
-        { u"pl"_s, {}, i18n("Polish") },
-        { u"nl"_s, {}, i18n("Dutch") },
-        { u"se"_s, {}, i18n("Swedish") },
-        { u"no"_s, {}, i18n("Norwegian") },
-        { u"fi"_s, {}, i18n("Finnish") },
-        { u"dk"_s, {}, i18n("Danish") },
-        { u"cz"_s, {}, i18n("Czech") },
-        { u"hu"_s, {}, i18n("Hungarian") },
-        { u"ro"_s, {}, i18n("Romanian") },
-        { u"tr"_s, {}, i18n("Turkish") },
-        { u"gr"_s, {}, i18n("Greek") },
-        { u"ua"_s, {}, i18n("Ukrainian") },
-        { u"ara"_s, {}, i18n("Arabic") },
-        { u"il"_s, {}, i18n("Hebrew") },
-        { u"in"_s, {}, i18n("Hindi") },
-        { u"th"_s, {}, i18n("Thai") },
+        { u"fr"_s, { }, i18n("French") },
+        { u"be"_s, { }, i18n("Belgian") },
+        { u"es"_s, { }, i18n("Spanish") },
+        { u"latam"_s, { }, i18n("Latin American") },
+        { u"it"_s, { }, i18n("Italian") },
+        { u"br"_s, { }, i18n("Portuguese (Brazil)") },
+        { u"pt"_s, { }, i18n("Portuguese") },
+        { u"jp"_s, { }, i18n("Japanese") },
+        { u"kr"_s, { }, i18n("Korean") },
+        { u"cn"_s, { }, i18n("Chinese") },
+        { u"tw"_s, { }, i18n("Chinese (Taiwan)") },
+        { u"ru"_s, { }, i18n("Russian") },
+        { u"pl"_s, { }, i18n("Polish") },
+        { u"nl"_s, { }, i18n("Dutch") },
+        { u"se"_s, { }, i18n("Swedish") },
+        { u"no"_s, { }, i18n("Norwegian") },
+        { u"fi"_s, { }, i18n("Finnish") },
+        { u"dk"_s, { }, i18n("Danish") },
+        { u"cz"_s, { }, i18n("Czech") },
+        { u"hu"_s, { }, i18n("Hungarian") },
+        { u"ro"_s, { }, i18n("Romanian") },
+        { u"tr"_s, { }, i18n("Turkish") },
+        { u"gr"_s, { }, i18n("Greek") },
+        { u"ua"_s, { }, i18n("Ukrainian") },
+        { u"ara"_s, { }, i18n("Arabic") },
+        { u"il"_s, { }, i18n("Hebrew") },
+        { u"in"_s, { }, i18n("Hindi") },
+        { u"th"_s, { }, i18n("Thai") },
     };
 }
 
@@ -137,16 +136,16 @@ private Q_SLOTS:
     void validate();
 
 private:
-    QPointer<QLineEdit> hostnameEdit;
-    QPointer<QLineEdit> usernameEdit;
-    QPointer<QLineEdit> passwordEdit;
-    QPointer<QLineEdit> passwordConfirmEdit;
-    QPointer<QLabel> passwordMismatchLabel;
-    QPointer<QComboBox> timezoneCombo;
-    QPointer<QComboBox> localeCombo;
-    QPointer<QComboBox> kbLayoutCombo;
-    QPointer<QPlainTextEdit> sshKeysEdit;
-    QPointer<QCheckBox> installDesktopCheck;
-    QPointer<QLineEdit> extraPackagesEdit;
-    QPointer<QDialogButtonBox> buttonBox;
+    QLineEdit* hostnameEdit = nullptr;
+    QLineEdit* usernameEdit = nullptr;
+    QLineEdit* passwordEdit = nullptr;
+    QLineEdit* passwordConfirmEdit = nullptr;
+    QLabel* passwordMismatchLabel = nullptr;
+    QComboBox* timezoneCombo = nullptr;
+    QComboBox* localeCombo = nullptr;
+    QComboBox* kbLayoutCombo = nullptr;
+    QPlainTextEdit* sshKeysEdit = nullptr;
+    QCheckBox* installDesktopCheck = nullptr;
+    QLineEdit* extraPackagesEdit = nullptr;
+    QDialogButtonBox* buttonBox = nullptr;
 };

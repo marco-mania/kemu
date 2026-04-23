@@ -16,7 +16,6 @@
 #include <QMainWindow>
 #include <QMenuBar>
 #include <QMessageBox>
-#include <QPointer>
 #include <QStatusBar>
 #include <QStyle>
 #include <QTimer>
@@ -103,21 +102,21 @@ private:
     bool m_audioInConnected = false;
 
     // Menu actions
-    QPointer<QAction> m_actQuit;
-    QPointer<QAction> m_actFullscreen;
-    QPointer<QAction> m_actAudioOut;
-    QPointer<QAction> m_actAudioIn;
-    QPointer<QAction> m_actClipOff;
-    QPointer<QAction> m_actClipToHost;
-    QPointer<QAction> m_actClipToGuest;
-    QPointer<QAction> m_actClipBoth;
-    QPointer<QAction> m_actAbout;
+    QAction* m_actQuit = nullptr;
+    QAction* m_actFullscreen = nullptr;
+    QAction* m_actAudioOut = nullptr;
+    QAction* m_actAudioIn = nullptr;
+    QAction* m_actClipOff = nullptr;
+    QAction* m_actClipToHost = nullptr;
+    QAction* m_actClipToGuest = nullptr;
+    QAction* m_actClipBoth = nullptr;
+    QAction* m_actAbout = nullptr;
 
     // Status bar labels
-    QPointer<QLabel> m_lblResolution;
-    QPointer<QLabel> m_lblAudioOut;
-    QPointer<QLabel> m_lblAudioIn;
-    QPointer<QLabel> m_lblClipboard;
+    QLabel* m_lblResolution = nullptr;
+    QLabel* m_lblAudioOut = nullptr;
+    QLabel* m_lblAudioIn = nullptr;
+    QLabel* m_lblClipboard = nullptr;
 
     ClipboardDirection m_clipDirection;
 };

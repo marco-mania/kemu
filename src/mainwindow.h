@@ -177,8 +177,8 @@ private:
     bool requireTool(const ExternalTools::Tool tool);
     bool isDisplayTypeAvailable(const VMSpecs::DisplayType type);
 
-    QPointer<VirtualEnvironmentTreeView> veTreeView;
-    QPointer<VirtualEnvironmentModel> veModel;
+    VirtualEnvironmentTreeView* veTreeView = nullptr;
+    VirtualEnvironmentModel* veModel = nullptr;
 
     QPointer<KActionMenu> usbActionMenu;
 
@@ -194,12 +194,12 @@ private:
 
     QMap<QString, QDir> m_lastMediaDir;
 
-    QPointer<QTextBrowser> detailsBrowser;
-    QPointer<PerformanceMonitorWidget> perfMonitor;
-    QPointer<QToolBar> vmActionBar;
+    QTextBrowser* detailsBrowser = nullptr;
+    PerformanceMonitorWidget* perfMonitor = nullptr;
+    QToolBar* vmActionBar = nullptr;
 
-    QList<CreateVmJob*> creatingVMs;
-    QList<KJob*> activeImports;
+    QList<QPointer<CreateVmJob>> creatingVMs;
+    QList<QPointer<KJob>> activeImports;
 
     // Deployment handling
     struct PendingDeployment {
@@ -217,7 +217,7 @@ private:
 
     void deployCloudImage(const QString& vmName);
 
-    QPointer<KUiServerV2JobTracker> jobTracker;
+    KUiServerV2JobTracker* jobTracker = nullptr;
 
     VMConfig currentConfig;
 };

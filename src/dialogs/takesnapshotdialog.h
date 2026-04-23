@@ -11,7 +11,6 @@
 #include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QTextEdit>
@@ -35,8 +34,8 @@ private Q_SLOTS:
     void onNameChanged(const QString& text);
 
 private:
-    QPointer<QLineEdit> m_nameEdit;
-    QPointer<QTextEdit> m_descriptionEdit;
-    QPointer<QLabel> m_nameHintLabel;
-    QPointer<QDialogButtonBox> m_buttonBox;
+    QLineEdit* m_nameEdit = nullptr;
+    QTextEdit* m_descriptionEdit = nullptr;
+    QLabel* m_nameHintLabel = nullptr;
+    QDialogButtonBox* m_buttonBox = nullptr;
 };

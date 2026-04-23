@@ -95,7 +95,7 @@ MainWindow::MainWindow(QWidget* parent)
 
 MainWindow::~MainWindow()
 {
-    for (auto* job : std::as_const(creatingVMs)) {
+    for (auto job : std::as_const(creatingVMs)) {
         if (job) {
             job->disconnect();
             job->kill();
@@ -103,7 +103,7 @@ MainWindow::~MainWindow()
     }
     creatingVMs.clear();
 
-    for (auto* job : std::as_const(activeImports)) {
+    for (auto job : std::as_const(activeImports)) {
         if (job) {
             job->disconnect();
             job->kill();
@@ -368,7 +368,7 @@ bool MainWindow::startSwtpm(const QString& vmName)
 
     QFile::remove(sockPath);
 
-    QPointer<KProcess> process = new KProcess(this);
+    KProcess* process = new KProcess(this);
     process->setChildProcessModifier([] {
         // Ask the kernel to SIGTERM us if our parent (KEMU) dies, for any
         // reason -- including SIGKILL, SEGV, OOM-kill. This is a reliable
@@ -1068,7 +1068,7 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_export"_s)->setEnabled(hasSelection && !isBusy);
     actionCollection()->action(u"vm_import"_s)->setEnabled(true);
     actionCollection()->action(u"vm_screenshot"_s)->setEnabled(hasSelection && isRunning && vmSupportsScreendump());
-    bool hasUsbController = hasSelection && entry && entry->config.usbController() != VMSpecs::UsbController::None;
+    const bool hasUsbController = hasSelection && entry && entry->config.usbController() != VMSpecs::UsbController::None;
     usbActionMenu->setEnabled(hasUsbController && isRunning);
 
     const bool canReconnectSpice = isRunning && entry->isHeadless
@@ -2499,7 +2499,7 @@ void MainWindow::startVM(bool headless)
     if (!requireTool(ExternalTools::QemuSystem))
         return;
 
-    QPointer<KProcess> process = new KProcess(this);
+    KProcess* process = new KProcess(this);
 
     if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
         && !tapDevice.isEmpty()) {
@@ -2545,7 +2545,7 @@ void MainWindow::startVM(bool headless)
         return;
     }
 
-    QPointer<QMPClient> client = new QMPClient(this);
+    QMPClient* client = new QMPClient(this);
     veModel->setQmpClient(vmName, client);
     connect(client, &QMPClient::eventReceived, this,
         [this, vmName](const QString& eventName, const QJsonObject& data) {
@@ -3649,7 +3649,7 @@ void MainWindow::startDeployment(const QString& vmName, const bool disable_headl
         return;
     }
 
-    QPointer<KProcess> process = new KProcess(this);
+    KProcess* process = new KProcess(this);
 
     if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
         && !tapDevice.isEmpty()) {
@@ -3684,7 +3684,7 @@ void MainWindow::startDeployment(const QString& vmName, const bool disable_headl
     updateActionStates();
 
     // QMP connection for monitoring shutdown
-    QPointer<QMPClient> client = new QMPClient(this);
+    QMPClient* client = new QMPClient(this);
     veModel->setQmpClient(vmName, client);
 
     connect(client, &QMPClient::eventReceived, this,

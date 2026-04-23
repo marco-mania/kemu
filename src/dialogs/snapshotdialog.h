@@ -9,7 +9,6 @@
 #include <QDialog>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QPointer>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSplitter>
@@ -50,10 +49,10 @@ private:
     QMPClient* m_qmp = nullptr;
     SnapshotManager m_manager;
 
-    QPointer<QTreeWidget> m_tree;
-    QPointer<QTextBrowser> m_detailsBrowser;
-    QPointer<QPushButton> m_takeBtn;
-    QPointer<QPushButton> m_revertBtn;
-    QPointer<QPushButton> m_deleteBtn;
-    QPointer<QProgressBar> m_progressBar;
+    QTreeWidget* m_tree = nullptr;
+    QTextBrowser* m_detailsBrowser = nullptr;
+    QPushButton* m_takeBtn = nullptr;
+    QPushButton* m_revertBtn = nullptr;
+    QPushButton* m_deleteBtn = nullptr;
+    QProgressBar* m_progressBar = nullptr;
 };

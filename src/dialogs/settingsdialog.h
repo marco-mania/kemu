@@ -17,7 +17,6 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
-#include <QPointer>
 #include <QProcess>
 #include <QPushButton>
 #include <QScrollArea>
@@ -97,32 +96,32 @@ private:
 
     QMap<Page, KPageWidgetItem*> m_pages;
 
-    QPointer<QLineEdit> pathEdit;
-    QPointer<QLineEdit> ovmfEdit;
+    QLineEdit* pathEdit = nullptr;
+    QLineEdit* ovmfEdit = nullptr;
 
     struct ToolWidgets {
         ExternalTools::Tool tool;
-        QPointer<QLineEdit> pathEdit;
-        QPointer<QLabel> statusLabel;
+        QLineEdit* pathEdit = nullptr;
+        QLabel* statusLabel = nullptr;
     };
     QList<ToolWidgets> m_toolWidgets;
     void updateToolVersion(int index);
 
-    QPointer<QCheckBox> deployHeadlessCheck;
-    QPointer<QCheckBox> deploySerialLogCheck;
-    QPointer<QComboBox> spiceCloseActionCombo;
+    QCheckBox* deployHeadlessCheck = nullptr;
+    QCheckBox* deploySerialLogCheck = nullptr;
+    QComboBox* spiceCloseActionCombo = nullptr;
 
-    QPointer<QCheckBox> perfMonitorCheck;
-    QPointer<QComboBox> resolutionCombo;
-    QPointer<QCheckBox> dbusDisplayCheck;
+    QCheckBox* perfMonitorCheck = nullptr;
+    QComboBox* resolutionCombo = nullptr;
+    QCheckBox* dbusDisplayCheck = nullptr;
 
-    QPointer<QCheckBox> allArchCheck;
-    QPointer<QCheckBox> cloneRegenerateMacCheck;
-    QPointer<QCheckBox> importRegenerateMacCheck;
+    QCheckBox* allArchCheck = nullptr;
+    QCheckBox* cloneRegenerateMacCheck = nullptr;
+    QCheckBox* importRegenerateMacCheck = nullptr;
 
     VirtualNetworkManager* m_networkManager = nullptr;
-    QPointer<QTableWidget> networkTable;
-    QPointer<QPushButton> netAddButton;
-    QPointer<QPushButton> netEditButton;
-    QPointer<QPushButton> netRemoveButton;
+    QTableWidget* networkTable = nullptr;
+    QPushButton* netAddButton = nullptr;
+    QPushButton* netEditButton = nullptr;
+    QPushButton* netRemoveButton = nullptr;
 };

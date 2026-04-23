@@ -84,7 +84,7 @@ private:
     Utils::ChecksumType m_checksumType;
     QString m_checksum;
 
-    QPointer<QNetworkAccessManager> m_nam;
+    QNetworkAccessManager* m_nam = nullptr;
     QPointer<QNetworkReply> m_reply;
     QFile* m_outputFile = nullptr;
     QCryptographicHash* m_runningHash = nullptr;
