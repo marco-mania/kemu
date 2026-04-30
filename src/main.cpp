@@ -61,5 +61,6 @@ int main(int argc, char* argv[])
     mainwindow->setAttribute(Qt::WA_DeleteOnClose);
     mainwindow->show();
 
-    return app.exec();
+    const int rc = app.exec();
+    std::quick_exit(rc);
 }
