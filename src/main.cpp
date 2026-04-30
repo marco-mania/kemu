@@ -58,6 +58,7 @@ int main(int argc, char* argv[])
     KCrash::initialize();
 
     auto* mainwindow = new MainWindow();
+    mainwindow->setAttribute(Qt::WA_DeleteOnClose);
     mainwindow->show();
 
     return app.exec();

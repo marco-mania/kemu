@@ -116,13 +116,7 @@ MainWindow::~MainWindow()
         if (!e)
             continue;
 
-        if (e->qmpClient) {
-            e->qmpClient->disconnect();
-            if (e->qmpClient->isConnected())
-                e->qmpClient->sendCommandSync(u"quit"_s, QJsonObject(), 1000);
-            e->qmpClient->disconnectFromVm();
-        }
-
+        // Stop the QEMU process; Qt's parent-child cleanup deletes it
         if (e->qemuProcess) {
             e->qemuProcess->disconnect();
             if (e->qemuProcess->state() == KProcess::Running) {
@@ -132,50 +126,7 @@ MainWindow::~MainWindow()
             }
         }
 
-        if (e->swtpmProcess) {
-            e->swtpmProcess->disconnect();
-            e->swtpmProcess->terminate();
-            if (!e->swtpmProcess->waitForFinished(2000))
-                e->swtpmProcess->kill();
-            delete e->swtpmProcess;
-        }
-
-        if (e->virtiofsdProcess) {
-            e->virtiofsdProcess->disconnect();
-            e->virtiofsdProcess->terminate();
-            if (!e->virtiofsdProcess->waitForFinished(2000))
-                e->virtiofsdProcess->kill();
-            delete e->virtiofsdProcess;
-        }
-
-        if (e->passtProcess) {
-            e->passtProcess->terminate();
-            if (!e->passtProcess->waitForFinished(3000))
-                e->passtProcess->kill();
-            delete e->passtProcess;
-            QFile::remove(getVmBaseDir().filePath(name) + u"/passt.sock"_s);
-        }
-
-        if (e->spiceViewerProcess) {
-            e->spiceViewerProcess->terminate();
-            if (!e->spiceViewerProcess->waitForFinished(2000))
-                e->spiceViewerProcess->kill();
-            delete e->spiceViewerProcess;
-        }
-
-        if (e->dbusDaemonProcess) {
-            e->dbusDaemonProcess->terminate();
-            if (!e->dbusDaemonProcess->waitForFinished(2000))
-                e->dbusDaemonProcess->kill();
-            delete e->dbusDaemonProcess;
-            QFile::remove(getVmBaseDir().filePath(name) + u"/dbus-bus.sock"_s);
-            QFile::remove(getVmBaseDir().filePath(name) + u"/dbus-bus.conf"_s);
-        }
-
-        stopDbusViewer(name);
-        cleanupDbusSocket(name);
-
-        releaseNetwork(e->config);
+        tearDownVmRuntime(name);
     }
 }
 
@@ -215,8 +166,14 @@ bool MainWindow::queryClose()
             KStandardGuiItem::close(),
             KStandardGuiItem::cancel());
 
-        return result == KMessageBox::PrimaryAction;
+        if (result != KMessageBox::PrimaryAction)
+            return false;
     }
+
+    const auto viewerNames = m_dbusViewers.keys();
+    for (const QString& name : viewerNames)
+        stopDbusViewer(name);
+
     return true;
 }
 
@@ -832,18 +789,27 @@ bool MainWindow::startDbusViewer(const QString& vmName)
     connect(state.displayListener, &QemuDisplayListener::connectionLost, this,
         [this, vmName]() { stopDbusViewer(vmName); });
 
-    // Mirror SPICE behavior: when the user closes the viewer window,
-    // switch the VM to headless instead of killing it.
-    connect(state.window, &QObject::destroyed, this,
-        [this, vmName](QObject*) {
-            VmEntry* entry = veModel->entryByName(vmName);
-            if (entry && entry->state == VmEntry::State::Running)
-                veModel->setHeadless(vmName, true);
-            if (selectedVmName() == vmName) {
-                updateDetails();
-                updateActionStates();
-            }
-        });
+    // Mirror SPICE behaviour: when the user closes the viewer window,
+    // keep QEMU running, mark the VM as headless and tear down the
+    // per-viewer D-Bus listeners so the user can reconnect later.
+    //
+    // QueuedConnection: the slot must run AFTER closeEvent() has fully
+    // returned, otherwise stopDbusViewer() would delete the window from
+    // within its own event handler.
+    connect(state.window, &DbusViewerWindow::viewerClosed, this, [this, vmName]() {
+                if (!m_dbusViewers.contains(vmName))
+                    return;  // already torn down (shutdown path / connectionLost)
+
+    VmEntry* entry = veModel->entryByName(vmName);
+    if (entry && entry->state == VmEntry::State::Running)
+        veModel->setHeadless(vmName, true);
+
+                stopDbusViewer(vmName);
+
+                if (selectedVmName() == vmName) {
+                    updateDetails();
+                    updateActionStates();
+                } }, Qt::QueuedConnection);
 
     m_dbusViewers.insert(vmName, state);
     return true;
@@ -858,12 +824,16 @@ void MainWindow::stopDbusViewer(const QString& vmName)
 
     if (state.window) {
         state.window->displayWidget()->stopAllGLibWatching();
+        disconnect(state.window, &DbusViewerWindow::viewerClosed, this, nullptr);
         state.window->close();
-        delete state.window;
+        state.window->deleteLater();
     }
-    delete state.audioOut;
-    delete state.audioIn;
-    delete state.displayListener;
+    if (state.audioOut)
+        state.audioOut->deleteLater();
+    if (state.audioIn)
+        state.audioIn->deleteLater();
+    if (state.displayListener)
+        state.displayListener->deleteLater();
 
     if (!state.connectionName.isEmpty())
         QDBusConnection::disconnectFromPeer(state.connectionName);
@@ -1681,6 +1651,51 @@ void MainWindow::releaseNetwork(const VMConfig& config)
     if (config.virtualNetworkName().isEmpty())
         return;
     m_networkManager->detachVm(config.virtualNetworkName(), config.name());
+}
+
+void MainWindow::tearDownVmRuntime(const QString& vmName)
+{
+    VmEntry* entry = veModel->entryByName(vmName);
+    if (!entry)
+        return;
+
+    // Detach signal sources first so no slot fires during teardown.
+    if (entry->qmpClient) {
+        entry->qmpClient->disconnect();
+        entry->qmpClient->disconnectFromVm();
+        entry->qmpClient->deleteLater();
+    }
+
+    // Detach the integrated D-Bus viewer (also drops its listeners).
+    stopDbusViewer(vmName);
+    cleanupDbusSocket(vmName);
+
+    auto stopHelper = [](QPointer<KProcess>& p, int waitMs) {
+        if (!p)
+            return;
+        p->disconnect();
+        p->terminate();
+        if (!p->waitForFinished(waitMs))
+            p->kill();
+        delete p; // QPointer auto-nullifies
+    };
+
+    stopHelper(entry->swtpmProcess, 3000);
+    stopHelper(entry->virtiofsdProcess, 3000);
+    stopHelper(entry->passtProcess, 3000);
+    stopHelper(entry->spiceViewerProcess, 2000);
+    stopHelper(entry->dbusDaemonProcess, 2000);
+
+    const QDir vmDir = getVmDir(vmName);
+    QFile::remove(vmDir.filePath(u"swtpm.sock"_s));
+    QFile::remove(vmDir.filePath(u"virtiofsd.sock.pid"_s));
+    QFile::remove(vmDir.filePath(u"passt.sock"_s));
+    QFile::remove(vmDir.filePath(u"dbus-bus.sock"_s));
+    QFile::remove(vmDir.filePath(u"dbus-bus.conf"_s));
+    QFile::remove(monitorSocketPath(vmName));
+
+    releaseNetwork(entry->config);
+    veModel->clearRuntimeState(vmName);
 }
 
 void MainWindow::changeISO()
@@ -2792,115 +2807,14 @@ void MainWindow::onProcessFinished(int, KProcess::ExitStatus)
     }
 
     VmEntry* entry = veModel->entryByName(vmName);
+    const bool wasDeploying = entry && entry->state == VmEntry::State::Deploying;
 
-    // Deployment finalization
-    if (entry->state == VmEntry::State::Deploying) {
-        if (entry->qmpClient) {
-            entry->qmpClient->disconnectFromVm();
-            entry->qmpClient->deleteLater();
-        }
-        if (entry->swtpmProcess) {
-            entry->swtpmProcess->terminate();
-            if (!entry->swtpmProcess->waitForFinished(3000))
-                entry->swtpmProcess->kill();
-            delete entry->swtpmProcess;
-            QFile::remove(getVmBaseDir().filePath(vmName) + u"/swtpm.sock"_s);
-        }
-        if (entry->virtiofsdProcess) {
-            entry->virtiofsdProcess->terminate();
-            if (!entry->virtiofsdProcess->waitForFinished(3000))
-                entry->virtiofsdProcess->kill();
-            delete entry->virtiofsdProcess;
-            QFile::remove(getVmBaseDir().filePath(vmName) + u"/virtiofsd.sock.pid"_s);
-        }
-        if (entry->passtProcess) {
-            entry->passtProcess->terminate();
-            if (!entry->passtProcess->waitForFinished(3000))
-                entry->passtProcess->kill();
-            delete entry->passtProcess;
-            QFile::remove(getVmBaseDir().filePath(vmName) + u"/passt.sock"_s);
-        }
-        if (entry->spiceViewerProcess) {
-            entry->spiceViewerProcess->terminate();
-            if (!entry->spiceViewerProcess->waitForFinished(2000))
-                entry->spiceViewerProcess->kill();
-            delete entry->spiceViewerProcess;
-        }
-        if (entry->dbusDaemonProcess) {
-            entry->dbusDaemonProcess->terminate();
-            if (!entry->dbusDaemonProcess->waitForFinished(2000))
-                entry->dbusDaemonProcess->kill();
-            delete entry->dbusDaemonProcess;
-            QFile::remove(getVmBaseDir().filePath(vmName) + u"/dbus-bus.sock"_s);
-            QFile::remove(getVmBaseDir().filePath(vmName) + u"/dbus-bus.conf"_s);
-        }
-        // D-Bus integrated viewer cleanup
-        stopDbusViewer(vmName);
-        cleanupDbusSocket(vmName);
+    tearDownVmRuntime(vmName);
 
-        QFile::remove(monitorSocketPath(vmName));
-        releaseNetwork(entry->config);
-        veModel->clearRuntimeState(vmName);
-
+    if (wasDeploying)
         finalizeDeployment(vmName);
-
-        if (selectedVmName() == vmName) {
-            updateDetails();
-            updateActionStates();
-            if (perfMonitor) {
-                perfMonitor->clearHistory();
-                perfMonitor->setActive(false);
-            }
-        }
-        p->deleteLater();
-        return; // Skip normal cleanup
-    }
-
-    if (entry->qmpClient) {
-        entry->qmpClient->disconnectFromVm();
-        entry->qmpClient->deleteLater();
-    }
-
-    if (entry->swtpmProcess) {
-        entry->swtpmProcess->terminate();
-        if (!entry->swtpmProcess->waitForFinished(3000))
-            entry->swtpmProcess->kill();
-        delete entry->swtpmProcess;
-        QFile::remove(getVmBaseDir().filePath(vmName) + u"/swtpm.sock"_s);
-    }
-
-    if (entry->virtiofsdProcess) {
-        entry->virtiofsdProcess->terminate();
-        if (!entry->virtiofsdProcess->waitForFinished(3000))
-            entry->virtiofsdProcess->kill();
-        delete entry->virtiofsdProcess;
-        QFile::remove(getVmBaseDir().filePath(vmName) + u"/virtiofsd.sock.pid"_s);
-    }
-
-    if (entry->passtProcess) {
-        entry->passtProcess->terminate();
-        if (!entry->passtProcess->waitForFinished(3000))
-            entry->passtProcess->kill();
-        delete entry->passtProcess;
-        QFile::remove(getVmBaseDir().filePath(vmName) + u"/passt.sock"_s);
-    }
-
-    if (entry->dbusDaemonProcess) {
-        entry->dbusDaemonProcess->terminate();
-        if (!entry->dbusDaemonProcess->waitForFinished(2000))
-            entry->dbusDaemonProcess->kill();
-        delete entry->dbusDaemonProcess;
-        QFile::remove(getVmBaseDir().filePath(vmName) + u"/dbus-bus.sock"_s);
-        QFile::remove(getVmBaseDir().filePath(vmName) + u"/dbus-bus.conf"_s);
-    }
-
-    stopDbusViewer(vmName);
-    cleanupDbusSocket(vmName);
-
-    QFile::remove(monitorSocketPath(vmName));
-    releaseNetwork(entry->config);
-    veModel->clearRuntimeState(vmName);
-    statusBar()->showMessage(i18n("VM '%1' stopped.", vmName));
+    else
+        statusBar()->showMessage(i18n("VM '%1' stopped.", vmName));
 
     if (selectedVmName() == vmName) {
         updateDetails();
@@ -2910,6 +2824,7 @@ void MainWindow::onProcessFinished(int, KProcess::ExitStatus)
             perfMonitor->setActive(false);
         }
     }
+
     p->deleteLater();
 }
 

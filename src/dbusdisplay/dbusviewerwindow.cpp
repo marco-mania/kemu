@@ -406,6 +406,7 @@ void DbusViewerWindow::onAbout()
 void DbusViewerWindow::closeEvent(QCloseEvent* event)
 {
     teardownClipboard();
+    Q_EMIT viewerClosed();
     event->accept();
 }
 

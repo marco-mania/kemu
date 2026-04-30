@@ -65,6 +65,9 @@ public:
     void audioOutReady();
     void audioInReady();
 
+Q_SIGNALS:
+    void viewerClosed();
+
 protected:
     void closeEvent(QCloseEvent* event) override;
 

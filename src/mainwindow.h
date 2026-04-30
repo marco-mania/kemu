@@ -148,6 +148,7 @@ private:
 
     QString ensureNetworkRunning(const QString& networkName, const QString& vmName);
     void releaseNetwork(const VMConfig& config);
+    void tearDownVmRuntime(const QString& vmName);
 
     QDir getVmBaseDir() const;
     QDir getVmDir(const QString& vmName) const;
