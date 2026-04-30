@@ -6,8 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # KEMU – KDE QEMU Virtual Machine Manager
 
-A traditional desktop frontend for QEMU on Linux, developed using Qt6 Widgets and KDE Frameworks 6.
-This tool prioritizes desktop integration - built without libvirt.
+A traditional, direct-to-QEMU desktop frontend for Linux, built with Qt6 Widgets and KDE Frameworks 6 for deep desktop integration.
 
 **Disclaimer:** Early-stage development.
 
@@ -175,20 +174,6 @@ GTK and SDL are the simplest options - QEMU opens its own window directly, with 
 > **Highly Experimental:** The D-Bus display backend is under active development and should be considered unstable. Expect bugs, missing features, and breaking changes between versions. Not recommended for production use.
 
 The D-Bus display backend embeds the VM's framebuffer directly into a KEMU-managed Qt window. It uses QEMU's `-display dbus` interface to receive video, send keyboard and mouse events, and exchange audio and clipboard data - all over a private D-Bus session per VM.
-
-**Architecture:**
-
-```
-┌─── KEMU process ───┐         ┌─── per-VM dbus-daemon ───┐         ┌─── QEMU process ───┐
-│                    │         │                          │         │                    │
-│  DbusViewerWindow ─┼────────►│                          │◄────────┼─ -display dbus     │
-│   ├─ DisplayWidget │         │   private bus, listening │         │   (registers as    │
-│   ├─ Audio in/out  │         │   on dbus-bus.sock       │         │    org.qemu)       │
-│   └─ Clipboard     │         │                          │         │                    │
-│                    │         │                          │         │                    │
-└────────────────────┘         └──────────────────────────┘         └────────────────────┘
-```
-
 Each D-Bus VM gets its own isolated `dbus-daemon` instance with a private socket inside the VM directory. KEMU and QEMU connect as clients to this private bus and exchange D-Bus messages directly.
 
 **Features:**
@@ -218,16 +203,14 @@ Each VM gets its own isolated network connection through `passt`, which translat
 
 ### Virtual Network
 
-Virtual networks connect multiple VMs to a shared private subnet. The entire stack runs rootless using Linux user namespaces - no libvirt, no root, no system-wide configuration changes.
-
-**Architecture:**
+Virtual networks connect multiple VMs to a shared private subnet. The entire stack runs rootless using Linux user namespaces.
 
 ```
 ┌─── User Namespace ───────────────────────────────┐
 │                                                  │
 │   br0  (bridge, e.g. 192.168.100.1/24)           │
-│    ├── tap-vm1  ←── QEMU VM 1                    │
-│    ├── tap-vm2  ←── QEMU VM 2                    │
+│    ├── tap-vm1 :: QEMU VM1                       │
+│    ├── tap-vm2 :: QEMU VM2                       │
 │    └── ...                                       │
 │                                                  │
 │   [dnsmasq]  (optional DHCP on br0)              │
@@ -351,7 +334,7 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="0951", ATTR{idProduct}=="1666", MODE="0664", 
 - UEFI, TPM, and Secure Boot settings cannot be represented in the OVA format and will be lost on export
 - Snapshots are not preserved during OVA export (VMDK does not support them)
 - The shared folder path and ISO path are stripped from native exports as they are system-specific
-- OVF parsing covers common VirtualBox/VMware OVAs but may not handle exotic configurations
+- OVF parsing covers common VirtualBox/VMware OVAs but may not handle some exotic configurations
 
 ## Credits and Trademarks
 
