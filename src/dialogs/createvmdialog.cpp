@@ -356,10 +356,10 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     hwLayout->addRow({ }, diskHintLabel);
 
     usbCombo = new QComboBox();
-    usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::None), static_cast<int>(VMSpecs::UsbController::None));
     usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Xhci), static_cast<int>(VMSpecs::UsbController::Xhci));
     usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Ehci), static_cast<int>(VMSpecs::UsbController::Ehci));
     usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Default), static_cast<int>(VMSpecs::UsbController::Default));
+    usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::None), static_cast<int>(VMSpecs::UsbController::None));
     hwLayout->addRow(i18n("USB Controller:"), usbCombo);
     usbControllerLabel = qobject_cast<QLabel*>(hwLayout->labelForField(usbCombo));
 
