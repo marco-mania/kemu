@@ -9,6 +9,7 @@
 #include "const.h"
 #include "dbusdisplay/dbusdisplayconst.h"
 #include "dialogs/createvmdialog.h"
+#include "dialogs/missingtoolsdialog.h"
 #include "dialogs/settingsdialog.h"
 #include "dialogs/snapshotdialog.h"
 #include "jobs/clonejob.h"
@@ -75,20 +76,21 @@ MainWindow::MainWindow(QWidget* parent)
     m_networkManager->load();
 
     QTimer::singleShot(0, this, [this]() {
-        QStringList missing = ExternalTools::instance().missingToolNames();
+        auto missing = ExternalTools::instance().missingFeatureGroups();
+
+        // drop suppressible groups the user has silenced
+        missing.erase(std::remove_if(missing.begin(), missing.end(),
+                          [](const ExternalTools::FeatureGroup& g) {
+                              return g.suppressible && ExternalTools::isWarningSuppressed(g.id);
+                          }),
+            missing.end());
+
         if (missing.isEmpty())
             return;
 
-        auto result = KMessageBox::warningContinueCancel(
-            this,
-            i18n("The following tools were not found:\n\n%1\n\n"
-                 "Some features may not work correctly.\n"
-                 "You can configure the paths in Settings.",
-                missing.join(u"\n"_s)),
-            i18n("Missing Tools"),
-            KGuiItem(i18n("Open Settings…"), u"configure"_s));
-
-        if (result == KMessageBox::Continue)
+        MissingToolsDialog dlg(missing, this);
+        dlg.exec();
+        if (dlg.openSettingsRequested())
             openSettingsPage(SettingsDialog::Executables);
     });
 }

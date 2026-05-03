@@ -233,3 +233,113 @@ bool ExternalTools::isVirtualNetworkCapable() const
     }
     return true;
 }
+
+// --- Feature groups ---
+
+QList<ExternalTools::FeatureGroup> ExternalTools::featureGroups()
+{
+    return {
+        { Core,
+            i18n("Core Functionality"),
+            i18n("Required for basic VM operation. This warning cannot be disabled."),
+            coreTools(),
+            false },
+        { VirtualNetwork,
+            i18n("Virtual Networks"),
+            i18n("User-defined isolated networks with built-in DHCP and DNS."),
+            virtualNetworkTools(),
+            true },
+        { SpiceDisplay,
+            i18n("SPICE Display"),
+            i18n("External SPICE viewer for VM consoles."),
+            spiceDisplayTools(),
+            true },
+        { DbusDisplay,
+            i18n("D-Bus Integrated Display"),
+            i18n("Embedded display via a per-VM D-Bus session."),
+            dbusDisplayTools(),
+            true },
+        { TpmEmulation,
+            i18n("TPM Emulation"),
+            i18n("Software TPM 2.0 device for guests that require it (e.g. Windows 11)."),
+            { Swtpm },
+            true },
+        { SharedFolders,
+            i18n("Shared Folders"),
+            i18n("Host-to-guest folder sharing via virtio-fs."),
+            { Virtiofsd },
+            true },
+        { CloudInitIso,
+            i18n("Cloud-Init / ISO Creation"),
+            i18n("Generate seed ISOs for automated cloud-image deployment."),
+            { GenIsoImage },
+            true }
+    };
+}
+
+QList<ExternalTools::FeatureGroup> ExternalTools::missingFeatureGroups() const
+{
+    QList<FeatureGroup> result;
+    for (const auto& group : featureGroups()) {
+        for (Tool t : group.tools) {
+            if (!isAvailable(t)) {
+                result.append(group);
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+QString ExternalTools::suppressionConfigKey(FeatureGroupId id)
+{
+    switch (id) {
+    case Core:
+        return u"IgnoreMissing_Core"_s;
+    case VirtualNetwork:
+        return u"IgnoreMissing_VirtualNetwork"_s;
+    case SpiceDisplay:
+        return u"IgnoreMissing_SpiceDisplay"_s;
+    case DbusDisplay:
+        return u"IgnoreMissing_DbusDisplay"_s;
+    case TpmEmulation:
+        return u"IgnoreMissing_TpmEmulation"_s;
+    case SharedFolders:
+        return u"IgnoreMissing_SharedFolders"_s;
+    case CloudInitIso:
+        return u"IgnoreMissing_CloudInitIso"_s;
+    }
+    return { };
+}
+
+bool ExternalTools::isWarningSuppressed(FeatureGroupId id)
+{
+    KConfig config(u"kemurc"_s);
+    KConfigGroup g = config.group(u"MissingToolWarnings"_s);
+    return g.readEntry(suppressionConfigKey(id), false);
+}
+
+void ExternalTools::setWarningSuppressed(FeatureGroupId id, bool suppressed)
+{
+    KConfig config(u"kemurc"_s);
+    KConfigGroup g = config.group(u"MissingToolWarnings"_s);
+    g.writeEntry(suppressionConfigKey(id), suppressed);
+    config.sync();
+}
+
+QList<ExternalTools::FeatureGroupId> ExternalTools::suppressedFeatureGroups()
+{
+    QList<FeatureGroupId> result;
+    for (const auto& g : featureGroups()) {
+        if (g.suppressible && isWarningSuppressed(g.id))
+            result.append(g.id);
+    }
+    return result;
+}
+
+void ExternalTools::resetAllSuppressions()
+{
+    KConfig config(u"kemurc"_s);
+    config.deleteGroup(u"MissingToolWarnings"_s);
+    config.sync();
+}

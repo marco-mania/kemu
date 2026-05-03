@@ -12,6 +12,7 @@
 #include <QStandardPaths>
 #include <QString>
 #include <QStringList>
+#include <QTextBrowser>
 
 #include <KConfig>
 #include <KConfigGroup>
@@ -48,6 +49,25 @@ public:
         DbusDaemon // dbus-daemon for per-VM private bus
     };
     Q_ENUM(Tool)
+
+    enum FeatureGroupId {
+        Core,
+        VirtualNetwork,
+        SpiceDisplay,
+        DbusDisplay,
+        TpmEmulation,
+        SharedFolders,
+        CloudInitIso
+    };
+    Q_ENUM(FeatureGroupId)
+
+    struct FeatureGroup {
+        FeatureGroupId id;
+        QString name;
+        QString description;
+        QList<Tool> tools;
+        bool suppressible; // false for Core: cannot be silenced
+    };
 
     static ExternalTools& instance();
 
@@ -87,6 +107,16 @@ public:
 
     // Convenience: check if all tools for virtual networking are available.
     [[nodiscard]] bool isVirtualNetworkCapable() const;
+
+    [[nodiscard]] static QList<FeatureGroup> featureGroups();
+    [[nodiscard]] QList<FeatureGroup> missingFeatureGroups() const;
+
+    [[nodiscard]] static bool isWarningSuppressed(FeatureGroupId id);
+    static void setWarningSuppressed(FeatureGroupId id, bool suppressed);
+    [[nodiscard]] static QList<FeatureGroupId> suppressedFeatureGroups();
+    static void resetAllSuppressions();
+
+    [[nodiscard]] static QString suppressionConfigKey(FeatureGroupId id);
 
     // --- (Re-)Detection ---
 

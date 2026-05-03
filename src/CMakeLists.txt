@@ -68,6 +68,8 @@ target_sources(
           dialogs/snapshotdialog.h
           dialogs/cloudconfigdialog.cpp
           dialogs/cloudconfigdialog.h
+          dialogs/missingtoolsdialog.cpp
+          dialogs/missingtoolsdialog.h
           widgets/virtualenvironmentitemdelegate.cpp
           widgets/virtualenvironmentitemdelegate.h
           widgets/virtualenvironmenttreeview.h

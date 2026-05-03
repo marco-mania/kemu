@@ -180,6 +180,44 @@ void SettingsDialog::setupExecutablesPage()
         });
     }
 
+    // Suppressed-warnings section
+    auto* suppressedBox = new QGroupBox(i18n("Suppressed Startup Warnings"));
+    auto* suppressedLayout = new QVBoxLayout(suppressedBox);
+
+    auto* suppressedLabel = new QLabel;
+    suppressedLabel->setWordWrap(true);
+    suppressedLayout->addWidget(suppressedLabel);
+
+    auto* resetBtn = new QPushButton(QIcon::fromTheme(u"edit-undo"_s), i18n("Reset All Suppressed Warnings"));
+    auto* btnRow = new QHBoxLayout;
+    btnRow->addWidget(resetBtn);
+    btnRow->addStretch();
+    suppressedLayout->addLayout(btnRow);
+
+    auto refresh = [suppressedLabel, resetBtn]() {
+        const auto ids = ExternalTools::suppressedFeatureGroups();
+        if (ids.isEmpty()) {
+            suppressedLabel->setText(i18n("No warnings are currently suppressed."));
+            resetBtn->setEnabled(false);
+        } else {
+            QStringList names;
+            for (const auto& g : ExternalTools::featureGroups()) {
+                if (ids.contains(g.id))
+                    names << g.name;
+            }
+            suppressedLabel->setText(i18n("Currently suppressed: %1", names.join(u", "_s)));
+            resetBtn->setEnabled(true);
+        }
+    };
+    refresh();
+
+    connect(resetBtn, &QPushButton::clicked, this, [refresh]() {
+        ExternalTools::resetAllSuppressions();
+        refresh();
+    });
+
+    layout->addWidget(suppressedBox);
+
     layout->addStretch();
     scrollArea->setWidget(page);
 
