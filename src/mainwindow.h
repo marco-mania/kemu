@@ -81,6 +81,7 @@ public:
 
 protected:
     bool queryClose() override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private Q_SLOTS:
     void openSettings();
@@ -134,6 +135,8 @@ private:
     void setupActions();
     void updateDetails();
     void updateActionStates();
+
+    QString encodeThemeIcon(const QString& name, int sizePx) const;
 
     QStringList existingVmNames() const;
     QStringList usedMacAddresses() const;

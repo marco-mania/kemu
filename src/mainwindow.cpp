@@ -36,6 +36,8 @@ MainWindow::MainWindow(QWidget* parent)
     setupUi();
     setupActions();
 
+    qApp->installEventFilter(this);
+
     jobTracker = new KUiServerV2JobTracker(this);
 
     setupGUI(Default, u"kemuui.rc"_s);
@@ -177,6 +179,27 @@ bool MainWindow::queryClose()
         stopDbusViewer(name);
 
     return true;
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == qApp) {
+        const QEvent::Type t = event->type();
+        if (t == QEvent::ApplicationPaletteChange || t == QEvent::ThemeChange || t == QEvent::StyleChange) {
+
+            qDebug() << "Theme/palette change detected" << t;
+
+            QTimer::singleShot(0, this, [this]() {
+                if (detailsBrowser) {
+                    const QString ss = detailsBrowser->styleSheet();
+                    detailsBrowser->setStyleSheet(QString());
+                    detailsBrowser->setStyleSheet(ss);
+                }
+                updateDetails();
+            });
+        }
+    }
+    return KXmlGuiWindow::eventFilter(watched, event);
 }
 
 QDir MainWindow::getVmBaseDir() const
@@ -1060,6 +1083,27 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_network_shell"_s)->setEnabled(hasActiveNamespace);
 }
 
+QString MainWindow::encodeThemeIcon(const QString& name, int sizePx) const
+{
+    const QIcon icon = QIcon::fromTheme(name);
+    if (icon.isNull() || !detailsBrowser)
+        return { };
+
+    const qreal dpr = detailsBrowser->devicePixelRatioF();
+    const QPixmap pix = icon.pixmap(QSize(sizePx, sizePx) * dpr);
+    if (pix.isNull())
+        return { };
+
+    QByteArray ba;
+    QBuffer buf(&ba);
+    buf.open(QIODevice::WriteOnly);
+    pix.save(&buf, "PNG");
+    return u"<img src='data:image/png;base64,%1' width='%2' height='%2' "
+           "style='vertical-align: middle;'/>"_s
+               .arg(QString::fromLatin1(ba.toBase64()))
+               .arg(sizePx);
+}
+
 QStringList MainWindow::existingVmNames() const
 {
     const QDir dir = getVmBaseDir();
@@ -1099,23 +1143,36 @@ QList<MacUsageInfo> MainWindow::macUsageInfo() const
 
 void MainWindow::updateDetails()
 {
-    KColorScheme scheme(QPalette::Active, KColorScheme::View);
+    const QPalette pal = detailsBrowser->palette();
+    KColorScheme scheme(QPalette::Active, KColorScheme::Window);
 
-    const QString colNormal = scheme.foreground(KColorScheme::NormalText).color().name();
-    const QString colInactive = scheme.foreground(KColorScheme::InactiveText).color().name();
+    const QString colNormal = pal.color(QPalette::Active, QPalette::WindowText).name();
+    const QString colInactive = pal.color(QPalette::Disabled, QPalette::WindowText).name();
+    const QString colLink = pal.color(QPalette::Active, QPalette::Link).name();
+    const QString colVisited = pal.color(QPalette::Active, QPalette::LinkVisited).name();
     const QString colPositive = scheme.foreground(KColorScheme::PositiveText).color().name();
     const QString colNeutral = scheme.foreground(KColorScheme::NeutralText).color().name();
-    const QString colLink = scheme.foreground(KColorScheme::LinkText).color().name();
-    const QString colVisited = scheme.foreground(KColorScheme::VisitedText).color().name();
-    QColor borderColor = scheme.foreground(KColorScheme::InactiveText).color();
-    borderColor.setAlphaF(0.25);
+
+    QColor borderColor = pal.color(QPalette::Disabled, QPalette::WindowText);
+    borderColor.setAlphaF(0.3);
     const QString colBorder = borderColor.name(QColor::HexArgb);
+
+    // System font: respects the user's KDE font settings
+    const QFont sysFont = QApplication::font();
+    const QString fontFamily = sysFont.family();
+    const int basePtSize = sysFont.pointSize() > 0
+        ? sysFont.pointSize()
+        : qMax(8, QFontInfo(sysFont).pixelSize() * 72 / 96);
 
     if (currentConfig.name().isEmpty()) {
         detailsBrowser->setHtml(
-            u"<div style='padding: 60px 40px; text-align: center; font-family: sans-serif;'>"
-            "<div style='font-size: 48px; color: %1;'>&#x1F5A5;</div>"
-            "<div style='font-size: 15px; color: %1; margin-top: 12px;'>"_s.arg(colInactive)
+            u"<div style='padding: 60px 40px; text-align: center; "
+            "font-family: \"%1\"; font-size: %2pt; color: %3;'>"
+            "<div style='font-size: 3em;'>&#x1F5A5;</div>"
+            "<div style='margin-top: 0.8em;'>"_s
+                .arg(fontFamily)
+                .arg(basePtSize)
+                .arg(colInactive)
             + i18n("Select a virtual machine from the list or create a new one.")
             + u"</div></div>"_s);
         return;
@@ -1178,7 +1235,6 @@ void MainWindow::updateDetails()
     const auto& portForwards = currentConfig.portForwards();
     if (!portForwards.isEmpty()) {
         netVal += u"  [%1 port(s) forwarded]"_s.arg(portForwards.size());
-
         QStringList portLines;
         for (const auto& rule : portForwards) {
             portLines << u"%1 %2 → %3"_s
@@ -1191,15 +1247,13 @@ void MainWindow::updateDetails()
 
     QString usbVal = VMConfig::toUIString(currentConfig.usbController());
     QString displayVal = VMConfig::toUIString(currentConfig.displayType());
-
-    QString resolutionVal = u"%1×%2"_s.arg(currentConfig.displayResolution().width()).arg(currentConfig.displayResolution().height());
-
+    QString resolutionVal = u"%1×%2"_s.arg(currentConfig.displayResolution().width())
+                                .arg(currentConfig.displayResolution().height());
     QString firmwareVal = VMConfig::firmwareToUIString(currentConfig.useUefi(), currentConfig.useSecureBoot());
     QString chipsetVal = VMConfig::toUIString(currentConfig.machineType());
 
     QString osVal = VMConfig::toUIString(currentConfig.osType());
-    if (!currentConfig.distroId().isEmpty()
-        && currentConfig.distroId() != u"other"_s) {
+    if (!currentConfig.distroId().isEmpty() && currentConfig.distroId() != u"other"_s) {
         osVal += u" — "_s + m_imageDatabase.displayName(currentConfig.distroId());
     }
 
@@ -1212,12 +1266,13 @@ void MainWindow::updateDetails()
     if (!memFlags.isEmpty())
         memVal += i18n("  [%1]", memFlags.join(u", "));
 
-    QString cpuVal = i18n("%1, %2 core(s), %3", VMConfig::toUIString(currentConfig.cpuModel()), currentConfig.cpuCoreCount(), currentConfig.useKvm() ? i18n("KVM") : i18n("TCG"));
+    QString cpuVal = i18n("%1, %2 core(s), %3", VMConfig::toUIString(currentConfig.cpuModel()),
+        currentConfig.cpuCoreCount(),
+        currentConfig.useKvm() ? i18n("KVM") : i18n("TCG"));
 
     QString cdVal = currentConfig.isoPath().isEmpty()
         ? i18n("No disc inserted")
         : QFileInfo(currentConfig.isoPath()).fileName();
-
     QString floppyVal = currentConfig.floppyPath().isEmpty()
         ? i18n("No disk inserted")
         : QFileInfo(currentConfig.floppyPath()).fileName();
@@ -1229,9 +1284,7 @@ void MainWindow::updateDetails()
         QString protocol = (currentConfig.osType() == VMSpecs::OsType::Windows)
             ? i18n("virtio-fs")
             : i18n("9p (VirtFS)");
-        QString tag = currentConfig.sharedName().isEmpty()
-            ? u"share"_s
-            : currentConfig.sharedName();
+        QString tag = currentConfig.sharedName().isEmpty() ? u"share"_s : currentConfig.sharedName();
         sharedVal = i18n("%1  [%2, Tag: %3]", currentConfig.sharedPath(), protocol, tag);
     }
 
@@ -1246,7 +1299,8 @@ void MainWindow::updateDetails()
             else
                 statusText += i18n(" <b>Headless</b>");
         }
-        statusText += u"  <span class='pid'>[<a href='copy-pid:%1' title='%2'>PID %1</a>]</span>"_s.arg(QString::number(pid), i18n("Click to copy PID"));
+        statusText += u"  <span class='pid'>[<a href='copy-pid:%1' title='%2'>PID %1</a>]</span>"_s
+                          .arg(QString::number(pid), i18n("Click to copy PID"));
         statusColor = colPositive;
     } else if (isShrinking) {
         statusDot = u"&#x25CF;"_s;
@@ -1270,20 +1324,44 @@ void MainWindow::updateDetails()
         statusColor = colInactive;
     }
 
-    // Render icon as inline SVG or PNG for crisp display
+    QColor badgeBg = QColor(statusColor);
+    badgeBg.setAlphaF(0.15);
+    const QString colBadgeBg = badgeBg.name(QColor::HexArgb);
+
+    // VM header icon
     QString iconImgTag;
     {
         const int targetSize = KEMUConst::DetailViewIconSize;
         const qreal dpr = detailsBrowser->devicePixelRatioF();
         const int devPx = qRound(targetSize * dpr);
 
-        // IconSet SVG: render at device-pixel resolution into PNG
+        auto pixmapToImgTag = [&](const QPixmap& src) -> QString {
+            QImage srcImg = src.toImage();
+            srcImg.setDevicePixelRatio(1.0);
+
+            const QImage scaled = srcImg.scaled(devPx, devPx, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+            QImage canvas(devPx, devPx, QImage::Format_ARGB32_Premultiplied);
+            canvas.setDevicePixelRatio(1.0);
+            canvas.fill(Qt::transparent);
+            QPainter p(&canvas);
+            p.drawImage((devPx - scaled.width()) / 2, (devPx - scaled.height()) / 2, scaled);
+            p.end();
+
+            QByteArray ba;
+            QBuffer buf(&ba);
+            buf.open(QIODevice::WriteOnly);
+            canvas.save(&buf, "PNG");
+            return u"<img src='data:image/png;base64,%1' width='%2' height='%2'/>"_s
+                .arg(QString::fromLatin1(ba.toBase64()))
+                .arg(targetSize);
+        };
+
         QString svgPath;
         if (currentConfig.iconSource() == VMConfig::IconSource::IconSet)
             svgPath = currentConfig.iconSetPath();
 
-        if (!svgPath.isEmpty()
-            && svgPath.endsWith(u".svg", Qt::CaseInsensitive)) {
+        if (!svgPath.isEmpty() && svgPath.endsWith(u".svg", Qt::CaseInsensitive)) {
             QSvgRenderer renderer(svgPath);
             if (renderer.isValid()) {
                 QPixmap pix(devPx, devPx);
@@ -1292,80 +1370,71 @@ void MainWindow::updateDetails()
                 painter.setRenderHint(QPainter::Antialiasing);
                 renderer.render(&painter);
                 painter.end();
-
-                QByteArray ba;
-                QBuffer buffer(&ba);
-                buffer.open(QIODevice::WriteOnly);
-                pix.save(&buffer, "PNG");
-                const QString b64 = QString::fromLatin1(ba.toBase64());
-                iconImgTag = u"<img src='data:image/png;base64,%1' "
-                             "width='%2' />"_s
-                                 .arg(b64)
-                                 .arg(targetSize);
+                iconImgTag = pixmapToImgTag(pix);
             }
         }
 
-        // Fallback: all other icon sources
         if (iconImgTag.isEmpty()) {
             const QIcon ic = currentConfig.icon(targetSize);
             const QPixmap pix = ic.pixmap(QSize(devPx, devPx));
             if (!pix.isNull()) {
-                QByteArray ba;
-                QBuffer buffer(&ba);
-                buffer.open(QIODevice::WriteOnly);
-                pix.save(&buffer, "PNG");
-                const QString b64 = QString::fromLatin1(ba.toBase64());
-                iconImgTag = u"<img src='data:image/png;base64,%1' "
-                             "width='%2' />"_s
-                                 .arg(b64)
-                                 .arg(targetSize);
+                iconImgTag = pixmapToImgTag(pix);
             } else {
-                iconImgTag = u"<span style='font-size: 42px; "
-                             "color: %1;'>&#x1F5B3;</span>"_s
-                                 .arg(colInactive);
+                QPixmap empty(devPx, devPx);
+                empty.fill(Qt::transparent);
+                iconImgTag = pixmapToImgTag(empty);
             }
         }
     }
 
-    // --- CSS ---
+    // Theme-aware CSS: system font, em-relative sizing, palette colors only
     QString css = u"* { margin: 0; padding: 0; }"
-                  "body { font-family: 'Segoe UI', 'Noto Sans', sans-serif; font-size: 13px; "
-                  "       color: %1; background: transparent; padding: 16px 20px; }"
-                  ".header { display: flex; margin-bottom: 18px; }"
-                  ".vm-icon { width: 58px; vertical-align: top; padding-right: 10px; }"
-                  ".header-info { }"
-                  ".vm-name { font-size: 18px; font-weight: 600; color: %1; margin-bottom: 3px; }"
-                  ".vm-status { font-size: 12px; color: %2; }"
-                  ".vm-status .dot { font-size: 10px; }"
-                  ".vm-os { font-size: 12px; color: %3; margin-top: 2px; }"
-                  ".pid { color: %3; font-size: 11px; }"
-                  ".pid a { color: %4; text-decoration: none; }"
-                  ".pid a:hover { text-decoration: underline; color: %5; }"
-                  ".hw-table { width: 100%%; border-collapse: collapse; margin-top: 4px; }"
-                  ".hw-table td { padding: 6px 10px; vertical-align: top; border-bottom: 1px solid %6; }"
-                  ".hw-table tr:last-child td { border-bottom: none; }"
-                  ".hw-icon { width: 26px; text-align: center; font-size: 15px; color: %3; }"
-                  ".hw-label { width: 160px; font-weight: 500; color: %3; }"
-                  ".hw-value { color: %1; }"
-                  ".hw-value.muted { color: %3; font-style: italic; }"
-                  ".section-gap td { padding-top: 14px; }"_s
-                      .arg(colNormal, statusColor, colInactive,
-                          colLink, colVisited, colBorder);
+                  "body { font-family: '%1'; font-size: %2pt; color: %3; background: transparent; padding: 1.2em 1.5em; }"
+                  ".header { margin-bottom: 24px; }"
+                  ".vm-icon { width: 58px; height: 58px; vertical-align: top; "
+                  "           padding-right: 16px; padding-bottom: 8px; }"
+                  ".header-info { vertical-align: top; padding-top: 2px; }"
+                  ".vm-name { font-size: 1.75em; font-weight: 700; color: %3; margin-bottom: 0.4em; letter-spacing: -0.01em; }"
+                  ".vm-status { font-size: 0.9em; margin-bottom: 0.3em; }"
+                  ".vm-status .badge { color: %4; font-weight: 600; "
+                  "                    padding: 2px 8px; "
+                  "                    background-color: %9; "
+                  "                    border-radius: 3px; }"
+                  ".vm-status .dot { font-size: 0.7em; vertical-align: middle; }"
+                  ".vm-os { font-size: 1em; color: %5; }"
+                  ".pid { color: %5; font-size: 0.85em; margin-left: 8px; }"
+                  ".pid a { color: %6; text-decoration: none; }"
+                  ".pid a:hover { text-decoration: underline; color: %7; }"
+                  ".pid a:hover { text-decoration: underline; color: %7; }"
+                  ".hw-table { width: 100%; border-collapse: collapse; margin-top: 4px; "
+                  "            line-height: 1.0; }"
+                  ".hw-table { width: 100%; border-collapse: collapse; margin-top: 4px; "
+                  "            line-height: 1.0; }"
+                  ".hw-table td { padding: 2px 10px; vertical-align: middle; }"
+                  ".hw-icon { width: 22px; text-align: center; }"
+                  ".hw-label { color: %3; }"
+                  ".hw-value { color: %3; }"
+                  ".hw-value.muted { color: %5; font-style: italic; }"
+                  ".section-gap td { border-top: 1px solid %8; padding-top: 8px; }"_s
+                      .arg(fontFamily)
+                      .arg(basePtSize)
+                      .arg(colNormal, statusColor, colInactive, colLink, colVisited, colBorder, colBadgeBg);
 
-    // --- HTML ---
     QString html = u"<html><head><style>%1</style></head><body>"_s.arg(css);
 
     html += u"<table class='header' cellpadding='0' cellspacing='0'><tr>"
             "<td class='vm-icon'>%1</td>"
             "<td class='header-info'>"
             "  <div class='vm-name'>%2</div>"
-            "  <div class='vm-status'><span class='dot'>%3</span> %4</div>"
+            "  <div class='vm-status'>"
+            "    <span class='badge'><span class='dot'>%3</span> %4</span>"
+            "  </div>"
             "  <div class='vm-os'>%5</div>"
-            "</td>"
-            "</tr></table>"_s.arg(iconImgTag, currentConfig.name(), statusDot, statusText, osVal);
+            "</td></tr></table>"_s.arg(iconImgTag, currentConfig.name(),
+                statusDot, statusText, osVal);
 
     struct HwRow {
-        QString icon;
+        QString iconName; // freedesktop / Breeze theme icon name
         QString label;
         QString value;
         bool sectionStart = false;
@@ -1373,34 +1442,36 @@ void MainWindow::updateDetails()
     };
 
     QList<HwRow> rows = {
-        { u"&#x2699;"_s, i18n("Firmware"), firmwareVal, false, false },
-        { u"&#x2699;"_s, i18n("Chipset"), chipsetVal, false, false },
-
-        { u"&#x1F512;"_s, i18n("TPM"), currentConfig.useTpm() ? i18n("TPM 2.0 (swtpm)") : i18n("None"), false, !currentConfig.useTpm() },
-
-        { u"&#x1F552;"_s, i18n("Clock"), currentConfig.useLocalTime() ? i18n("Localtime") : i18n("UTC"), false, false },
-
-        { u"&#x1F4BB;"_s, i18n("Memory"), memVal, true, false },
-        { u"&#x1F4BB;"_s, i18n("Processors"), cpuVal, false, false },
-
-        { u"&#x1F4BE;"_s, i18n("Hard Disk"), diskVal, true, false },
-        { u"&#x1F4BF;"_s, i18n("CD/DVD"), cdVal, false, currentConfig.isoPath().isEmpty() },
-        { u"&#x1F4BE;"_s, i18n("Floppy"), floppyVal, false, currentConfig.floppyPath().isEmpty() },
-
-        { u"&#x1F5B5;"_s, i18n("Display"),
-            gpuVal + u", "_s + displayVal + (currentConfig.displayType() != VMSpecs::DisplayType::Spice ? u" (%1)"_s.arg(resolutionVal) : QString()),
+        { u"preferences-system"_s, i18n("Firmware"), firmwareVal, false, false },
+        { u"computer"_s, i18n("Chipset"), chipsetVal, false, false },
+        { u"security-high"_s, i18n("TPM"),
+            currentConfig.useTpm() ? i18n("TPM 2.0 (swtpm)") : i18n("None"),
+            false, !currentConfig.useTpm() },
+        { u"clock"_s, i18n("Clock"),
+            currentConfig.useLocalTime() ? i18n("Localtime") : i18n("UTC"),
+            false, false },
+        { u"media-flash"_s, i18n("Memory"), memVal, true, false },
+        { u"cpu"_s, i18n("Processors"), cpuVal, false, false },
+        { u"drive-harddisk"_s, i18n("Hard Disk"), diskVal, true, false },
+        { u"media-optical"_s, i18n("CD/DVD"), cdVal,
+            false, currentConfig.isoPath().isEmpty() },
+        { u"media-floppy"_s, i18n("Floppy"), floppyVal,
+            false, currentConfig.floppyPath().isEmpty() },
+        { u"video-display"_s, i18n("Display"),
+            gpuVal + u", "_s + displayVal
+                + (currentConfig.displayType() != VMSpecs::DisplayType::Spice
+                        ? u" (%1)"_s.arg(resolutionVal)
+                        : QString()),
             true, false },
-
-        { u"&#x1F50A;"_s, i18n("Sound Card"), audioVal, true, currentConfig.audioDevice() == VMSpecs::AudioDevice::None },
-
-        { u"&#x1F310;"_s, i18n("Network Adapter"), netVal, true, currentConfig.networkCard() == VMSpecs::NetworkCard::None }
-
+        { u"audio-card"_s, i18n("Sound Card"), audioVal,
+            true, currentConfig.audioDevice() == VMSpecs::AudioDevice::None },
+        { u"network-wired"_s, i18n("Network Adapter"), netVal,
+            true, currentConfig.networkCard() == VMSpecs::NetworkCard::None }
     };
 
     if (!portFwdVal.isEmpty())
-        rows.append({ u"&#x21C4;"_s, i18n("Port Forwarding"), portFwdVal, false, false });
+        rows.append({ u"network-connect"_s, i18n("Port Forwarding"), portFwdVal, false, false });
 
-    // Show namespace PID for VMs on a virtual network (when running)
     if ((isRunning || isDeploying)
         && currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
         && !currentConfig.virtualNetworkName().isEmpty()
@@ -1413,27 +1484,30 @@ void MainWindow::updateDetails()
             nsVal += u"  [%1, %2]"_s
                          .arg(currentConfig.virtualNetworkName())
                          .arg(i18np("%1 VM connected", "%1 VMs connected", vmCount));
-            rows.append({ u"&#x1F310;"_s, i18n("Namespace"), nsVal, false, false });
+            rows.append({ u"network-server"_s, i18n("Namespace"), nsVal, false, false });
         }
     }
 
-    rows.append({ { u"&#x1F50C;"_s, i18n("USB Controller"), usbVal, true, false },
-        { u"&#x1F4C1;"_s, i18n("Shared Folders"), sharedVal, true, currentConfig.sharedPath().isEmpty() } });
+    rows.append({ u"drive-removable-media-usb"_s, i18n("USB Controller"), usbVal, true, false });
+    rows.append({ u"folder-network"_s, i18n("Shared Folders"), sharedVal,
+        true, currentConfig.sharedPath().isEmpty() });
 
-    html += u"<table class='hw-table'>"_s;
+    const int hwIconPx = 14;
 
+    html += u"<table class='hw-table' cellspacing='0' cellpadding='0'>"_s;
     for (const auto& row : rows) {
-        QString trClass = row.sectionStart ? u" class='section-gap'"_s : QString();
-        QString valClass = row.muted ? u"hw-value muted"_s : u"hw-value"_s;
+        const QString trClass = row.sectionStart ? u" class='section-gap'"_s : QString();
+        const QString valClass = row.muted ? u"hw-value muted"_s : u"hw-value"_s;
+        const QString iconImg = encodeThemeIcon(row.iconName, hwIconPx);
 
         html += u"<tr%1>"
                 "<td class='hw-icon'>%2</td>"
                 "<td class='hw-label'>%3</td>"
                 "<td class='%4'>%5</td>"
-                "</tr>"_s.arg(trClass, row.icon, row.label, valClass, row.value);
+                "</tr>"_s.arg(trClass, iconImg, row.label, valClass, row.value);
     }
-
     html += u"</table></body></html>"_s;
+
     detailsBrowser->setHtml(html);
 }
 
