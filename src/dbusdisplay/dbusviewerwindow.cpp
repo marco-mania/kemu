@@ -249,13 +249,9 @@ void DbusViewerWindow::updateStatusBar()
 void DbusViewerWindow::onToggleFullscreen(bool checked)
 {
     if (checked) {
-        menuBar()->hide();
-        statusBar()->hide();
         showFullScreen();
     } else {
         showNormal();
-        menuBar()->show();
-        statusBar()->show();
     }
 }
 
@@ -408,6 +404,27 @@ void DbusViewerWindow::closeEvent(QCloseEvent* event)
     teardownClipboard();
     Q_EMIT viewerClosed();
     event->accept();
+}
+
+// =============================================================================
+// Change Event
+// =============================================================================
+
+void DbusViewerWindow::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::WindowStateChange) {
+        // Check if the current state is FullScreen
+        if (this->windowState() & Qt::WindowFullScreen) {
+            menuBar()->hide();
+            statusBar()->hide();
+            m_actFullscreen->setChecked(true);
+        } else {
+            menuBar()->show();
+            statusBar()->show();
+            m_actFullscreen->setChecked(false);
+        }
+    }
+    QWidget::changeEvent(event); // Always call the base class implementation
 }
 
 // =============================================================================
