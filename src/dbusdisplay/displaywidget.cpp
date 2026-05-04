@@ -200,8 +200,10 @@ void QemuDisplayWidget::updateCursor()
         setCursor(Qt::BlankCursor);
         return;
     }
+    float scale = devicePixelRatio() / m_lastScale;
     QPixmap pm = QPixmap::fromImage(ci.image);
-    setCursor(QCursor(pm, ci.hot_x, ci.hot_y));
+    pm.setDevicePixelRatio(scale);
+    setCursor(QCursor(pm, ci.hot_x / scale, ci.hot_y / scale));
 }
 
 void QemuDisplayWidget::onCursorChanged()
@@ -443,6 +445,12 @@ void QemuDisplayWidget::renderQuad()
         float scaleX = static_cast<float>(vpW) / m_fbSize.width();
         float scaleY = static_cast<float>(vpH) / m_fbSize.height();
         float scale = qMin(scaleX, scaleY);
+        if (scale <= 0.0f)
+            scale = 1.0f; // Avoid division by zero and negative scaling
+        if (scale != m_lastScale) {
+            m_lastScale = scale;
+            updateCursor(); // Rescale cursor if needed
+        }
 
         int drawW = static_cast<int>(m_fbSize.width() * scale);
         int drawH = static_cast<int>(m_fbSize.height() * scale);
