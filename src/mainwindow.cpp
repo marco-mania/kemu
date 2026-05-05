@@ -1387,29 +1387,25 @@ void MainWindow::updateDetails()
         }
     }
 
+    const int nameSize = basePtSize + 3;
+
     // Theme-aware CSS: system font, em-relative sizing, palette colors only
     QString css = u"* { margin: 0; padding: 0; }"
                   "body { font-family: '%1'; font-size: %2pt; color: %3; background: transparent; padding: 1.2em 1.5em; }"
                   ".header { margin-bottom: 24px; }"
-                  ".vm-icon { width: 58px; height: 58px; vertical-align: top; "
-                  "           padding-right: 16px; padding-bottom: 8px; }"
+                  ".vm-icon { width: 58px; height: 58px; vertical-align: top; padding-right: 16px; padding-bottom: 8px; }"
                   ".header-info { vertical-align: top; padding-top: 2px; }"
-                  ".vm-name { font-size: 1.75em; font-weight: 700; color: %3; margin-bottom: 0.4em; letter-spacing: -0.01em; }"
-                  ".vm-status { font-size: 0.9em; margin-bottom: 0.3em; }"
-                  ".vm-status .badge { color: %4; font-weight: 600; "
-                  "                    padding: 2px 8px; "
-                  "                    background-color: %9; "
-                  "                    border-radius: 3px; }"
-                  ".vm-status .dot { font-size: 0.7em; vertical-align: middle; }"
-                  ".vm-os { font-size: 1em; color: %5; }"
-                  ".pid { color: %5; font-size: 0.85em; margin-left: 8px; }"
+                  ".vm-name { font-size: %10pt; font-weight: 700; color: %3; margin-bottom: 0.15em; letter-spacing: -0.01em; }"
+                  ".vm-status { margin-bottom: 0.15em; }"
+                  ".vm-status .badge { color: %4; font-weight: 600; padding: 2px 8px; background-color: %9; border-radius: 3px; }"
+                  ".vm-status .dot { vertical-align: middle; }"
+                  ".vm-os { color: %5; }"
+                  ".pid { color: %5; margin-left: 8px; }"
                   ".pid a { color: %6; text-decoration: none; }"
                   ".pid a:hover { text-decoration: underline; color: %7; }"
                   ".pid a:hover { text-decoration: underline; color: %7; }"
-                  ".hw-table { width: 100%; border-collapse: collapse; margin-top: 4px; "
-                  "            line-height: 1.0; }"
-                  ".hw-table { width: 100%; border-collapse: collapse; margin-top: 4px; "
-                  "            line-height: 1.0; }"
+                  ".hw-table { width: 100%; border-collapse: collapse; margin-top: 4px; line-height: 1.0; }"
+                  ".hw-table { width: 100%; border-collapse: collapse; margin-top: 4px; line-height: 1.0; }"
                   ".hw-table td { padding: 2px 10px; vertical-align: middle; }"
                   ".hw-icon { width: 22px; text-align: center; }"
                   ".hw-label { color: %3; }"
@@ -1418,7 +1414,8 @@ void MainWindow::updateDetails()
                   ".section-gap td { border-top: 1px solid %8; padding-top: 8px; }"_s
                       .arg(fontFamily)
                       .arg(basePtSize)
-                      .arg(colNormal, statusColor, colInactive, colLink, colVisited, colBorder, colBadgeBg);
+                      .arg(colNormal, statusColor, colInactive, colLink, colVisited, colBorder, colBadgeBg)
+                      .arg(nameSize);
 
     QString html = u"<html><head><style>%1</style></head><body>"_s.arg(css);
 

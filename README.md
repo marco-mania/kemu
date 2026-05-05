@@ -64,10 +64,10 @@ sudo pacman -S qt6-base qt6-declarative extra-cmake-modules \
 Optional:
 
 ```bash
-sudo pacman -S swtpm virtiofsd dnsmasq virt-viewer dbus
+sudo pacman -S swtpm virtiofsd dnsmasq virt-viewer dbus cdrtools
 ```
 
-### Debian 13+ / (K)Ubuntu 26.04+
+### Debian 13+ / (K)Ubuntu 26.04+ / KDE neon
 
 ```bash
 sudo apt install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-multimedia-dev \
@@ -80,7 +80,7 @@ sudo apt install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-multimedia-dev
 Optional:
 
 ```bash
-sudo apt install ovmf swtpm virtiofsd dnsmasq virt-viewer dbus-daemon
+sudo apt install ovmf swtpm virtiofsd dnsmasq virt-viewer dbus-daemon genisoimage
 ```
 
 ### Fedora 40+
@@ -97,7 +97,7 @@ sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
 Optional:
 
 ```bash
-sudo dnf install edk2-ovmf swtpm virtiofsd dnsmasq virt-viewer dbus-daemon
+sudo dnf install edk2-ovmf swtpm virtiofsd dnsmasq virt-viewer dbus-daemon genisoimage
 ```
 
 ## Building and running
