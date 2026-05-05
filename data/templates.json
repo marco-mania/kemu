@@ -42,23 +42,23 @@
       "icon_hint": "ubuntu",
       "releases": [
         {
-          "version": "25.10",
+          "version": "26.04",
           "quick_deploy": true,
-          "codename": "Questing Quokka",
-          "lts": false,
+          "codename": "Resolute Raccoon",
+          "lts": true,
           "cloud_images": [
             {
               "arch": "x86_64",
-              "url": "https://cloud-images.ubuntu.com/questing/current/questing-server-cloudimg-amd64.img",
+              "url": "https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-amd64.img",
               "format": "qcow2",
-              "checksum_url": "https://cloud-images.ubuntu.com/questing/current/SHA256SUMS",
+              "checksum_url": "https://cloud-images.ubuntu.com/resolute/current/SHA256SUMS",
               "default_user": "ubuntu"
             },
             {
               "arch": "aarch64",
-              "url": "https://cloud-images.ubuntu.com/questing/current/questing-server-cloudimg-arm64.img",
+              "url": "https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-arm64.img",
               "format": "qcow2",
-              "checksum_url": "https://cloud-images.ubuntu.com/questing/current/SHA256SUMS",
+              "checksum_url": "https://cloud-images.ubuntu.com/resolute/current/SHA256SUMS",
               "default_user": "ubuntu"
             }
           ],
@@ -112,6 +112,50 @@
           ],
           "installer_isos": [],
           "min_disk_gb": 10
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 40
+      }
+    },
+    {
+      "id": "kdeneon",
+      "display_name": "KDE neon",
+      "os_type": "linux",
+      "homepage": "https://neon.kde.org",
+      "icon_hint": "neon",
+      "releases": [
+        {
+          "version": "User Edition",
+          "quick_deploy": false,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "x86_64",
+              "edition": "User",
+              "url": "https://files.kde.org/neon/images/user/current/neon-user-current.iso",
+              "note": "Live/Install ISO based on Ubuntu 24.04 LTS. Manual installation via Calamares; no cloud-init support."
+            }
+          ],
+          "min_disk_gb": 20
+        },
+        {
+          "version": "Testing Edition",
+          "quick_deploy": false,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "x86_64",
+              "edition": "Testing",
+              "url": "https://files.kde.org/neon/images/testing/current/neon-testing-current.iso",
+              "note": "Pre-release KDE software from bugfix branches. Will contain bugs. Manual installation; no cloud-init support."
+            }
+          ],
+          "min_disk_gb": 20
         }
       ],
       "qemu_defaults": {
