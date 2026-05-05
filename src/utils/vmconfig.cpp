@@ -387,6 +387,8 @@ QString VMConfig::defaultIconFor(VMSpecs::OsType type, const QString& variant)
 
     if (lv.contains(u"debian"_s))
         filename = u"papirus-icons/distributor-logo-debian.svg"_s;
+    else if (lv.contains(u"kubuntu"_s))
+        filename = u"papirus-icons/distributor-logo-kubuntu.svg"_s;
     else if (lv.contains(u"ubuntu"_s))
         filename = u"papirus-icons/distributor-logo-ubuntu.svg"_s;
     else if (lv.contains(u"neon"_s))
@@ -1212,6 +1214,7 @@ QPair<VMSpecs::OsType, QString> VMConfig::guessOSFromText(const QString& string,
         QString variantId;
     };
     static const QList<VariantHint> linuxHints = {
+        { u"kubuntu"_s, u"kubuntu"_s },
         { u"ubuntu"_s, u"ubuntu"_s },
         { u"neon"_s, u"kdeneon"_s },
         { u"debian"_s, u"debian"_s },
