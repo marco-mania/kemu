@@ -46,9 +46,11 @@ MainWindow::MainWindow(QWidget* parent)
     if (!dir.exists())
         dir.mkpath(u"."_s);
 
+    ExternalTools::instance().refresh();
+
     loadVmList();
 
-    // Preselect first VM
+    // preselect first VM
     if (veModel->rowCount() > 0) {
         QModelIndex firstIndex = veModel->index(0, 0);
 
@@ -69,8 +71,6 @@ MainWindow::MainWindow(QWidget* parent)
     // coming from setupUi()
     connect(veTreeView, &VirtualEnvironmentTreeView::expanded, this, [this]() { saveFolderStructure(); });
     connect(veTreeView, &VirtualEnvironmentTreeView::collapsed, this, [this]() { saveFolderStructure(); });
-
-    ExternalTools::instance().refresh();
 
     m_imageDatabase.loadFromFile(QStandardPaths::locate(QStandardPaths::AppDataLocation, u"data/templates.json"_s));
 
@@ -1151,7 +1151,9 @@ void MainWindow::updateDetails()
     const QString colLink = pal.color(QPalette::Active, QPalette::Link).name();
     const QString colVisited = pal.color(QPalette::Active, QPalette::LinkVisited).name();
     const QString colPositive = scheme.foreground(KColorScheme::PositiveText).color().name();
+    const QString colNegative = scheme.foreground(KColorScheme::NegativeText).color().name();
     const QString colNeutral = scheme.foreground(KColorScheme::NeutralText).color().name();
+    const QString colTrack = scheme.shade(KColorScheme::MidShade).name();
 
     QColor borderColor = pal.color(QPalette::Disabled, QPalette::WindowText);
     borderColor.setAlphaF(0.3);
@@ -1197,12 +1199,54 @@ void MainWindow::updateDetails()
     DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
     QString diskVal;
     if (dInfo.isValid) {
-        QString diskInterfaceStr = VMConfig::toUIString(currentConfig.diskInterface());
-        diskVal = i18n("%1 GB, %2 (%3 GB ", QString::number(dInfo.virtualSizeGb, 'f', 1),
-                      diskInterfaceStr,
-                      QString::number(dInfo.actualSizeGb, 'f', 1))
-            + i18n("used")
-            + u")"_s;
+        const QString diskInterfaceStr = VMConfig::toUIString(currentConfig.diskInterface());
+
+        double usagePercent = 0.0;
+        if (dInfo.virtualSizeGb > 0.0)
+            usagePercent = (dInfo.actualSizeGb / dInfo.virtualSizeGb) * 100.0;
+        usagePercent = qBound(0.0, usagePercent, 100.0);
+        const int filledPct = qRound(usagePercent);
+
+        QString barColor;
+        if (usagePercent < 80.0)
+            barColor = colPositive;
+        else if (usagePercent < 90.0)
+            barColor = colNeutral;
+        else
+            barColor = colNegative;
+
+        const QString bgColor = colTrack;
+
+        const int barWidthPx = 140;
+        const int barHeightPx = 6;
+        const int filledPx = qBound(0, (barWidthPx * filledPct) / 100, barWidthPx);
+
+        const QString svg = u"<svg xmlns='http://www.w3.org/2000/svg' width='%1' height='%2' "
+                            "shape-rendering='crispEdges'>"
+                            "<rect width='%1' height='%2' fill='%3'/>"
+                            "<rect width='%4' height='%2' fill='%5'/>"
+                            "</svg>"_s
+                                .arg(barWidthPx)
+                                .arg(barHeightPx)
+                                .arg(bgColor)
+                                .arg(filledPx)
+                                .arg(barColor);
+
+        const QByteArray svgB64 = svg.toUtf8().toBase64();
+        const QString barHtml = u"<img src='data:image/svg+xml;base64,%1' width='%2' height='%3' "
+                                "style='vertical-align:middle;'/>"_s
+                                    .arg(QString::fromLatin1(svgB64))
+                                    .arg(barWidthPx)
+                                    .arg(barHeightPx);
+
+        diskVal = u"<span style='white-space:nowrap;'>%1&nbsp;&nbsp;%2&nbsp;&nbsp;%3</span>"_s
+                      .arg(i18n("%1 GB, %2",
+                          QString::number(dInfo.virtualSizeGb, 'f', 1),
+                          diskInterfaceStr))
+                      .arg(barHtml)
+                      .arg(i18n("%1 GB used (%2%)",
+                          QString::number(dInfo.actualSizeGb, 'f', 1),
+                          QString::number(usagePercent, 'f', 0)));
     } else {
         diskVal = i18n("Not available");
     }
