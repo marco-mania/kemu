@@ -628,12 +628,191 @@
         "gpu_type": "qxl",
         "gpu_3d_acceleration": false,
         "display_type": "spice",
-        "disk_interface": "sata",
+        "disk_interface": "sataide",
         "net_card": "e1000",
         "usb_controller": "xhci",
         "use_tpm": true,
         "use_secureboot": true,
         "use_localtime": true
+      }
+    },
+    {
+      "id": "windows7",
+      "display_name": "Windows 7",
+      "os_type": "windows",
+      "homepage": "https://en.wikipedia.org/wiki/Windows_7",
+      "icon_hint": "windows",
+      "releases": [
+        {
+          "version": "SP1",
+          "quick_deploy": false,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "x86_64",
+              "edition": "Home",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "i386",
+              "edition": "Home",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "x86_64",
+              "edition": "Professional",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "i386",
+              "edition": "Professional",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "x86_64",
+              "edition": "Ultimate",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "i386",
+              "edition": "Ultimate",
+              "url": "",
+              "note": "Installation media required"
+            }
+          ],
+          "min_disk_gb": 16
+        }
+      ],
+      "qemu_defaults": {
+        "use_kvm": true,
+        "ram": 2048,
+        "use_balloon": false,
+        "cpu_model": "core2duo",
+        "cpu_cores": 2,
+        "disk_size_gb": 40,
+        "machine_type": "pc",
+        "gpu_type": "vga",
+        "gpu_3d_acceleration": false,
+        "gpu_mem": 32,
+        "display_type": "sdl",
+        "audio_device": "hda",
+        "disk_interface": "sataide",
+        "net_card": "e1000",
+        "usb_controller": "ehci",
+        "use_usb_tablet": true,
+        "use_uefi": false,
+        "use_acpi": true,
+        "use_localtime": true
+      }
+    },
+    {
+      "id": "windowsxp",
+      "display_name": "Windows XP",
+      "os_type": "windows",
+      "homepage": "https://en.wikipedia.org/wiki/Windows_XP",
+      "icon_hint": "windows",
+      "releases": [
+        {
+          "version": "SP3",
+          "quick_deploy": false,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "i386",
+              "edition": "Professional",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "i386",
+              "edition": "Home",
+              "url": "",
+              "note": "Installation media required"
+            }
+          ],
+          "min_disk_gb": 5
+        }
+      ],
+      "qemu_defaults": {
+        "use_kvm": true,
+        "ram": 1024,
+        "use_balloon": false,
+        "cpu_model": "qemu32",
+        "cpu_cores": 1,
+        "disk_size_gb": 20,
+        "machine_type": "pc",
+        "gpu_type": "vga",
+        "gpu_3d_acceleration": false,
+        "gpu_mem": 16,
+        "audio_device": "ac97",
+        "disk_interface": "sataide",
+        "net_card": "rtl8139",
+        "usb_controller": "ehci",
+        "use_usb_tablet": true,
+        "use_uefi": false,
+        "use_acpi": true,
+        "use_localtime": true,
+        "extra_args": "-serial none"
+      }
+    },
+    {
+      "id": "windows2000",
+      "display_name": "Windows 2000",
+      "os_type": "windows",
+      "homepage": "https://en.wikipedia.org/wiki/Windows_2000",
+      "icon_hint": "windows",
+      "releases": [
+        {
+          "version": "2000",
+          "quick_deploy": false,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "i386",
+              "edition": "Professional",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "i386",
+              "edition": "Server",
+              "url": "",
+              "note": "Installation media required"
+            }
+          ],
+          "min_disk_gb": 1
+        }
+      ],
+      "qemu_defaults": {
+        "use_kvm": true,
+        "ram": 512,
+        "use_balloon": false,
+        "cpu_model": "qemu32",
+        "cpu_cores": 1,
+        "disk_size_gb": 10,
+        "machine_type": "pc",
+        "gpu_type": "vga",
+        "gpu_3d_acceleration": false,
+        "gpu_mem": 8,
+        "audio_device": "ac97",
+        "disk_interface": "sataide",
+        "net_card": "rtl8139",
+        "usb_controller": "default",
+        "use_usb_tablet": false,
+        "use_uefi": false,
+        "use_acpi": true,
+        "extra_args": "-serial none"
       }
     },
     {

@@ -1196,13 +1196,27 @@ QPair<VMSpecs::OsType, QString> VMConfig::guessOSFromText(const QString& string,
         if (found)
             *found = true;
         return { VMSpecs::OsType::Windows, u"windows11"_s };
-    }
-    if (lowerz.contains(u"windows10"_s) || lowerz.contains(u"win10"_s)) {
+    } else if (lowerz.contains(u"windows10"_s) || lowerz.contains(u"win10"_s)) {
         if (found)
             *found = true;
         return { VMSpecs::OsType::Windows, u"windows10"_s };
-    }
-    if (lowerz.contains(u"windows"_s)) {
+    } else if (lowerz.contains(u"windows7"_s) || lowerz.contains(u"win7"_s)) {
+        if (found)
+            *found = true;
+        return { VMSpecs::OsType::Windows, u"windows7"_s };
+    } else if (lowerz.contains(u"windowsxp"_s) || lowerz.contains(u"winxp"_s)) {
+        if (found)
+            *found = true;
+        return { VMSpecs::OsType::Windows, u"windowsxp"_s };
+    } else if (lowerz.contains(u"windows2000"_s) || lowerz.contains(u"win2000"_s) || lowerz.contains(u"windows2k"_s) || lowerz.contains(u"win2k"_s)) {
+        if (found)
+            *found = true;
+        return { VMSpecs::OsType::Windows, u"windows2000"_s };
+    } else if (lowerz.contains(u"windowsnt4"_s) || lowerz.contains(u"winnt4"_s)) {
+        if (found)
+            *found = true;
+        return { VMSpecs::OsType::Windows, u"windowsnt4"_s };
+    } else if (lowerz.contains(u"windows"_s)) {
         if (found)
             *found = true;
         return { VMSpecs::OsType::Windows, { } };
