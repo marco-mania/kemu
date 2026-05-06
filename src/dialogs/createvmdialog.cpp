@@ -707,13 +707,23 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
 
     connect(usbCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
         this, [this]() {
-            bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
+            const bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
             usbTabletCheck->setEnabled(hasUsb);
             usbKeyboardCheck->setEnabled(hasUsb);
             if (!hasUsb) {
                 usbTabletCheck->setChecked(false);
                 usbKeyboardCheck->setChecked(false);
             }
+
+            // SPICE USB redirection requires an USB controller
+            spiceUsbRedirCheck->setEnabled(hasUsb);
+            if (!hasUsb)
+                spiceUsbRedirCheck->setChecked(false);
+
+            const QString tip = hasUsb
+                ? QString()
+                : i18n("Requires a USB controller.");
+            spiceUsbRedirCheck->setToolTip(tip);
         });
 
     auto updateSecureBootState = [this]() {
@@ -827,6 +837,14 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     updateIconDisplay();
     updateDiskInterfaceHint();
     updateDeviceAvailability();
+
+    // Sync SPICE USB redir with the initial USB controller state.
+    {
+        const bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
+        spiceUsbRedirCheck->setEnabled(hasUsb);
+        if (!hasUsb)
+            spiceUsbRedirCheck->setChecked(false);
+    }
 
     updateRamSlider(GlobalDefaults.ramMb);
 }

@@ -15,13 +15,13 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
     const QDir& vmDir,
     const QString& monitorSocketPath,
     const NetworkContext& networkContext,
-    // const bool quoted,
     const bool relativePaths,
     const bool headless)
 {
     QStringList args;
 
-    args << u"-name"_s << config.name();
+    // Use guest= form so commas in the VM name aren't parsed as further -name options.
+    args << u"-name"_s << u"guest=%1"_s.arg(config.name());
 
     // --- Chipset ---
     const QString accel = config.useKvm() ? u"kvm"_s : u"tcg"_s;
@@ -90,7 +90,12 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
     if (config.useMemoryBallooning() && VMConfig::supportsPciBus(config.machineType())) {
         args << u"-device"_s << u"virtio-balloon-pci"_s;
     }
-    if (config.preallocMemory())
+
+    // virtio-fs (Windows shared folder) requires an explicit memory-backend
+    // object; in that case prealloc is set on the object itself below,
+    // not via the legacy -mem-prealloc flag.
+    const bool usesVirtiofs = !config.sharedPath().isEmpty() && config.osType() == VMSpecs::OsType::Windows;
+    if (config.preallocMemory() && !usesVirtiofs)
         args << u"-mem-prealloc"_s;
 
     // --- RTC ---
@@ -114,7 +119,7 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
             args << u"-drive"_s
                  << u"if=pflash,format=raw,readonly=on,unit=0,file=%1"_s.arg(ovmf.codePath);
             args << u"-drive"_s
-                 << u"if=pflash,format=raw,unit=1,file=%1"_s.arg(relativePaths ? QDir(localVarsPath).dirName() : localVarsPath);
+                 << u"if=pflash,format=raw,unit=1,file=%1"_s.arg(relativePaths ? QFileInfo(localVarsPath).fileName() : localVarsPath);
         } else {
             if (ovmf.codePath.isEmpty())
                 args << u"-drive"_s << u"if=pflash,file=UEFI_CODE_NOT_FOUND"_s;
@@ -126,7 +131,7 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
     // --- TPM ---
     if (config.useTpm()) {
         const QString sockPath = vmDir.absoluteFilePath(u"swtpm.sock"_s);
-        args << u"-chardev"_s << u"socket,id=chrtpm,path=%1"_s.arg(relativePaths ? QDir(sockPath).dirName() : sockPath);
+        args << u"-chardev"_s << u"socket,id=chrtpm,path=%1"_s.arg(relativePaths ? QFileInfo(sockPath).fileName() : sockPath);
         args << u"-tpmdev"_s << u"emulator,id=tpm0,chardev=chrtpm"_s;
         // CRB preferred for Q35 / Windows 11; TIS as fallback.
         args << u"-device"_s
@@ -138,7 +143,7 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
     // --- Disk ---
     const QString driveId = u"sysdisk"_s;
     args << u"-drive"_s
-         << u"file=%1,format=qcow2,if=none,id=%2"_s.arg(relativePaths ? QDir(config.diskPath()).dirName() : config.diskPath(), driveId);
+         << u"file=%1,format=qcow2,if=none,id=%2"_s.arg(relativePaths ? QFileInfo(config.diskPath()).fileName() : config.diskPath(), driveId);
 
     if (config.diskInterface() == VMSpecs::DiskInterface::Nvme)
         args << u"-device"_s
@@ -192,13 +197,15 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
             : u"ide-cd"_s;
         args << u"-drive"_s
              << u"file=%1,format=raw,if=none,id=drive-cidata,media=cdrom,readonly=on"_s
-                    .arg(relativePaths ? QDir(cidataIso).dirName() : cidataIso);
+                    .arg(relativePaths ? QFileInfo(cidataIso).fileName() : cidataIso);
         args << u"-device"_s << u"%1,drive=drive-cidata,id=cidata"_s.arg(ciDevType);
     }
 
-    // Boot order: Floppy (a), Disk (c) or ISO (d)
+    // Boot order: Floppy (a), Disk (c) or ISO (d).
+    // Q35 has no floppy controller, so floppy boot would silently fail.
+    const bool canBootFromFloppy = config.bootFromFloppy() && config.machineType() != VMSpecs::MachineType::Q35;
     QString bootOrder;
-    if (config.bootFromFloppy())
+    if (canBootFromFloppy)
         bootOrder = u"a"_s;
     else if (config.bootFromIso())
         bootOrder = u"d"_s;
@@ -218,13 +225,15 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
             const QString virtiofsSock = vmDir.absoluteFilePath(u"virtiofsd.sock"_s);
 
             args << u"-chardev"_s
-                 << u"socket,id=char_virtiofs,path=%1"_s.arg(relativePaths ? QDir(virtiofsSock).dirName() : virtiofsSock);
+                 << u"socket,id=char_virtiofs,path=%1"_s.arg(relativePaths ? QFileInfo(virtiofsSock).fileName() : virtiofsSock);
             args << u"-device"_s
                  << u"vhost-user-fs-pci,queue-size=1024,chardev=char_virtiofs,tag=%1"_s.arg(mountTag);
 
             // Shared memory for virtio-fs
-            args << u"-object"_s
-                 << u"memory-backend-file,id=mem,size=%1M,mem-path=/dev/shm,share=on"_s.arg(config.ramMb());
+            QString memObj = u"memory-backend-file,id=mem,size=%1M,mem-path=/dev/shm,share=on"_s.arg(config.ramMb());
+            if (config.preallocMemory())
+                memObj += u",prealloc=on"_s;
+            args << u"-object"_s << memObj;
             args << u"-numa"_s << u"node,memdev=mem"_s;
 
         } else {
@@ -236,7 +245,7 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
             // which stores guest UIDs in xattrs on the host.
             const QString secModel = (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) ? u"mapped-xattr"_s : u"none"_s;
             args << u"-virtfs"_s
-                 << u"local,path=%1,mount_tag=%2,security_model=%3,id=fs0"_s.arg(relativePaths ? QDir(config.sharedPath()).dirName() : config.sharedPath(), mountTag, secModel);
+                 << u"local,path=%1,mount_tag=%2,security_model=%3,id=fs0"_s.arg(relativePaths ? QFileInfo(config.sharedPath()).fileName() : config.sharedPath(), mountTag, secModel);
         }
     }
 
@@ -275,7 +284,7 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
     if (config.displayType() == VMSpecs::DisplayType::Spice) {
         const QString spiceSock = vmDir.absoluteFilePath(u"spice.sock"_s);
         args << u"-spice"_s
-             << u"unix=on,addr=%1,disable-ticketing=on"_s.arg(relativePaths ? QDir(spiceSock).dirName() : spiceSock);
+             << u"unix=on,addr=%1,disable-ticketing=on"_s.arg(relativePaths ? QFileInfo(spiceSock).fileName() : spiceSock);
         args << u"-display"_s << u"none"_s;
 
         if (config.spiceAgent()) {
@@ -284,7 +293,9 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
             args << u"-device"_s << u"virtserialport,chardev=vdagent,name=com.redhat.spice.0"_s;
         }
 
-        if (config.spiceUsbRedir()) {
+        // Only emit chardevs if a USB controller exists; otherwise the
+        // matching usb-redir devices below are skipped and these would dangle.
+        if (config.spiceUsbRedir() && config.usbController() != VMSpecs::UsbController::None) {
             for (int i = 0; i < config.spiceUsbRedirCount(); ++i) {
                 const QString id = u"usbredir%1"_s.arg(i);
                 args << u"-chardev"_s << u"spicevmc,id=%1,name=usbredir"_s.arg(id);
@@ -347,10 +358,15 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
             netDevice.append(u",mac=%1"_s.arg(config.macAddress()));
         args << u"-device"_s << netDevice;
 
-        if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
-            && !networkContext.tapDevice.isEmpty()) {
+        if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
             // Namespace-based: QEMU uses a pre-created tap device on the bridge.
             // QEMU itself must be launched inside the namespace via nsenter.
+            // The caller MUST provide the tap name - otherwise we fail loud
+            // rather than silently falling back to passt.
+            Q_ASSERT_X(!networkContext.tapDevice.isEmpty(),
+                "QemuCommandBuilder::build",
+                "VirtualNetwork mode requires NetworkContext::tapDevice to be set");
+
             args << u"-netdev"_s
                  << u"tap,id=nic0,ifname=%1,script=no,downscript=no"_s.arg(networkContext.tapDevice);
         } else {
@@ -359,11 +375,12 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
                 ? vmDir.absoluteFilePath(u"passt.sock"_s)
                 : networkContext.passtSocketPath;
             args << u"-netdev"_s
-                 << u"stream,id=nic0,server=off,addr.type=unix,addr.path=%1"_s.arg(relativePaths ? QDir(passtSock).dirName() : passtSock);
+                 << u"stream,id=nic0,server=off,addr.type=unix,addr.path=%1"_s
+                        .arg(relativePaths ? QFileInfo(passtSock).fileName() : passtSock);
         }
     }
 
-    // --- USB Controller ---
+    // --- USB ---
     if (config.usbController() == VMSpecs::UsbController::Xhci) {
         args << u"-device"_s << u"qemu-xhci,id=xhci"_s;
         if (config.useUsbTablet())
@@ -377,11 +394,11 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
         if (config.useUsbKeyboard())
             args << u"-device"_s << u"usb-kbd,bus=ehci.0"_s;
     } else if (config.usbController() == VMSpecs::UsbController::Default) {
-        args << u"-device"_s << u"pci-ohci,id=usb"_s;
+        args << u"-device"_s << u"pci-ohci,id=ohci"_s;
         if (config.useUsbTablet())
-            args << u"-device"_s << u"usb-tablet,bus=usb"_s;
+            args << u"-device"_s << u"usb-tablet,bus=ohci.0"_s;
         if (config.useUsbKeyboard())
-            args << u"-device"_s << u"usb-kbd,bus=usb"_s;
+            args << u"-device"_s << u"usb-kbd,bus=ohci.0"_s;
     }
 
     // usb-redir devices must come after the USB controller
@@ -392,7 +409,7 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
     }
 
     // --- Monitor / QMP ---
-    args << u"-qmp"_s << u"unix:%1,server,nowait"_s.arg(relativePaths ? QDir(monitorSocketPath).dirName() : monitorSocketPath);
+    args << u"-qmp"_s << u"unix:%1,server,nowait"_s.arg(relativePaths ? QFileInfo(monitorSocketPath).fileName() : monitorSocketPath);
 
     // --- Extra Args ---
     if (!config.extraArgs().isEmpty())
@@ -611,16 +628,6 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig& config,
     }
 
     script += qemuPath + u" \\\n  "_s + argsToReadableString(args) + u"\n"_s;
-
-    // --- SPICE viewer (launched after QEMU in background) ---
-    if (config.displayType() == VMSpecs::DisplayType::Spice) {
-        const QString spiceSock = relativePaths
-            ? u"spice.sock"_s
-            : vmDir.absoluteFilePath(u"spice.sock"_s);
-
-        // Note: In the shell script, QEMU runs via exec (replacing the shell),
-        // so the viewer must be started BEFORE the exec line.
-    }
 
     return script;
 }
