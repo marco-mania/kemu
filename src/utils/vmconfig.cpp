@@ -704,11 +704,11 @@ QString VMConfig::toUIString(VMSpecs::UsbController controller)
     case VMSpecs::UsbController::None:
         return i18n("No USB");
     case VMSpecs::UsbController::Xhci:
-        return i18n("USB 3.0 XHCI");
+        return i18n("USB 3.0");
     case VMSpecs::UsbController::Ehci:
-        return i18n("USB 2.0 EHCI");
+        return i18n("USB 2.0");
     case VMSpecs::UsbController::Default:
-        return i18n("USB 1.1 UHCI");
+        return i18n("USB 1.1");
     }
     return { };
 }

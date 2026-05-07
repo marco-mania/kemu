@@ -1706,11 +1706,11 @@ DiskInfo MainWindow::getDiskInfo(const QString& diskPath)
     KProcess p;
     p.setOutputChannelMode(KProcess::SeparateChannels);
     p.setProgram(ExternalTools::instance().path(ExternalTools::QemuImg));
-    p.setArguments({ u"info"_s, u"--output=json"_s, diskPath });
+    p.setArguments({ u"info"_s, u"--output=json"_s, u"--force-share"_s, diskPath });
     p.start();
-    p.waitForFinished(5000);
+    const bool finished = p.waitForFinished(5000);
 
-    if (p.exitCode() == 0) {
+    if (finished && p.exitStatus() == KProcess::NormalExit && p.exitCode() == 0) {
         QJsonDocument doc = QJsonDocument::fromJson(p.readAllStandardOutput());
         QJsonObject obj = doc.object();
         double virtBytes = obj[u"virtual-size"_s].toDouble();
@@ -3034,7 +3034,7 @@ void MainWindow::onUsbActionTriggered()
             action->setChecked(false);
             KMessageBox::error(this,
                 i18n("Could not attach USB device.\n\n%1\n\n"
-                     "Make sure QEMU was started with -device qemu-xhci "
+                     "Make sure QEMU was started with a USB controller "
                      "and has permission to access /dev/bus/usb/.",
                     r.errorMessage),
                 i18n("USB Passthrough"));
