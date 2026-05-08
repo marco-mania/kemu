@@ -4,6 +4,8 @@
 
 #include "dbusviewerwindow.h"
 
+#include <QVBoxLayout>
+
 // =============================================================================
 // Constructor
 // =============================================================================
@@ -28,7 +30,11 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener* listener,
 {
     // Display widget as the central widget
     m_display = new QemuDisplayWidget(listener, bus, consolePath, this);
-    setCentralWidget(m_display);
+    auto centralWidget = new QWidget(this);
+    auto layout = new QVBoxLayout(centralWidget);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(m_display);
+    setCentralWidget(centralWidget);
 
     createActions();
     createMenus();

@@ -482,20 +482,16 @@ void QemuDisplayWidget::resizeGL(int, int) { }
 
 void QemuDisplayWidget::onScanoutChanged(int w, int h)
 {
-    if (w > 0 && h > 0) {
-        qreal dpr = devicePixelRatio();
-        resize(qRound(w / dpr), qRound(h / dpr));
-    }
+    Q_UNUSED(w);
+    Q_UNUSED(h);
     m_usingDmaBuf = false;
     m_needsRepaint = true; // Coalesced -> next frame tick
 }
 
 void QemuDisplayWidget::onDmaBufScanout(int w, int h)
 {
-    if (w > 0 && h > 0) {
-        qreal dpr = devicePixelRatio();
-        resize(qRound(w / dpr), qRound(h / dpr));
-    }
+    Q_UNUSED(w);
+    Q_UNUSED(h);
     if (m_eglAvailable) {
         m_dmaBufPending = true;
     }
