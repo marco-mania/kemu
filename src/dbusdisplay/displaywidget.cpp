@@ -200,8 +200,14 @@ void QemuDisplayWidget::updateCursor()
         setCursor(Qt::BlankCursor);
         return;
     }
+    // Qt seems to ceil the devicePixelRatio internally, resulting in non-smooth cursor
+    // size changes. Let's first do the scaling by ourselves and submit an integer scale
+    // to Qt.
+    float submit_scale = qCeil(devicePixelRatio());
     QPixmap pm = QPixmap::fromImage(ci.image);
-    setCursor(QCursor(pm, ci.hot_x, ci.hot_y));
+    pm = pm.scaled(pm.size() * m_lastScale * submit_scale / devicePixelRatio(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    pm.setDevicePixelRatio(submit_scale);
+    setCursor(QCursor(pm, ci.hot_x / submit_scale, ci.hot_y / submit_scale));
 }
 
 void QemuDisplayWidget::onCursorChanged()
@@ -443,6 +449,12 @@ void QemuDisplayWidget::renderQuad()
         float scaleX = static_cast<float>(vpW) / m_fbSize.width();
         float scaleY = static_cast<float>(vpH) / m_fbSize.height();
         float scale = qMin(scaleX, scaleY);
+        if (scale <= 0.0f)
+            scale = 1.0f; // Avoid division by zero and negative scaling
+        if (scale != m_lastScale) {
+            m_lastScale = scale;
+            updateCursor(); // Rescale cursor if needed
+        }
 
         int drawW = static_cast<int>(m_fbSize.width() * scale);
         int drawH = static_cast<int>(m_fbSize.height() * scale);

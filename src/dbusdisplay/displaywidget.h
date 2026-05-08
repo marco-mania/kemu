@@ -112,4 +112,6 @@ private:
     typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(GLenum, void*);
     PFNGLEGLIMAGETARGETTEXTURE2DOESPROC m_glEGLImageTargetTexture2DOES = nullptr;
     bool m_eglAvailable = false;
+
+    float m_lastScale = 1.0f; // scale factor of the last rendered frame, used for cursor scaling
 };
