@@ -44,7 +44,7 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener* listener,
     qDebug() << "DbusViewerWindow: audioOutConnected=" << m_audioOutConnected
              << "audioInConnected=" << m_audioInConnected;
 
-    resize(1280, 720);
+    resize(m_lastTargetW, m_lastTargetH);
 }
 
 DbusViewerWindow::~DbusViewerWindow()
@@ -372,7 +372,13 @@ void DbusViewerWindow::onScanoutChanged(int width, int height)
             int statusH = statusBar()->isVisible() ? statusBar()->height() : 0;
             int targetW = qRound(width / dpr);
             int targetH = qRound(height / dpr) + menuH + statusH;
-            resize(targetW, targetH);
+
+            // Prevent fighting with tiling window managers: Only resize if the target size actually changes.
+            if (targetW != m_lastTargetW || targetH != m_lastTargetH) {
+                resize(targetW, targetH);
+                m_lastTargetW = targetW;
+                m_lastTargetH = targetH;
+            }
         }
     } else {
         m_lblResolution->setText(i18n("No Display"));

@@ -122,4 +122,7 @@ private:
     QLabel* m_lblClipboard = nullptr;
 
     ClipboardDirection m_clipDirection;
+
+    int m_lastTargetW = 1280;
+    int m_lastTargetH = 720;
 };
