@@ -8,7 +8,6 @@
 
 #include <QDBusConnection>
 #include <QDBusInterface>
-#include <QDebug>
 #include <QKeyEvent>
 #include <QList>
 #include <QMouseEvent>

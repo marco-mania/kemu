@@ -7,6 +7,30 @@ add_executable(${PROJECT_NAME})
 target_compile_definitions(${PROJECT_NAME}
                            PRIVATE TRANSLATION_DOMAIN=\"${PROJECT_NAME}\")
 
+ecm_qt_declare_logging_category(
+    ${PROJECT_NAME}
+    HEADER "kemu_debug.h"
+    IDENTIFIER "KEMU"
+    CATEGORY_NAME "org.kde.kemu"
+    DESCRIPTION "KEMU"
+    EXPORT KEMU
+)
+
+ecm_qt_declare_logging_category(
+    ${PROJECT_NAME}
+    HEADER "kemu_dbusdisplay_debug.h"
+    IDENTIFIER "KEMU_DBUSDISPLAY"
+    CATEGORY_NAME "org.kde.kemu.dbusdisplay"
+    DESCRIPTION "KEMU DBusDisplay"
+    EXPORT KEMU
+)
+
+ecm_qt_install_logging_categories(
+    EXPORT KEMU
+    FILE kemu.categories
+    DESTINATION "${KDE_INSTALL_LOGGINGCATEGORIESDIR}"
+)
+
 target_sources(
   ${PROJECT_NAME}
   PRIVATE main.cpp

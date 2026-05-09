@@ -6,6 +6,8 @@
 
 #include "qmpclient.h"
 
+#include "kemu_debug.h"
+
 QMPClient::QMPClient(QObject *parent)
     : QObject(parent)
 {
@@ -150,13 +152,13 @@ void QMPClient::requestScreenshot(const QString &dumpPath)
         m_screenshotInFlight = false;
 
         if (!result.success) {
-            qDebug() << "screendump failed:" << result.errorMessage;
+            qCDebug(KEMU) << "screendump failed:" << result.errorMessage;
             return;
         }
 
         const QImage image(dumpPath);
         if (image.isNull()) {
-            qDebug() << "Failed to load screendump image from" << dumpPath;
+            qCDebug(KEMU) << "Failed to load screendump image from" << dumpPath;
             return;
         }
 
@@ -212,7 +214,7 @@ void QMPClient::requestCpuUsage(std::function<void(VmCpuUsage)> callback)
         VmCpuUsage usage;
 
         if (!result.success) {
-            qDebug() << "query-cpus-fast failed:" << result.errorMessage;
+            qCDebug(KEMU) << "query-cpus-fast failed:" << result.errorMessage;
             if (callback)
                 callback(usage);
             return;
@@ -323,7 +325,7 @@ void QMPClient::performCpuUsageSample()
         m_cpuUsageInFlight = false;
 
         if (!result.success) {
-            qDebug() << "query-cpus-fast failed:" << result.errorMessage;
+            qCDebug(KEMU) << "query-cpus-fast failed:" << result.errorMessage;
             return;
         }
 
@@ -501,7 +503,7 @@ void QMPClient::enableGuestStats()
 
     sendCommand(u"qom-set"_s, args, [this](QMPResult result) {
         if (!result.success) {
-            qDebug() << "Failed to enable guest stats polling:" << result.errorMessage;
+            qCDebug(KEMU) << "Failed to enable guest stats polling:" << result.errorMessage;
             m_guestStatsEnabled = false;
             m_memorySampleState = MemorySampleState::Idle;
         } else {

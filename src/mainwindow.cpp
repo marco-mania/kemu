@@ -19,6 +19,7 @@
 #include "jobs/ovaexportjob.h"
 #include "jobs/ovaimportjob.h"
 #include "jobs/shrinkjob.h"
+#include "kemu_debug.h"
 #include "utils/namespacehelper.h"
 #include "utils/qemucommandbuilder.h"
 #include "utils/usbenumerator.h"
@@ -189,7 +190,7 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     if (watched == qApp) {
         const QEvent::Type t = event->type();
         if (t == QEvent::ApplicationPaletteChange || t == QEvent::ThemeChange || t == QEvent::StyleChange) {
-            qDebug() << "Theme/palette change detected" << t;
+            qCDebug(KEMU) << "Theme/palette change detected" << t;
 
             QTimer::singleShot(0, this, [this]() {
                 if (detailsBrowser) {
@@ -561,8 +562,8 @@ bool MainWindow::startDbusDaemon(const QString &vmName)
         return false;
 
     const QString sockPath = getVmDir(vmName).absoluteFilePath(KEMUConst::DBUSSocketFileName);
-    qDebug() << "D-Bus raw sockPath:" << sockPath;
-    qDebug() << "D-Bus escaped:" << QString::fromLatin1(sockPath.toUtf8().toPercentEncoding());
+    qCDebug(KEMU) << "D-Bus raw sockPath:" << sockPath;
+    qCDebug(KEMU) << "D-Bus escaped:" << QString::fromLatin1(sockPath.toUtf8().toPercentEncoding());
 
     // Stale socket cleanup
     QFile::remove(sockPath);
@@ -592,7 +593,7 @@ bool MainWindow::startDbusDaemon(const QString &vmName)
                                 "  </policy>\n"
                                 "</busconfig>\n")
                                 .arg(QString::fromLatin1(sockPath.toUtf8().toPercentEncoding()));
-    qDebug() << "D-Bus daemon config will be written:\n" << content;
+    qCDebug(KEMU) << "D-Bus daemon config will be written:\n" << content;
     cfg.write(content.toUtf8());
     cfg.close();
 
@@ -688,7 +689,7 @@ bool MainWindow::startDbusViewer(const QString &vmName)
     ::close(listenerFd);
 
     if (!reply.isValid()) {
-        qWarning() << "RegisterListener failed:" << reply.error().message();
+        qCWarning(KEMU) << "RegisterListener failed:" << reply.error().message();
         delete state.displayListener;
         QDBusConnection::disconnectFromBus(connName);
         return false;
@@ -731,7 +732,7 @@ bool MainWindow::startDbusViewer(const QString &vmName)
                 const QDBusPendingReply<> r = *watcher;
                 if (r.isError() || !m_dbusViewers.contains(vmName)) {
                     if (r.isError())
-                        qWarning() << "RegisterOutListener failed:" << r.error().message();
+                        qCWarning(KEMU) << "RegisterOutListener failed:" << r.error().message();
                     return;
                 }
                 auto &s = m_dbusViewers[vmName];
@@ -757,7 +758,7 @@ bool MainWindow::startDbusViewer(const QString &vmName)
                 const QDBusPendingReply<> r = *watcher;
                 if (r.isError() || !m_dbusViewers.contains(vmName)) {
                     if (r.isError())
-                        qWarning() << "RegisterInListener failed:" << r.error().message();
+                        qCWarning(KEMU) << "RegisterInListener failed:" << r.error().message();
                     return;
                 }
                 auto &s = m_dbusViewers[vmName];
@@ -770,7 +771,7 @@ bool MainWindow::startDbusViewer(const QString &vmName)
             });
         }
     } else {
-        qWarning() << "Audio interface not available on private bus";
+        qCWarning(KEMU) << "Audio interface not available on private bus";
     }
     delete audioIface;
 
@@ -1559,12 +1560,12 @@ void MainWindow::saveVmConfig(const QString &vmPath, const VMConfig &config)
     if (file.open(QIODevice::WriteOnly)) {
         file.write(doc.toJson(QJsonDocument::Indented));
     } else {
-        qWarning() << "Failed to write config.json:" << file.errorString();
+        qCWarning(KEMU) << "Failed to write config.json:" << file.errorString();
     }
 
     if (!config.saveCustomIcon(vmPath)) {
         if (config.iconSource() == VMConfig::IconSource::Custom) {
-            qWarning() << "Failed to save custom icon for" << config.name();
+            qCWarning(KEMU) << "Failed to save custom icon for" << config.name();
         }
     }
 
@@ -1591,7 +1592,7 @@ void MainWindow::generateShellScript(const QString &vmPath, const VMConfig &conf
         scriptFile.write(script.toUtf8());
         scriptFile.setPermissions(scriptFile.permissions() | QFile::ExeOwner | QFile::ExeUser);
     } else {
-        qWarning() << "Failed to write qemu.sh:" << scriptFile.errorString();
+        qCWarning(KEMU) << "Failed to write qemu.sh:" << scriptFile.errorString();
     }
 }
 
@@ -1599,7 +1600,7 @@ VMConfig MainWindow::loadVmConfig(const QString &vmPath) const
 {
     QFile file(vmPath + u"/"_s + KEMUConst::VMConfigFileName);
     if (!file.open(QIODevice::ReadOnly)) {
-        qWarning() << "Failed to read config.json:" << file.errorString();
+        qCWarning(KEMU) << "Failed to read config.json:" << file.errorString();
         return {};
     }
 
@@ -1608,7 +1609,7 @@ VMConfig MainWindow::loadVmConfig(const QString &vmPath) const
 
     if (config.iconSource() == VMConfig::IconSource::Custom) {
         if (!config.loadCustomIcon(vmPath)) {
-            qWarning() << "Failed to load custom icon for" << config.name();
+            qCWarning(KEMU) << "Failed to load custom icon for" << config.name();
         }
     }
 
@@ -2721,7 +2722,7 @@ void MainWindow::startVM(bool headless)
     if (Utils::waitForSocket(sockPath, 2000)) {
         client->connectToVm(sockPath);
     } else {
-        qWarning() << "Failed to connect to QMP: Socket was not created in time.";
+        qCWarning(KEMU) << "Failed to connect to QMP: Socket was not created in time.";
     }
 }
 
@@ -2801,7 +2802,7 @@ void MainWindow::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus
 
 void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, const QJsonObject &data)
 {
-    qDebug() << "QMP Event for" << vmName << ":" << eventName << data;
+    qCDebug(KEMU) << "QMP Event for" << vmName << ":" << eventName << data;
 
     if (eventName == u"SHUTDOWN"_s) {
         statusBar()->showMessage(i18n("VM '%1' is shutting down...", vmName));
@@ -3759,7 +3760,7 @@ void MainWindow::startDeployment(const QString &vmName, const bool disable_headl
     if (Utils::waitForSocket(sockPath, 2000))
         client->connectToVm(sockPath);
     else
-        qWarning() << "Deployment QMP: socket not ready for" << vmName;
+        qCWarning(KEMU) << "Deployment QMP: socket not ready for" << vmName;
 }
 
 void MainWindow::finalizeDeployment(const QString &vmName)

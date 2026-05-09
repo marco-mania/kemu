@@ -19,7 +19,6 @@
 #include <QDBusReply>
 #include <QDBusUnixFileDescriptor>
 #include <QDateTime>
-#include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>

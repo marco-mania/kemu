@@ -6,6 +6,8 @@
 
 #include "utils.h"
 
+#include "kemu_debug.h"
+
 extern "C" {
 char *__crypt_sha512(const char *key, const char *setting, char *output);
 }
@@ -42,7 +44,7 @@ QString generateCloudInitPasswordHash(const QString &password)
         return QString::fromUtf8(hashResult);
     }
 
-    qWarning() << "Failed to generate cloud-init hash via __crypt_sha512!";
+    qCWarning(KEMU) << "Failed to generate cloud-init hash via __crypt_sha512!";
 
     return u"!"_s;
 }

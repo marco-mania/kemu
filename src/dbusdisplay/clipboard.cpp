@@ -5,6 +5,7 @@
 #include "clipboard.h"
 
 #include "dbusdisplay/dbusdisplayconst.h"
+#include "kemu_dbusdisplay_debug.h"
 
 // =============================================================================
 // ClipboardDBusHandler – receives and dispatches all D-Bus calls from QEMU
@@ -47,7 +48,7 @@ bool ClipboardDBusHandler::handleMessage(const QDBusMessage &message, const QDBu
         else
             argStrings << u"%1"_s.arg(QLatin1StringView(a.typeName()));
     }
-    qDebug() << "Clipboard D-Bus ←" << iface << "::" << method << "sig:" << message.signature() << "args:" << argStrings.join(u"; "_s);
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard D-Bus ←" << iface << "::" << method << "sig:" << message.signature() << "args:" << argStrings.join(u"; "_s);
 
     // ================================================================
     // Standard D-Bus Interfaces
@@ -165,13 +166,13 @@ bool ClipboardDBusHandler::handleMessage(const QDBusMessage &message, const QDBu
         QDBusMessage reply = message.createReply();
         reply << result.mime << QVariant::fromValue(result.data);
 
-        qDebug() << "Clipboard D-Bus -> Request reply:" << result.data.size() << "bytes, mime:" << result.mime;
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard D-Bus -> Request reply:" << result.data.size() << "bytes, mime:" << result.mime;
 
         connection.send(reply);
         return true;
     }
 
-    qDebug() << "Clipboard: unhandled:" << iface << "::" << method;
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: unhandled:" << iface << "::" << method;
     return false;
 }
 
@@ -205,7 +206,7 @@ bool QemuClipboardManager::setup()
 
     const bool ok = m_bus.registerVirtualObject(KemuDbusDisplayConst::ClipboardPath, m_handler, QDBusConnection::VirtualObjectRegisterOption::SubPath);
     if (!ok) {
-        qWarning() << "Clipboard: registerVirtualObject failed:" << m_bus.lastError().message();
+        qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: registerVirtualObject failed:" << m_bus.lastError().message();
         return false;
     }
 
@@ -213,13 +214,13 @@ bool QemuClipboardManager::setup()
         new QDBusInterface(KemuDbusDisplayConst::ServiceName, KemuDbusDisplayConst::ClipboardPath, KemuDbusDisplayConst::ClipboardIface, m_bus, this);
 
     if (!m_qemuClipboard->isValid()) {
-        qWarning() << "Clipboard: QEMU interface not available:" << m_qemuClipboard->lastError().message();
+        qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: QEMU interface not available:" << m_qemuClipboard->lastError().message();
         m_bus.unregisterObject(KemuDbusDisplayConst::ClipboardPath);
         return false;
     }
 
     QTimer::singleShot(0, this, &QemuClipboardManager::doRegister);
-    qDebug() << "Clipboard: Setup OK (direction:" << static_cast<int>(m_direction) << ")";
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Setup OK (direction:" << static_cast<int>(m_direction) << ")";
     return true;
 }
 
@@ -235,7 +236,7 @@ void QemuClipboardManager::doRegister()
         w->deleteLater();
         const QDBusPendingReply<> reply = *w;
         if (reply.isError()) {
-            qWarning() << "Clipboard: Register() failed:" << reply.error().name() << reply.error().message();
+            qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Register() failed:" << reply.error().name() << reply.error().message();
             m_registered = false;
             return;
         }
@@ -244,7 +245,7 @@ void QemuClipboardManager::doRegister()
         m_currentSerial = 0;
         m_weAreOwner = false;
         m_registered = true;
-        qDebug() << "Clipboard: Register() acknowledged, serial reset to 0";
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Register() acknowledged, serial reset to 0";
     });
 }
 
@@ -266,11 +267,11 @@ void QemuClipboardManager::handleGrab(uint selection, uint serial, const QString
 
     // Serial protocol: discard stale grabs; on tie the client (us) wins.
     if (serial < m_currentSerial) {
-        qDebug() << "Clipboard: stale Grab discarded (serial" << serial << "<" << m_currentSerial << ")";
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: stale Grab discarded (serial" << serial << "<" << m_currentSerial << ")";
         return;
     }
     if (serial == m_currentSerial && m_weAreOwner) {
-        qDebug() << "Clipboard: tied Grab rejected (client wins on equal serial)";
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: tied Grab rejected (client wins on equal serial)";
         return;
     }
 
@@ -309,14 +310,14 @@ void QemuClipboardManager::onRequestFinished(QDBusPendingCallWatcher *watcher)
 
     const QDBusPendingReply<QString, QByteArray> reply = *watcher;
     if (reply.isError()) {
-        qWarning() << "Clipboard: Request reply error:" << reply.error().name() << reply.error().message();
+        qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Request reply error:" << reply.error().name() << reply.error().message();
         return;
     }
 
     const QString mime = reply.argumentAt<0>();
     const QByteArray data = reply.argumentAt<1>();
 
-    qDebug() << "Clipboard: guest data received:" << data.size() << "bytes, mime:" << mime;
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: guest data received:" << data.size() << "bytes, mime:" << mime;
 
     if (data.isEmpty())
         return;
@@ -338,7 +339,7 @@ void QemuClipboardManager::onRequestFinished(QDBusPendingCallWatcher *watcher)
         m_settingFromGuest = false;
     });
 
-    qDebug() << "Clipboard: Guest -> Host transfer complete";
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Guest -> Host transfer complete";
 }
 
 // =============================================================================
@@ -354,7 +355,7 @@ void QemuClipboardManager::handleRelease(uint selection)
     // whoever has the highest serial. A Release just signals the previous
     // owner is willing to drop, but until somebody grabs, ownership state
     // doesn't change.
-    qDebug() << "Clipboard: QEMU released selection" << selection;
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: QEMU released selection" << selection;
 }
 
 QemuClipboardManager::ClipboardData QemuClipboardManager::handleRequest(uint selection, const QStringList &mimes)
@@ -371,16 +372,16 @@ QemuClipboardManager::ClipboardData QemuClipboardManager::handleRequest(uint sel
 
     for (const QString &mime : mimes) {
         if (mimeData->hasFormat(mime)) {
-            qDebug() << "Clipboard: serving guest with native format:" << mime;
+            qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: serving guest with native format:" << mime;
             return {mime, mimeData->data(mime)};
         }
         if ((mime == u"text/plain"_s || mime == u"text/plain;charset=utf-8"_s || mime == u"UTF8_STRING"_s) && mimeData->hasText()) {
-            qDebug() << "Clipboard: serving guest with text fallback for:" << mime;
+            qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: serving guest with text fallback for:" << mime;
             return {mime, mimeData->text().toUtf8()};
         }
     }
 
-    qDebug() << "Clipboard: host cannot satisfy request, mimes:" << mimes;
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: host cannot satisfy request, mimes:" << mimes;
     return {};
 }
 
@@ -414,7 +415,7 @@ void QemuClipboardManager::onHostClipboardChanged()
     m_currentSerial++;
     m_weAreOwner = true;
 
-    qDebug() << "Clipboard: Host->Guest Grab (serial:" << m_currentSerial << ")";
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Host->Guest Grab (serial:" << m_currentSerial << ")";
 
     const QDBusPendingCall grabPending = m_qemuClipboard->asyncCall(u"Grab"_s, 0u, m_currentSerial, mimesToSend);
 
@@ -423,7 +424,7 @@ void QemuClipboardManager::onHostClipboardChanged()
         w->deleteLater();
         const QDBusPendingReply<> reply = *w;
         if (reply.isError()) {
-            qWarning() << "Clipboard: Grab to QEMU failed:" << reply.error().message();
+            qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Grab to QEMU failed:" << reply.error().message();
             m_weAreOwner = false;
         }
         // Do NOT proactively call Request() from here. QEMU pulls the data

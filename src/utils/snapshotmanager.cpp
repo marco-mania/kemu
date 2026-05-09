@@ -6,6 +6,8 @@
 
 #include "snapshotmanager.h"
 
+#include "kemu_debug.h"
+
 SnapshotManager::SnapshotManager(QObject *parent)
     : QObject(parent)
 {
@@ -174,7 +176,7 @@ void SnapshotManager::saveDescription(const QString &diskPath, const QString &sn
             } else {
                 // If the file contains data but is corrupt, log and abort
                 // to avoid destroying the rest of the (potentially recoverable) file.
-                qWarning() << "Sidecar JSON is corrupt. Aborting to prevent data loss:" << path;
+                qCWarning(KEMU) << "Sidecar JSON is corrupt. Aborting to prevent data loss:" << path;
                 return;
             }
         }
@@ -189,10 +191,10 @@ void SnapshotManager::saveDescription(const QString &diskPath, const QString &sn
 
         // commit() performs the atomic rename instead of close()
         if (!saveFile.commit()) {
-            qWarning() << "Failed to commit snapshot descriptions:" << saveFile.errorString();
+            qCWarning(KEMU) << "Failed to commit snapshot descriptions:" << saveFile.errorString();
         }
     } else {
-        qWarning() << "Could not open sidecar file for writing:" << path << saveFile.errorString();
+        qCWarning(KEMU) << "Could not open sidecar file for writing:" << path << saveFile.errorString();
     }
 }
 

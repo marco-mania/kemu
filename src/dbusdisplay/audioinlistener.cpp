@@ -5,13 +5,13 @@
 #include "audioinlistener.h"
 
 #include <QAudioDevice>
-#include <QDebug>
 #include <QMediaDevices>
 
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include "dbusdisplay/dbusdisplayconst.h"
+#include "kemu_dbusdisplay_debug.h"
 
 // =============================================================================
 // D-Bus Interface XML for AudioInListener
@@ -106,12 +106,12 @@ int QemuAudioInListener::createSocketPair()
 {
     int sv[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) {
-        qCritical() << "AudioIn: socketpair() failed:" << strerror(errno);
+        qCCritical(KEMU_DBUSDISPLAY) << "AudioIn: socketpair() failed:" << strerror(errno);
         return -1;
     }
     m_qemuFd = sv[0];
     m_ourFd = sv[1];
-    qDebug() << "AudioIn: Socketpair created";
+    qCDebug(KEMU_DBUSDISPLAY) << "AudioIn: Socketpair created";
     return m_qemuFd;
 }
 
@@ -130,7 +130,7 @@ bool QemuAudioInListener::connectListener()
     GError *error = nullptr;
     GSocket *gsock = g_socket_new_from_fd(ourFd, &error);
     if (!gsock) {
-        qCritical() << "AudioIn: g_socket_new_from_fd:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "AudioIn: g_socket_new_from_fd:" << error->message;
         g_error_free(error);
         close(ourFd);
         return false;
@@ -139,7 +139,7 @@ bool QemuAudioInListener::connectListener()
     GSocketConnection *sockConn = g_socket_connection_factory_create_connection(gsock);
     g_object_unref(gsock);
     if (!sockConn) {
-        qCritical() << "AudioIn: Socket connection failed";
+        qCCritical(KEMU_DBUSDISPLAY) << "AudioIn: Socket connection failed";
         return false;
     }
 
@@ -147,7 +147,7 @@ bool QemuAudioInListener::connectListener()
     g_object_unref(sockConn);
 
     if (!m_conn) {
-        qCritical() << "AudioIn: D-Bus auth failed:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "AudioIn: D-Bus auth failed:" << error->message;
         g_error_free(error);
         return false;
     }
@@ -157,7 +157,7 @@ bool QemuAudioInListener::connectListener()
 
     GDBusNodeInfo *nodeInfo = g_dbus_node_info_new_for_xml(audioInListenerXml, &error);
     if (!nodeInfo) {
-        qCritical() << "AudioIn: XML error:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "AudioIn: XML error:" << error->message;
         g_error_free(error);
         return false;
     }
@@ -172,12 +172,12 @@ bool QemuAudioInListener::connectListener()
     g_dbus_node_info_unref(nodeInfo);
 
     if (!m_registrationId) {
-        qCritical() << "AudioIn: Registration failed:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "AudioIn: Registration failed:" << error->message;
         g_error_free(error);
         return false;
     }
 
-    qDebug() << "AudioIn: Listener ready";
+    qCDebug(KEMU_DBUSDISPLAY) << "AudioIn: Listener ready";
     return true;
 }
 
@@ -188,7 +188,7 @@ void QemuAudioInListener::onConnectionClosed(GDBusConnection *, gboolean remote_
 {
     auto *self = static_cast<QemuAudioInListener *>(user_data);
     self->m_closed = true;
-    qDebug() << "AudioIn: Connection closed" << (remote_peer_vanished ? "(QEMU terminated)" : "(local)") << (error ? error->message : "");
+    qCDebug(KEMU_DBUSDISPLAY) << "AudioIn: Connection closed" << (remote_peer_vanished ? "(QEMU terminated)" : "(local)") << (error ? error->message : "");
     Q_EMIT self->connectionLost();
 }
 
@@ -238,7 +238,8 @@ void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation
 
     g_variant_get(parameters, "(tybbuyuub)", &id, &bits, &is_signed, &is_float, &freq, &nchannels, &bytes_per_frame, &bytes_per_second, &be);
 
-    qDebug() << "AudioIn Init: id=" << id << "bits=" << bits << "signed=" << is_signed << "float=" << is_float << "freq=" << freq << "channels=" << nchannels;
+    qCDebug(KEMU_DBUSDISPLAY) << "AudioIn Init: id=" << id << "bits=" << bits << "signed=" << is_signed << "float=" << is_float << "freq=" << freq
+                              << "channels=" << nchannels;
 
     // Clean up old stream
     if (m_streams.contains(id)) {
@@ -273,7 +274,7 @@ void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation
             format.setSampleFormat(QAudioFormat::Int32);
             break;
         default:
-            qWarning() << "AudioIn: Unknown bit depth:" << bits;
+            qCWarning(KEMU_DBUSDISPLAY) << "AudioIn: Unknown bit depth:" << bits;
             format.setSampleFormat(QAudioFormat::Int16);
         }
     }
@@ -291,8 +292,8 @@ void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation
     }
 
     if (!inputDevice.isFormatSupported(format)) {
-        qWarning() << "Audio: format not advertised as supported"
-                   << "(rate=" << format.sampleRate() << "ch=" << format.channelCount() << "fmt=" << format.sampleFormat() << ")";
+        qCWarning(KEMU_DBUSDISPLAY) << "Audio: format not advertised as supported"
+                                    << "(rate=" << format.sampleRate() << "ch=" << format.channelCount() << "fmt=" << format.sampleFormat() << ")";
     }
 
     stream->source = new QAudioSource(inputDevice, format);
@@ -310,7 +311,7 @@ void QemuAudioInListener::handleFini(GVariant *parameters, GDBusMethodInvocation
     guint64 id;
     g_variant_get(parameters, "(t)", &id);
 
-    qDebug() << "AudioIn Fini: id=" << id;
+    qCDebug(KEMU_DBUSDISPLAY) << "AudioIn Fini: id=" << id;
 
     if (auto *stream = m_streams.take(id)) {
         if (stream->source) {
@@ -332,7 +333,7 @@ void QemuAudioInListener::handleSetEnabled(GVariant *parameters, GDBusMethodInvo
     gboolean enabled;
     g_variant_get(parameters, "(tb)", &id, &enabled);
 
-    qDebug() << "AudioIn SetEnabled: id=" << id << "enabled=" << enabled;
+    qCDebug(KEMU_DBUSDISPLAY) << "AudioIn SetEnabled: id=" << id << "enabled=" << enabled;
 
     auto *stream = m_streams.value(id, nullptr);
     if (stream && stream->source) {
@@ -342,7 +343,7 @@ void QemuAudioInListener::handleSetEnabled(GVariant *parameters, GDBusMethodInvo
                 // Start recording → QIODevice for reading microphone data
                 stream->ioDevice = stream->source->start();
                 if (!stream->ioDevice) {
-                    qWarning() << "AudioIn: start() failed:" << stream->source->error();
+                    qCWarning(KEMU_DBUSDISPLAY) << "AudioIn: start() failed:" << stream->source->error();
                 }
             } else if (stream->source->state() == QAudio::SuspendedState) {
                 stream->source->resume();

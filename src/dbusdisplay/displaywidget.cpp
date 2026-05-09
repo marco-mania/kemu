@@ -16,6 +16,7 @@
 #endif
 
 #include "dbusdisplay/dbusdisplayconst.h"
+#include "kemu_dbusdisplay_debug.h"
 
 // =============================================================================
 // Shaders
@@ -133,7 +134,7 @@ void QemuDisplayWidget::watchGLibFd(int fd)
     connect(notifier, &QSocketNotifier::activated, this, &QemuDisplayWidget::dispatchGLib);
     m_glibNotifiers.append(notifier);
 
-    qDebug() << "Monitoring GLib socket: FD" << fd;
+    qCDebug(KEMU_DBUSDISPLAY) << "Monitoring GLib socket: FD" << fd;
 }
 
 void QemuDisplayWidget::stopAllGLibWatching()
@@ -145,7 +146,7 @@ void QemuDisplayWidget::stopAllGLibWatching()
         n->setEnabled(false);
     }
     m_glibNotifiers.clear();
-    qDebug() << "All GLib socket notifiers deactivated";
+    qCDebug(KEMU_DBUSDISPLAY) << "All GLib socket notifiers deactivated";
 }
 
 void QemuDisplayWidget::dispatchGLib()
@@ -159,7 +160,7 @@ void QemuDisplayWidget::dispatchGLib()
         pfd.fd = n->socket();
         pfd.events = POLLIN;
         if (poll(&pfd, 1, 0) >= 0 && (pfd.revents & (POLLHUP | POLLERR | POLLNVAL))) {
-            qDebug() << "dispatchGLib: Socket" << pfd.fd << "dead - stopping GLib dispatching";
+            qCDebug(KEMU_DBUSDISPLAY) << "dispatchGLib: Socket" << pfd.fd << "dead - stopping GLib dispatching";
             stopAllGLibWatching();
             return;
         }
@@ -277,12 +278,12 @@ void QemuDisplayWidget::initializeGL()
         }
     }
 
-    // qDebug() << "GL_BGRA:" << (m_hasBGRA ? "available (no format convert)"
+    // qCDebug(KEMU_DBUSDISPLAY) << "GL_BGRA:" << (m_hasBGRA ? "available (no format convert)"
     //                                       : "not available (fallback: RGBA
     //                                       convert)");
 
     m_eglAvailable = initEglFunctions();
-    // qDebug() << (m_eglAvailable
+    // qCDebug(KEMU_DBUSDISPLAY) << (m_eglAvailable
     //     ? "EGL DMA-BUF import available -> GPU path active"
     //     : "EGL not available -> Software fallback");
 }
@@ -351,7 +352,7 @@ bool QemuDisplayWidget::importDmaBuf()
     ::close(buf.fd);
 
     if (m_eglImage == EGL_NO_IMAGE_KHR) {
-        qWarning() << "EGLImage failed: fourcc=0x" << Qt::hex << buf.fourcc;
+        qCWarning(KEMU_DBUSDISPLAY) << "EGLImage failed: fourcc=0x" << Qt::hex << buf.fourcc;
         return false;
     }
 
@@ -363,7 +364,7 @@ bool QemuDisplayWidget::importDmaBuf()
     m_usingDmaBuf = true;
     m_flipY = buf.y0_top;
 
-    // qDebug() << "DMA-BUF imported:" << buf.width << "x" << buf.height
+    // qCDebug(KEMU_DBUSDISPLAY) << "DMA-BUF imported:" << buf.width << "x" << buf.height
     //          << "flipY:" << m_flipY;
     return true;
 }

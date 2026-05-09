@@ -8,6 +8,8 @@
 
 #include <QtConcurrent/QtConcurrent>
 
+#include "kemu_debug.h"
+
 extern "C" {
 #include <archive.h>
 #include <archive_entry.h>
@@ -108,7 +110,7 @@ bool ImportJob::detectVmConfig()
     const QJsonDocument doc = QJsonDocument::fromJson(configData, &error);
 
     if (error.error != QJsonParseError::NoError) {
-        qWarning() << "Could not parse the config file:" << error.errorString();
+        qCWarning(KEMU) << "Could not parse the config file:" << error.errorString();
         return false;
     }
 

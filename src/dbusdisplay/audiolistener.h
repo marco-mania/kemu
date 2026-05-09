@@ -15,7 +15,6 @@
 #include <QAudioDevice>
 #include <QAudioFormat>
 #include <QAudioSink>
-#include <QDebug>
 #include <QHash>
 #include <QIODevice>
 #include <QMediaDevices>

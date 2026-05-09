@@ -4,6 +4,7 @@
 
 #include "audiolistener.h"
 #include "dbusdisplay/dbusdisplayconst.h"
+#include "kemu_dbusdisplay_debug.h"
 
 #include <sys/socket.h>
 // #include <unistd.h>
@@ -94,12 +95,12 @@ int QemuAudioListener::createSocketPair()
 {
     int sv[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) {
-        qCritical() << "Audio: socketpair() failed:" << strerror(errno);
+        qCCritical(KEMU_DBUSDISPLAY) << "Audio: socketpair() failed:" << strerror(errno);
         return -1;
     }
     m_qemuFd = sv[0];
     m_ourFd = sv[1];
-    qDebug() << "Audio: Socketpair created";
+    qCDebug(KEMU_DBUSDISPLAY) << "Audio: Socketpair created";
     return m_qemuFd;
 }
 
@@ -118,7 +119,7 @@ bool QemuAudioListener::connectListener()
     GError *error = nullptr;
     GSocket *gsock = g_socket_new_from_fd(ourFd, &error);
     if (!gsock) {
-        qCritical() << "Audio: g_socket_new_from_fd:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "Audio: g_socket_new_from_fd:" << error->message;
         g_error_free(error);
         close(ourFd);
         return false;
@@ -127,7 +128,7 @@ bool QemuAudioListener::connectListener()
     GSocketConnection *sockConn = g_socket_connection_factory_create_connection(gsock);
     g_object_unref(gsock);
     if (!sockConn) {
-        qCritical() << "Audio: Socket connection failed";
+        qCCritical(KEMU_DBUSDISPLAY) << "Audio: Socket connection failed";
         return false;
     }
 
@@ -135,7 +136,7 @@ bool QemuAudioListener::connectListener()
     g_object_unref(sockConn);
 
     if (!m_conn) {
-        qCritical() << "Audio: D-Bus auth failed:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "Audio: D-Bus auth failed:" << error->message;
         g_error_free(error);
         return false;
     }
@@ -145,7 +146,7 @@ bool QemuAudioListener::connectListener()
 
     GDBusNodeInfo *nodeInfo = g_dbus_node_info_new_for_xml(audioOutListenerXml, &error);
     if (!nodeInfo) {
-        qCritical() << "Audio: XML error:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "Audio: XML error:" << error->message;
         g_error_free(error);
         return false;
     }
@@ -160,12 +161,12 @@ bool QemuAudioListener::connectListener()
     g_dbus_node_info_unref(nodeInfo);
 
     if (!m_registrationId) {
-        qCritical() << "Audio: Registration failed:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "Audio: Registration failed:" << error->message;
         g_error_free(error);
         return false;
     }
 
-    qDebug() << "Audio: Listener ready";
+    qCDebug(KEMU_DBUSDISPLAY) << "Audio: Listener ready";
     return true;
 }
 
@@ -176,7 +177,7 @@ void QemuAudioListener::onConnectionClosed(GDBusConnection *, gboolean remote_pe
 {
     auto *self = static_cast<QemuAudioListener *>(user_data);
     self->m_closed = true;
-    qDebug() << "Audio: Connection closed" << (remote_peer_vanished ? "(QEMU terminated)" : "(local)") << (error ? error->message : "");
+    qCDebug(KEMU_DBUSDISPLAY) << "Audio: Connection closed" << (remote_peer_vanished ? "(QEMU terminated)" : "(local)") << (error ? error->message : "");
     Q_EMIT self->connectionLost();
 }
 
@@ -226,8 +227,8 @@ void QemuAudioListener::handleInit(GVariant *parameters, GDBusMethodInvocation *
 
     g_variant_get(parameters, "(tybbuyuub)", &id, &bits, &is_signed, &is_float, &freq, &nchannels, &bytes_per_frame, &bytes_per_second, &be);
 
-    qDebug() << "Audio Init: id=" << id << "bits=" << bits << "signed=" << is_signed << "float=" << is_float << "freq=" << freq << "channels=" << nchannels
-             << "be=" << be;
+    qCDebug(KEMU_DBUSDISPLAY) << "Audio Init: id=" << id << "bits=" << bits << "signed=" << is_signed << "float=" << is_float << "freq=" << freq
+                              << "channels=" << nchannels << "be=" << be;
 
     // Clean up existing stream if present
     if (m_streams.contains(id)) {
@@ -262,7 +263,7 @@ void QemuAudioListener::handleInit(GVariant *parameters, GDBusMethodInvocation *
             format.setSampleFormat(QAudioFormat::Int32);
             break;
         default:
-            qWarning() << "Audio: Unknown bit depth:" << bits;
+            qCWarning(KEMU_DBUSDISPLAY) << "Audio: Unknown bit depth:" << bits;
             format.setSampleFormat(QAudioFormat::Int16);
         }
     }
@@ -284,8 +285,8 @@ void QemuAudioListener::handleInit(GVariant *parameters, GDBusMethodInvocation *
         // Qt's QAudioSink can sometimes still play a non-listed format via
         // the platform plugin's resampler. Log a warning but proceed; if the
         // sink really cannot open we'll catch it on the start() call later.
-        qWarning() << "Audio: format not advertised as supported"
-                   << "(rate=" << format.sampleRate() << "ch=" << format.channelCount() << "fmt=" << format.sampleFormat() << ")";
+        qCWarning(KEMU_DBUSDISPLAY) << "Audio: format not advertised as supported"
+                                    << "(rate=" << format.sampleRate() << "ch=" << format.channelCount() << "fmt=" << format.sampleFormat() << ")";
     }
 
     stream->sink = new QAudioSink(defaultDevice, format);
@@ -303,7 +304,7 @@ void QemuAudioListener::handleFini(GVariant *parameters, GDBusMethodInvocation *
     guint64 id;
     g_variant_get(parameters, "(t)", &id);
 
-    qDebug() << "Audio Fini: id=" << id;
+    qCDebug(KEMU_DBUSDISPLAY) << "Audio Fini: id=" << id;
 
     if (auto *stream = m_streams.take(id)) {
         if (stream->sink) {
@@ -348,7 +349,7 @@ void QemuAudioListener::handleSetEnabled(GVariant *parameters, GDBusMethodInvoca
     gboolean enabled;
     g_variant_get(parameters, "(tb)", &id, &enabled);
 
-    qDebug() << "Audio SetEnabled: id=" << id << "enabled=" << enabled;
+    qCDebug(KEMU_DBUSDISPLAY) << "Audio SetEnabled: id=" << id << "enabled=" << enabled;
 
     auto *stream = m_streams.value(id, nullptr);
     if (stream && stream->sink) {
@@ -358,7 +359,7 @@ void QemuAudioListener::handleSetEnabled(GVariant *parameters, GDBusMethodInvoca
             if (!stream->ioDevice) {
                 stream->ioDevice = stream->sink->start();
                 if (!stream->ioDevice) {
-                    qWarning() << "Audio: QAudioSink::start() failed:" << stream->sink->error();
+                    qCWarning(KEMU_DBUSDISPLAY) << "Audio: QAudioSink::start() failed:" << stream->sink->error();
                 }
             } else if (stream->sink->state() == QAudio::SuspendedState) {
                 stream->sink->resume();

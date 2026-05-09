@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "dbusdisplay/dbusdisplayconst.h"
+#include "kemu_dbusdisplay_debug.h"
 
 // =============================================================================
 // Pixman format constants
@@ -186,7 +187,7 @@ int QemuDisplayListener::createSocketPair()
 {
     int sv[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) {
-        qCritical() << "socketpair():" << strerror(errno);
+        qCCritical(KEMU_DBUSDISPLAY) << "socketpair():" << strerror(errno);
         return -1;
     }
     m_qemuFd = sv[0];
@@ -205,7 +206,7 @@ bool QemuDisplayListener::connectListener()
     GError *error = nullptr;
     GSocket *gsock = g_socket_new_from_fd(ourFd, &error);
     if (!gsock) {
-        qCritical() << "g_socket_new_from_fd:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "g_socket_new_from_fd:" << error->message;
         g_error_free(error);
         close(ourFd);
         return false;
@@ -218,7 +219,7 @@ bool QemuDisplayListener::connectListener()
     m_listenerConn = g_dbus_connection_new_sync(G_IO_STREAM(sockConn), nullptr, G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT, nullptr, nullptr, &error);
     g_object_unref(sockConn);
     if (!m_listenerConn) {
-        qCritical() << "D-Bus Auth:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "D-Bus Auth:" << error->message;
         g_error_free(error);
         return false;
     }
@@ -228,7 +229,7 @@ bool QemuDisplayListener::connectListener()
 
     GDBusNodeInfo *nodeInfo = g_dbus_node_info_new_for_xml(listenerIntrospectionXml, &error);
     if (!nodeInfo) {
-        qCritical() << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << error->message;
         g_error_free(error);
         return false;
     }
@@ -241,7 +242,7 @@ bool QemuDisplayListener::connectListener()
                                                          &error);
     g_dbus_node_info_unref(nodeInfo);
     if (!m_registrationId) {
-        qCritical() << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << error->message;
         g_error_free(error);
         return false;
     }
@@ -257,12 +258,12 @@ bool QemuDisplayListener::connectListener()
                                                                  &error);
         g_dbus_node_info_unref(unixNode);
         if (!m_registrationIdUnix) {
-            qWarning() << error->message;
+            qCWarning(KEMU_DBUSDISPLAY) << error->message;
             g_error_free(error);
         }
     }
 
-    qDebug() << "Display listener ready";
+    qCDebug(KEMU_DBUSDISPLAY) << "Display listener ready";
     return true;
 }
 
@@ -273,7 +274,7 @@ void QemuDisplayListener::onConnectionClosed(GDBusConnection *, gboolean remote_
 {
     auto *self = static_cast<QemuDisplayListener *>(user_data);
     self->m_closed = true;
-    qDebug() << "Display: Connection closed" << (remote_peer_vanished ? "(QEMU terminated)" : "(local)") << (error ? error->message : "");
+    qCDebug(KEMU_DBUSDISPLAY) << "Display: Connection closed" << (remote_peer_vanished ? "(QEMU terminated)" : "(local)") << (error ? error->message : "");
     Q_EMIT self->connectionLost();
 }
 
@@ -350,7 +351,7 @@ void QemuDisplayListener::handleScanoutDMABUF(GVariant *parameters, GDBusMethodI
         return;
     }
 
-    // qDebug() << "ScanoutDMABUF:" << width << "x" << height
+    // qCDebug(KEMU_DBUSDISPLAY) << "ScanoutDMABUF:" << width << "x" << height
     //          << "fourcc: 0x" << Qt::hex << fourcc << Qt::dec
     //          << "y0_top:" << y0_top << "FD:" << dmabufFd;
 
@@ -524,7 +525,7 @@ void QemuDisplayListener::handleCursorDefine(GVariant *parameters, GDBusMethodIn
     gsize dataLen = 0;
     const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant, &dataLen, sizeof(guint8)));
 
-    // qDebug() << "CursorDefine:" << width << "x" << height
+    // qCDebug(KEMU_DBUSDISPLAY) << "CursorDefine:" << width << "x" << height
     //          << "hot:" << hot_x << "," << hot_y
     //          << "Data:" << dataLen << "bytes";
 
@@ -607,7 +608,7 @@ QImage::Format QemuDisplayListener::pixmanFormatToQt(uint32_t pf)
     case PIXMAN_a8b8g8r8:
         return QImage::Format_RGBA8888;
     default:
-        qWarning() << "Unsupported pixman format: 0x" << Qt::hex << pf << Qt::dec << "- ignoring frame.";
+        qCWarning(KEMU_DBUSDISPLAY) << "Unsupported pixman format: 0x" << Qt::hex << pf << Qt::dec << "- ignoring frame.";
         return QImage::Format_Invalid;
     }
 }

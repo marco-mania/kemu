@@ -15,7 +15,6 @@
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
 #include <QDBusVirtualObject>
-#include <QDebug>
 #include <QMimeData>
 #include <QObject>
 #include <QPointer>

@@ -11,7 +11,6 @@
 #include <gio/gio.h>
 #pragma pop_macro("signals")
 
-#include <QDebug>
 #include <QImage>
 #include <QMutex>
 #include <QObject>

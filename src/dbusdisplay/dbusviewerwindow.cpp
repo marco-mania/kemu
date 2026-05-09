@@ -4,7 +4,7 @@
 
 #include "dbusviewerwindow.h"
 
-#include <QScrollArea>
+#include "kemu_dbusdisplay_debug.h"
 
 // =============================================================================
 // Constructor
@@ -51,7 +51,7 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
 
     connect(m_display, &QemuDisplayWidget::fullscreenToggleRequested, m_actFullscreen, &QAction::trigger);
 
-    qDebug() << "DbusViewerWindow: audioOutConnected=" << m_audioOutConnected << "audioInConnected=" << m_audioInConnected;
+    qCDebug(KEMU_DBUSDISPLAY) << "DbusViewerWindow: audioOutConnected=" << m_audioOutConnected << "audioInConnected=" << m_audioInConnected;
 
     resize(m_lastWindowSize);
 }
@@ -429,7 +429,7 @@ void DbusViewerWindow::onToggleAudioOut(bool checked)
 {
     if (m_audioOut) {
         m_audioOut->setMuted(!checked);
-        qDebug() << "Audio output:" << (checked ? "ON" : "MUTED");
+        qCDebug(KEMU_DBUSDISPLAY) << "Audio output:" << (checked ? "ON" : "MUTED");
     }
     updateStatusBar();
 }
@@ -438,7 +438,7 @@ void DbusViewerWindow::onToggleAudioIn(bool checked)
 {
     if (m_audioIn) {
         m_audioIn->setMuted(!checked);
-        qDebug() << "Audio input:" << (checked ? "ON" : "MUTED");
+        qCDebug(KEMU_DBUSDISPLAY) << "Audio input:" << (checked ? "ON" : "MUTED");
     }
     updateStatusBar();
 }
@@ -641,7 +641,7 @@ void DbusViewerWindow::audioOutReady()
 
     updateStatusBar();
     statusBar()->showMessage(i18n("Audio output connected"), 3000);
-    qDebug() << "DbusViewerWindow: Audio output activated subsequently";
+    qCDebug(KEMU_DBUSDISPLAY) << "DbusViewerWindow: Audio output activated subsequently";
 }
 
 void DbusViewerWindow::audioInReady()
@@ -657,7 +657,7 @@ void DbusViewerWindow::audioInReady()
 
     updateStatusBar();
     statusBar()->showMessage(i18n("Audio input connected"), 3000);
-    qDebug() << "DbusViewerWindow: Audio input activated subsequently";
+    qCDebug(KEMU_DBUSDISPLAY) << "DbusViewerWindow: Audio input activated subsequently";
 }
 
 void DbusViewerWindow::updateWindowAndDisplaySize()

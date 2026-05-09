@@ -11,7 +11,6 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDBusConnection>
-#include <QDebug>
 #include <QLabel>
 #include <QMainWindow>
 #include <QMenuBar>

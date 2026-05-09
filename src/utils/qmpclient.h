@@ -9,7 +9,6 @@
 #include <functional>
 #include <unistd.h>
 
-#include <QDebug>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
