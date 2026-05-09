@@ -22,6 +22,7 @@
 #include <QToolBar>
 
 #include <KLocalizedString>
+#include <KMessageBox>
 
 #include "dbusdisplay/audioinlistener.h"
 #include "dbusdisplay/audiolistener.h"

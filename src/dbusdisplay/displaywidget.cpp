@@ -525,6 +525,14 @@ void QemuDisplayWidget::onRegionUpdated(const QRect&)
 
 void QemuDisplayWidget::keyPressEvent(QKeyEvent* event)
 {
+    // Reclaim F11 from the guest while fullscreen, so the user
+    // always has a way out. In windowed mode F11 keeps reaching
+    // the guest, and the QAction shortcut handles toggling.
+    if (window()->isFullScreen() && event->key() == Qt::Key_F11 && event->modifiers() == Qt::NoModifier) {
+        Q_EMIT fullscreenToggleRequested();
+        event->accept();
+        return;
+    }
     if (event->isAutoRepeat())
         return;
     uint32_t evdev = event->nativeScanCode();
@@ -535,6 +543,10 @@ void QemuDisplayWidget::keyPressEvent(QKeyEvent* event)
 
 void QemuDisplayWidget::keyReleaseEvent(QKeyEvent* event)
 {
+    if (window()->isFullScreen() && event->key() == Qt::Key_F11 && event->modifiers() == Qt::NoModifier) {
+        event->accept();
+        return;
+    }
     if (event->isAutoRepeat())
         return;
     uint32_t evdev = event->nativeScanCode();

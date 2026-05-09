@@ -47,6 +47,8 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener* listener,
     // QEMU termination: Stop notifiers immediately, then close with delay
     connect(listener, &QemuDisplayListener::connectionLost, this, &DbusViewerWindow::onQemuDisconnected);
 
+    connect(m_display, &QemuDisplayWidget::fullscreenToggleRequested, m_actFullscreen, &QAction::trigger);
+
     qDebug() << "DbusViewerWindow: audioOutConnected=" << m_audioOutConnected
              << "audioInConnected=" << m_audioInConnected;
 
@@ -262,6 +264,11 @@ void DbusViewerWindow::updateStatusBar()
 void DbusViewerWindow::onToggleFullscreen(bool checked)
 {
     if (checked) {
+        // First-time hint; KMessageBox persists the user's choice in kemurc.
+        KMessageBox::information(this,
+            i18n("Press <b>F11</b> to leave fullscreen mode again."),
+            i18n("Fullscreen Mode"),
+            u"ShowFullscreenHint"_s);
         showFullScreen();
     } else {
         showNormal();

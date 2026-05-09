@@ -46,6 +46,9 @@ public:
     // Must be called BEFORE listeners are destroyed.
     void stopAllGLibWatching();
 
+Q_SIGNALS:
+    void fullscreenToggleRequested();
+
 protected:
     void initializeGL() override;
     void paintGL() override;
