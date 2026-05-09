@@ -77,6 +77,11 @@ void DbusViewerWindow::createActions()
     m_actFullscreen->setStatusTip(i18n("Toggle fullscreen mode"));
     connect(m_actFullscreen, &QAction::toggled, this, &DbusViewerWindow::onToggleFullscreen);
 
+    m_actNativeSize = new QAction(QIcon::fromTheme(u"zoom-original"_s), i18n("&Reset to Native Size"), this);
+    m_actNativeSize->setShortcut(QKeySequence(u"Ctrl+Shift+R"_s));
+    m_actNativeSize->setStatusTip(i18n("Resize the window to the guest's native resolution"));
+    connect(m_actNativeSize, &QAction::triggered, this, &DbusViewerWindow::onResetToNativeSize);
+
     // --- Devices: Audio ---
     m_actAudioOut = new QAction(i18n("Audio &Output"), this);
     m_actAudioOut->setCheckable(true);
@@ -110,17 +115,17 @@ void DbusViewerWindow::createActions()
     clipGroup->addAction(m_actClipOff);
     connect(m_actClipOff, &QAction::triggered, this, &DbusViewerWindow::onClipboardOff);
 
-    m_actClipToHost = new QAction(i18n("Guest → Host"), this);
+    m_actClipToHost = new QAction(i18n("Guest -> Host"), this);
     m_actClipToHost->setCheckable(true);
     clipGroup->addAction(m_actClipToHost);
     connect(m_actClipToHost, &QAction::triggered, this, &DbusViewerWindow::onClipboardToHost);
 
-    m_actClipToGuest = new QAction(i18n("Host → Guest"), this);
+    m_actClipToGuest = new QAction(i18n("Host -> Guest"), this);
     m_actClipToGuest->setCheckable(true);
     clipGroup->addAction(m_actClipToGuest);
     connect(m_actClipToGuest, &QAction::triggered, this, &DbusViewerWindow::onClipboardToGuest);
 
-    m_actClipBoth = new QAction(i18n("↔ Bidirectional"), this);
+    m_actClipBoth = new QAction(i18n("<-> Bidirectional"), this);
     m_actClipBoth->setCheckable(true);
     clipGroup->addAction(m_actClipBoth);
     connect(m_actClipBoth, &QAction::triggered, this, &DbusViewerWindow::onClipboardBoth);
@@ -143,6 +148,8 @@ void DbusViewerWindow::createMenus()
     // View
     QMenu* viewMenu = menuBar()->addMenu(i18n("&View"));
     viewMenu->addAction(m_actFullscreen);
+    viewMenu->addSeparator();
+    viewMenu->addAction(m_actNativeSize);
 
     // Devices
     QMenu* devicesMenu = menuBar()->addMenu(i18n("&Devices"));
@@ -258,6 +265,30 @@ void DbusViewerWindow::onToggleFullscreen(bool checked)
         showFullScreen();
     } else {
         showNormal();
+    }
+}
+
+void DbusViewerWindow::onResetToNativeSize()
+{
+    if (m_lastTargetW <= 0 || m_lastTargetH <= 0) {
+        statusBar()->showMessage(i18n("Native display size not yet known"), 3000);
+        return;
+    }
+
+    const bool wasFullscreen = isFullScreen();
+    if (wasFullscreen) {
+        // Triggers toggled() -> onToggleFullscreen(false) -> showNormal().
+        m_actFullscreen->setChecked(false);
+    }
+
+    auto doResize = [this] { resize(m_lastTargetW, m_lastTargetH); };
+
+    // Defer the resize until the window state transition has settled,
+    // otherwise the WM may overwrite our geometry while leaving fullscreen.
+    if (wasFullscreen) {
+        QTimer::singleShot(0, this, doResize);
+    } else {
+        doResize();
     }
 }
 
@@ -422,7 +453,7 @@ void DbusViewerWindow::closeEvent(QCloseEvent* event)
 // Change Event
 // =============================================================================
 
-void DbusViewerWindow::changeEvent(QEvent *event)
+void DbusViewerWindow::changeEvent(QEvent* event)
 {
     if (event->type() == QEvent::WindowStateChange) {
         // Check if the current state is FullScreen

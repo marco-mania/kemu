@@ -70,10 +70,11 @@ Q_SIGNALS:
 
 protected:
     void closeEvent(QCloseEvent* event) override;
-    void changeEvent(QEvent *event) override;
+    void changeEvent(QEvent* event) override;
 
 private Q_SLOTS:
     void onToggleFullscreen(bool checked);
+    void onResetToNativeSize();
     void onToggleAudioOut(bool checked);
     void onToggleAudioIn(bool checked);
     void onClipboardOff();
@@ -108,6 +109,7 @@ private:
     // Menu actions
     QAction* m_actQuit = nullptr;
     QAction* m_actFullscreen = nullptr;
+    QAction* m_actNativeSize = nullptr;
     QAction* m_actAudioOut = nullptr;
     QAction* m_actAudioIn = nullptr;
     QAction* m_actClipOff = nullptr;
