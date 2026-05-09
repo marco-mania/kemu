@@ -36,6 +36,7 @@ int main(int argc, char* argv[])
         KAboutLicense::GPL_V3,
         i18n("© 2021-2026"));
     aboutData.addAuthor(u"Marco Nelles"_s, i18n("Main Developer"));
+    aboutData.addAuthor(u"Jin Liu"_s, i18n("Contributor"));
 
     aboutData.addCredit(
         u"Papirus Development Team"_s,
