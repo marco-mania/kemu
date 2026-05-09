@@ -121,4 +121,5 @@ target_link_libraries(
   KF6::JobWidgets
   KF6::KIOWidgets
   KF6::TextTemplate
+  KF6::DBusAddons
   KF6::Crash)

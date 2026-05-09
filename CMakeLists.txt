@@ -47,6 +47,7 @@ find_package(
              JobWidgets
              KIO
              TextTemplate
+             DBusAddons
              Crash)
 
 find_package(LibArchive REQUIRED)

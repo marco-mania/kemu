@@ -8,6 +8,7 @@
 
 #include <KAboutData>
 #include <KCrash>
+#include <KDBusService>
 #include <KLocalizedString>
 
 #include <QApplication>
@@ -58,9 +59,21 @@ int main(int argc, char* argv[])
 
     KCrash::initialize();
 
+    KDBusService service(KDBusService::Unique);
+
     auto* mainwindow = new MainWindow();
     mainwindow->setAttribute(Qt::WA_DeleteOnClose);
     mainwindow->show();
+
+    QObject::connect(&service, &KDBusService::activateRequested,
+        mainwindow, [mainwindow](const QStringList& args, const QString& workingDir) {
+            Q_UNUSED(args);
+            Q_UNUSED(workingDir);
+            mainwindow->show();
+            mainwindow->raise();
+            mainwindow->activateWindow();
+            // KWindowSystem::forceActiveWindow(mainwindow->winId());
+        });
 
     const int rc = app.exec();
     std::quick_exit(rc);
