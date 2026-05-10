@@ -122,6 +122,7 @@ MainWindow::~MainWindow()
 
         // Stop the QEMU process; Qt's parent-child cleanup deletes it
         if (e->qemuProcess) {
+            m_userInitiatedShutdowns.insert(name);
             e->qemuProcess->disconnect();
             if (e->qemuProcess->state() == KProcess::Running) {
                 e->qemuProcess->terminate();
@@ -1813,6 +1814,9 @@ void MainWindow::tearDownVmRuntime(const QString& vmName)
 
     releaseNetwork(entry->config);
     veModel->clearRuntimeState(vmName);
+
+    m_qemuStderrTails.remove(vmName);
+    m_userInitiatedShutdowns.remove(vmName);
 }
 
 void MainWindow::changeISO()
@@ -2538,6 +2542,10 @@ void MainWindow::startVM(bool headless)
         return;
     }
 
+    // Reset failure-handling state from any previous run of this VM
+    m_qemuStderrTails.remove(vmName);
+    m_userInitiatedShutdowns.remove(vmName);
+
     if (currentConfig.useKvm() && !QFile::exists(u"/dev/kvm"_s))
         KMessageBox::error(this, i18n("/dev/kvm not found. Hardware virtualization may be disabled in BIOS."), i18n("KVM not available"));
 
@@ -2593,30 +2601,40 @@ void MainWindow::startVM(bool headless)
         cleanupDbusSocket(vmName);
 
     if (!headless && currentConfig.displayType() == VMSpecs::DisplayType::Dbus) {
-        if (!startDbusDaemon(vmName))
+        if (!startDbusDaemon(vmName)) {
+            tearDownVmRuntime(vmName);
             return;
+        }
     }
 
     if (currentConfig.useTpm()) {
-        if (!startSwtpm(vmName))
+        if (!startSwtpm(vmName)) {
+            tearDownVmRuntime(vmName);
             return;
+        }
     }
 
     if (!currentConfig.sharedPath().isEmpty()
         && currentConfig.osType() == VMSpecs::OsType::Windows) {
-        if (!startVirtiofsd(vmName))
+        if (!startVirtiofsd(vmName)) {
+            tearDownVmRuntime(vmName);
             return;
+        }
     }
 
     QString tapDevice;
     if (currentConfig.networkCard() != VMSpecs::NetworkCard::None) {
         if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
             tapDevice = ensureNetworkRunning(currentConfig.virtualNetworkName(), vmName);
-            if (tapDevice.isEmpty())
+            if (tapDevice.isEmpty()) {
+                tearDownVmRuntime(vmName);
                 return;
+            }
         } else {
-            if (!startPasst(vmName, currentConfig.portForwards()))
+            if (!startPasst(vmName, currentConfig.portForwards())) {
+                tearDownVmRuntime(vmName);
                 return;
+            }
         }
     }
 
@@ -2632,6 +2650,17 @@ void MainWindow::startVM(bool headless)
         return;
 
     KProcess* process = new KProcess(this);
+    process->setOutputChannelMode(KProcess::SeparateChannels);
+
+    // Capture QEMU stderr in a rolling tail buffer for diagnostics
+    constexpr int kStderrTailLimit = 65536;
+    connect(process, &QProcess::readyReadStandardError, this,
+        [this, process, vmName]() {
+            QByteArray& tail = m_qemuStderrTails[vmName];
+            tail.append(process->readAllStandardError());
+            if (tail.size() > kStderrTailLimit)
+                tail.remove(0, tail.size() - kStderrTailLimit);
+        });
 
     if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
         && !tapDevice.isEmpty()) {
@@ -2651,30 +2680,47 @@ void MainWindow::startVM(bool headless)
 
     process->start();
 
-    if (process->waitForStarted()) {
-        veModel->setHeadless(vmName, headless);
-        veModel->setQemuProcess(vmName, process);
-        veModel->setVmState(vmName, VmEntry::State::Running);
-        statusBar()->showMessage(i18n("VM '%1' started.", vmName));
-        updateDetails();
-        updateActionStates();
-
-        // Launch SPICE viewer if configured
-        if (!headless && currentConfig.displayType() == VMSpecs::DisplayType::Spice) {
-            startSpiceViewer(vmName);
-        }
-
-        // Launch integrated D-Bus viewer if configured
-        if (!headless && currentConfig.displayType() == VMSpecs::DisplayType::Dbus) {
-            QTimer::singleShot(500, this, [this, vmName]() {
-                startDbusViewer(vmName);
-            });
-        }
-
-    } else {
-        KMessageBox::error(this, i18n("Failed to start QEMU: %1", process->errorString()));
+    if (!process->waitForStarted(3000)) {
+        const QString errStr = process->errorString();
+        process->disconnect();
         delete process;
+        tearDownVmRuntime(vmName);
+        showQemuFailureDialog(vmName, true, -1, KProcess::CrashExit, errStr.toUtf8());
         return;
+    }
+
+    // Quick-exit probe: if QEMU dies within 750 ms, treat it as a startup
+    // failure (bad arguments, missing firmware, KVM permission denied, ...)
+    // rather than a normal run that ended.
+    if (process->waitForFinished(750)) {
+        const int exitCode = process->exitCode();
+        const auto exitStatus = process->exitStatus();
+        QByteArray tail = m_qemuStderrTails.value(vmName);
+        tail.append(process->readAllStandardError());
+        process->disconnect();
+        delete process;
+        tearDownVmRuntime(vmName);
+        showQemuFailureDialog(vmName, true, exitCode, exitStatus, tail);
+        return;
+    }
+
+    veModel->setHeadless(vmName, headless);
+    veModel->setQemuProcess(vmName, process);
+    veModel->setVmState(vmName, VmEntry::State::Running);
+    statusBar()->showMessage(i18n("VM '%1' started.", vmName));
+    updateDetails();
+    updateActionStates();
+
+    // Launch SPICE viewer if configured
+    if (!headless && currentConfig.displayType() == VMSpecs::DisplayType::Spice) {
+        startSpiceViewer(vmName);
+    }
+
+    // Launch integrated D-Bus viewer if configured
+    if (!headless && currentConfig.displayType() == VMSpecs::DisplayType::Dbus) {
+        QTimer::singleShot(500, this, [this, vmName]() {
+            startDbusViewer(vmName);
+        });
     }
 
     QMPClient* client = new QMPClient(this);
@@ -2793,9 +2839,12 @@ void MainWindow::shutdownVM()
         return;
     }
 
+    m_userInitiatedShutdowns.insert(currentConfig.name());
+
     QMPResult result = client->sendCommandSync(u"system_powerdown"_s);
 
     if (!result.success) {
+        m_userInitiatedShutdowns.remove(currentConfig.name());
         KMessageBox::error(this, i18n("Shutdown Failed"), result.errorMessage);
         return;
     }
@@ -2877,6 +2926,8 @@ void MainWindow::killVM()
 
     if (result == KMessageBox::PrimaryAction) {
 
+        m_userInitiatedShutdowns.insert(vmName);
+
         bool qmpSuccess = false;
 
         QPointer<QMPClient> client = entry->qmpClient;
@@ -2903,7 +2954,7 @@ void MainWindow::killVM()
     }
 }
 
-void MainWindow::onProcessFinished(int, KProcess::ExitStatus)
+void MainWindow::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus)
 {
     QPointer<KProcess> p = qobject_cast<KProcess*>(sender());
     if (!p)
@@ -2925,13 +2976,26 @@ void MainWindow::onProcessFinished(int, KProcess::ExitStatus)
 
     VmEntry* entry = veModel->entryByName(vmName);
     const bool wasDeploying = entry && entry->state == VmEntry::State::Deploying;
+    const bool userInitiated = m_userInitiatedShutdowns.contains(vmName);
+    const bool abnormal = (exitStatus != KProcess::NormalExit) || (exitCode != 0);
+
+    // Drain any remaining stderr before tear-down clears the buffer
+    if (p) {
+        QByteArray& tail = m_qemuStderrTails[vmName];
+        tail.append(p->readAllStandardError());
+    }
+    const QByteArray stderrTail = m_qemuStderrTails.value(vmName);
 
     tearDownVmRuntime(vmName);
 
-    if (wasDeploying)
+    if (wasDeploying) {
         finalizeDeployment(vmName);
-    else
+    } else if (abnormal && !userInitiated) {
+        showQemuFailureDialog(vmName, /*startupFailed=*/false,
+            exitCode, exitStatus, stderrTail);
+    } else {
         statusBar()->showMessage(i18n("VM '%1' stopped.", vmName));
+    }
 
     if (selectedVmName() == vmName) {
         updateDetails();
@@ -3614,6 +3678,42 @@ void MainWindow::saveFolderStructure() const
     }
     grp.writeEntry(u"collapsed"_s, collapsedFolders);
     grp.sync();
+}
+
+void MainWindow::showQemuFailureDialog(const QString& vmName,
+    bool startupFailed,
+    int exitCode,
+    KProcess::ExitStatus exitStatus,
+    const QByteArray& stderrTail)
+{
+    const QString title = startupFailed
+        ? i18nc("@title:window", "Failed to Start VM")
+        : i18nc("@title:window", "VM Terminated Unexpectedly");
+
+    QString summary;
+    if (startupFailed) {
+        summary = i18n("QEMU failed to start the virtual machine '%1'.", vmName);
+    } else if (exitStatus == KProcess::CrashExit) {
+        summary = i18n("QEMU for VM '%1' was terminated by a signal.", vmName);
+    } else {
+        summary = i18n("QEMU for VM '%1' exited with code %2.", vmName, exitCode);
+    }
+
+    // Build the main body: summary + QEMU's stderr (the actually useful part)
+    QString body = u"<p>"_s + summary.toHtmlEscaped() + u"</p>"_s;
+
+    const QString stderrText = QString::fromUtf8(stderrTail).trimmed();
+    if (!stderrText.isEmpty()) {
+        body += u"<pre style='white-space: pre-wrap;'>"_s
+            + stderrText.toHtmlEscaped()
+            + u"</pre>"_s;
+    } else {
+        body += u"<p><i>"_s
+            + i18n("(No diagnostic output captured.)").toHtmlEscaped()
+            + u"</i></p>"_s;
+    }
+
+    KMessageBox::error(this, body, title);
 }
 
 void MainWindow::startDeployment(const QString& vmName, const bool disable_headless)
