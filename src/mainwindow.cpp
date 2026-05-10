@@ -3516,11 +3516,11 @@ void MainWindow::cloneVM()
 void MainWindow::createFolder()
 {
     bool ok = false;
-    QString name = QInputDialog::getText(this, i18n("New Folder"), i18n("Folder name:"), QLineEdit::Normal, { }, &ok);
+    const QString name = QInputDialog::getText(this, i18n("New Folder"), i18n("Folder name:"), QLineEdit::Normal, { }, &ok);
     if (!ok || name.trimmed().isEmpty())
         return;
 
-    QModelIndex idx = veModel->createFolder(name.trimmed());
+    const QModelIndex idx = veModel->createFolder(name.trimmed());
     if (idx.isValid()) {
         veTreeView->expand(idx);
         saveFolderStructure();
@@ -3529,7 +3529,7 @@ void MainWindow::createFolder()
 
 void MainWindow::deleteFolder()
 {
-    QModelIndex idx = veTreeView->currentIndex();
+    const QModelIndex idx = veTreeView->currentIndex();
     if (veModel->removeFolder(idx))
         saveFolderStructure();
     else
@@ -3538,13 +3538,13 @@ void MainWindow::deleteFolder()
 
 void MainWindow::renameFolder()
 {
-    QModelIndex idx = veTreeView->currentIndex();
+    const QModelIndex idx = veTreeView->currentIndex();
     if (!idx.isValid()
         || idx.data(VirtualEnvironmentModel::ItemTypeRole).toInt() != VirtualEnvironmentModel::Folder)
         return;
 
     bool ok = false;
-    QString newName = QInputDialog::getText(this, i18n("Rename Folder"), i18n("New name:"), QLineEdit::Normal, idx.data(Qt::DisplayRole).toString(), &ok);
+    const QString newName = QInputDialog::getText(this, i18n("Rename Folder"), i18n("New name:"), QLineEdit::Normal, idx.data(Qt::DisplayRole).toString(), &ok);
     if (ok && !newName.trimmed().isEmpty()) {
         veModel->renameFolder(idx, newName.trimmed());
         saveFolderStructure();
