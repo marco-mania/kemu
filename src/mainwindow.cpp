@@ -2977,8 +2977,7 @@ void MainWindow::onUsbMenuAboutToShow()
 {
     usbActionMenu->menu()->clear();
 
-    QString vmName = selectedVmName();
-    VmEntry* entry = veModel ? veModel->entryByName(vmName) : nullptr;
+    VmEntry* entry = veModel ? veModel->entryByName(selectedVmName()) : nullptr;
 
     if (!entry || entry->state != VmEntry::State::Running || !entry->qmpClient) {
         auto* a = usbActionMenu->menu()->addAction(i18n("VM not running"));
@@ -3014,14 +3013,13 @@ void MainWindow::onUsbActionTriggered()
     if (!action)
         return;
 
-    QVariantList d = action->data().toList();
-    int busNum = d[0].toInt();
-    int devAddr = d[1].toInt();
-    QString busKey = d[2].toString();
-    QString qemuId = d[3].toString();
+    const QVariantList d = action->data().toList();
+    const int busNum = d[0].toInt();
+    const int devAddr = d[1].toInt();
+    const QString busKey = d[2].toString();
+    const QString qemuId = d[3].toString();
 
-    QString vmName = selectedVmName();
-    VmEntry* entry = veModel ? veModel->entryByName(vmName) : nullptr;
+    VmEntry* entry = veModel ? veModel->entryByName(selectedVmName()) : nullptr;
     if (!entry || !entry->qmpClient)
         return;
 
@@ -3096,8 +3094,8 @@ void MainWindow::importOVA(const QString& filePath)
 
 void MainWindow::exportOVA(const QString& filePath)
 {
-    DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
-    int diskGb = dInfo.isValid ? qRound(dInfo.virtualSizeGb) : currentConfig.diskSizeGb();
+    const DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
+    const int diskGb = dInfo.isValid ? qRound(dInfo.virtualSizeGb) : currentConfig.diskSizeGb();
 
     VMConfig exportConfig = currentConfig;
     exportConfig.setDiskSizeGb(diskGb);
@@ -3304,7 +3302,7 @@ void MainWindow::editVM()
         return;
     }
 
-    DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
+    const DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
     if (dInfo.isValid)
         currentConfig.setDiskSizeGb(qRound(dInfo.virtualSizeGb));
 
@@ -3376,7 +3374,7 @@ void MainWindow::deleteVM()
     if (veModel->isBusy(currentConfig.name()))
         return;
 
-    auto answer = KMessageBox::questionTwoActions(
+    const auto answer = KMessageBox::questionTwoActions(
         this,
         i18n("Delete VM '%1' and all associated files?", currentConfig.name()),
         i18n("Delete VM"),
