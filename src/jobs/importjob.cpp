@@ -51,7 +51,7 @@ void ImportJob::start()
         QPair<QString, QString>(i18n("VM"), m_vmName),
         QPair<QString, QString>(i18n("File"), QFileInfo(m_archivePath).fileName()));
 
-    Q_EMIT infoMessage(this, i18n("Preparing to import archive…"));
+    Q_EMIT infoMessage(this, i18n("Preparing to import archive..."));
     emitPercent(0, 100);
 
     // Setup threaded execution

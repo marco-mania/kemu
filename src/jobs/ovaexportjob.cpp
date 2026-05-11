@@ -48,7 +48,7 @@ void OvaExportJob::start()
     Q_EMIT description(this,
         i18n("Exporting as OVA"),
         QPair<QString, QString>(i18n("VM"), m_vmName),
-        QPair<QString, QString>(i18n("Step"), i18n("Converting disk image…")));
+        QPair<QString, QString>(i18n("Step"), i18n("Converting disk image...")));
 
     // step 1: qcow2 → vmdk
     QString vmdkPath = m_stagingDir.filePath(m_vmdkFileName);
@@ -139,7 +139,7 @@ void OvaExportJob::onConvertFinished(int exitCode, QProcess::ExitStatus exitStat
 
 bool OvaExportJob::performBackgroundTasks()
 {
-    QMetaObject::invokeMethod(this, [this]() { Q_EMIT infoMessage(this, i18n("Creating Manifest (SHA256)…")); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(this, [this]() { Q_EMIT infoMessage(this, i18n("Creating Manifest (SHA256)...")); }, Qt::QueuedConnection);
 
     if (!createManifestInThread()) {
         return false;
@@ -149,7 +149,7 @@ bool OvaExportJob::performBackgroundTasks()
         return false;
     }
 
-    QMetaObject::invokeMethod(this, [this]() { Q_EMIT infoMessage(this, i18n("Packaging OVA…")); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(this, [this]() { Q_EMIT infoMessage(this, i18n("Packaging OVA...")); }, Qt::QueuedConnection);
 
     return performOvaPackagingInThread();
 }

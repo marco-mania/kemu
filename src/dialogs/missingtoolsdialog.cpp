@@ -92,7 +92,7 @@ MissingToolsDialog::MissingToolsDialog(const QList<ExternalTools::FeatureGroup>&
     }
 
     auto* buttons = new QDialogButtonBox(this);
-    auto* settingsBtn = buttons->addButton(i18n("Open Settings…"), QDialogButtonBox::AcceptRole);
+    auto* settingsBtn = buttons->addButton(i18n("Open Settings..."), QDialogButtonBox::AcceptRole);
     settingsBtn->setIcon(QIcon::fromTheme(u"configure"_s));
     buttons->addButton(QDialogButtonBox::Close);
 

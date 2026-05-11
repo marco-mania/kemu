@@ -26,8 +26,8 @@
  * no Qt objects are used in the child after fork().
  *
  * Dependencies:
- *   - libmnl  (libmnl-dev / libmnl-devel)  — minimalistic netlink library
- *   - libnftnl (libnftnl-dev / libnftnl-devel) — nftables netlink helpers
+ *   - libmnl  (libmnl-dev / libmnl-devel): minimalistic netlink library
+ *   - libnftnl (libnftnl-dev / libnftnl-devel): nftables netlink helpers
  *   Both are available on all major distributions.
  */
 class NamespaceHelper {

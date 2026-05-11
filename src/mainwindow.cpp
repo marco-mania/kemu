@@ -503,7 +503,7 @@ bool MainWindow::startSpiceViewer(const QString& vmName)
         return false;
     }
 
-    // Write a .vv connection file — avoids all URI encoding issues
+    // Write a .vv connection file, avoids all URI encoding issues
     const QString vvFile = vmPath + u"/spice.vv"_s;
     QFile f(vvFile);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -537,7 +537,7 @@ bool MainWindow::startSpiceViewer(const QString& vmName)
             if (entry->qmpClient && entry->qmpClient->isConnected()) {
                 entry->qmpClient->sendCommand(u"system_powerdown"_s);
                 statusBar()->showMessage(
-                    i18n("SPICE viewer closed — shutting down '%1'.", vmName));
+                    i18n("SPICE viewer closed -- shutting down '%1'.", vmName));
             }
             return;
         }
@@ -545,7 +545,7 @@ bool MainWindow::startSpiceViewer(const QString& vmName)
         // SwitchToHeadless (default)
         veModel->setHeadless(vmName, true);
         statusBar()->showMessage(
-            i18n("SPICE viewer closed — '%1' continues headless.", vmName));
+            i18n("SPICE viewer closed -- '%1' continues headless.", vmName));
 
         if (selectedVmName() == vmName) {
             updateDetails();
@@ -920,7 +920,7 @@ void MainWindow::setupActions()
 
     auto* actionChangeISO = ac->addAction(u"vm_change_iso"_s);
     actionChangeISO->setIcon(QIcon::fromTheme(u"media-optical"_s));
-    actionChangeISO->setText(i18n("ISO Image…"));
+    actionChangeISO->setText(i18n("ISO Image..."));
     connect(actionChangeISO, &QAction::triggered, this, &MainWindow::changeISO);
 
     auto* actionEjectISO = ac->addAction(u"vm_eject_iso"_s);
@@ -930,7 +930,7 @@ void MainWindow::setupActions()
 
     auto* actionChangeFloppy = ac->addAction(u"vm_change_floppy"_s);
     actionChangeFloppy->setIcon(QIcon::fromTheme(u"media-floppy"_s));
-    actionChangeFloppy->setText(i18n("Floppy Image…"));
+    actionChangeFloppy->setText(i18n("Floppy Image..."));
     connect(actionChangeFloppy, &QAction::triggered, this, &MainWindow::changeFloppy);
 
     auto* actionEjectFloppy = ac->addAction(u"vm_eject_floppy"_s);
@@ -960,7 +960,7 @@ void MainWindow::setupActions()
 
     auto* actionClone = ac->addAction(u"vm_clone"_s);
     actionClone->setIcon(QIcon::fromTheme(u"edit-copy"_s));
-    actionClone->setText(i18n("Clone VM…"));
+    actionClone->setText(i18n("Clone VM..."));
     actionClone->setToolTip(i18n("Create a full copy of this virtual machine"));
     connect(actionClone, &QAction::triggered, this, &MainWindow::cloneVM);
 
@@ -972,36 +972,36 @@ void MainWindow::setupActions()
 
     auto* snapshotsAction = actionCollection()->addAction(u"vm_manage_snapshots"_s);
     snapshotsAction->setIcon(QIcon::fromTheme(u"camera-photo"_s));
-    snapshotsAction->setText(i18n("Manage Snapshots…"));
+    snapshotsAction->setText(i18n("Manage Snapshots..."));
     snapshotsAction->setToolTip(i18n("Open the snapshot manager for this VM"));
     connect(snapshotsAction, &QAction::triggered, this, &MainWindow::manageSnapshots);
 
     auto* actionExport = ac->addAction(u"vm_export"_s);
     actionExport->setIcon(QIcon::fromTheme(u"document-export"_s));
-    actionExport->setText(i18n("Export VM…"));
+    actionExport->setText(i18n("Export VM..."));
     actionExport->setToolTip(i18n("Export the virtual machine as a portable archive"));
     connect(actionExport, &QAction::triggered, this, &MainWindow::exportVM);
 
     auto* actionImport = ac->addAction(u"vm_import"_s);
     actionImport->setIcon(QIcon::fromTheme(u"document-import"_s));
-    actionImport->setText(i18n("Import VM…"));
+    actionImport->setText(i18n("Import VM..."));
     actionImport->setToolTip(i18n("Import a virtual machine from an archive"));
     connect(actionImport, &QAction::triggered, this, &MainWindow::importVM);
 
     auto* actionShowCmd = ac->addAction(u"vm_show_cmd"_s);
     actionShowCmd->setIcon(QIcon::fromTheme(u"utilities-terminal"_s));
-    actionShowCmd->setText(i18n("Show command…"));
+    actionShowCmd->setText(i18n("Show command..."));
     connect(actionShowCmd, &QAction::triggered, this, &MainWindow::showCommand);
 
     auto* actionScreenshot = ac->addAction(u"vm_screenshot"_s);
     actionScreenshot->setIcon(QIcon::fromTheme(u"spectacle"_s));
-    actionScreenshot->setText(i18n("Save Screenshot…"));
+    actionScreenshot->setText(i18n("Save Screenshot..."));
     actionScreenshot->setToolTip(i18n("Capture and save a screenshot of the running VM"));
     connect(actionScreenshot, &QAction::triggered, this, &MainWindow::saveScreenshot);
 
     auto* actionNetShell = ac->addAction(u"vm_network_shell"_s);
     actionNetShell->setIcon(QIcon::fromTheme(u"utilities-terminal"_s));
-    actionNetShell->setText(i18n("Open Network Shell…"));
+    actionNetShell->setText(i18n("Open Network Shell..."));
     actionNetShell->setToolTip(i18n("Open a terminal (konsole) inside the virtual network namespace"));
     connect(actionNetShell, &QAction::triggered, this, &MainWindow::openNetworkShell);
 
@@ -1299,7 +1299,7 @@ void MainWindow::updateDetails()
 
     QString osVal = VMConfig::toUIString(currentConfig.osType());
     if (!currentConfig.distroId().isEmpty() && currentConfig.distroId() != u"other"_s) {
-        osVal += u" — "_s + m_imageDatabase.displayName(currentConfig.distroId());
+        osVal += u" -- "_s + m_imageDatabase.displayName(currentConfig.distroId());
     }
 
     QString memVal = i18n("%1 MB", currentConfig.ramMb());
@@ -1349,19 +1349,19 @@ void MainWindow::updateDetails()
         statusColor = colPositive;
     } else if (isShrinking) {
         statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Compacting Disk…");
+        statusText = i18n("Compacting Disk...");
         statusColor = colNeutral;
     } else if (isExporting) {
         statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Exporting…");
+        statusText = i18n("Exporting...");
         statusColor = colNeutral;
     } else if (isDeploying) {
         statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Deploying…");
+        statusText = i18n("Deploying...");
         statusColor = colNeutral;
     } else if (isCloning) {
         statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Cloning…");
+        statusText = i18n("Cloning...");
         statusColor = colNeutral;
     } else {
         statusDot = u"&#x25CF;"_s;
@@ -2030,7 +2030,7 @@ void MainWindow::shrinkDisk()
 
     job->start();
 
-    statusBar()->showMessage(i18n("Compacting disk of VM '%1'…", currentConfig.name()));
+    statusBar()->showMessage(i18n("Compacting disk of VM '%1'...", currentConfig.name()));
     updateActionStates();
     updateDetails();
 }
@@ -2121,7 +2121,7 @@ void MainWindow::exportVM()
 
         job->start();
 
-        statusBar()->showMessage(i18n("Exporting VM '%1'…", currentConfig.name()));
+        statusBar()->showMessage(i18n("Exporting VM '%1'...", currentConfig.name()));
         updateActionStates();
         updateDetails();
     }
@@ -2180,7 +2180,7 @@ void MainWindow::importVM()
     });
 
     job->start();
-    statusBar()->showMessage(i18n("Importing VM…"));
+    statusBar()->showMessage(i18n("Importing VM..."));
 }
 
 void MainWindow::saveScreenshot()
@@ -2414,7 +2414,7 @@ void MainWindow::showContextMenu(const QPoint& pos)
 
             if (isShrinking) {
                 auto* infoAction = contextMenu.addAction(
-                    QIcon::fromTheme(u"view-refresh"_s), i18n("Compacting disk…"));
+                    QIcon::fromTheme(u"view-refresh"_s), i18n("Compacting disk..."));
                 infoAction->setEnabled(false);
             } else if (isDeploying) {
                 QAction* originalKillAction = actionCollection()->action(u"vm_kill"_s);
@@ -2424,7 +2424,7 @@ void MainWindow::showContextMenu(const QPoint& pos)
                 contextMenu.addAction(customKillAction);
             } else if (entry && entry->state == VmEntry::State::Cloning) {
                 auto* infoAction = contextMenu.addAction(
-                    QIcon::fromTheme(u"edit-copy"_s), i18n("Cloning…"));
+                    QIcon::fromTheme(u"edit-copy"_s), i18n("Cloning..."));
                 infoAction->setEnabled(false);
             } else if (!isRunning) {
                 contextMenu.addAction(actionCollection()->action(u"vm_start"_s));
@@ -2849,7 +2849,7 @@ void MainWindow::shutdownVM()
         return;
     }
 
-    statusBar()->showMessage(i18n("Shutting down VM '%1'…", currentConfig.name()));
+    statusBar()->showMessage(i18n("Shutting down VM '%1'...", currentConfig.name()));
 }
 
 void MainWindow::resetVM()
@@ -3014,7 +3014,7 @@ void MainWindow::onQMPEvent(const QString& vmName, const QString& eventName, con
     qDebug() << "QMP Event for" << vmName << ":" << eventName << data;
 
     if (eventName == u"SHUTDOWN"_s) {
-        statusBar()->showMessage(i18n("VM '%1' is shutting down…", vmName));
+        statusBar()->showMessage(i18n("VM '%1' is shutting down...", vmName));
     }
 
     else if (eventName == u"GUEST_CRASHED"_s) {
@@ -3153,7 +3153,7 @@ void MainWindow::importOVA(const QString& filePath)
     });
 
     job->start();
-    statusBar()->showMessage(i18n("Importing OVA…"));
+    statusBar()->showMessage(i18n("Importing OVA..."));
 }
 
 void MainWindow::exportOVA(const QString& filePath)
@@ -3200,7 +3200,7 @@ void MainWindow::exportOVA(const QString& filePath)
 
     job->start();
 
-    statusBar()->showMessage(i18n("Exporting VM '%1' as OVA…", currentConfig.name()));
+    statusBar()->showMessage(i18n("Exporting VM '%1' as OVA...", currentConfig.name()));
     updateActionStates();
     updateDetails();
 }
@@ -3299,7 +3299,7 @@ void MainWindow::createNewVM()
         updateActionStates();
 
         if (needsDownload) {
-            statusBar()->showMessage(i18n("Deploying '%1' — downloading cloud image…", newConfig.name()));
+            statusBar()->showMessage(i18n("Deploying '%1' -- downloading cloud image...", newConfig.name()));
 
             auto* job = new DownloadJob(image.url, imageLocalPath, Utils::ChecksumType::NONE, { }, this);
             jobTracker->registerJob(job);
@@ -3535,7 +3535,7 @@ void MainWindow::cloneVM()
                                  "random one?",
                                 cloneConfig.macAddress()),
                             i18n("MAC Address"),
-                            KGuiItem(i18n("Enter New MAC…"), u"document-edit"_s),
+                            KGuiItem(i18n("Enter New MAC..."), u"document-edit"_s),
                             KGuiItem(i18n("Generate Random"), u"roll"_s));
 
                         if (answer == KMessageBox::PrimaryAction) {
@@ -3572,7 +3572,7 @@ void MainWindow::cloneVM()
 
     job->start();
 
-    statusBar()->showMessage(i18n("Cloning VM '%1'…", srcName));
+    statusBar()->showMessage(i18n("Cloning VM '%1'...", srcName));
     updateActionStates();
     updateDetails();
 }
@@ -3809,7 +3809,7 @@ void MainWindow::startDeployment(const QString& vmName, const bool disable_headl
     veModel->setQemuProcess(vmName, process);
     // State stays Deploying (not Running)
 
-    statusBar()->showMessage(i18n("Deploying '%1' — unattended installation running…", vmName));
+    statusBar()->showMessage(i18n("Deploying '%1' -- unattended installation running...", vmName));
     updateDetails();
     updateActionStates();
 
@@ -3940,7 +3940,7 @@ void MainWindow::deployCloudImage(const QString& vmName)
     QDir vmDir = getVmDir(vmName);
     VMConfig config = loadVmConfig(vmDir.absolutePath());
 
-    statusBar()->showMessage(i18n("Deploying '%1'. Preparing cloud image…", vmName));
+    statusBar()->showMessage(i18n("Deploying '%1'. Preparing cloud image...", vmName));
 
     auto result = CloudImageDeployer::deploy(pd.imageLocalPath, vmDir, config.diskSizeGb(), pd.cloudConfig);
 

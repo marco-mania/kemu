@@ -185,7 +185,7 @@ qint64 NamespaceHelper::createNamespace(QString* error)
         close(syncPipe[1]);
 
         // Die with our creator. When KEMU exits the kernel sends SIGTERM,
-        // the anchor dies, and the kernel tears down the namespace — which
+        // the anchor dies, and the kernel tears down the namespace which
         // in turn destroys every tap device, bridge and route inside it.
         prctl(PR_SET_PDEATHSIG, SIGTERM);
 

@@ -87,7 +87,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     osTypeCombo->addItem(i18n("BSD"), static_cast<int>(VMSpecs::OsType::BSD));
     osTypeCombo->addItem(i18n("DOS"), static_cast<int>(VMSpecs::OsType::DOS));
     osTypeCombo->addItem(i18n("Other"), static_cast<int>(VMSpecs::OsType::Other));
-    osTypeCombo->insertItem(0, i18n("— Please select —"), -1);
+    osTypeCombo->insertItem(0, i18n("-- Please select --"), -1);
     osTypeCombo->setCurrentIndex(0);
     genLayout->addRow(i18n("OS Type:"), osTypeCombo);
 
@@ -177,7 +177,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
 
     // Cloud Config Button
     cloudInitButton = new QPushButton(
-        QIcon::fromTheme(u"preferences-system"_s), i18n("Cloud Image Settings…"));
+        QIcon::fromTheme(u"preferences-system"_s), i18n("Cloud Image Settings..."));
     cloudInitButton->setToolTip(i18n("Configure hostname, user, password, SSH keys and more."));
     cloudInitButton->setEnabled(false);
     cloudInitButton->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
@@ -921,9 +921,9 @@ void CreateVmDialog::clearIcon()
 void CreateVmDialog::showIconContextMenu(const QPoint& pos)
 {
     QMenu menu(this);
-    menu.addAction(QIcon::fromTheme(u"preferences-desktop-icons"_s), i18n("Choose Icon…"), this, &CreateVmDialog::chooseFromIconSet);
-    menu.addAction(QIcon::fromTheme(u"preferences-desktop-icons"_s), i18n("Choose System Theme Icon…"), this, &CreateVmDialog::chooseThemeIcon);
-    menu.addAction(QIcon::fromTheme(u"document-open"_s), i18n("Load Custom Image…"), this, &CreateVmDialog::browseCustomIcon);
+    menu.addAction(QIcon::fromTheme(u"preferences-desktop-icons"_s), i18n("Choose Icon..."), this, &CreateVmDialog::chooseFromIconSet);
+    menu.addAction(QIcon::fromTheme(u"preferences-desktop-icons"_s), i18n("Choose System Theme Icon..."), this, &CreateVmDialog::chooseThemeIcon);
+    menu.addAction(QIcon::fromTheme(u"document-open"_s), i18n("Load Custom Image..."), this, &CreateVmDialog::browseCustomIcon);
     menu.addSeparator();
     menu.addAction(QIcon::fromTheme(u"edit-clear"_s), i18n("Reset Icon"), this, &CreateVmDialog::clearIcon);
     menu.exec(iconDisplayButton->mapToGlobal(pos));
@@ -1047,7 +1047,7 @@ void CreateVmDialog::onOsTypeChanged(int index)
     if (typeVal == -1) {
         // Placeholder
         osNameCombo->clear();
-        osNameCombo->addItem(i18n("— Please select —"), { });
+        osNameCombo->addItem(i18n("-- Please select --"), { });
         osNameCombo->setCurrentIndex(0);
         osNameCombo->setEnabled(false);
         osNameLabel->setEnabled(false);
@@ -1800,11 +1800,11 @@ void CreateVmDialog::updateCloudImageStatus()
     const auto& img = images[idx];
 
     if (!ImageDatabase::isArchCompatible(img.arch)) {
-        cloudImageStatusLabel->setText(i18n("⚠ Foreign architecture — emulation not yet supported"));
+        cloudImageStatusLabel->setText(i18n("! Foreign architecture -- emulation not yet supported"));
     } else if (ImageDatabase::isImageCached(img.url)) {
-        cloudImageStatusLabel->setText(i18n("✓ Cached"));
+        cloudImageStatusLabel->setText(i18n("Cached"));
     } else {
-        cloudImageStatusLabel->setText(i18n("⬇ Will be downloaded"));
+        cloudImageStatusLabel->setText(i18n("Will be downloaded"));
     }
 
     validateForm();

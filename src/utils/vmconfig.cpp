@@ -267,7 +267,7 @@ QIcon VMConfig::styledVmIcon(const QIcon& baseIcon, bool isRunning,
     const int totalSize = size + margin * 2;
 
     // Allocate at device-pixel resolution, but mark with DPR
-    // so QPainter works in logical coordinates (0 … totalSize)
+    // so QPainter works in logical coordinates (0 ... totalSize)
     QPixmap result(qRound(totalSize * dpr), qRound(totalSize * dpr));
     result.setDevicePixelRatio(dpr);
     result.fill(Qt::transparent);

@@ -96,9 +96,9 @@ QVariant VirtualEnvironmentModel::data(const QModelIndex& index, int role) const
             return vm.name;
         case SubtitleRole: {
             if (vm.state == VmEntry::State::Deploying)
-                return i18n("Deploying…");
+                return i18n("Deploying...");
             if (vm.state == VmEntry::State::Cloning)
-                return i18n("Cloning…");
+                return i18n("Cloning...");
             QString label = VMConfig::toUIString(vm.config.osType());
             if (!vm.config.distroId().isEmpty()
                 && vm.config.distroId() != u"other"_s)

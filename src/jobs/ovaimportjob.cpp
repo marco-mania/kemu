@@ -34,7 +34,7 @@ void OvaImportJob::start()
     Q_EMIT description(this,
         i18n("Importing OVA"),
         QPair<QString, QString>(i18n("File"), QFileInfo(m_ovaPath).fileName()),
-        QPair<QString, QString>(i18n("Step"), i18n("Extracting archive…")));
+        QPair<QString, QString>(i18n("Step"), i18n("Extracting archive...")));
 
     emitPercent(0, 1000);
 
@@ -300,7 +300,7 @@ void OvaImportJob::convertDisk()
     Q_EMIT description(this,
         i18n("Importing OVA"),
         QPair<QString, QString>(i18n("VM"), m_vmName),
-        QPair<QString, QString>(i18n("Step"), i18n("Converting disk format…")));
+        QPair<QString, QString>(i18n("Step"), i18n("Converting disk format...")));
 
     QString targetQcow2 = m_vmBaseDir + u"/"_s + m_vmName + u"/disk.qcow2"_s;
 

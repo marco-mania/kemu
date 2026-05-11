@@ -83,7 +83,7 @@ CloudConfigDialog::CloudConfigDialog(QWidget* parent)
         const auto& kb = keyboards[i];
         QString label = kb.displayName;
         if (!kb.variant.isEmpty())
-            label += u" — %1"_s.arg(kb.variant);
+            label += u" -- %1"_s.arg(kb.variant);
         // Store index to retrieve layout+variant pair later
         kbLayoutCombo->addItem(label, i);
     }

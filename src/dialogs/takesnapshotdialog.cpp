@@ -37,7 +37,7 @@ TakeSnapshotDialog::TakeSnapshotDialog(const QString& vmName, QWidget* parent)
     form->addRow({ }, m_nameHintLabel);
 
     m_descriptionEdit = new QTextEdit(this);
-    m_descriptionEdit->setPlaceholderText(i18n("Optional: describe what this snapshot captures…"));
+    m_descriptionEdit->setPlaceholderText(i18n("Optional: describe what this snapshot captures..."));
     m_descriptionEdit->setMaximumHeight(80);
     form->addRow(i18n("Description:"), m_descriptionEdit);
 

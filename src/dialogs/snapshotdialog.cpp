@@ -59,8 +59,8 @@ SnapshotDialog::SnapshotDialog(const QString& vmName,
     // Buttons
     auto* btnLayout = new QHBoxLayout;
 
-    m_takeBtn = new QPushButton(QIcon::fromTheme(u"camera-photo"_s), i18n("Take Snapshot…"));
-    m_revertBtn = new QPushButton(QIcon::fromTheme(u"edit-undo"_s), i18n("Revert To…"));
+    m_takeBtn = new QPushButton(QIcon::fromTheme(u"camera-photo"_s), i18n("Take Snapshot..."));
+    m_revertBtn = new QPushButton(QIcon::fromTheme(u"edit-undo"_s), i18n("Revert To..."));
     m_deleteBtn = new QPushButton(QIcon::fromTheme(u"edit-delete"_s), i18n("Delete"));
     auto* closeBtn = new QPushButton(i18n("Close"));
     closeBtn->setDefault(true);
@@ -106,7 +106,7 @@ void SnapshotDialog::loadSnapshots()
         auto* item = new QTreeWidgetItem;
         item->setText(0, snap.name);
         item->setText(1, snap.dateTime.toString(u"dd.MM.yyyy  HH:mm"_s));
-        item->setText(2, snap.vmStateSizeBytes > 0 ? formatSize(snap.vmStateSizeBytes) : i18n("—"));
+        item->setText(2, snap.vmStateSizeBytes > 0 ? formatSize(snap.vmStateSizeBytes) : i18n("--"));
         item->setIcon(0, QIcon::fromTheme(u"camera-photo"_s));
         item->setData(0, SnapshotInfoRole, QVariant::fromValue(snap));
         item->setData(0, IsCurrentStateRole, false);

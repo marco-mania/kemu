@@ -346,8 +346,8 @@ void SettingsDialog::setupVirtualNetworksPage()
     layout->addWidget(networkTable);
 
     auto* buttonLayout = new QHBoxLayout();
-    netAddButton = new QPushButton(QIcon::fromTheme(u"list-add"_s), i18n("Add…"));
-    netEditButton = new QPushButton(QIcon::fromTheme(u"document-edit"_s), i18n("Edit…"));
+    netAddButton = new QPushButton(QIcon::fromTheme(u"list-add"_s), i18n("Add..."));
+    netEditButton = new QPushButton(QIcon::fromTheme(u"document-edit"_s), i18n("Edit..."));
     netRemoveButton = new QPushButton(QIcon::fromTheme(u"list-remove"_s), i18n("Remove"));
     netEditButton->setEnabled(false);
     netRemoveButton->setEnabled(false);
