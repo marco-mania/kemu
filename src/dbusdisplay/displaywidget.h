@@ -44,6 +44,8 @@ public:
     // Must be called BEFORE listeners are destroyed.
     void stopAllGLibWatching();
 
+    void setScale(float scale);
+
 Q_SIGNALS:
     void fullscreenToggleRequested();
 
@@ -77,6 +79,7 @@ private:
     void renderQuad();
 
     void scheduleRepaint();
+    void updateWidgetSize();
 
     static uint32_t evdevToQnum(uint32_t evdev);
     static int qtButtonToQemu(Qt::MouseButton button);
@@ -116,5 +119,5 @@ private:
     PFNGLEGLIMAGETARGETTEXTURE2DOESPROC m_glEGLImageTargetTexture2DOES = nullptr;
     bool m_eglAvailable = false;
 
-    float m_lastScale = 1.0f; // scale factor of the last rendered frame, used for cursor scaling
+    qreal m_scale = 1.0f;
 };

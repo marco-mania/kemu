@@ -4,7 +4,7 @@
 
 #include "dbusviewerwindow.h"
 
-#include <QVBoxLayout>
+#include <QScrollArea>
 
 // =============================================================================
 // Constructor
@@ -32,11 +32,11 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
 {
     // Display widget as the central widget
     m_display = new QemuDisplayWidget(listener, bus, consolePath, this);
-    auto centralWidget = new QWidget(this);
-    auto layout = new QVBoxLayout(centralWidget);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->addWidget(m_display);
-    setCentralWidget(centralWidget);
+    m_scrollArea = new QScrollArea(this);
+    m_scrollArea->setWidget(m_display);
+    m_scrollArea->setWidgetResizable(false);
+    m_scrollArea->setAlignment(Qt::AlignCenter);
+    setCentralWidget(m_scrollArea);
 
     createActions();
     createMenus();
@@ -53,7 +53,7 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
 
     qDebug() << "DbusViewerWindow: audioOutConnected=" << m_audioOutConnected << "audioInConnected=" << m_audioInConnected;
 
-    resize(m_lastTargetW, m_lastTargetH);
+    resize(m_lastWindowSize);
 }
 
 DbusViewerWindow::~DbusViewerWindow()
@@ -100,6 +100,37 @@ void DbusViewerWindow::createActions()
     m_actNativeSize->setShortcut(QKeySequence(u"Ctrl+Shift+R"_s));
     m_actNativeSize->setStatusTip(i18n("Resize the window to the guest's native resolution"));
     connect(m_actNativeSize, &QAction::triggered, this, &DbusViewerWindow::onResetToNativeSize);
+
+    m_windowActionGroup = new QActionGroup(this);
+    m_windowActionGroup->setExclusive(true);
+    connect(m_windowActionGroup, &QActionGroup::triggered, this, &DbusViewerWindow::onToggleWindowMode);
+
+    m_actWindowFitsContent = new QAction(i18n("Window Fits &Content"), m_windowActionGroup);
+    m_actWindowFitsContent->setCheckable(true);
+    m_actWindowFitsContent->setChecked(true);
+    m_actWindowFitsContent->setStatusTip(i18n("Fit window size to content"));
+
+    m_actContentFitsWindow = new QAction(i18n("&Content Fits Window"), m_windowActionGroup);
+    m_actContentFitsWindow->setCheckable(true);
+    m_actContentFitsWindow->setStatusTip(i18n("Fit content to window size"));
+
+    m_actManualZoom = new QAction(i18n("&Manual Zoom"), m_windowActionGroup);
+    m_actManualZoom->setCheckable(true);
+    m_actManualZoom->setStatusTip(i18n("Control zoom level and window size manually"));
+
+    m_actZoomIn = new QAction(i18n("Zoom &In"), this);
+    m_actZoomIn->setShortcut(QKeySequence::ZoomIn);
+    m_actZoomIn->setStatusTip(i18n("Increase zoom level"));
+    connect(m_actZoomIn, &QAction::triggered, this, &DbusViewerWindow::onZoomIn);
+
+    m_actZoomOut = new QAction(i18n("Zoom &Out"), this);
+    m_actZoomOut->setShortcut(QKeySequence::ZoomOut);
+    m_actZoomOut->setStatusTip(i18n("Decrease zoom level"));
+    connect(m_actZoomOut, &QAction::triggered, this, &DbusViewerWindow::onZoomOut);
+
+    m_actZoomReset = new QAction(i18n("&Reset Zoom"), this);
+    m_actZoomReset->setStatusTip(i18n("Reset zoom level to 100%"));
+    connect(m_actZoomReset, &QAction::triggered, this, &DbusViewerWindow::onZoomReset);
 
     // --- Devices: Audio ---
     m_actAudioOut = new QAction(i18n("Audio &Output"), this);
@@ -177,8 +208,15 @@ void DbusViewerWindow::createMenus()
     // View
     QMenu *viewMenu = menuBar()->addMenu(i18n("&View"));
     viewMenu->addAction(m_actFullscreen);
-    viewMenu->addSeparator();
     viewMenu->addAction(m_actNativeSize);
+    viewMenu->addSeparator();
+    viewMenu->addAction(m_actWindowFitsContent);
+    viewMenu->addAction(m_actContentFitsWindow);
+    viewMenu->addAction(m_actManualZoom);
+    viewMenu->addSeparator();
+    viewMenu->addAction(m_actZoomIn);
+    viewMenu->addAction(m_actZoomOut);
+    viewMenu->addAction(m_actZoomReset);
 
     // Devices
     QMenu *devicesMenu = menuBar()->addMenu(i18n("&Devices"));
@@ -308,9 +346,52 @@ void DbusViewerWindow::onToggleFullscreen(bool checked)
     }
 }
 
+void DbusViewerWindow::onToggleWindowMode(QAction *action)
+{
+    if (action == m_actManualZoom) {
+        m_windowFitsContent = false;
+        m_contentFitsWindow = false;
+    } else if (action == m_actWindowFitsContent) {
+        m_windowFitsContent = true;
+        m_contentFitsWindow = false;
+    } else if (action == m_actContentFitsWindow) {
+        m_windowFitsContent = false;
+        m_contentFitsWindow = true;
+    }
+    m_actZoomIn->setEnabled(!m_contentFitsWindow);
+    m_actZoomOut->setEnabled(!m_contentFitsWindow);
+    m_actZoomReset->setEnabled(!m_contentFitsWindow);
+    m_lastWindowSize = {0, 0}; // Force resizing the window when changing modes
+    updateWindowAndDisplaySize();
+}
+
+void DbusViewerWindow::onZoomIn()
+{
+    m_scale += 0.25f;
+    if (m_scale > 5.0f) {
+        m_scale = 5.0f; // Cap zoom level to prevent excessive sizes
+    }
+    updateWindowAndDisplaySize();
+}
+
+void DbusViewerWindow::onZoomOut()
+{
+    m_scale -= 0.25f;
+    if (m_scale < 0.5f) {
+        m_scale = 0.5f; // Minimum zoom level
+    }
+    updateWindowAndDisplaySize();
+}
+
+void DbusViewerWindow::onZoomReset()
+{
+    m_scale = 1.0f;
+    updateWindowAndDisplaySize();
+}
+
 void DbusViewerWindow::onResetToNativeSize()
 {
-    if (m_lastTargetW <= 0 || m_lastTargetH <= 0) {
+    if (m_scanoutSize.width() <= 0 || m_scanoutSize.height() <= 0) {
         statusBar()->showMessage(i18n("Native display size not yet known"), 3000);
         return;
     }
@@ -321,8 +402,11 @@ void DbusViewerWindow::onResetToNativeSize()
         m_actFullscreen->setChecked(false);
     }
 
+    if (m_contentFitsWindow) {
+        m_scale = 1.0f; // Same as "Reset Zoom" in "Content Fits Window" mode
+    }
     auto doResize = [this] {
-        resize(m_lastTargetW, m_lastTargetH);
+        fitWindowToContent(true);
     };
 
     // Defer the resize until the window state transition has settled,
@@ -435,25 +519,10 @@ void DbusViewerWindow::teardownClipboard()
 
 void DbusViewerWindow::onScanoutChanged(int width, int height)
 {
-    if (width > 0 && height > 0) {
+    if (width > 0 && height > 0 && m_scanoutSize != QSize(width, height)) {
+        m_scanoutSize = {width, height};
         m_lblResolution->setText(u"%1 × %2"_s.arg(width).arg(height));
-
-        // Adjust window size to framebuffer (+ menu/status bar)
-        if (!isFullScreen()) {
-            const qreal dpr = devicePixelRatio();
-            const int menuH = menuBar()->isVisible() ? menuBar()->height() : 0;
-            const int statusH = statusBar()->isVisible() ? statusBar()->height() : 0;
-            const int targetW = qRound(width / dpr);
-            const int targetH = qRound(height / dpr) + menuH + statusH;
-
-            // Prevent fighting with tiling window managers: Only resize if the target
-            // size actually changes.
-            if (targetW != m_lastTargetW || targetH != m_lastTargetH) {
-                resize(targetW, targetH);
-                m_lastTargetW = targetW;
-                m_lastTargetH = targetH;
-            }
-        }
+        updateWindowAndDisplaySize();
     } else {
         m_lblResolution->setText(i18n("No Display"));
     }
@@ -492,13 +561,26 @@ void DbusViewerWindow::changeEvent(QEvent *event)
             menuBar()->hide();
             statusBar()->hide();
             m_actFullscreen->setChecked(true);
+            auto doResize = [this]() {
+                updateWindowAndDisplaySize();
+            };
+            QTimer::singleShot(100, doResize); // 0 doesn't work
         } else {
             menuBar()->show();
             statusBar()->show();
             m_actFullscreen->setChecked(false);
+            updateWindowAndDisplaySize();
         }
     }
     QWidget::changeEvent(event); // Always call the base class implementation
+}
+
+void DbusViewerWindow::resizeEvent(QResizeEvent *event)
+{
+    if (m_contentFitsWindow) {
+        fitContentToWindow();
+    }
+    QWidget::resizeEvent(event);
 }
 
 // =============================================================================
@@ -576,4 +658,44 @@ void DbusViewerWindow::audioInReady()
     updateStatusBar();
     statusBar()->showMessage(i18n("Audio input connected"), 3000);
     qDebug() << "DbusViewerWindow: Audio input activated subsequently";
+}
+
+void DbusViewerWindow::updateWindowAndDisplaySize()
+{
+    if (isFullScreen() || isMaximized()) {
+        // We always scale the content to fit the window, because that's probably
+        // why the user entered these modes.
+        fitContentToWindow();
+    } else if (m_contentFitsWindow) {
+        fitContentToWindow();
+    } else if (m_windowFitsContent) {
+        fitWindowToContent(false);
+    } else {
+        m_display->setScale(m_scale);
+    }
+}
+
+void DbusViewerWindow::fitContentToWindow()
+{
+    QSize availableSize = m_scrollArea->size() * devicePixelRatio();
+    qreal scale = qMin(qreal(availableSize.width()) / qreal(m_scanoutSize.width()), qreal(availableSize.height()) / m_scanoutSize.height());
+    qDebug() << "DbusViewerWindow::fitContentToWindow" << availableSize << m_scanoutSize << scale;
+    m_display->setScale(scale);
+}
+
+void DbusViewerWindow::fitWindowToContent(bool force)
+{
+    m_display->setScale(m_scale);
+
+    int menuH = menuBar()->isVisible() ? menuBar()->height() : 0;
+    int statusH = statusBar()->isVisible() ? statusBar()->height() : 0;
+    int targetW = qMax(m_display->width(), 720); // Leave room for the status bar
+    int targetH = m_display->height() + menuH + statusH;
+    QSize windowSize = {targetW, targetH};
+
+    // Prevent fighting with tiling window managers: Only resize if the target size actually changes.
+    if (force || windowSize != m_lastWindowSize) {
+        resize(windowSize);
+        m_lastWindowSize = windowSize;
+    }
 }

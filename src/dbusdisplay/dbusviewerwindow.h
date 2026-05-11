@@ -16,6 +16,7 @@
 #include <QMainWindow>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QScrollArea>
 #include <QStatusBar>
 #include <QStyle>
 #include <QTimer>
@@ -87,10 +88,15 @@ Q_SIGNALS:
 protected:
     void closeEvent(QCloseEvent *event) override;
     void changeEvent(QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private Q_SLOTS:
     void onToggleFullscreen(bool checked);
     void onResetToNativeSize();
+    void onToggleWindowMode(QAction *action);
+    void onZoomIn();
+    void onZoomOut();
+    void onZoomReset();
     void onToggleAudioOut(bool checked);
     void onToggleAudioIn(bool checked);
     void onClipboardOff();
@@ -108,11 +114,15 @@ private:
     void updateStatusBar();
     void setupClipboard(ClipboardDirection dir);
     void teardownClipboard();
+    Q_INVOKABLE void updateWindowAndDisplaySize();
+    void fitContentToWindow();
+    void fitWindowToContent(bool force);
 
     QDBusConnection m_bus;
     QString m_consolePath;
 
     // Core components
+    QScrollArea *m_scrollArea = nullptr;
     QemuDisplayWidget *m_display = nullptr;
     QemuDisplayListener *m_listener = nullptr;
     QemuAudioListener *m_audioOut = nullptr;
@@ -132,6 +142,13 @@ private:
     QAction *m_actQuit = nullptr;
     QAction *m_actFullscreen = nullptr;
     QAction *m_actNativeSize = nullptr;
+    QActionGroup *m_windowActionGroup = nullptr;
+    QAction *m_actWindowFitsContent = nullptr;
+    QAction *m_actContentFitsWindow = nullptr;
+    QAction *m_actManualZoom = nullptr;
+    QAction *m_actZoomIn = nullptr;
+    QAction *m_actZoomOut = nullptr;
+    QAction *m_actZoomReset = nullptr;
     QAction *m_actAudioOut = nullptr;
     QAction *m_actAudioIn = nullptr;
     QAction *m_actClipOff = nullptr;
@@ -150,6 +167,10 @@ private:
 
     ClipboardDirection m_clipDirection;
 
-    int m_lastTargetW = 1280;
-    int m_lastTargetH = 720;
+    QSize m_scanoutSize;
+    QSize m_lastWindowSize = {1280, 720};
+
+    qreal m_scale = 1.0f;
+    bool m_windowFitsContent = true;
+    bool m_contentFitsWindow = false;
 };

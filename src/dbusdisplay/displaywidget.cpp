@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "displaywidget.h"
+#include "kemu_dbusdisplay_debug.h"
 
 #include <cstring>
 #include <glib.h>
@@ -206,7 +207,7 @@ void QemuDisplayWidget::updateCursor()
     const float submit_scale = qCeil(devicePixelRatio());
     // Effective scaling factor from cursor pixels to Qt logical points.
     // Must be applied identically to both the pixmap AND the hotspot.
-    const float effectiveScale = m_lastScale * submit_scale / devicePixelRatio();
+    const float effectiveScale = m_scale * submit_scale / devicePixelRatio();
 
     QPixmap pm = QPixmap::fromImage(ci.image);
     pm = pm.scaled(pm.size() * effectiveScale, Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -453,18 +454,8 @@ void QemuDisplayWidget::renderQuad()
         const int vpW = width() * dpr;
         const int vpH = height() * dpr;
 
-        const float scaleX = static_cast<float>(vpW) / m_fbSize.width();
-        const float scaleY = static_cast<float>(vpH) / m_fbSize.height();
-        float scale = qMin(scaleX, scaleY);
-        if (scale <= 0.0f)
-            scale = 1.0f; // Avoid division by zero and negative scaling
-        if (scale != m_lastScale) {
-            m_lastScale = scale;
-            QTimer::singleShot(0, this, &QemuDisplayWidget::updateCursor);
-        }
-
-        const int drawW = static_cast<int>(m_fbSize.width() * scale);
-        const int drawH = static_cast<int>(m_fbSize.height() * scale);
+        const int drawW = static_cast<int>(m_fbSize.width() * m_scale);
+        const int drawH = static_cast<int>(m_fbSize.height() * m_scale);
         const int offX = (vpW - drawW) / 2;
         const int offY = (vpH - drawH) / 2;
 
@@ -500,17 +491,33 @@ void QemuDisplayWidget::resizeGL(int, int)
 // Slots
 // =============================================================================
 
-void QemuDisplayWidget::onScanoutChanged(int, int)
+void QemuDisplayWidget::onScanoutChanged(int w, int h)
 {
+    qDebug() << "QemuDisplayWidget::onScanoutChanged" << w << h;
+    if (w == 0 || h == 0) {
+        return;
+    }
     m_usingDmaBuf = false;
     scheduleRepaint();
+    if (m_fbSize != QSize(w, h)) {
+        m_fbSize = QSize(w, h);
+        updateWidgetSize();
+    }
 }
 
-void QemuDisplayWidget::onDmaBufScanout(int, int)
+void QemuDisplayWidget::onDmaBufScanout(int w, int h)
 {
-    if (m_eglAvailable)
+    if (w == 0 || h == 0) {
+        return;
+    }
+    if (m_eglAvailable) {
         m_dmaBufPending = true;
+    }
     scheduleRepaint();
+    if (m_fbSize != QSize(w, h)) {
+        m_fbSize = QSize(w, h);
+        updateWidgetSize();
+    }
 }
 
 void QemuDisplayWidget::onRegionUpdated(const QRect &)
@@ -567,20 +574,16 @@ QPointF QemuDisplayWidget::mapToFramebuffer(const QPointF &widgetPos) const
     const float vpW = width() * dpr;
     const float vpH = height() * dpr;
 
-    const float scaleX = vpW / m_fbSize.width();
-    const float scaleY = vpH / m_fbSize.height();
-    const float scale = qMin(scaleX, scaleY);
-
-    const float drawW = m_fbSize.width() * scale;
-    const float drawH = m_fbSize.height() * scale;
+    const float drawW = m_fbSize.width() * m_scale;
+    const float drawH = m_fbSize.height() * m_scale;
     const float offX = (vpW - drawW) / 2.0f;
     const float offY = (vpH - drawH) / 2.0f;
 
     const float physX = widgetPos.x() * dpr;
     const float physY = widgetPos.y() * dpr;
 
-    float fbX = (physX - offX) / scale;
-    float fbY = (physY - offY) / scale;
+    float fbX = (physX - offX) / m_scale;
+    float fbY = (physY - offY) / m_scale;
 
     fbX = qBound(0.0f, fbX, m_fbSize.width() - 1.0f);
     fbY = qBound(0.0f, fbY, m_fbSize.height() - 1.0f);
@@ -671,4 +674,22 @@ int QemuDisplayWidget::qtButtonToQemu(Qt::MouseButton button)
     default:
         return -1;
     }
+}
+
+void QemuDisplayWidget::setScale(float scale)
+{
+    qDebug() << "QemuDisplayWidget::setScale" << scale;
+    if (scale == m_scale)
+        return;
+    m_scale = scale;
+    updateWidgetSize();
+}
+
+void QemuDisplayWidget::updateWidgetSize()
+{
+    qDebug() << "QemuDisplayWidget::updateWidgetSize" << m_fbSize << m_scale;
+    QSize scaledSize = m_fbSize * m_scale / devicePixelRatio();
+    resize(scaledSize.width(), scaledSize.height());
+    updateCursor();
+    update(); // Trigger repaint with new size
 }
