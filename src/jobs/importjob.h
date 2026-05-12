@@ -22,19 +22,24 @@
 
 using namespace Qt::StringLiterals;
 
-class ImportJob : public KJob {
+class ImportJob : public KJob
+{
     Q_OBJECT
 
 public:
-    explicit ImportJob(const QString& archivePath,
-        const QString& vmBaseDir,
-        QObject* parent = nullptr);
+    explicit ImportJob(const QString &archivePath, const QString &vmBaseDir, QObject *parent = nullptr);
 
     void start() override;
 
-    [[nodiscard]] QString vmName() const { return m_vmName; }
+    [[nodiscard]] QString vmName() const
+    {
+        return m_vmName;
+    }
 
-    void setRegenerateMac(bool regen) { m_regenerateMac = regen; }
+    void setRegenerateMac(bool regen)
+    {
+        m_regenerateMac = regen;
+    }
 
 protected:
     bool doKill() override;
@@ -54,6 +59,6 @@ private:
     bool m_regenerateMac = false;
 
     // Threading and cancellation
-    QFutureWatcher<bool>* m_watcher = nullptr;
-    std::atomic<bool> m_cancelImport { false };
+    QFutureWatcher<bool> *m_watcher = nullptr;
+    std::atomic<bool> m_cancelImport{false};
 };

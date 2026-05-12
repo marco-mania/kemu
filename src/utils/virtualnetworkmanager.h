@@ -55,11 +55,12 @@ using namespace Qt::StringLiterals;
  * All QEMU processes for VMs on a virtual network MUST be launched inside
  * the namespace via nsenter (see nsenterArgs()).
  */
-class VirtualNetworkManager : public QObject {
+class VirtualNetworkManager : public QObject
+{
     Q_OBJECT
 
 public:
-    explicit VirtualNetworkManager(QObject* parent = nullptr);
+    explicit VirtualNetworkManager(QObject *parent = nullptr);
     ~VirtualNetworkManager() override;
 
     // --- KConfig Persistence ---
@@ -70,12 +71,12 @@ public:
     // --- Network Definitions (CRUD) ---
 
     [[nodiscard]] QList<VirtualNetwork> networks() const;
-    [[nodiscard]] VirtualNetwork network(const QString& name) const;
+    [[nodiscard]] VirtualNetwork network(const QString &name) const;
     [[nodiscard]] QStringList networkNames() const;
 
-    bool addNetwork(const VirtualNetwork& net);
-    bool removeNetwork(const QString& name);
-    bool updateNetwork(const VirtualNetwork& net);
+    bool addNetwork(const VirtualNetwork &net);
+    bool removeNetwork(const QString &name);
+    bool updateNetwork(const VirtualNetwork &net);
 
     // --- Runtime Control ---
 
@@ -88,16 +89,16 @@ public:
      *
      * @return true if the network is running after this call.
      */
-    bool startNetwork(const QString& name);
+    bool startNetwork(const QString &name);
 
     /**
      * Stop the virtual network.
      * Terminates the namespace anchor process; the kernel destroys
      * all interfaces, tap devices and routes automatically.
      */
-    void stopNetwork(const QString& name);
+    void stopNetwork(const QString &name);
 
-    [[nodiscard]] bool isRunning(const QString& name) const;
+    [[nodiscard]] bool isRunning(const QString &name) const;
 
     // --- Per-VM Integration ---
 
@@ -109,28 +110,28 @@ public:
      * @param vmName       Used to derive a unique tap device name (tap-<vmName>).
      * @return The tap interface name (e.g. "tap-myvm"), or empty on failure.
      */
-    QString attachVm(const QString& networkName, const QString& vmName);
+    QString attachVm(const QString &networkName, const QString &vmName);
 
     /**
      * Remove the tap device for the given VM and decrement the ref count.
      * If the ref count reaches zero, the network is stopped automatically.
      */
-    void detachVm(const QString& networkName, const QString& vmName);
+    void detachVm(const QString &networkName, const QString &vmName);
 
-    [[nodiscard]] int connectedVmCount(const QString& name) const;
+    [[nodiscard]] int connectedVmCount(const QString &name) const;
 
     /**
      * Returns the PID of the namespace anchor process.
      * Needed to launch QEMU inside the namespace via nsenter.
      * Returns 0 if the network is not running.
      */
-    [[nodiscard]] qint64 namespacePid(const QString& name) const;
+    [[nodiscard]] qint64 namespacePid(const QString &name) const;
 
     /**
      * Returns the tap device name assigned to a specific VM.
      * Used by QemuCommandBuilder to construct the -netdev argument.
      */
-    [[nodiscard]] QString tapDeviceName(const QString& networkName, const QString& vmName) const;
+    [[nodiscard]] QString tapDeviceName(const QString &networkName, const QString &vmName) const;
 
     // --- Capability Checks ---
 
@@ -144,18 +145,18 @@ public:
     [[nodiscard]] QString lastError() const;
 
 Q_SIGNALS:
-    void networkStarted(const QString& name);
-    void networkStopped(const QString& name);
+    void networkStarted(const QString &name);
+    void networkStopped(const QString &name);
     void networksChanged();
 
     /// Emitted when a VM's tap device has been created and is ready.
-    void vmAttached(const QString& networkName, const QString& vmName, const QString& tapDevice);
+    void vmAttached(const QString &networkName, const QString &vmName, const QString &tapDevice);
 
     /// Emitted when a VM's tap device has been removed.
-    void vmDetached(const QString& networkName, const QString& vmName);
+    void vmDetached(const QString &networkName, const QString &vmName);
 
     /// Emitted when a runtime error occurs (e.g. namespace creation fails).
-    void errorOccurred(const QString& networkName, const QString& message);
+    void errorOccurred(const QString &networkName, const QString &message);
 
 private:
     struct RuntimeState {
@@ -176,60 +177,60 @@ private:
     // --- Internal Helpers ---
 
     /// XDG_RUNTIME_DIR/kemu/net-<name>
-    [[nodiscard]] QString runtimeDir(const QString& name) const;
+    [[nodiscard]] QString runtimeDir(const QString &name) const;
 
-    void cleanupRuntimeDir(const QString& name);
+    void cleanupRuntimeDir(const QString &name);
 
     /**
      * Step 1: Create the user + network namespace.
      * Launches `unshare --user --net --map-root-user -- sleep infinity`.
      */
-    bool createNamespace(const QString& name);
+    bool createNamespace(const QString &name);
 
-    bool setupNat(const QString& name);
+    bool setupNat(const QString &name);
 
     /**
      * Step 2: Configure the bridge inside the namespace.
      * Runs `ip link add br0 type bridge`, assigns the gateway IP, brings it up.
      */
-    bool configureBridge(const QString& name, const VirtualNetwork& net);
+    bool configureBridge(const QString &name, const VirtualNetwork &net);
 
     /**
      * Step 3 (optional): Start dnsmasq inside the namespace.
      * Binds to br0, serves DHCP in the configured range.
      */
-    bool startDnsmasq(const QString& name, const VirtualNetwork& net);
+    bool startDnsmasq(const QString &name, const VirtualNetwork &net);
 
     /**
-     * Step 4 (optional): Start pasta to connect the namespace to the host network.
-     * Provides NAT for outbound traffic and optional port forwards.
+     * Step 4 (optional): Start pasta to connect the namespace to the host
+     * network. Provides NAT for outbound traffic and optional port forwards.
      */
-    bool startPasta(const QString& name, const VirtualNetwork& net);
+    bool startPasta(const QString &name, const VirtualNetwork &net);
 
     /**
      * Create a tap device inside the namespace, set it up, and attach it to br0.
      * @return The tap device name, or empty on failure.
      */
-    QString createTapDevice(const QString& networkName, const QString& vmName);
+    QString createTapDevice(const QString &networkName, const QString &vmName);
 
     /**
      * Remove a tap device from the namespace.
      */
-    void destroyTapDevice(const QString& networkName, const QString& tapName);
+    void destroyTapDevice(const QString &networkName, const QString &tapName);
 
     /**
      * Terminate all processes associated with a network.
      * Killing the namespace anchor process causes the kernel to
      * clean up all interfaces, bridges and tap devices automatically.
      */
-    void terminateAll(RuntimeState& state);
+    void terminateAll(RuntimeState &state);
 
     /// Derive a tap device name from the VM name (max 15 chars for IFNAMSIZ).
-    [[nodiscard]] static QString makeTapName(const QString& vmName);
+    [[nodiscard]] static QString makeTapName(const QString &vmName);
 
-    static QString configGroupName(const QString& networkName);
+    static QString configGroupName(const QString &networkName);
 
     QString m_lastError;
-    void setError(const QString& networkName, const QString& message);
+    void setError(const QString &networkName, const QString &message);
     void resetError();
 };

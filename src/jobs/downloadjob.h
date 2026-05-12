@@ -35,8 +35,8 @@ using namespace Qt::StringLiterals;
  * * Supports SHA-256, SHA-512, or MD5 checksums.
  *
  */
-class DownloadJob : public KJob {
-
+class DownloadJob : public KJob
+{
     Q_OBJECT
 
 public:
@@ -44,26 +44,36 @@ public:
      * @param url           Direct download URL.
      * @param localPath     Full local file path to save the ISO to.
      * @param checksumType  SHA256, SHA512 or MD5.
-     * @param checksum      Expected checksum hex string (empty = skip verification).
+     * @param checksum      Expected checksum hex string (empty = skip
+     * verification).
      * @param parent        Parent QObject.
      */
-    explicit DownloadJob(const QString& url,
-        const QString& localPath,
-        const Utils::ChecksumType checksumType = Utils::ChecksumType::NONE,
-        const QString& checksum = { },
-        QObject* parent = nullptr);
+    explicit DownloadJob(const QString &url,
+                         const QString &localPath,
+                         const Utils::ChecksumType checksumType = Utils::ChecksumType::NONE,
+                         const QString &checksum = {},
+                         QObject *parent = nullptr);
 
     ~DownloadJob() override;
 
     void start() override;
 
-    [[nodiscard]] QString url() const { return m_url; }
-    [[nodiscard]] QString localPath() const { return m_localPath; }
-    [[nodiscard]] bool wasCached() const { return m_wasCached; }
+    [[nodiscard]] QString url() const
+    {
+        return m_url;
+    }
+    [[nodiscard]] QString localPath() const
+    {
+        return m_localPath;
+    }
+    [[nodiscard]] bool wasCached() const
+    {
+        return m_wasCached;
+    }
 
 Q_SIGNALS:
     // emitted with a human-readable status message for UI display
-    void statusMessage(const QString& message);
+    void statusMessage(const QString &message);
 
 protected:
     bool doKill() override;
@@ -84,10 +94,10 @@ private:
     Utils::ChecksumType m_checksumType;
     QString m_checksum;
 
-    QNetworkAccessManager* m_nam = nullptr;
+    QNetworkAccessManager *m_nam = nullptr;
     QPointer<QNetworkReply> m_reply;
-    QFile* m_outputFile = nullptr;
-    QCryptographicHash* m_runningHash = nullptr;
+    QFile *m_outputFile = nullptr;
+    QCryptographicHash *m_runningHash = nullptr;
 
     bool m_wasCached = false;
 };

@@ -25,12 +25,15 @@
 
 using namespace Qt::StringLiterals;
 
-namespace Utils {
+namespace Utils
+{
 
-enum class ChecksumType { NONE = 0,
+enum class ChecksumType {
+    NONE = 0,
     SHA256,
     SHA512,
-    MD5 };
+    MD5
+};
 
 inline QString toString(ChecksumType type)
 {
@@ -47,7 +50,7 @@ inline QString toString(ChecksumType type)
     }
 }
 
-inline ChecksumType parseChecksumType(const QString& str)
+inline ChecksumType parseChecksumType(const QString &str)
 {
     if (str.compare("SHA256"_L1, Qt::CaseInsensitive) == 0)
         return ChecksumType::SHA256;
@@ -64,17 +67,20 @@ inline ChecksumType parseChecksumType(const QString& str)
 /**
  * @brief Generates a SHA-512 ($6$) Linux password hash for cloud-init.
  * * @param password The plaintext password.
- * @return The generated hash including the salt, or the plaintext password as a fallback on failure.
+ * @return The generated hash including the salt, or the plaintext password as a
+ * fallback on failure.
  */
-QString generateCloudInitPasswordHash(const QString& password);
+QString generateCloudInitPasswordHash(const QString &password);
 
 /**
- * @brief Waits synchronously (without blocking the event loop) for a file to be created.
+ * @brief Waits synchronously (without blocking the event loop) for a file to be
+ * created.
  * @param sockPath  The absolute or relative path to the expected socket file.
  * @param timeoutMs Maximum wait time in milliseconds (default: 5000ms).
- * @return true if the file exists or was created within the timeout. false on timeout.
+ * @return true if the file exists or was created within the timeout. false on
+ * timeout.
  */
-bool waitForSocket(const QString& sockPath, int timeoutMs = 5000);
+bool waitForSocket(const QString &sockPath, int timeoutMs = 5000);
 
 struct OvmfPaths {
     QString codePath;
@@ -82,13 +88,17 @@ struct OvmfPaths {
 };
 
 /**
- * @brief Locates the appropriate OVMF firmware (UEFI) files for the virtual machine.
- * @param secureBoot If true, searches specifically for Secure Boot compatible firmware (e.g., files containing Microsoft certificates/keys).
- * @param customDir  An optional custom directory path to search first. Can be empty.
- * @return OvmfPaths A struct containing the absolute paths to the code file (.fd) and the
- * vars template. If the firmware cannot be found, the paths will be empty.
+ * @brief Locates the appropriate OVMF firmware (UEFI) files for the virtual
+ * machine.
+ * @param secureBoot If true, searches specifically for Secure Boot compatible
+ * firmware (e.g., files containing Microsoft certificates/keys).
+ * @param customDir  An optional custom directory path to search first. Can be
+ * empty.
+ * @return OvmfPaths A struct containing the absolute paths to the code file
+ * (.fd) and the vars template. If the firmware cannot be found, the paths will
+ * be empty.
  */
-OvmfPaths findOvmfPaths(bool secureBoot = false, const QString& customDir = { });
+OvmfPaths findOvmfPaths(bool secureBoot = false, const QString &customDir = {});
 
 /**
  * @brief Detects the host's configured keyboard layout via KDE System Settings.
@@ -98,13 +108,14 @@ OvmfPaths findOvmfPaths(bool secureBoot = false, const QString& customDir = { })
  * Note: This returns the *primary configured* layout, not necessarily the
  * currently active one if the user actively switches layouts during a session.
  *
- * @return A QString containing the short language code of the primary layout (e.g., "de").
+ * @return A QString containing the short language code of the primary layout
+ * (e.g., "de").
  */
 QString detectHostKeyboardLayout();
 
-QString generateRandomMac(const QStringList& excludes = { });
-bool isValidMacAddress(const QString& mac);
+QString generateRandomMac(const QStringList &excludes = {});
+bool isValidMacAddress(const QString &mac);
 
-QString quoteShellArg(const QString& arg);
+QString quoteShellArg(const QString &arg);
 
 } // namespace Utils

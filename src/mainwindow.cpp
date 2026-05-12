@@ -30,7 +30,7 @@ extern "C" {
 #include <sys/prctl.h>
 }
 
-MainWindow::MainWindow(QWidget* parent)
+MainWindow::MainWindow(QWidget *parent)
     : KXmlGuiWindow(parent)
 {
     setupUi();
@@ -42,7 +42,7 @@ MainWindow::MainWindow(QWidget* parent)
 
     setupGUI(Default, u"kemuui.rc"_s);
 
-    QDir dir = getVmBaseDir();
+    const QDir dir = getVmBaseDir();
     if (!dir.exists())
         dir.mkpath(u"."_s);
 
@@ -55,9 +55,8 @@ MainWindow::MainWindow(QWidget* parent)
         QModelIndex firstIndex = veModel->index(0, 0);
 
         if (veModel->hasChildren(firstIndex) && veModel->data(firstIndex, VirtualEnvironmentModel::ItemTypeRole).toInt() == VirtualEnvironmentModel::Folder) {
-
             if (veTreeView->isExpanded(firstIndex)) {
-                QModelIndex firstChild = veModel->index(0, 0, firstIndex);
+                const QModelIndex firstChild = veModel->index(0, 0, firstIndex);
                 if (firstChild.isValid())
                     firstIndex = firstChild;
             }
@@ -69,8 +68,12 @@ MainWindow::MainWindow(QWidget* parent)
     updateActionStates();
 
     // coming from setupUi()
-    connect(veTreeView, &VirtualEnvironmentTreeView::expanded, this, [this]() { saveFolderStructure(); });
-    connect(veTreeView, &VirtualEnvironmentTreeView::collapsed, this, [this]() { saveFolderStructure(); });
+    connect(veTreeView, &VirtualEnvironmentTreeView::expanded, this, [this]() {
+        saveFolderStructure();
+    });
+    connect(veTreeView, &VirtualEnvironmentTreeView::collapsed, this, [this]() {
+        saveFolderStructure();
+    });
 
     m_imageDatabase.loadFromFile(QStandardPaths::locate(QStandardPaths::AppDataLocation, u"data/templates.json"_s));
 
@@ -81,11 +84,12 @@ MainWindow::MainWindow(QWidget* parent)
         auto missing = ExternalTools::instance().missingFeatureGroups();
 
         // drop suppressible groups the user has silenced
-        missing.erase(std::remove_if(missing.begin(), missing.end(),
-                          [](const ExternalTools::FeatureGroup& g) {
-                              return g.suppressible && ExternalTools::isWarningSuppressed(g.id);
-                          }),
-            missing.end());
+        missing.erase(std::remove_if(missing.begin(),
+                                     missing.end(),
+                                     [](const ExternalTools::FeatureGroup &g) {
+                                         return g.suppressible && ExternalTools::isWarningSuppressed(g.id);
+                                     }),
+                      missing.end());
 
         if (missing.isEmpty())
             return;
@@ -115,8 +119,8 @@ MainWindow::~MainWindow()
     }
     activeImports.clear();
 
-    for (const QString& name : veModel->vmNames()) {
-        VmEntry* e = veModel->entryByName(name);
+    for (const QString &name : veModel->vmNames()) {
+        const VmEntry *e = veModel->entryByName(name);
         if (!e)
             continue;
 
@@ -138,8 +142,8 @@ MainWindow::~MainWindow()
 bool MainWindow::queryClose()
 {
     bool hasShrinking = false, hasRunning = false;
-    for (const QString& name : veModel->vmNames()) {
-        const VmEntry* e = veModel->entryByName(name);
+    for (const QString &name : veModel->vmNames()) {
+        const VmEntry *e = veModel->entryByName(name);
         if (!e)
             continue;
         if (e->state == VmEntry::State::Shrinking)
@@ -148,46 +152,43 @@ bool MainWindow::queryClose()
             hasRunning = true;
     }
     if (hasShrinking) {
-        auto result = KMessageBox::warningTwoActions(
-            this,
-            i18n("Disk compaction is still in progress. "
-                 "If you close the window, the operation(s) will be aborted "
-                 "and the disk image(s) will remain unchanged.\n\n"
-                 "Do you really want to proceed?"),
-            i18nc("@title:window", "Confirm Exit"),
-            KStandardGuiItem::close(),
-            KStandardGuiItem::cancel());
+        auto result = KMessageBox::warningTwoActions(this,
+                                                     i18n("Disk compaction is still in progress. "
+                                                          "If you close the window, the operation(s) will be aborted "
+                                                          "and the disk image(s) will remain unchanged.\n\n"
+                                                          "Do you really want to proceed?"),
+                                                     i18nc("@title:window", "Confirm Exit"),
+                                                     KStandardGuiItem::close(),
+                                                     KStandardGuiItem::cancel());
 
         if (result != KMessageBox::PrimaryAction)
             return false;
     }
 
     if (hasRunning) {
-        auto result = KMessageBox::warningTwoActions(
-            this,
-            i18n("Virtual machines are still running. If you close the window, "
-                 "they will be terminated. Do you really want to proceed?"),
-            i18nc("@title:window", "Confirm Exit"),
-            KStandardGuiItem::close(),
-            KStandardGuiItem::cancel());
+        auto result = KMessageBox::warningTwoActions(this,
+                                                     i18n("Virtual machines are still running. If you close the window, "
+                                                          "they will be terminated. Do you really want to proceed?"),
+                                                     i18nc("@title:window", "Confirm Exit"),
+                                                     KStandardGuiItem::close(),
+                                                     KStandardGuiItem::cancel());
 
         if (result != KMessageBox::PrimaryAction)
             return false;
     }
 
     const auto viewerNames = m_dbusViewers.keys();
-    for (const QString& name : viewerNames)
+    for (const QString &name : viewerNames)
         stopDbusViewer(name);
 
     return true;
 }
 
-bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched == qApp) {
         const QEvent::Type t = event->type();
         if (t == QEvent::ApplicationPaletteChange || t == QEvent::ThemeChange || t == QEvent::StyleChange) {
-
             qDebug() << "Theme/palette change detected" << t;
 
             QTimer::singleShot(0, this, [this]() {
@@ -208,12 +209,12 @@ QDir MainWindow::getVmBaseDir() const
     return QDir(SettingsDialog::getVmBasePath());
 }
 
-QDir MainWindow::getVmDir(const QString& vmName) const
+QDir MainWindow::getVmDir(const QString &vmName) const
 {
     return getVmBaseDir().absoluteFilePath(vmName);
 }
 
-QString MainWindow::monitorSocketPath(const QString& vmName) const
+QString MainWindow::monitorSocketPath(const QString &vmName) const
 {
     return getVmDir(vmName).absoluteFilePath(u"qemu-monitor.sock"_s);
 }
@@ -223,22 +224,22 @@ void MainWindow::setupUi()
     setWindowTitle(i18n("KEMU – Virtual Machine Manager"));
     resize(1280, 800);
 
-    auto* centralWidget = new QWidget(this);
-    auto* mainLayout = new QVBoxLayout(centralWidget);
+    auto *centralWidget = new QWidget(this);
+    auto *mainLayout = new QVBoxLayout(centralWidget);
     mainLayout->setContentsMargins(0, 0, 0, 0);
 
-    auto* splitter = new QSplitter(Qt::Horizontal, centralWidget);
+    auto *splitter = new QSplitter(Qt::Horizontal, centralWidget);
 
     // --- LEFT ---
-    auto* leftContainer = new QWidget(splitter);
-    auto* leftLayout = new QVBoxLayout(leftContainer);
+    auto *leftContainer = new QWidget(splitter);
+    auto *leftLayout = new QVBoxLayout(leftContainer);
     leftLayout->setContentsMargins(4, 4, 4, 4);
 
     // Header Layout: Label (left), Stretch (center), Button (right)
-    auto* leftHeaderLayout = new QHBoxLayout();
-    auto* titleLabel = new QLabel(i18n("<b>Virtual Machines</b>"));
+    auto *leftHeaderLayout = new QHBoxLayout();
+    auto *titleLabel = new QLabel(i18n("<b>Virtual Machines</b>"));
 
-    auto* addVmButton = new QToolButton();
+    auto *addVmButton = new QToolButton();
     addVmButton->setIcon(QIcon::fromTheme(u"list-add"_s));
     addVmButton->setToolTip(i18n("Create a new Virtual Machine"));
     addVmButton->setAutoRaise(true);
@@ -276,26 +277,29 @@ void MainWindow::setupUi()
     connect(veTreeView, &VirtualEnvironmentTreeView::customContextMenuRequested, this, &MainWindow::showContextMenu);
     connect(veTreeView, &VirtualEnvironmentTreeView::itemDropped, this, &MainWindow::onDropCompleted);
 
-    connect(veTreeView, &VirtualEnvironmentTreeView::mediaIconClicked, this, [this](const QString& vmName, VirtualEnvironmentItemDelegate::MediaType type, const QPoint& pos) {
-        selectVmByName(vmName);
+    connect(veTreeView,
+            &VirtualEnvironmentTreeView::mediaIconClicked,
+            this,
+            [this](const QString &vmName, VirtualEnvironmentItemDelegate::MediaType type, const QPoint &pos) {
+                selectVmByName(vmName);
 
-        QMenu menu(this);
-        if (type == VirtualEnvironmentItemDelegate::MediaType::Cd) {
-            menu.addAction(actionCollection()->action(u"vm_change_iso"_s));
-            menu.addAction(actionCollection()->action(u"vm_eject_iso"_s));
-        } else {
-            menu.addAction(actionCollection()->action(u"vm_change_floppy"_s));
-            menu.addAction(actionCollection()->action(u"vm_eject_floppy"_s));
-        }
-        menu.exec(pos);
-    });
+                QMenu menu(this);
+                if (type == VirtualEnvironmentItemDelegate::MediaType::Cd) {
+                    menu.addAction(actionCollection()->action(u"vm_change_iso"_s));
+                    menu.addAction(actionCollection()->action(u"vm_eject_iso"_s));
+                } else {
+                    menu.addAction(actionCollection()->action(u"vm_change_floppy"_s));
+                    menu.addAction(actionCollection()->action(u"vm_eject_floppy"_s));
+                }
+                menu.exec(pos);
+            });
 
     leftLayout->addLayout(leftHeaderLayout);
     leftLayout->addWidget(veTreeView);
 
     // --- RIGHT ---
-    auto* rightContainer = new QWidget(splitter);
-    auto* rightLayout = new QVBoxLayout(rightContainer);
+    auto *rightContainer = new QWidget(splitter);
+    auto *rightLayout = new QVBoxLayout(rightContainer);
     rightLayout->setContentsMargins(4, 4, 4, 4);
 
     // Local toolbar
@@ -308,17 +312,12 @@ void MainWindow::setupUi()
     detailsBrowser->setFrameShape(QFrame::NoFrame);
     detailsBrowser->setStyleSheet(u"QTextBrowser { background: palette(window); padding: 12px; }"_s);
     detailsBrowser->setOpenLinks(false);
-    connect(detailsBrowser, &QTextBrowser::anchorClicked, this, [this](const QUrl& url) {
+    connect(detailsBrowser, &QTextBrowser::anchorClicked, this, [this](const QUrl &url) {
         Q_UNUSED(this);
         if (url.scheme() == "copy-pid"_L1) {
-            QString pidString = url.path();
+            const QString pidString = url.path();
             QGuiApplication::clipboard()->setText(pidString);
-            QToolTip::showText(
-                QCursor::pos(),
-                i18n("PID %1 copied to clipboard", pidString),
-                detailsBrowser,
-                QRect(),
-                2000);
+            QToolTip::showText(QCursor::pos(), i18n("PID %1 copied to clipboard", pidString), detailsBrowser, QRect(), 2000);
         } else if (url.scheme() == "http"_L1 || url.scheme() == "https"_L1) {
             QDesktopServices::openUrl(url);
         }
@@ -337,11 +336,11 @@ void MainWindow::setupUi()
     mainLayout->addWidget(splitter);
     setCentralWidget(centralWidget);
 
-    splitter->setSizes({ 250, 500 });
+    splitter->setSizes({250, 500});
     statusBar()->showMessage(i18n("Ready."));
 }
 
-bool MainWindow::startSwtpm(const QString& vmName)
+bool MainWindow::startSwtpm(const QString &vmName)
 {
     if (!requireTool(ExternalTools::Swtpm))
         return false;
@@ -351,7 +350,7 @@ bool MainWindow::startSwtpm(const QString& vmName)
 
     QFile::remove(sockPath);
 
-    KProcess* process = new KProcess(this);
+    KProcess *process = new KProcess(this);
     process->setChildProcessModifier([] {
         // Ask the kernel to SIGTERM us if our parent (KEMU) dies, for any
         // reason -- including SIGKILL, SEGV, OOM-kill. This is a reliable
@@ -359,11 +358,8 @@ bool MainWindow::startSwtpm(const QString& vmName)
         prctl(PR_SET_PDEATHSIG, SIGTERM);
     });
     process->setProgram(ExternalTools::instance().path(ExternalTools::Swtpm));
-    process->setArguments({ u"socket"_s,
-        u"--ctrl"_s, u"type=unixio,path=%1"_s.arg(sockPath),
-        u"--terminate"_s,
-        u"--tpmstate"_s, u"dir=%1"_s.arg(vmPath),
-        u"--tpm2"_s });
+    process->setArguments(
+        {u"socket"_s, u"--ctrl"_s, u"type=unixio,path=%1"_s.arg(sockPath), u"--terminate"_s, u"--tpmstate"_s, u"dir=%1"_s.arg(vmPath), u"--tpm2"_s});
     process->start();
 
     if (!process->waitForStarted(3000)) {
@@ -387,7 +383,7 @@ bool MainWindow::startSwtpm(const QString& vmName)
     return false;
 }
 
-bool MainWindow::startVirtiofsd(const QString& vmName)
+bool MainWindow::startVirtiofsd(const QString &vmName)
 {
     if (!requireTool(ExternalTools::Virtiofsd))
         return false;
@@ -397,15 +393,12 @@ bool MainWindow::startVirtiofsd(const QString& vmName)
 
     QFile::remove(sockPath);
 
-    auto* process = new KProcess(this);
+    auto *process = new KProcess(this);
     process->setChildProcessModifier([] {
         prctl(PR_SET_PDEATHSIG, SIGTERM);
     });
     process->setProgram(ExternalTools::instance().path(ExternalTools::Virtiofsd));
-    process->setArguments({ u"--socket-path=%1"_s.arg(sockPath),
-        u"--shared-dir=%1"_s.arg(sharedPath),
-        u"--cache=auto"_s,
-        u"--sandbox=none"_s });
+    process->setArguments({u"--socket-path=%1"_s.arg(sockPath), u"--shared-dir=%1"_s.arg(sharedPath), u"--cache=auto"_s, u"--sandbox=none"_s});
     process->start();
 
     if (!process->waitForStarted(3000)) {
@@ -430,7 +423,7 @@ bool MainWindow::startVirtiofsd(const QString& vmName)
     return false;
 }
 
-bool MainWindow::startPasst(const QString& vmName, const QList<PortForwardRule>& portForwards)
+bool MainWindow::startPasst(const QString &vmName, const QList<PortForwardRule> &portForwards)
 {
     if (!requireTool(ExternalTools::Passt))
         return false;
@@ -439,14 +432,12 @@ bool MainWindow::startPasst(const QString& vmName, const QList<PortForwardRule>&
 
     QFile::remove(sockPath);
 
-    QStringList passtArgs = { u"--socket"_s, sockPath, u"-f"_s, u"-q"_s };
+    QStringList passtArgs = {u"--socket"_s, sockPath, u"-f"_s, u"-q"_s};
 
     // Collect ports per protocol
     QStringList tcpPorts, udpPorts;
-    for (const auto& rule : portForwards) {
-        QString mapping = (rule.hostPort != rule.guestPort)
-            ? u"%1:%2"_s.arg(rule.hostPort).arg(rule.guestPort)
-            : QString::number(rule.hostPort);
+    for (const auto &rule : portForwards) {
+        const QString mapping = (rule.hostPort != rule.guestPort) ? u"%1:%2"_s.arg(rule.hostPort).arg(rule.guestPort) : QString::number(rule.hostPort);
 
         if (rule.protocol == PortForwardRule::Protocol::Tcp)
             tcpPorts << mapping;
@@ -459,7 +450,7 @@ bool MainWindow::startPasst(const QString& vmName, const QList<PortForwardRule>&
     if (!udpPorts.isEmpty())
         passtArgs << u"-u"_s << udpPorts.join(u","_s);
 
-    auto* process = new KProcess(this);
+    auto *process = new KProcess(this);
     process->setChildProcessModifier([] {
         prctl(PR_SET_PDEATHSIG, SIGTERM);
     });
@@ -488,7 +479,7 @@ bool MainWindow::startPasst(const QString& vmName, const QList<PortForwardRule>&
     return false;
 }
 
-bool MainWindow::startSpiceViewer(const QString& vmName)
+bool MainWindow::startSpiceViewer(const QString &vmName)
 {
     if (!requireTool(ExternalTools::RemoteViewer))
         return false;
@@ -497,9 +488,7 @@ bool MainWindow::startSpiceViewer(const QString& vmName)
     const QString spiceSockPath = vmPath + u"/spice.sock"_s;
 
     if (!Utils::waitForSocket(spiceSockPath, 3000)) {
-        KMessageBox::error(this,
-            i18n("SPICE socket was not created in time."),
-            i18n("Viewer Error"));
+        KMessageBox::error(this, i18n("SPICE socket was not created in time."), i18n("Viewer Error"));
         return false;
     }
 
@@ -507,9 +496,7 @@ bool MainWindow::startSpiceViewer(const QString& vmName)
     const QString vvFile = vmPath + u"/spice.vv"_s;
     QFile f(vvFile);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        KMessageBox::error(this,
-            i18n("Failed to write SPICE connection file."),
-            i18n("Viewer Error"));
+        KMessageBox::error(this, i18n("Failed to write SPICE connection file."), i18n("Viewer Error"));
         return false;
     }
     f.write("[virt-viewer]\n");
@@ -517,13 +504,13 @@ bool MainWindow::startSpiceViewer(const QString& vmName)
     f.write(u"unix-path=%1\n"_s.arg(spiceSockPath).toUtf8());
     f.close();
 
-    auto* viewer = new KProcess(this);
+    auto *viewer = new KProcess(this);
     viewer->setProgram(ExternalTools::instance().path(ExternalTools::RemoteViewer));
-    viewer->setArguments({ vvFile });
+    viewer->setArguments({vvFile});
 
     connect(viewer, &QProcess::finished, viewer, [this, vmName, viewer, vvFile]() {
         QFile::remove(vvFile);
-        VmEntry* entry = veModel->entryByName(vmName);
+        VmEntry *entry = veModel->entryByName(vmName);
         if (entry && entry->spiceViewerProcess == viewer)
             entry->spiceViewerProcess = nullptr;
         viewer->deleteLater();
@@ -536,16 +523,14 @@ bool MainWindow::startSpiceViewer(const QString& vmName)
         if (action == SettingsDialog::ShutdownVm) {
             if (entry->qmpClient && entry->qmpClient->isConnected()) {
                 entry->qmpClient->sendCommand(u"system_powerdown"_s);
-                statusBar()->showMessage(
-                    i18n("SPICE viewer closed -- shutting down '%1'.", vmName));
+                statusBar()->showMessage(i18n("SPICE viewer closed -- shutting down '%1'.", vmName));
             }
             return;
         }
 
         // SwitchToHeadless (default)
         veModel->setHeadless(vmName, true);
-        statusBar()->showMessage(
-            i18n("SPICE viewer closed -- '%1' continues headless.", vmName));
+        statusBar()->showMessage(i18n("SPICE viewer closed -- '%1' continues headless.", vmName));
 
         if (selectedVmName() == vmName) {
             updateDetails();
@@ -556,9 +541,7 @@ bool MainWindow::startSpiceViewer(const QString& vmName)
     viewer->start();
 
     if (!viewer->waitForStarted(3000)) {
-        KMessageBox::error(this,
-            i18n("Failed to start SPICE viewer: %1", viewer->errorString()),
-            i18n("Viewer Error"));
+        KMessageBox::error(this, i18n("Failed to start SPICE viewer: %1", viewer->errorString()), i18n("Viewer Error"));
         QFile::remove(vvFile);
         delete viewer;
         return false;
@@ -568,12 +551,12 @@ bool MainWindow::startSpiceViewer(const QString& vmName)
     return true;
 }
 
-bool MainWindow::startDbusDaemon(const QString& vmName)
+bool MainWindow::startDbusDaemon(const QString &vmName)
 {
     if (!requireTool(ExternalTools::DbusDaemon))
         return false;
 
-    VmEntry* entry = veModel->entryByName(vmName);
+    const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry)
         return false;
 
@@ -590,51 +573,46 @@ bool MainWindow::startDbusDaemon(const QString& vmName)
 
     QFile cfg(configPath);
     if (!cfg.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        KMessageBox::error(this,
-            i18n("Failed to write D-Bus daemon config."));
+        KMessageBox::error(this, i18n("Failed to write D-Bus daemon config."));
         return false;
     }
 
-    QString content = QStringLiteral(
-        "<!DOCTYPE busconfig PUBLIC\n"
-        " \"-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN\"\n"
-        " \"http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd\">\n"
-        "<busconfig>\n"
-        "  <type>session</type>\n"
-        "  <listen>unix:path=%1</listen>\n"
-        "  <auth>EXTERNAL</auth>\n"
-        "  <policy context=\"default\">\n"
-        "    <allow send_destination=\"*\" eavesdrop=\"true\"/>\n"
-        "    <allow eavesdrop=\"true\"/>\n"
-        "    <allow own=\"*\"/>\n"
-        "  </policy>\n"
-        "</busconfig>\n")
-                          .arg(QString::fromLatin1(sockPath.toUtf8().toPercentEncoding()));
-    qDebug() << "D-Bus daemon config will be written:\n"
-             << content;
+    const QString content = QStringLiteral(
+                                "<!DOCTYPE busconfig PUBLIC\n"
+                                " \"-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN\"\n"
+                                " \"http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd\">\n"
+                                "<busconfig>\n"
+                                "  <type>session</type>\n"
+                                "  <listen>unix:path=%1</listen>\n"
+                                "  <auth>EXTERNAL</auth>\n"
+                                "  <policy context=\"default\">\n"
+                                "    <allow send_destination=\"*\" eavesdrop=\"true\"/>\n"
+                                "    <allow eavesdrop=\"true\"/>\n"
+                                "    <allow own=\"*\"/>\n"
+                                "  </policy>\n"
+                                "</busconfig>\n")
+                                .arg(QString::fromLatin1(sockPath.toUtf8().toPercentEncoding()));
+    qDebug() << "D-Bus daemon config will be written:\n" << content;
     cfg.write(content.toUtf8());
     cfg.close();
 
-    auto* daemon = new KProcess(this);
+    auto *daemon = new KProcess(this);
     daemon->setChildProcessModifier([] {
         prctl(PR_SET_PDEATHSIG, SIGTERM);
     });
     daemon->setProgram(ExternalTools::instance().path(ExternalTools::DbusDaemon));
-    daemon->setArguments({ u"--config-file=%1"_s.arg(configPath), u"--nofork"_s });
+    daemon->setArguments({u"--config-file=%1"_s.arg(configPath), u"--nofork"_s});
 
     daemon->start();
     if (!daemon->waitForStarted(3000)) {
-        KMessageBox::error(this,
-            i18n("Failed to start D-Bus daemon: %1",
-                daemon->errorString()));
+        KMessageBox::error(this, i18n("Failed to start D-Bus daemon: %1", daemon->errorString()));
         delete daemon;
         return false;
     }
 
     // Wait for the socket to actually appear
     if (!Utils::waitForSocket(sockPath, 3000)) {
-        KMessageBox::error(this,
-            i18n("D-Bus daemon socket was not created in time."));
+        KMessageBox::error(this, i18n("D-Bus daemon socket was not created in time."));
         daemon->terminate();
         if (!daemon->waitForFinished(2000))
             daemon->kill();
@@ -646,17 +624,17 @@ bool MainWindow::startDbusDaemon(const QString& vmName)
     return true;
 }
 
-QString MainWindow::dbusBusAddress(const QString& vmName) const
+QString MainWindow::dbusBusAddress(const QString &vmName) const
 {
     const QString sockPath = getVmDir(vmName).absoluteFilePath(u"dbus-bus.sock"_s);
     return u"unix:path=%1"_s.arg(QString::fromLatin1(sockPath.toUtf8().toPercentEncoding()));
 }
 
-bool MainWindow::startDbusViewer(const QString& vmName)
+bool MainWindow::startDbusViewer(const QString &vmName)
 {
     // Already running? Just bring the existing window to the front.
     if (m_dbusViewers.contains(vmName)) {
-        auto& existing = m_dbusViewers[vmName];
+        auto &existing = m_dbusViewers[vmName];
         if (existing.window) {
             existing.window->raise();
             existing.window->activateWindow();
@@ -670,9 +648,7 @@ bool MainWindow::startDbusViewer(const QString& vmName)
 
     QDBusConnection bus = QDBusConnection::connectToBus(busAddress, connName);
     if (!bus.isConnected()) {
-        KMessageBox::error(this,
-            i18n("Failed to connect to the D-Bus session for '%1': %2", vmName, bus.lastError().message()),
-            i18n("Viewer Error"));
+        KMessageBox::error(this, i18n("Failed to connect to the D-Bus session for '%1': %2", vmName, bus.lastError().message()), i18n("Viewer Error"));
         QDBusConnection::disconnectFromBus(connName);
         return false;
     }
@@ -682,21 +658,15 @@ bool MainWindow::startDbusViewer(const QString& vmName)
     // on the bus. Retry for up to 3 seconds.
     const QString consolePath = KemuDbusDisplayConst::ConsolePathPrefix + u"0"_s;
 
-    QScopedPointer<QDBusInterface> console(new QDBusInterface(
-        KemuDbusDisplayConst::ServiceName, consolePath,
-        KemuDbusDisplayConst::ConsoleIface, bus));
+    QScopedPointer<QDBusInterface> console(new QDBusInterface(KemuDbusDisplayConst::ServiceName, consolePath, KemuDbusDisplayConst::ConsoleIface, bus));
 
     for (int i = 0; i < 30 && !console->isValid(); ++i) {
         QThread::msleep(100);
-        console.reset(new QDBusInterface(
-            KemuDbusDisplayConst::ServiceName, consolePath,
-            KemuDbusDisplayConst::ConsoleIface, bus));
+        console.reset(new QDBusInterface(KemuDbusDisplayConst::ServiceName, consolePath, KemuDbusDisplayConst::ConsoleIface, bus));
     }
 
     if (!console->isValid()) {
-        KMessageBox::error(this,
-            i18n("QEMU console interface not available for '%1'.", vmName),
-            i18n("Viewer Error"));
+        KMessageBox::error(this, i18n("QEMU console interface not available for '%1'.", vmName), i18n("Viewer Error"));
         QDBusConnection::disconnectFromBus(connName);
         return false;
     }
@@ -706,15 +676,15 @@ bool MainWindow::startDbusViewer(const QString& vmName)
 
     // --- Display listener ---
     state.displayListener = new QemuDisplayListener(this);
-    int listenerFd = state.displayListener->createSocketPair();
+    const int listenerFd = state.displayListener->createSocketPair();
     if (listenerFd < 0) {
         delete state.displayListener;
         QDBusConnection::disconnectFromBus(connName);
         return false;
     }
 
-    QDBusUnixFileDescriptor fdWrapper(listenerFd);
-    QDBusReply<void> reply = console->call(u"RegisterListener"_s, QVariant::fromValue(fdWrapper));
+    const QDBusUnixFileDescriptor fdWrapper(listenerFd);
+    const QDBusReply<void> reply = console->call(u"RegisterListener"_s, QVariant::fromValue(fdWrapper));
     ::close(listenerFd);
 
     if (!reply.isValid()) {
@@ -735,76 +705,66 @@ bool MainWindow::startDbusViewer(const QString& vmName)
     state.audioIn = new QemuAudioInListener(this);
 
     // --- Viewer window ---
-    state.window = new DbusViewerWindow(
-        state.displayListener, bus, consolePath,
-        state.audioOut, state.audioIn,
-        false, false, nullptr);
+    state.window = new DbusViewerWindow(state.displayListener, bus, consolePath, state.audioOut, state.audioIn, false, false, nullptr);
     state.window->setWindowTitle(vmName);
     state.window->setAttribute(Qt::WA_DeleteOnClose, false);
     state.window->displayWidget()->watchGLibFd(state.displayListener->socketFd());
     state.window->show();
 
     // --- Async audio registration ---
-    QDBusInterface* audioIface = new QDBusInterface(
-        KemuDbusDisplayConst::ServiceName,
-        KemuDbusDisplayConst::AudioPath,
-        KemuDbusDisplayConst::AudioIface, bus);
+    QDBusInterface *audioIface = new QDBusInterface(KemuDbusDisplayConst::ServiceName, KemuDbusDisplayConst::AudioPath, KemuDbusDisplayConst::AudioIface, bus);
 
     if (audioIface->isValid()) {
         // Audio output
-        int outFd = state.audioOut->createSocketPair();
+        const int outFd = state.audioOut->createSocketPair();
         if (outFd >= 0) {
-            QDBusUnixFileDescriptor outFdW(outFd);
-            QDBusPendingCall pending = audioIface->asyncCall(u"RegisterOutListener"_s, QVariant::fromValue(outFdW));
+            const QDBusUnixFileDescriptor outFdW(outFd);
+            const QDBusPendingCall pending = audioIface->asyncCall(u"RegisterOutListener"_s, QVariant::fromValue(outFdW));
             ::close(outFd);
 
-            auto* w = new QDBusPendingCallWatcher(pending, this);
-            connect(w, &QDBusPendingCallWatcher::finished, this,
-                [this, vmName](QDBusPendingCallWatcher* watcher) {
-                    watcher->deleteLater();
-                    QDBusPendingReply<> r = *watcher;
-                    if (r.isError() || !m_dbusViewers.contains(vmName)) {
-                        if (r.isError())
-                            qWarning() << "RegisterOutListener failed:"
-                                       << r.error().message();
-                        return;
-                    }
-                    auto& s = m_dbusViewers[vmName];
-                    if (!s.audioOut->connectListener())
-                        return;
-                    if (s.window) {
-                        s.window->audioOutReady();
-                        s.window->displayWidget()->watchGLibFd(s.audioOut->socketFd());
-                    }
-                });
+            auto *w = new QDBusPendingCallWatcher(pending, this);
+            connect(w, &QDBusPendingCallWatcher::finished, this, [this, vmName](QDBusPendingCallWatcher *watcher) {
+                watcher->deleteLater();
+                const QDBusPendingReply<> r = *watcher;
+                if (r.isError() || !m_dbusViewers.contains(vmName)) {
+                    if (r.isError())
+                        qWarning() << "RegisterOutListener failed:" << r.error().message();
+                    return;
+                }
+                auto &s = m_dbusViewers[vmName];
+                if (!s.audioOut->connectListener())
+                    return;
+                if (s.window) {
+                    s.window->audioOutReady();
+                    s.window->displayWidget()->watchGLibFd(s.audioOut->socketFd());
+                }
+            });
         }
 
         // Audio input
-        int inFd = state.audioIn->createSocketPair();
+        const int inFd = state.audioIn->createSocketPair();
         if (inFd >= 0) {
-            QDBusUnixFileDescriptor inFdW(inFd);
-            QDBusPendingCall pending = audioIface->asyncCall(u"RegisterInListener"_s, QVariant::fromValue(inFdW));
+            const QDBusUnixFileDescriptor inFdW(inFd);
+            const QDBusPendingCall pending = audioIface->asyncCall(u"RegisterInListener"_s, QVariant::fromValue(inFdW));
             ::close(inFd);
 
-            auto* w = new QDBusPendingCallWatcher(pending, this);
-            connect(w, &QDBusPendingCallWatcher::finished, this,
-                [this, vmName](QDBusPendingCallWatcher* watcher) {
-                    watcher->deleteLater();
-                    QDBusPendingReply<> r = *watcher;
-                    if (r.isError() || !m_dbusViewers.contains(vmName)) {
-                        if (r.isError())
-                            qWarning() << "RegisterInListener failed:"
-                                       << r.error().message();
-                        return;
-                    }
-                    auto& s = m_dbusViewers[vmName];
-                    if (!s.audioIn->connectListener())
-                        return;
-                    if (s.window) {
-                        s.window->audioInReady();
-                        s.window->displayWidget()->watchGLibFd(s.audioIn->socketFd());
-                    }
-                });
+            auto *w = new QDBusPendingCallWatcher(pending, this);
+            connect(w, &QDBusPendingCallWatcher::finished, this, [this, vmName](QDBusPendingCallWatcher *watcher) {
+                watcher->deleteLater();
+                const QDBusPendingReply<> r = *watcher;
+                if (r.isError() || !m_dbusViewers.contains(vmName)) {
+                    if (r.isError())
+                        qWarning() << "RegisterInListener failed:" << r.error().message();
+                    return;
+                }
+                auto &s = m_dbusViewers[vmName];
+                if (!s.audioIn->connectListener())
+                    return;
+                if (s.window) {
+                    s.window->audioInReady();
+                    s.window->displayWidget()->watchGLibFd(s.audioIn->socketFd());
+                }
+            });
         }
     } else {
         qWarning() << "Audio interface not available on private bus";
@@ -812,8 +772,9 @@ bool MainWindow::startDbusViewer(const QString& vmName)
     delete audioIface;
 
     // Auto-cleanup when QEMU's display connection drops
-    connect(state.displayListener, &QemuDisplayListener::connectionLost, this,
-        [this, vmName]() { stopDbusViewer(vmName); });
+    connect(state.displayListener, &QemuDisplayListener::connectionLost, this, [this, vmName]() {
+        stopDbusViewer(vmName);
+    });
 
     // Mirror SPICE behaviour: when the user closes the viewer window,
     // keep QEMU running, mark the VM as headless and tear down the
@@ -822,26 +783,32 @@ bool MainWindow::startDbusViewer(const QString& vmName)
     // QueuedConnection: the slot must run AFTER closeEvent() has fully
     // returned, otherwise stopDbusViewer() would delete the window from
     // within its own event handler.
-    connect(state.window, &DbusViewerWindow::viewerClosed, this, [this, vmName]() {
-                if (!m_dbusViewers.contains(vmName))
-                    return;  // already torn down (shutdown path / connectionLost)
+    connect(
+        state.window,
+        &DbusViewerWindow::viewerClosed,
+        this,
+        [this, vmName]() {
+            if (!m_dbusViewers.contains(vmName))
+                return; // already torn down (shutdown path / connectionLost)
 
-    VmEntry* entry = veModel->entryByName(vmName);
-    if (entry && entry->state == VmEntry::State::Running)
-        veModel->setHeadless(vmName, true);
+            const VmEntry *entry = veModel->entryByName(vmName);
+            if (entry && entry->state == VmEntry::State::Running)
+                veModel->setHeadless(vmName, true);
 
-                stopDbusViewer(vmName);
+            stopDbusViewer(vmName);
 
-                if (selectedVmName() == vmName) {
-                    updateDetails();
-                    updateActionStates();
-                } }, Qt::QueuedConnection);
+            if (selectedVmName() == vmName) {
+                updateDetails();
+                updateActionStates();
+            }
+        },
+        Qt::QueuedConnection);
 
     m_dbusViewers.insert(vmName, state);
     return true;
 }
 
-void MainWindow::stopDbusViewer(const QString& vmName)
+void MainWindow::stopDbusViewer(const QString &vmName)
 {
     if (!m_dbusViewers.contains(vmName))
         return;
@@ -865,7 +832,7 @@ void MainWindow::stopDbusViewer(const QString& vmName)
         QDBusConnection::disconnectFromPeer(state.connectionName);
 }
 
-void MainWindow::cleanupDbusSocket(const QString& vmName)
+void MainWindow::cleanupDbusSocket(const QString &vmName)
 {
     QFile::remove(getVmDir(vmName).absoluteFilePath(u"dbus-display.sock"_s));
 }
@@ -896,116 +863,118 @@ bool MainWindow::isDisplayTypeAvailable(const VMSpecs::DisplayType type)
 
 void MainWindow::setupActions()
 {
-    KActionCollection* ac = actionCollection();
+    KActionCollection *ac = actionCollection();
 
-    auto* actionNew = ac->addAction(u"vm_new"_s);
+    auto *actionNew = ac->addAction(u"vm_new"_s);
     actionNew->setIcon(QIcon::fromTheme(u"list-add"_s));
     actionNew->setText(i18n("New Machine"));
     connect(actionNew, &QAction::triggered, this, &MainWindow::createNewVM);
 
-    auto* actionStart = ac->addAction(u"vm_start"_s);
+    auto *actionStart = ac->addAction(u"vm_start"_s);
     actionStart->setIcon(QIcon::fromTheme(u"kt-start"_s));
     actionStart->setText(i18n("Start"));
     connect(actionStart, &QAction::triggered, this, &MainWindow::startVM);
 
-    auto* actionStartHeadless = ac->addAction(u"vm_start_headless"_s);
+    auto *actionStartHeadless = ac->addAction(u"vm_start_headless"_s);
     actionStartHeadless->setIcon(QIcon::fromTheme(u"system-run"_s));
     actionStartHeadless->setText(i18n("Start (Headless)"));
     connect(actionStartHeadless, &QAction::triggered, this, &MainWindow::startVMHeadless);
 
-    auto* actionStop = ac->addAction(u"vm_shutdown"_s);
+    auto *actionStop = ac->addAction(u"vm_shutdown"_s);
     actionStop->setIcon(QIcon::fromTheme(u"system-shutdown"_s));
     actionStop->setText(i18n("Shutdown"));
     connect(actionStop, &QAction::triggered, this, &MainWindow::shutdownVM);
 
-    auto* actionChangeISO = ac->addAction(u"vm_change_iso"_s);
+    auto *actionChangeISO = ac->addAction(u"vm_change_iso"_s);
     actionChangeISO->setIcon(QIcon::fromTheme(u"media-optical"_s));
     actionChangeISO->setText(i18n("ISO Image..."));
     connect(actionChangeISO, &QAction::triggered, this, &MainWindow::changeISO);
 
-    auto* actionEjectISO = ac->addAction(u"vm_eject_iso"_s);
+    auto *actionEjectISO = ac->addAction(u"vm_eject_iso"_s);
     actionEjectISO->setIcon(QIcon::fromTheme(u"media-eject"_s));
     actionEjectISO->setText(i18n("Eject ISO Image"));
     connect(actionEjectISO, &QAction::triggered, this, &MainWindow::ejectISO);
 
-    auto* actionChangeFloppy = ac->addAction(u"vm_change_floppy"_s);
+    auto *actionChangeFloppy = ac->addAction(u"vm_change_floppy"_s);
     actionChangeFloppy->setIcon(QIcon::fromTheme(u"media-floppy"_s));
     actionChangeFloppy->setText(i18n("Floppy Image..."));
     connect(actionChangeFloppy, &QAction::triggered, this, &MainWindow::changeFloppy);
 
-    auto* actionEjectFloppy = ac->addAction(u"vm_eject_floppy"_s);
+    auto *actionEjectFloppy = ac->addAction(u"vm_eject_floppy"_s);
     actionEjectFloppy->setIcon(QIcon::fromTheme(u"media-eject"_s));
     actionEjectFloppy->setText(i18n("Eject Floppy Image"));
     connect(actionEjectFloppy, &QAction::triggered, this, &MainWindow::ejectFloppy);
 
-    auto* actionReset = ac->addAction(u"vm_reset"_s);
+    auto *actionReset = ac->addAction(u"vm_reset"_s);
     actionReset->setIcon(QIcon::fromTheme(u"system-reboot"_s));
     actionReset->setText(i18n("Reset"));
     connect(actionReset, &QAction::triggered, this, &MainWindow::resetVM);
 
-    auto* actionKill = ac->addAction(u"vm_kill"_s);
+    auto *actionKill = ac->addAction(u"vm_kill"_s);
     actionKill->setIcon(QIcon::fromTheme(u"process-stop"_s));
     actionKill->setText(i18n("Kill"));
     connect(actionKill, &QAction::triggered, this, &MainWindow::killVM);
 
-    auto* actionEdit = ac->addAction(u"vm_edit"_s);
+    auto *actionEdit = ac->addAction(u"vm_edit"_s);
     actionEdit->setIcon(QIcon::fromTheme(u"document-edit"_s));
     actionEdit->setText(i18n("Edit"));
     connect(actionEdit, &QAction::triggered, this, &MainWindow::editVM);
 
-    auto* actionDelete = ac->addAction(u"vm_delete"_s);
+    auto *actionDelete = ac->addAction(u"vm_delete"_s);
     actionDelete->setIcon(QIcon::fromTheme(u"edit-delete"_s));
     actionDelete->setText(i18n("Delete"));
     connect(actionDelete, &QAction::triggered, this, &MainWindow::deleteVM);
 
-    auto* actionClone = ac->addAction(u"vm_clone"_s);
+    auto *actionClone = ac->addAction(u"vm_clone"_s);
     actionClone->setIcon(QIcon::fromTheme(u"edit-copy"_s));
     actionClone->setText(i18n("Clone VM..."));
     actionClone->setToolTip(i18n("Create a full copy of this virtual machine"));
     connect(actionClone, &QAction::triggered, this, &MainWindow::cloneVM);
 
-    auto* actionShrink = ac->addAction(u"vm_shrink"_s);
+    auto *actionShrink = ac->addAction(u"vm_shrink"_s);
     actionShrink->setIcon(QIcon::fromTheme(u"edit-clear-history"_s));
     actionShrink->setText(i18n("Compact Disk"));
-    actionShrink->setToolTip(i18n("Compact the disk image by removing unused blocks. Please free blocks on guest OS level first."));
+    actionShrink->setToolTip(
+        i18n("Compact the disk image by removing unused blocks. Please free "
+             "blocks on guest OS level first."));
     connect(actionShrink, &QAction::triggered, this, &MainWindow::shrinkDisk);
 
-    auto* snapshotsAction = actionCollection()->addAction(u"vm_manage_snapshots"_s);
+    auto *snapshotsAction = actionCollection()->addAction(u"vm_manage_snapshots"_s);
     snapshotsAction->setIcon(QIcon::fromTheme(u"camera-photo"_s));
     snapshotsAction->setText(i18n("Manage Snapshots..."));
     snapshotsAction->setToolTip(i18n("Open the snapshot manager for this VM"));
     connect(snapshotsAction, &QAction::triggered, this, &MainWindow::manageSnapshots);
 
-    auto* actionExport = ac->addAction(u"vm_export"_s);
+    auto *actionExport = ac->addAction(u"vm_export"_s);
     actionExport->setIcon(QIcon::fromTheme(u"document-export"_s));
     actionExport->setText(i18n("Export VM..."));
     actionExport->setToolTip(i18n("Export the virtual machine as a portable archive"));
     connect(actionExport, &QAction::triggered, this, &MainWindow::exportVM);
 
-    auto* actionImport = ac->addAction(u"vm_import"_s);
+    auto *actionImport = ac->addAction(u"vm_import"_s);
     actionImport->setIcon(QIcon::fromTheme(u"document-import"_s));
     actionImport->setText(i18n("Import VM..."));
     actionImport->setToolTip(i18n("Import a virtual machine from an archive"));
     connect(actionImport, &QAction::triggered, this, &MainWindow::importVM);
 
-    auto* actionShowCmd = ac->addAction(u"vm_show_cmd"_s);
+    auto *actionShowCmd = ac->addAction(u"vm_show_cmd"_s);
     actionShowCmd->setIcon(QIcon::fromTheme(u"utilities-terminal"_s));
     actionShowCmd->setText(i18n("Show command..."));
     connect(actionShowCmd, &QAction::triggered, this, &MainWindow::showCommand);
 
-    auto* actionScreenshot = ac->addAction(u"vm_screenshot"_s);
+    auto *actionScreenshot = ac->addAction(u"vm_screenshot"_s);
     actionScreenshot->setIcon(QIcon::fromTheme(u"spectacle"_s));
     actionScreenshot->setText(i18n("Save Screenshot..."));
     actionScreenshot->setToolTip(i18n("Capture and save a screenshot of the running VM"));
     connect(actionScreenshot, &QAction::triggered, this, &MainWindow::saveScreenshot);
 
-    auto* actionNetShell = ac->addAction(u"vm_network_shell"_s);
+    auto *actionNetShell = ac->addAction(u"vm_network_shell"_s);
     actionNetShell->setIcon(QIcon::fromTheme(u"utilities-terminal"_s));
     actionNetShell->setText(i18n("Open Network Shell..."));
     actionNetShell->setToolTip(i18n("Open a terminal (konsole) inside the virtual network namespace"));
     connect(actionNetShell, &QAction::triggered, this, &MainWindow::openNetworkShell);
 
-    auto* actionReconnect = ac->addAction(u"vm_reconnect"_s);
+    auto *actionReconnect = ac->addAction(u"vm_reconnect"_s);
     actionReconnect->setIcon(QIcon::fromTheme(u"view-fullscreen"_s));
     actionReconnect->setText(i18n("Reconnect Viewer"));
     actionReconnect->setToolTip(i18n("Re-open the viewer for a running headless VM"));
@@ -1025,7 +994,7 @@ void MainWindow::setupActions()
     vmActionBar->addAction(actionChangeFloppy);
     vmActionBar->addSeparator();
     vmActionBar->addAction(snapshotsAction);
-    auto* spacer = new QWidget();
+    auto *spacer = new QWidget();
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     vmActionBar->addWidget(spacer);
     vmActionBar->addAction(actionEdit);
@@ -1039,7 +1008,7 @@ void MainWindow::updateActionStates()
     const QString name = selectedVmName();
     const bool hasSelection = !name.isEmpty();
 
-    const VmEntry* entry = hasSelection ? veModel->entryByName(name) : nullptr;
+    const VmEntry *entry = hasSelection ? veModel->entryByName(name) : nullptr;
     const bool isRunning = entry && entry->state == VmEntry::State::Running;
     const bool isDeploying = entry && entry->state == VmEntry::State::Deploying;
     const bool isBusy = entry && entry->state != VmEntry::State::Stopped;
@@ -1067,41 +1036,33 @@ void MainWindow::updateActionStates()
     const bool hasUsbController = hasSelection && entry && entry->config.usbController() != VMSpecs::UsbController::None;
     usbActionMenu->setEnabled(hasUsbController && isRunning);
 
-    const bool canReconnectSpice = isRunning && entry->isHeadless
-        && entry->config.displayType() == VMSpecs::DisplayType::Spice
-        && !entry->spiceViewerProcess;
-    const bool canReconnectDbus = isRunning && entry->isHeadless
-        && entry->config.displayType() == VMSpecs::DisplayType::Dbus
-        && !m_dbusViewers.contains(entry->config.name());
+    const bool canReconnectSpice = isRunning && entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Spice && !entry->spiceViewerProcess;
+    const bool canReconnectDbus =
+        isRunning && entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !m_dbusViewers.contains(entry->config.name());
     actionCollection()->action(u"vm_reconnect"_s)->setEnabled(hasSelection && (canReconnectSpice || canReconnectDbus));
 
-    const bool hasActiveNamespace = hasSelection
-        && (isRunning || isDeploying)
-        && entry->config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
-        && !entry->config.virtualNetworkName().isEmpty()
-        && m_networkManager
-        && m_networkManager->namespacePid(entry->config.virtualNetworkName()) > 0;
+    const bool hasActiveNamespace = hasSelection && (isRunning || isDeploying) && entry->config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
+        && !entry->config.virtualNetworkName().isEmpty() && m_networkManager && m_networkManager->namespacePid(entry->config.virtualNetworkName()) > 0;
     actionCollection()->action(u"vm_network_shell"_s)->setEnabled(hasActiveNamespace);
 }
 
-QString MainWindow::encodeThemeIcon(const QString& name, int sizePx) const
+QString MainWindow::encodeThemeIcon(const QString &name, int sizePx) const
 {
     const QIcon icon = QIcon::fromTheme(name);
     if (icon.isNull() || !detailsBrowser)
-        return { };
+        return {};
 
     const qreal dpr = detailsBrowser->devicePixelRatioF();
     const QPixmap pix = icon.pixmap(QSize(sizePx, sizePx) * dpr);
     if (pix.isNull())
-        return { };
+        return {};
 
     QByteArray ba;
     QBuffer buf(&ba);
     buf.open(QIODevice::WriteOnly);
     pix.save(&buf, "PNG");
     return u"<img src='data:image/png;base64,%1' width='%2' height='%2' "
-           "style='vertical-align: middle;'/>"_s
-               .arg(QString::fromLatin1(ba.toBase64()))
+           "style='vertical-align: middle;'/>"_s.arg(QString::fromLatin1(ba.toBase64()))
                .arg(sizePx);
 }
 
@@ -1110,7 +1071,7 @@ QStringList MainWindow::existingVmNames() const
     const QDir dir = getVmBaseDir();
     QStringList names;
     const QStringList dirs = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-    for (const QString& d : dirs) {
+    for (const QString &d : dirs) {
         if (QFile::exists(dir.filePath(d) + u"/config.json"_s))
             names << d;
     }
@@ -1120,7 +1081,7 @@ QStringList MainWindow::existingVmNames() const
 QStringList MainWindow::usedMacAddresses() const
 {
     QStringList macs;
-    for (const auto& info : macUsageInfo())
+    for (const auto &info : macUsageInfo())
         macs << info.mac;
     return macs;
 }
@@ -1128,8 +1089,8 @@ QStringList MainWindow::usedMacAddresses() const
 QList<MacUsageInfo> MainWindow::macUsageInfo() const
 {
     QList<MacUsageInfo> result;
-    for (const QString& name : existingVmNames()) {
-        VMConfig cfg = loadVmConfig(getVmBaseDir().filePath(name));
+    for (const QString &name : existingVmNames()) {
+        const VMConfig cfg = loadVmConfig(getVmBaseDir().filePath(name));
         if (cfg.macAddress().isEmpty())
             continue;
         MacUsageInfo info;
@@ -1145,7 +1106,7 @@ QList<MacUsageInfo> MainWindow::macUsageInfo() const
 void MainWindow::updateDetails()
 {
     const QPalette pal = detailsBrowser->palette();
-    KColorScheme scheme(QPalette::Active, KColorScheme::Window);
+    const KColorScheme scheme(QPalette::Active, KColorScheme::Window);
 
     const QString colNormal = pal.color(QPalette::Active, QPalette::WindowText).name();
     const QString colInactive = pal.color(QPalette::Disabled, QPalette::WindowText).name();
@@ -1163,25 +1124,21 @@ void MainWindow::updateDetails()
     // System font: respects the user's KDE font settings
     const QFont sysFont = QApplication::font();
     const QString fontFamily = sysFont.family();
-    const int basePtSize = sysFont.pointSize() > 0
-        ? sysFont.pointSize()
-        : qMax(8, QFontInfo(sysFont).pixelSize() * 72 / 96);
+    const int basePtSize = sysFont.pointSize() > 0 ? sysFont.pointSize() : qMax(8, QFontInfo(sysFont).pixelSize() * 72 / 96);
 
     if (currentConfig.name().isEmpty()) {
         detailsBrowser->setHtml(
             u"<div style='padding: 60px 40px; text-align: center; "
             "font-family: \"%1\"; font-size: %2pt; color: %3;'>"
             "<div style='font-size: 3em;'>&#x1F5A5;</div>"
-            "<div style='margin-top: 0.8em;'>"_s
-                .arg(fontFamily)
+            "<div style='margin-top: 0.8em;'>"_s.arg(fontFamily)
                 .arg(basePtSize)
                 .arg(colInactive)
-            + i18n("Select a virtual machine from the list or create a new one.")
-            + u"</div></div>"_s);
+            + i18n("Select a virtual machine from the list or create a new one.") + u"</div></div>"_s);
         return;
     }
 
-    const VmEntry* entry = veModel->entryByName(currentConfig.name());
+    const VmEntry *entry = veModel->entryByName(currentConfig.name());
     const bool isRunning = entry && entry->state == VmEntry::State::Running;
     const bool isHeadless = entry && entry->isHeadless;
     const bool isShrinking = entry && entry->state == VmEntry::State::Shrinking;
@@ -1190,14 +1147,11 @@ void MainWindow::updateDetails()
     const bool isCloning = entry && entry->state == VmEntry::State::Cloning;
 
     if (perfMonitor) {
-        const bool vmLive = entry
-            && entry->state == VmEntry::State::Running
-            && entry->qmpClient
-            && entry->qmpClient->isPerformanceTimerActive();
+        const bool vmLive = entry && entry->state == VmEntry::State::Running && entry->qmpClient && entry->qmpClient->isPerformanceTimerActive();
         perfMonitor->setActive(vmLive);
     }
 
-    DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
+    const DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
     QString diskVal;
     if (dInfo.isValid) {
         const QString diskInterfaceStr = VMConfig::toUIString(currentConfig.diskInterface());
@@ -1222,32 +1176,28 @@ void MainWindow::updateDetails()
         const int barHeightPx = 6;
         const int filledPx = qBound(0, (barWidthPx * filledPct) / 100, barWidthPx);
 
-        const QString svg = u"<svg xmlns='http://www.w3.org/2000/svg' width='%1' height='%2' "
-                            "shape-rendering='crispEdges'>"
-                            "<rect width='%1' height='%2' fill='%3'/>"
-                            "<rect width='%4' height='%2' fill='%5'/>"
-                            "</svg>"_s
-                                .arg(barWidthPx)
-                                .arg(barHeightPx)
-                                .arg(bgColor)
-                                .arg(filledPx)
-                                .arg(barColor);
+        const QString svg =
+            u"<svg xmlns='http://www.w3.org/2000/svg' width='%1' height='%2' "
+            "shape-rendering='crispEdges'>"
+            "<rect width='%1' height='%2' fill='%3'/>"
+            "<rect width='%4' height='%2' fill='%5'/>"
+            "</svg>"_s.arg(barWidthPx)
+                .arg(barHeightPx)
+                .arg(bgColor)
+                .arg(filledPx)
+                .arg(barColor);
 
         const QByteArray svgB64 = svg.toUtf8().toBase64();
-        const QString barHtml = u"<img src='data:image/svg+xml;base64,%1' width='%2' height='%3' "
-                                "style='vertical-align:middle;'/>"_s
-                                    .arg(QString::fromLatin1(svgB64))
-                                    .arg(barWidthPx)
-                                    .arg(barHeightPx);
+        const QString barHtml =
+            u"<img src='data:image/svg+xml;base64,%1' width='%2' height='%3' "
+            "style='vertical-align:middle;'/>"_s.arg(QString::fromLatin1(svgB64))
+                .arg(barWidthPx)
+                .arg(barHeightPx);
 
         diskVal = u"<span style='white-space:nowrap;'>%1&nbsp;&nbsp;%2&nbsp;&nbsp;%3</span>"_s
-                      .arg(i18n("%1 GB, %2",
-                          QString::number(dInfo.virtualSizeGb, 'f', 1),
-                          diskInterfaceStr))
+                      .arg(i18n("%1 GB, %2", QString::number(dInfo.virtualSizeGb, 'f', 1), diskInterfaceStr))
                       .arg(barHtml)
-                      .arg(i18n("%1 GB used (%2%)",
-                          QString::number(dInfo.actualSizeGb, 'f', 1),
-                          QString::number(usagePercent, 'f', 0)));
+                      .arg(i18n("%1 GB used (%2%)", QString::number(dInfo.actualSizeGb, 'f', 1), QString::number(usagePercent, 'f', 0)));
     } else {
         diskVal = i18n("Not available");
     }
@@ -1257,12 +1207,8 @@ void MainWindow::updateDetails()
         gpuVal += i18n(" (3D)");
     QString audioVal = VMConfig::toUIString(currentConfig.audioDevice());
     if (currentConfig.audioDevice() == VMSpecs::AudioDevice::Sb16) {
-        const auto& sb = currentConfig.sb16Config();
-        audioVal += u" (IRQ %1, DMA %2/%3, I/O 0x%4)"_s
-                        .arg(sb.irq)
-                        .arg(sb.dma)
-                        .arg(sb.dma16)
-                        .arg(sb.iobase, 0, 16);
+        const auto &sb = currentConfig.sb16Config();
+        audioVal += u" (IRQ %1, DMA %2/%3, I/O 0x%4)"_s.arg(sb.irq).arg(sb.dma).arg(sb.dma16).arg(sb.iobase, 0, 16);
     }
     QString netVal;
     if (currentConfig.networkCard() == VMSpecs::NetworkCard::None) {
@@ -1270,30 +1216,25 @@ void MainWindow::updateDetails()
     } else {
         netVal = VMConfig::toUIString(currentConfig.networkCard());
         netVal += u" (%1)"_s.arg(VMConfig::toUIString(currentConfig.networkMode()));
-        if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
-            && !currentConfig.virtualNetworkName().isEmpty()) {
+        if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !currentConfig.virtualNetworkName().isEmpty()) {
             netVal += u" [%1]"_s.arg(currentConfig.virtualNetworkName());
         }
     }
 
     QString portFwdVal;
-    const auto& portForwards = currentConfig.portForwards();
+    const auto &portForwards = currentConfig.portForwards();
     if (!portForwards.isEmpty()) {
         netVal += u"  [%1 port(s) forwarded]"_s.arg(portForwards.size());
         QStringList portLines;
-        for (const auto& rule : portForwards) {
-            portLines << u"%1 %2 → %3"_s
-                             .arg(VMConfig::toString(rule.protocol).toUpper())
-                             .arg(rule.hostPort)
-                             .arg(rule.guestPort);
+        for (const auto &rule : portForwards) {
+            portLines << u"%1 %2 → %3"_s.arg(VMConfig::toString(rule.protocol).toUpper()).arg(rule.hostPort).arg(rule.guestPort);
         }
         portFwdVal = portLines.join(u", "_s);
     }
 
-    QString usbVal = VMConfig::toUIString(currentConfig.usbController());
+    const QString usbVal = VMConfig::toUIString(currentConfig.usbController());
     QString displayVal = VMConfig::toUIString(currentConfig.displayType());
-    QString resolutionVal = u"%1×%2"_s.arg(currentConfig.displayResolution().width())
-                                .arg(currentConfig.displayResolution().height());
+    const QString resolutionVal = u"%1×%2"_s.arg(currentConfig.displayResolution().width()).arg(currentConfig.displayResolution().height());
     QString firmwareVal = VMConfig::firmwareToUIString(currentConfig.useUefi(), currentConfig.useSecureBoot());
     QString chipsetVal = VMConfig::toUIString(currentConfig.machineType());
 
@@ -1311,25 +1252,20 @@ void MainWindow::updateDetails()
     if (!memFlags.isEmpty())
         memVal += i18n("  [%1]", memFlags.join(u", "));
 
-    QString cpuVal = i18n("%1, %2 core(s), %3", VMConfig::toUIString(currentConfig.cpuModel()),
-        currentConfig.cpuCoreCount(),
-        currentConfig.useKvm() ? i18n("KVM") : i18n("TCG"));
+    QString cpuVal = i18n("%1, %2 core(s), %3",
+                          VMConfig::toUIString(currentConfig.cpuModel()),
+                          currentConfig.cpuCoreCount(),
+                          currentConfig.useKvm() ? i18n("KVM") : i18n("TCG"));
 
-    QString cdVal = currentConfig.isoPath().isEmpty()
-        ? i18n("No disc inserted")
-        : QFileInfo(currentConfig.isoPath()).fileName();
-    QString floppyVal = currentConfig.floppyPath().isEmpty()
-        ? i18n("No disk inserted")
-        : QFileInfo(currentConfig.floppyPath()).fileName();
+    QString cdVal = currentConfig.isoPath().isEmpty() ? i18n("No disc inserted") : QFileInfo(currentConfig.isoPath()).fileName();
+    QString floppyVal = currentConfig.floppyPath().isEmpty() ? i18n("No disk inserted") : QFileInfo(currentConfig.floppyPath()).fileName();
 
     QString sharedVal;
     if (currentConfig.sharedPath().isEmpty()) {
         sharedVal = i18n("Disabled");
     } else {
-        QString protocol = (currentConfig.osType() == VMSpecs::OsType::Windows)
-            ? i18n("virtio-fs")
-            : i18n("9p (VirtFS)");
-        QString tag = currentConfig.sharedName().isEmpty() ? u"share"_s : currentConfig.sharedName();
+        const QString protocol = (currentConfig.osType() == VMSpecs::OsType::Windows) ? i18n("virtio-fs") : i18n("9p (VirtFS)");
+        const QString tag = currentConfig.sharedName().isEmpty() ? u"share"_s : currentConfig.sharedName();
         sharedVal = i18n("%1  [%2, Tag: %3]", currentConfig.sharedPath(), protocol, tag);
     }
 
@@ -1344,8 +1280,7 @@ void MainWindow::updateDetails()
             else
                 statusText += i18n(" <b>Headless</b>");
         }
-        statusText += u"  <span class='pid'>[<a href='copy-pid:%1' title='%2'>PID %1</a>]</span>"_s
-                          .arg(QString::number(pid), i18n("Click to copy PID"));
+        statusText += u"  <span class='pid'>[<a href='copy-pid:%1' title='%2'>PID %1</a>]</span>"_s.arg(QString::number(pid), i18n("Click to copy PID"));
         statusColor = colPositive;
     } else if (isShrinking) {
         statusDot = u"&#x25CF;"_s;
@@ -1380,7 +1315,7 @@ void MainWindow::updateDetails()
         const qreal dpr = detailsBrowser->devicePixelRatioF();
         const int devPx = qRound(targetSize * dpr);
 
-        auto pixmapToImgTag = [&](const QPixmap& src) -> QString {
+        auto pixmapToImgTag = [&](const QPixmap &src) -> QString {
             QImage srcImg = src.toImage();
             srcImg.setDevicePixelRatio(1.0);
 
@@ -1397,9 +1332,7 @@ void MainWindow::updateDetails()
             QBuffer buf(&ba);
             buf.open(QIODevice::WriteOnly);
             canvas.save(&buf, "PNG");
-            return u"<img src='data:image/png;base64,%1' width='%2' height='%2'/>"_s
-                .arg(QString::fromLatin1(ba.toBase64()))
-                .arg(targetSize);
+            return u"<img src='data:image/png;base64,%1' width='%2' height='%2'/>"_s.arg(QString::fromLatin1(ba.toBase64())).arg(targetSize);
         };
 
         QString svgPath;
@@ -1435,45 +1368,51 @@ void MainWindow::updateDetails()
     const int nameSize = basePtSize + 3;
 
     // Theme-aware CSS: system font, em-relative sizing, palette colors only
-    QString css = u"* { margin: 0; padding: 0; }"
-                  "body { font-family: '%1'; font-size: %2pt; color: %3; background: transparent; padding: 1.2em 1.5em; }"
-                  ".header { margin-bottom: 24px; }"
-                  ".vm-icon { width: 58px; height: 58px; vertical-align: top; padding-right: 16px; padding-bottom: 8px; }"
-                  ".header-info { vertical-align: top; padding-top: 2px; }"
-                  ".vm-name { font-size: %10pt; font-weight: 700; color: %3; margin-bottom: 0.15em; letter-spacing: -0.01em; }"
-                  ".vm-status { margin-bottom: 0.15em; }"
-                  ".vm-status .badge { color: %4; font-weight: 600; padding: 2px 8px; background-color: %9; border-radius: 3px; }"
-                  ".vm-status .dot { vertical-align: middle; }"
-                  ".vm-os { color: %5; }"
-                  ".pid { color: %5; margin-left: 8px; }"
-                  ".pid a { color: %6; text-decoration: none; }"
-                  ".pid a:hover { text-decoration: underline; color: %7; }"
-                  ".pid a:hover { text-decoration: underline; color: %7; }"
-                  ".hw-table { width: 100%; border-collapse: collapse; margin-top: 4px; line-height: 1.0; }"
-                  ".hw-table { width: 100%; border-collapse: collapse; margin-top: 4px; line-height: 1.0; }"
-                  ".hw-table td { padding: 2px 10px; vertical-align: middle; }"
-                  ".hw-icon { width: 22px; text-align: center; }"
-                  ".hw-label { color: %3; }"
-                  ".hw-value { color: %3; }"
-                  ".hw-value.muted { color: %5; font-style: italic; }"
-                  ".section-gap td { border-top: 1px solid %8; padding-top: 8px; }"_s
-                      .arg(fontFamily)
-                      .arg(basePtSize)
-                      .arg(colNormal, statusColor, colInactive, colLink, colVisited, colBorder, colBadgeBg)
-                      .arg(nameSize);
+    const QString css =
+        u"* { margin: 0; padding: 0; }"
+        "body { font-family: '%1'; font-size: %2pt; color: %3; background: "
+        "transparent; padding: 1.2em 1.5em; }"
+        ".header { margin-bottom: 24px; }"
+        ".vm-icon { width: 58px; height: 58px; vertical-align: top; "
+        "padding-right: 16px; padding-bottom: 8px; }"
+        ".header-info { vertical-align: top; padding-top: 2px; }"
+        ".vm-name { font-size: %10pt; font-weight: 700; color: %3; "
+        "margin-bottom: 0.15em; letter-spacing: -0.01em; }"
+        ".vm-status { margin-bottom: 0.15em; }"
+        ".vm-status .badge { color: %4; font-weight: 600; padding: 2px 8px; "
+        "background-color: %9; border-radius: 3px; }"
+        ".vm-status .dot { vertical-align: middle; }"
+        ".vm-os { color: %5; }"
+        ".pid { color: %5; margin-left: 8px; }"
+        ".pid a { color: %6; text-decoration: none; }"
+        ".pid a:hover { text-decoration: underline; color: %7; }"
+        ".pid a:hover { text-decoration: underline; color: %7; }"
+        ".hw-table { width: 100%; border-collapse: collapse; margin-top: 4px; "
+        "line-height: 1.0; }"
+        ".hw-table { width: 100%; border-collapse: collapse; margin-top: 4px; "
+        "line-height: 1.0; }"
+        ".hw-table td { padding: 2px 10px; vertical-align: middle; }"
+        ".hw-icon { width: 22px; text-align: center; }"
+        ".hw-label { color: %3; }"
+        ".hw-value { color: %3; }"
+        ".hw-value.muted { color: %5; font-style: italic; }"
+        ".section-gap td { border-top: 1px solid %8; padding-top: 8px; }"_s.arg(fontFamily)
+            .arg(basePtSize)
+            .arg(colNormal, statusColor, colInactive, colLink, colVisited, colBorder, colBadgeBg)
+            .arg(nameSize);
 
     QString html = u"<html><head><style>%1</style></head><body>"_s.arg(css);
 
-    html += u"<table class='header' cellpadding='0' cellspacing='0'><tr>"
-            "<td class='vm-icon'>%1</td>"
-            "<td class='header-info'>"
-            "  <div class='vm-name'>%2</div>"
-            "  <div class='vm-status'>"
-            "    <span class='badge'><span class='dot'>%3</span> %4</span>"
-            "  </div>"
-            "  <div class='vm-os'>%5</div>"
-            "</td></tr></table>"_s.arg(iconImgTag, currentConfig.name(),
-                statusDot, statusText, osVal);
+    html +=
+        u"<table class='header' cellpadding='0' cellspacing='0'><tr>"
+        "<td class='vm-icon'>%1</td>"
+        "<td class='header-info'>"
+        "  <div class='vm-name'>%2</div>"
+        "  <div class='vm-status'>"
+        "    <span class='badge'><span class='dot'>%3</span> %4</span>"
+        "  </div>"
+        "  <div class='vm-os'>%5</div>"
+        "</td></tr></table>"_s.arg(iconImgTag, currentConfig.name(), statusDot, statusText, osVal);
 
     struct HwRow {
         QString iconName; // freedesktop / Breeze theme icon name
@@ -1484,69 +1423,54 @@ void MainWindow::updateDetails()
     };
 
     QList<HwRow> rows = {
-        { u"preferences-system"_s, i18n("Firmware"), firmwareVal, false, false },
-        { u"computer"_s, i18n("Chipset"), chipsetVal, false, false },
-        { u"security-high"_s, i18n("TPM"),
-            currentConfig.useTpm() ? i18n("TPM 2.0 (swtpm)") : i18n("None"),
-            false, !currentConfig.useTpm() },
-        { u"clock"_s, i18n("Clock"),
-            currentConfig.useLocalTime() ? i18n("Localtime") : i18n("UTC"),
-            false, false },
-        { u"media-flash"_s, i18n("Memory"), memVal, true, false },
-        { u"cpu"_s, i18n("Processors"), cpuVal, false, false },
-        { u"drive-harddisk"_s, i18n("Hard Disk"), diskVal, true, false },
-        { u"media-optical"_s, i18n("CD/DVD"), cdVal,
-            false, currentConfig.isoPath().isEmpty() },
-        { u"media-floppy"_s, i18n("Floppy"), floppyVal,
-            false, currentConfig.floppyPath().isEmpty() },
-        { u"video-display"_s, i18n("Display"),
-            gpuVal + u", "_s + displayVal
-                + (currentConfig.displayType() != VMSpecs::DisplayType::Spice
-                        ? u" (%1)"_s.arg(resolutionVal)
-                        : QString()),
-            true, false },
-        { u"audio-card"_s, i18n("Sound Card"), audioVal,
-            true, currentConfig.audioDevice() == VMSpecs::AudioDevice::None },
-        { u"network-wired"_s, i18n("Network Adapter"), netVal,
-            true, currentConfig.networkCard() == VMSpecs::NetworkCard::None }
-    };
+        {u"preferences-system"_s, i18n("Firmware"), firmwareVal, false, false},
+        {u"computer"_s, i18n("Chipset"), chipsetVal, false, false},
+        {u"security-high"_s, i18n("TPM"), currentConfig.useTpm() ? i18n("TPM 2.0 (swtpm)") : i18n("None"), false, !currentConfig.useTpm()},
+        {u"clock"_s, i18n("Clock"), currentConfig.useLocalTime() ? i18n("Localtime") : i18n("UTC"), false, false},
+        {u"media-flash"_s, i18n("Memory"), memVal, true, false},
+        {u"cpu"_s, i18n("Processors"), cpuVal, false, false},
+        {u"drive-harddisk"_s, i18n("Hard Disk"), diskVal, true, false},
+        {u"media-optical"_s, i18n("CD/DVD"), cdVal, false, currentConfig.isoPath().isEmpty()},
+        {u"media-floppy"_s, i18n("Floppy"), floppyVal, false, currentConfig.floppyPath().isEmpty()},
+        {u"video-display"_s,
+         i18n("Display"),
+         gpuVal + u", "_s + displayVal + (currentConfig.displayType() != VMSpecs::DisplayType::Spice ? u" (%1)"_s.arg(resolutionVal) : QString()),
+         true,
+         false},
+        {u"audio-card"_s, i18n("Sound Card"), audioVal, true, currentConfig.audioDevice() == VMSpecs::AudioDevice::None},
+        {u"network-wired"_s, i18n("Network Adapter"), netVal, true, currentConfig.networkCard() == VMSpecs::NetworkCard::None}};
 
     if (!portFwdVal.isEmpty())
-        rows.append({ u"network-connect"_s, i18n("Port Forwarding"), portFwdVal, false, false });
+        rows.append({u"network-connect"_s, i18n("Port Forwarding"), portFwdVal, false, false});
 
-    if ((isRunning || isDeploying)
-        && currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
-        && !currentConfig.virtualNetworkName().isEmpty()
+    if ((isRunning || isDeploying) && currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !currentConfig.virtualNetworkName().isEmpty()
         && m_networkManager) {
         const qint64 nsPid = m_networkManager->namespacePid(currentConfig.virtualNetworkName());
         if (nsPid > 0) {
             const int vmCount = m_networkManager->connectedVmCount(currentConfig.virtualNetworkName());
-            QString nsVal = u"<a href='copy-pid:%1' title='%2'>PID %1</a>"_s
-                                .arg(QString::number(nsPid), i18n("Click to copy namespace PID"));
-            nsVal += u"  [%1, %2]"_s
-                         .arg(currentConfig.virtualNetworkName())
-                         .arg(i18np("%1 VM connected", "%1 VMs connected", vmCount));
-            rows.append({ u"network-server"_s, i18n("Namespace"), nsVal, false, false });
+            QString nsVal = u"<a href='copy-pid:%1' title='%2'>PID %1</a>"_s.arg(QString::number(nsPid), i18n("Click to copy namespace PID"));
+            nsVal += u"  [%1, %2]"_s.arg(currentConfig.virtualNetworkName()).arg(i18np("%1 VM connected", "%1 VMs connected", vmCount));
+            rows.append({u"network-server"_s, i18n("Namespace"), nsVal, false, false});
         }
     }
 
-    rows.append({ u"drive-removable-media-usb"_s, i18n("USB Controller"), usbVal, true, false });
-    rows.append({ u"folder-network"_s, i18n("Shared Folders"), sharedVal,
-        true, currentConfig.sharedPath().isEmpty() });
+    rows.append({u"drive-removable-media-usb"_s, i18n("USB Controller"), usbVal, true, false});
+    rows.append({u"folder-network"_s, i18n("Shared Folders"), sharedVal, true, currentConfig.sharedPath().isEmpty()});
 
     const int hwIconPx = 14;
 
     html += u"<table class='hw-table' cellspacing='0' cellpadding='0'>"_s;
-    for (const auto& row : rows) {
+    for (const auto &row : rows) {
         const QString trClass = row.sectionStart ? u" class='section-gap'"_s : QString();
         const QString valClass = row.muted ? u"hw-value muted"_s : u"hw-value"_s;
         const QString iconImg = encodeThemeIcon(row.iconName, hwIconPx);
 
-        html += u"<tr%1>"
-                "<td class='hw-icon'>%2</td>"
-                "<td class='hw-label'>%3</td>"
-                "<td class='%4'>%5</td>"
-                "</tr>"_s.arg(trClass, iconImg, row.label, valClass, row.value);
+        html +=
+            u"<tr%1>"
+            "<td class='hw-icon'>%2</td>"
+            "<td class='hw-label'>%3</td>"
+            "<td class='%4'>%5</td>"
+            "</tr>"_s.arg(trClass, iconImg, row.label, valClass, row.value);
     }
     html += u"</table></body></html>"_s;
 
@@ -1565,7 +1489,7 @@ void MainWindow::onVmSelectionChanged()
     updateActionStates();
 
     if (perfMonitor) {
-        const VmEntry* entry = veModel->entryByName(name);
+        const VmEntry *entry = veModel->entryByName(name);
         if (entry && entry->state == VmEntry::State::Running) {
             perfMonitor->setHistory(PerformanceMonitorWidget::Cpu, entry->cpuHistory);
             perfMonitor->setHistory(PerformanceMonitorWidget::Ram, entry->ramHistory);
@@ -1590,7 +1514,7 @@ void MainWindow::openSettingsPage(SettingsDialog::Page page)
     dlg.setPage(page);
     if (dlg.exec() == QDialog::Accepted) {
         currentConfig = VMConfig();
-        QDir dir = getVmBaseDir();
+        const QDir dir = getVmBaseDir();
         if (!dir.exists())
             dir.mkpath(u"."_s);
         loadVmList();
@@ -1600,9 +1524,9 @@ void MainWindow::openSettingsPage(SettingsDialog::Page page)
     }
 }
 
-void MainWindow::saveVmConfig(const QString& vmPath, const VMConfig& config)
+void MainWindow::saveVmConfig(const QString &vmPath, const VMConfig &config)
 {
-    QJsonDocument doc(config.toJson());
+    const QJsonDocument doc(config.toJson());
     QFile file(vmPath + u"/"_s + KEMUConst::VMConfigFileName);
     if (file.open(QIODevice::WriteOnly)) {
         file.write(doc.toJson(QJsonDocument::Indented));
@@ -1620,7 +1544,7 @@ void MainWindow::saveVmConfig(const QString& vmPath, const VMConfig& config)
     generateShellScript(vmPath, config);
 }
 
-void MainWindow::generateShellScript(const QString& vmPath, const VMConfig& config)
+void MainWindow::generateShellScript(const QString &vmPath, const VMConfig &config)
 {
     const QString sockPath = vmPath + u"/qemu-monitor.sock"_s;
 
@@ -1630,7 +1554,7 @@ void MainWindow::generateShellScript(const QString& vmPath, const VMConfig& conf
 
     const VirtualNetwork net = (m_networkManager && config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         ? m_networkManager->network(config.virtualNetworkName())
-        : VirtualNetwork { };
+        : VirtualNetwork{};
 
     const QString script = QemuCommandBuilder::buildShellScript(config, QDir(vmPath), sockPath, netCtx, net, true);
 
@@ -1643,12 +1567,12 @@ void MainWindow::generateShellScript(const QString& vmPath, const VMConfig& conf
     }
 }
 
-VMConfig MainWindow::loadVmConfig(const QString& vmPath) const
+VMConfig MainWindow::loadVmConfig(const QString &vmPath) const
 {
     QFile file(vmPath + u"/"_s + KEMUConst::VMConfigFileName);
     if (!file.open(QIODevice::ReadOnly)) {
         qWarning() << "Failed to read config.json:" << file.errorString();
-        return { };
+        return {};
     }
 
     VMConfig config = VMConfig::fromJson(QJsonDocument::fromJson(file.readAll()).object());
@@ -1667,13 +1591,12 @@ void MainWindow::loadVmList()
 {
     const QMap<QString, QString> assignments = loadFolderAssignments();
 
-    veModel->reload(getVmBaseDir(), assignments,
-        [this](const QString& vmPath) {
-            return loadVmConfig(vmPath);
-        });
+    veModel->reload(getVmBaseDir(), assignments, [this](const QString &vmPath) {
+        return loadVmConfig(vmPath);
+    });
 
     QStringList macs = usedMacAddresses();
-    for (const QString& name : veModel->vmNames()) {
+    for (const QString &name : veModel->vmNames()) {
         const QString vmPath = getVmDir(name).absolutePath();
         VMConfig cfg = loadVmConfig(vmPath);
         if (cfg.networkCard() != VMSpecs::NetworkCard::None && cfg.macAddress().isEmpty()) {
@@ -1686,8 +1609,8 @@ void MainWindow::loadVmList()
     KConfig kconfig(u"kemurc"_s);
     const QStringList collapsed = kconfig.group(u"Folders"_s).readEntry(u"collapsed"_s, QStringList());
 
-    for (const QString& folder : veModel->folderNames()) {
-        QModelIndex idx = veModel->indexForFolder(folder);
+    for (const QString &folder : veModel->folderNames()) {
+        const QModelIndex idx = veModel->indexForFolder(folder);
         if (idx.isValid() && !collapsed.contains(folder))
             veTreeView->expand(idx);
     }
@@ -1695,7 +1618,7 @@ void MainWindow::loadVmList()
     statusBar()->showMessage(i18n("%1 virtual machine(s) found.", veModel->vmNames().size()));
 }
 
-DiskInfo MainWindow::getDiskInfo(const QString& diskPath)
+DiskInfo MainWindow::getDiskInfo(const QString &diskPath)
 {
     DiskInfo info;
     if (!QFile::exists(diskPath))
@@ -1707,15 +1630,15 @@ DiskInfo MainWindow::getDiskInfo(const QString& diskPath)
     KProcess p;
     p.setOutputChannelMode(KProcess::SeparateChannels);
     p.setProgram(ExternalTools::instance().path(ExternalTools::QemuImg));
-    p.setArguments({ u"info"_s, u"--output=json"_s, u"--force-share"_s, diskPath });
+    p.setArguments({u"info"_s, u"--output=json"_s, u"--force-share"_s, diskPath});
     p.start();
     const bool finished = p.waitForFinished(5000);
 
     if (finished && p.exitStatus() == KProcess::NormalExit && p.exitCode() == 0) {
-        QJsonDocument doc = QJsonDocument::fromJson(p.readAllStandardOutput());
+        const QJsonDocument doc = QJsonDocument::fromJson(p.readAllStandardOutput());
         QJsonObject obj = doc.object();
-        double virtBytes = obj[u"virtual-size"_s].toDouble();
-        double actBytes = obj[u"actual-size"_s].toDouble();
+        const double virtBytes = obj[u"virtual-size"_s].toDouble();
+        const double actBytes = obj[u"actual-size"_s].toDouble();
         info.virtualSizeGb = virtBytes / (1024.0 * 1024.0 * 1024.0);
         info.actualSizeGb = actBytes / (1024.0 * 1024.0 * 1024.0);
         info.isValid = true;
@@ -1728,39 +1651,43 @@ bool MainWindow::vmSupportsScreendump() const
     return !currentConfig.gpu3dAcceleration();
 }
 
-QString MainWindow::ensureNetworkRunning(const QString& networkName, const QString& vmName)
+QString MainWindow::ensureNetworkRunning(const QString &networkName, const QString &vmName)
 {
     if (!VirtualNetworkManager::isUserNamespaceSupported()) {
-        KMessageBox::error(this, i18n("User namespaces are not supported on this system. Virtual networking requires unprivileged user namespaces."));
-        return { };
+        KMessageBox::error(this,
+                           i18n("User namespaces are not supported on this system. Virtual "
+                                "networking requires unprivileged user namespaces."));
+        return {};
     }
 
     if (!ExternalTools::instance().isVirtualNetworkCapable()) {
-        KMessageBox::error(this, i18n("Required tools for virtual networking are missing. Please check Settings → Executables."));
-        return { };
+        KMessageBox::error(this,
+                           i18n("Required tools for virtual networking are "
+                                "missing. Please check Settings → Executables."));
+        return {};
     }
 
     const VirtualNetwork net = m_networkManager->network(networkName);
     if (!net.isValid()) {
         KMessageBox::error(this, i18n("Virtual network '%1' not found or invalid: %2", networkName, networkName, m_networkManager->lastError()));
-        return { };
+        return {};
     }
 
     if (!m_networkManager->startNetwork(networkName)) {
         KMessageBox::error(this, i18n("Failed to start virtual network '%1': %2", networkName, m_networkManager->lastError()));
-        return { };
+        return {};
     }
 
     const QString tapDevice = m_networkManager->attachVm(networkName, vmName);
     if (tapDevice.isEmpty()) {
         KMessageBox::error(this, i18n("Failed to create network interface for VM '%1': %2", vmName, networkName, m_networkManager->lastError()));
-        return { };
+        return {};
     }
 
     return tapDevice;
 }
 
-void MainWindow::releaseNetwork(const VMConfig& config)
+void MainWindow::releaseNetwork(const VMConfig &config)
 {
     if (!m_networkManager)
         return;
@@ -1771,9 +1698,9 @@ void MainWindow::releaseNetwork(const VMConfig& config)
     m_networkManager->detachVm(config.virtualNetworkName(), config.name());
 }
 
-void MainWindow::tearDownVmRuntime(const QString& vmName)
+void MainWindow::tearDownVmRuntime(const QString &vmName)
 {
-    VmEntry* entry = veModel->entryByName(vmName);
+    VmEntry *entry = veModel->entryByName(vmName);
     if (!entry)
         return;
 
@@ -1788,7 +1715,7 @@ void MainWindow::tearDownVmRuntime(const QString& vmName)
     stopDbusViewer(vmName);
     cleanupDbusSocket(vmName);
 
-    auto stopHelper = [](QPointer<KProcess>& p, int waitMs) {
+    auto stopHelper = [](QPointer<KProcess> &p, int waitMs) {
         if (!p)
             return;
         p->disconnect();
@@ -1832,17 +1759,14 @@ void MainWindow::changeISO()
     m_lastMediaDir[currentConfig.name()] = QFileInfo(isoPath).absolutePath();
 
     if (veModel->isRunning(currentConfig.name())) {
-        const VmEntry* entry = veModel->entryByName(currentConfig.name());
+        const VmEntry *entry = veModel->entryByName(currentConfig.name());
         if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
             KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
             return;
         }
 
-        QMPResult result = entry->qmpClient->sendCommandSync(
-            u"blockdev-change-medium"_s,
-            { { u"id"_s, u"cdrom0"_s },
-                { u"filename"_s, isoPath },
-                { u"format"_s, u"raw"_s } });
+        const QMPResult result =
+            entry->qmpClient->sendCommandSync(u"blockdev-change-medium"_s, {{u"id"_s, u"cdrom0"_s}, {u"filename"_s, isoPath}, {u"format"_s, u"raw"_s}});
 
         if (!result.success) {
             KMessageBox::error(this, i18n("Changing ISO Failed"), result.errorMessage);
@@ -1865,7 +1789,7 @@ void MainWindow::ejectISO()
         return;
 
     if (veModel->isRunning(currentConfig.name())) {
-        const VmEntry* entry = veModel->entryByName(currentConfig.name());
+        const VmEntry *entry = veModel->entryByName(currentConfig.name());
         if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
             KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
             return;
@@ -1873,7 +1797,7 @@ void MainWindow::ejectISO()
 
         QJsonObject ejectArgs;
         ejectArgs.insert(u"id"_s, u"cdrom0"_s);
-        QMPResult result = entry->qmpClient->sendCommandSync(u"eject"_s, ejectArgs);
+        const QMPResult result = entry->qmpClient->sendCommandSync(u"eject"_s, ejectArgs);
 
         if (!result.success) {
             KMessageBox::error(this, i18n("Eject Failed"), result.errorMessage);
@@ -1896,24 +1820,24 @@ void MainWindow::changeFloppy()
         return;
 
     const QDir startDir = m_lastMediaDir.value(currentConfig.name(), QDir::homePath());
-    const QString imagePath = QFileDialog::getOpenFileName(this, i18n("Select Floppy Image"), startDir.absolutePath(), i18n("Floppy Images (*.img *.ima *.flp *.vfd);;All Files (*)"));
+    const QString imagePath = QFileDialog::getOpenFileName(this,
+                                                           i18n("Select Floppy Image"),
+                                                           startDir.absolutePath(),
+                                                           i18n("Floppy Images (*.img *.ima *.flp *.vfd);;All Files (*)"));
     if (imagePath.isEmpty())
         return;
 
     m_lastMediaDir[currentConfig.name()] = QFileInfo(imagePath).absolutePath();
 
     if (veModel->isRunning(currentConfig.name())) {
-        const VmEntry* entry = veModel->entryByName(currentConfig.name());
+        const VmEntry *entry = veModel->entryByName(currentConfig.name());
         if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
             KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
             return;
         }
 
-        QMPResult result = entry->qmpClient->sendCommandSync(
-            u"blockdev-change-medium"_s,
-            { { u"id"_s, u"fda"_s },
-                { u"filename"_s, imagePath },
-                { u"format"_s, u"raw"_s } });
+        const QMPResult result =
+            entry->qmpClient->sendCommandSync(u"blockdev-change-medium"_s, {{u"id"_s, u"fda"_s}, {u"filename"_s, imagePath}, {u"format"_s, u"raw"_s}});
 
         if (!result.success) {
             KMessageBox::error(this, i18n("Changing floppy image failed"), result.errorMessage);
@@ -1937,7 +1861,7 @@ void MainWindow::ejectFloppy()
         return;
 
     if (veModel->isRunning(currentConfig.name())) {
-        const VmEntry* entry = veModel->entryByName(currentConfig.name());
+        const VmEntry *entry = veModel->entryByName(currentConfig.name());
         if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
             KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
             return;
@@ -1945,7 +1869,7 @@ void MainWindow::ejectFloppy()
 
         QJsonObject ejectArgs;
         ejectArgs.insert(u"id"_s, u"fda"_s);
-        QMPResult result = entry->qmpClient->sendCommandSync(u"eject"_s, ejectArgs);
+        const QMPResult result = entry->qmpClient->sendCommandSync(u"eject"_s, ejectArgs);
 
         if (!result.success) {
             KMessageBox::error(this, i18n("Eject floppy failed"), result.errorMessage);
@@ -1969,28 +1893,28 @@ void MainWindow::shrinkDisk()
     if (veModel->isBusy(currentConfig.name()))
         return;
 
-    DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
+    const DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
     QString sizeInfo;
     if (dInfo.isValid) {
         sizeInfo = i18n("\n\nCurrent size: %1 GB (virtual), %2 GB (actual on disk)",
-            QString::number(dInfo.virtualSizeGb, 'f', 1),
-            QString::number(dInfo.actualSizeGb, 'f', 1));
+                        QString::number(dInfo.virtualSizeGb, 'f', 1),
+                        QString::number(dInfo.actualSizeGb, 'f', 1));
     }
 
-    auto answer = KMessageBox::questionTwoActions(
-        this,
-        i18n("Compact the disk image of VM '%1'?\n\n"
-             "This will rewrite the disk image to reclaim unused space. "
-             "The VM must remain stopped during the operation.%2",
-            currentConfig.name(), sizeInfo),
-        i18nc("@title:window", "Compact Disk Image"),
-        KGuiItem(i18n("Compact"), u"edit-clear-history"_s),
-        KStandardGuiItem::cancel());
+    auto answer = KMessageBox::questionTwoActions(this,
+                                                  i18n("Compact the disk image of VM '%1'?\n\n"
+                                                       "This will rewrite the disk image to reclaim unused space. "
+                                                       "The VM must remain stopped during the operation.%2",
+                                                       currentConfig.name(),
+                                                       sizeInfo),
+                                                  i18nc("@title:window", "Compact Disk Image"),
+                                                  KGuiItem(i18n("Compact"), u"edit-clear-history"_s),
+                                                  KStandardGuiItem::cancel());
 
     if (answer != KMessageBox::PrimaryAction)
         return;
 
-    auto* job = new ShrinkJob(currentConfig.name(), currentConfig.diskPath(), this);
+    auto *job = new ShrinkJob(currentConfig.name(), currentConfig.diskPath(), this);
 
     if (jobTracker) {
         jobTracker->registerJob(job);
@@ -1998,19 +1922,19 @@ void MainWindow::shrinkDisk()
 
     veModel->setVmState(currentConfig.name(), VmEntry::State::Shrinking);
 
-    connect(job, &ShrinkJob::finished, this, [this](KJob* kjob) {
-        auto* shrinkJob = qobject_cast<ShrinkJob*>(kjob);
+    connect(job, &ShrinkJob::finished, this, [this](KJob *kjob) {
+        auto *shrinkJob = qobject_cast<ShrinkJob *>(kjob);
         if (!shrinkJob)
             return;
 
-        QString vmName = shrinkJob->vmName();
+        const QString vmName = shrinkJob->vmName();
         veModel->setVmState(vmName, VmEntry::State::Stopped);
 
         if (shrinkJob->error()) {
             statusBar()->showMessage(i18n("Disk compaction of VM '%1' failed: %2", vmName, shrinkJob->errorText()));
         } else {
-            VMConfig config = loadVmConfig(getVmDir(vmName).absolutePath());
-            DiskInfo dInfo = getDiskInfo(config.diskPath());
+            const VMConfig config = loadVmConfig(getVmDir(vmName).absolutePath());
+            const DiskInfo dInfo = getDiskInfo(config.diskPath());
 
             QString newSizeMsg = u"."_s;
             if (dInfo.isValid) {
@@ -2048,10 +1972,10 @@ void MainWindow::manageSnapshots()
         return;
     }
 
-    const VmEntry* entry = veModel->entryByName(vmName);
-    QPointer<QMPClient> qmp = entry ? entry->qmpClient : nullptr;
+    const VmEntry *entry = veModel->entryByName(vmName);
+    const QPointer<QMPClient> qmp = entry ? entry->qmpClient : nullptr;
 
-    auto* dlg = new SnapshotDialog(vmName, cfg.diskPath(), qmp, this);
+    auto *dlg = new SnapshotDialog(vmName, cfg.diskPath(), qmp, this);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->exec();
 }
@@ -2070,12 +1994,11 @@ void MainWindow::exportVM()
     QString filterOva = i18n("OVA Files (*.ova)");
     QString selectedFilter;
 
-    QString filePath = QFileDialog::getSaveFileName(
-        this,
-        i18n("Export VM '%1'", currentConfig.name()),
-        QDir::homePath() + u"/"_s + currentConfig.name(),
-        filterKemu + u";;"_s + filterOva,
-        &selectedFilter);
+    QString filePath = QFileDialog::getSaveFileName(this,
+                                                    i18n("Export VM '%1'", currentConfig.name()),
+                                                    QDir::homePath() + u"/"_s + currentConfig.name(),
+                                                    filterKemu + u";;"_s + filterOva,
+                                                    &selectedFilter);
 
     if (filePath.isEmpty())
         return;
@@ -2088,27 +2011,25 @@ void MainWindow::exportVM()
         if (!filePath.endsWith(u".kemu.tar.zst"_s))
             filePath += u".kemu.tar.zst"_s;
 
-        auto* job = new ExportJob(currentConfig.name(), getVmDir(currentConfig.name()).absolutePath(), filePath, this);
+        auto *job = new ExportJob(currentConfig.name(), getVmDir(currentConfig.name()).absolutePath(), filePath, this);
         if (jobTracker) {
             jobTracker->registerJob(job);
         }
         veModel->setVmState(currentConfig.name(), VmEntry::State::Exporting);
 
-        connect(job, &ExportJob::finished, this, [this](KJob* kjob) {
-            auto* exportJob = qobject_cast<ExportJob*>(kjob);
+        connect(job, &ExportJob::finished, this, [this](KJob *kjob) {
+            auto *exportJob = qobject_cast<ExportJob *>(kjob);
             if (!exportJob)
                 return;
 
-            QString vmName = exportJob->vmName();
+            const QString vmName = exportJob->vmName();
             veModel->setVmState(vmName, VmEntry::State::Stopped);
 
             if (exportJob->error()) {
-                statusBar()->showMessage(
-                    i18n("Export of VM '%1' failed: %2", vmName, exportJob->errorText()));
+                statusBar()->showMessage(i18n("Export of VM '%1' failed: %2", vmName, exportJob->errorText()));
                 KMessageBox::error(this, i18n("Failed to export VM '%1':\n%2", vmName, exportJob->errorText()), i18n("Export Failed"));
             } else {
-                statusBar()->showMessage(
-                    i18n("VM '%1' exported successfully.", vmName));
+                statusBar()->showMessage(i18n("VM '%1' exported successfully.", vmName));
             }
 
             if (currentConfig.name() == vmName) {
@@ -2129,11 +2050,11 @@ void MainWindow::exportVM()
 
 void MainWindow::importVM()
 {
-    const QString filePath = QFileDialog::getOpenFileName(
-        this,
-        i18n("Import Virtual Machine"),
-        QDir::homePath(),
-        i18n("KEMU Portable Archives (*.kemu.tar.zst);;OVA Files (*.ova);;All Files (*)"));
+    const QString filePath = QFileDialog::getOpenFileName(this,
+                                                          i18n("Import Virtual Machine"),
+                                                          QDir::homePath(),
+                                                          i18n("KEMU Portable Archives (*.kemu.tar.zst);;OVA Files (*.ova);;All "
+                                                               "Files (*)"));
 
     if (filePath.isEmpty())
         return;
@@ -2145,26 +2066,24 @@ void MainWindow::importVM()
 
     const QString vmBaseDir = getVmBaseDir().absolutePath();
 
-    auto* job = new ImportJob(filePath, vmBaseDir, this);
+    auto *job = new ImportJob(filePath, vmBaseDir, this);
     if (jobTracker) {
         jobTracker->registerJob(job);
     }
     activeImports.append(job);
 
-    connect(job, &ImportJob::finished, this, [this, vmBaseDir](KJob* kjob) {
-        auto* importJob = qobject_cast<ImportJob*>(kjob);
+    connect(job, &ImportJob::finished, this, [this, vmBaseDir](KJob *kjob) {
+        auto *importJob = qobject_cast<ImportJob *>(kjob);
         if (!importJob)
             return;
 
         activeImports.removeOne(importJob);
 
         if (importJob->error()) {
-
             statusBar()->showMessage(i18n("Import failed: %1", importJob->errorText()));
             KMessageBox::error(this, i18n("Failed to import VM:\n%1", importJob->errorText()), i18n("Import Failed"));
 
         } else {
-
             if (SettingsDialog::importRegenerateMac()) {
                 VMConfig config = loadVmConfig(vmBaseDir);
                 config.setMacAddress(Utils::generateRandomMac(usedMacAddresses()));
@@ -2191,16 +2110,16 @@ void MainWindow::saveScreenshot()
 
     if (!vmSupportsScreendump()) {
         KMessageBox::information(this,
-            i18n("Screenshots are not available for VMs using VirtIO-GL.\n\n"
-                 "The GPU renders directly via OpenGL on the host, "
-                 "so QEMU has no software framebuffer to capture.\n\n"
-                 "To use this feature, switch the GPU type to "
-                 "'VGA' or 'VirtIO' in the VM settings."),
-            i18n("Screenshot Not Available"));
+                                 i18n("Screenshots are not available for VMs using VirtIO-GL.\n\n"
+                                      "The GPU renders directly via OpenGL on the host, "
+                                      "so QEMU has no software framebuffer to capture.\n\n"
+                                      "To use this feature, switch the GPU type to "
+                                      "'VGA' or 'VirtIO' in the VM settings."),
+                                 i18n("Screenshot Not Available"));
         return;
     }
 
-    const VmEntry* entry = veModel->entryByName(vmName);
+    const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
         KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
         return;
@@ -2226,23 +2145,15 @@ void MainWindow::saveScreenshot()
     }
 
     const QString picturesDir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
-    const QString defaultName = u"%1/%2_%3.png"_s.arg(
-        picturesDir,
-        vmName,
-        QDateTime::currentDateTime().toString(u"yyyyMMdd_HHmmss"_s));
+    const QString defaultName = u"%1/%2_%3.png"_s.arg(picturesDir, vmName, QDateTime::currentDateTime().toString(u"yyyyMMdd_HHmmss"_s));
 
-    const QString filePath = QFileDialog::getSaveFileName(
-        this,
-        i18n("Save Screenshot"),
-        defaultName,
-        i18n("PNG Image (*.png);;JPEG Image (*.jpg *.jpeg)"));
+    const QString filePath = QFileDialog::getSaveFileName(this, i18n("Save Screenshot"), defaultName, i18n("PNG Image (*.png);;JPEG Image (*.jpg *.jpeg)"));
 
     if (filePath.isEmpty())
         return;
 
     QByteArray format = "PNG";
-    if (filePath.endsWith(u".jpg"_s, Qt::CaseInsensitive)
-        || filePath.endsWith(u".jpeg"_s, Qt::CaseInsensitive)) {
+    if (filePath.endsWith(u".jpg"_s, Qt::CaseInsensitive) || filePath.endsWith(u".jpeg"_s, Qt::CaseInsensitive)) {
         format = "JPEG";
     }
 
@@ -2267,33 +2178,34 @@ void MainWindow::openNetworkShell()
         return;
 
     // Build the nsenter command as a single shell string
-    const QString nsenterCmd = u"echo '-- KEMU Network Shell --'; "
-                               u"echo 'Network: %1  (Namespace PID %2)'; "
-                               u"echo 'Hint: Root privileges are mapped to the UID of the user executing KEMU.'; "
-                               u"echo 'Type exit to leave.'; echo; "
-                               u"exec nsenter -t %2 -U --preserve-credentials -n -- /bin/bash"_s
-                                   .arg(netName)
-                                   .arg(nsPid);
+    const QString nsenterCmd =
+        u"echo '-- KEMU Network Shell --'; "
+        u"echo 'Network: %1  (Namespace PID %2)'; "
+        u"echo 'Hint: Root privileges are mapped to the UID of the user "
+        u"executing KEMU.'; "
+        u"echo 'Type exit to leave.'; echo; "
+        u"exec nsenter -t %2 -U --preserve-credentials -n -- /bin/bash"_s.arg(netName)
+            .arg(nsPid);
 
     // Try konsole first, then xterm as fallback
     const QString konsole = QStandardPaths::findExecutable(u"konsole"_s);
     const QString xterm = QStandardPaths::findExecutable(u"xterm"_s);
 
-    auto* process = new KProcess(this);
+    auto *process = new KProcess(this);
     connect(process, &KProcess::finished, process, &KProcess::deleteLater);
 
     if (!konsole.isEmpty()) {
         process->setProgram(konsole);
-        process->setArguments({ u"--separate"_s, u"--title"_s, i18n("KEMU Network Shell -- %1", netName), u"-e"_s, u"/bin/bash"_s, u"-c"_s, nsenterCmd });
+        process->setArguments({u"--separate"_s, u"--title"_s, i18n("KEMU Network Shell -- %1", netName), u"-e"_s, u"/bin/bash"_s, u"-c"_s, nsenterCmd});
     } else if (!xterm.isEmpty()) {
         process->setProgram(xterm);
-        process->setArguments({ u"-title"_s, i18n("KEMU Network Shell -- %1", netName), u"-e"_s, u"/bin/bash"_s, u"-c"_s, nsenterCmd });
+        process->setArguments({u"-title"_s, i18n("KEMU Network Shell -- %1", netName), u"-e"_s, u"/bin/bash"_s, u"-c"_s, nsenterCmd});
     } else {
         KMessageBox::error(this,
-            i18n("No terminal emulator found.\n\n"
-                 "You can enter the namespace manually:\n"
-                 "nsenter -t %1 -U --preserve-credentials -n -- /bin/bash",
-                nsPid));
+                           i18n("No terminal emulator found.\n\n"
+                                "You can enter the namespace manually:\n"
+                                "nsenter -t %1 -U --preserve-credentials -n -- /bin/bash",
+                                nsPid));
         delete process;
         return;
     }
@@ -2301,8 +2213,7 @@ void MainWindow::openNetworkShell()
     process->start();
 
     if (!process->waitForStarted(3000)) {
-        KMessageBox::error(this,
-            i18n("Failed to open terminal: %1", process->errorString()));
+        KMessageBox::error(this, i18n("Failed to open terminal: %1", process->errorString()));
         delete process;
     }
 }
@@ -2313,7 +2224,7 @@ void MainWindow::reconnectViewer()
     if (vmName.isEmpty())
         return;
 
-    VmEntry* entry = veModel->entryByName(vmName);
+    const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || entry->state != VmEntry::State::Running)
         return;
 
@@ -2351,7 +2262,7 @@ void MainWindow::onTreeSelectionChanged()
     onVmSelectionChanged();
 }
 
-void MainWindow::onTreeDoubleClicked(const QModelIndex& index)
+void MainWindow::onTreeDoubleClicked(const QModelIndex &index)
 {
     const int itemType = index.data(VirtualEnvironmentModel::ItemTypeRole).toInt();
 
@@ -2359,19 +2270,13 @@ void MainWindow::onTreeDoubleClicked(const QModelIndex& index)
         veTreeView->setExpanded(index, !veTreeView->isExpanded(index));
     } else {
         const QString vmName = index.data(VirtualEnvironmentModel::VmNameRole).toString();
-        const VmEntry* entry = veModel->entryByName(vmName);
+        const VmEntry *entry = veModel->entryByName(vmName);
 
-        const bool spiceReconnect = entry
-            && entry->state == VmEntry::State::Running
-            && entry->isHeadless
-            && entry->config.displayType() == VMSpecs::DisplayType::Spice
-            && !entry->spiceViewerProcess;
+        const bool spiceReconnect = entry && entry->state == VmEntry::State::Running && entry->isHeadless
+            && entry->config.displayType() == VMSpecs::DisplayType::Spice && !entry->spiceViewerProcess;
 
-        const bool dbusReconnect = entry
-            && entry->state == VmEntry::State::Running
-            && entry->isHeadless
-            && entry->config.displayType() == VMSpecs::DisplayType::Dbus
-            && !m_dbusViewers.contains(vmName);
+        const bool dbusReconnect = entry && entry->state == VmEntry::State::Running && entry->isHeadless
+            && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !m_dbusViewers.contains(vmName);
 
         if (spiceReconnect || dbusReconnect) {
             reconnectViewer();
@@ -2386,19 +2291,19 @@ void MainWindow::onDropCompleted()
     saveFolderStructure();
 }
 
-void MainWindow::showContextMenu(const QPoint& pos)
+void MainWindow::showContextMenu(const QPoint &pos)
 {
-    QModelIndex idx = veTreeView->indexAt(pos);
+    const QModelIndex idx = veTreeView->indexAt(pos);
     QMenu contextMenu(this);
 
     if (idx.isValid()) {
-        int itemType = idx.data(VirtualEnvironmentModel::ItemTypeRole).toInt();
+        const int itemType = idx.data(VirtualEnvironmentModel::ItemTypeRole).toInt();
 
         if (itemType == VirtualEnvironmentModel::Folder) {
-            auto* renameAction = contextMenu.addAction(QIcon::fromTheme(u"edit-rename"_s), i18n("Rename Folder"));
+            auto *renameAction = contextMenu.addAction(QIcon::fromTheme(u"edit-rename"_s), i18n("Rename Folder"));
             connect(renameAction, &QAction::triggered, this, &MainWindow::renameFolder);
 
-            auto* deleteAction = contextMenu.addAction(QIcon::fromTheme(u"edit-delete"_s), i18n("Delete Folder"));
+            auto *deleteAction = contextMenu.addAction(QIcon::fromTheme(u"edit-delete"_s), i18n("Delete Folder"));
             connect(deleteAction, &QAction::triggered, this, &MainWindow::deleteFolder);
             deleteAction->setEnabled(veModel->rowCount(idx) == 0);
 
@@ -2407,24 +2312,21 @@ void MainWindow::showContextMenu(const QPoint& pos)
 
         } else {
             const QString vmName = idx.data(VirtualEnvironmentModel::VmNameRole).toString();
-            const VmEntry* entry = veModel->entryByName(vmName);
-            bool isRunning = entry && entry->state == VmEntry::State::Running;
-            bool isDeploying = entry && entry->state == VmEntry::State::Deploying;
-            bool isShrinking = entry && entry->state == VmEntry::State::Shrinking;
+            const VmEntry *entry = veModel->entryByName(vmName);
+            const bool isRunning = entry && entry->state == VmEntry::State::Running;
+            const bool isDeploying = entry && entry->state == VmEntry::State::Deploying;
+            const bool isShrinking = entry && entry->state == VmEntry::State::Shrinking;
 
             if (isShrinking) {
-                auto* infoAction = contextMenu.addAction(
-                    QIcon::fromTheme(u"view-refresh"_s), i18n("Compacting disk..."));
+                auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"view-refresh"_s), i18n("Compacting disk..."));
                 infoAction->setEnabled(false);
             } else if (isDeploying) {
-                QAction* originalKillAction = actionCollection()->action(u"vm_kill"_s);
-                QAction* customKillAction = contextMenu.addAction(
-                    originalKillAction->icon(), i18n("Abort Deployment"));
+                const QAction *originalKillAction = actionCollection()->action(u"vm_kill"_s);
+                QAction *customKillAction = contextMenu.addAction(originalKillAction->icon(), i18n("Abort Deployment"));
                 connect(customKillAction, &QAction::triggered, originalKillAction, &QAction::trigger);
                 contextMenu.addAction(customKillAction);
             } else if (entry && entry->state == VmEntry::State::Cloning) {
-                auto* infoAction = contextMenu.addAction(
-                    QIcon::fromTheme(u"edit-copy"_s), i18n("Cloning..."));
+                auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"edit-copy"_s), i18n("Cloning..."));
                 infoAction->setEnabled(false);
             } else if (!isRunning) {
                 contextMenu.addAction(actionCollection()->action(u"vm_start"_s));
@@ -2463,7 +2365,7 @@ void MainWindow::showContextMenu(const QPoint& pos)
             }
         }
     } else {
-        auto* newFolderAction = contextMenu.addAction(QIcon::fromTheme(u"folder-new"_s), i18n("New Folder"));
+        auto *newFolderAction = contextMenu.addAction(QIcon::fromTheme(u"folder-new"_s), i18n("New Folder"));
         connect(newFolderAction, &QAction::triggered, this, &MainWindow::createFolder);
         contextMenu.addSeparator();
         contextMenu.addAction(actionCollection()->action(u"vm_new"_s));
@@ -2485,41 +2387,43 @@ void MainWindow::showCommand()
 
     const VirtualNetwork net = (m_networkManager && currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         ? m_networkManager->network(currentConfig.virtualNetworkName())
-        : VirtualNetwork { };
+        : VirtualNetwork{};
 
     const QString sockPath = getVmBaseDir().absolutePath() + u"/qemu-monitor.sock"_s;
     const QString cmd = QemuCommandBuilder::buildShellScript(currentConfig, getVmDir(currentConfig.name()), sockPath, netCtx, net);
 
     QDialog d(this);
     d.setWindowTitle(i18n("QEMU Command Line"));
-    auto* l = new QVBoxLayout(&d);
+    auto *l = new QVBoxLayout(&d);
 
-    auto* t = new QTextEdit();
+    auto *t = new QTextEdit();
     t->setPlainText(cmd);
     t->setReadOnly(true);
     t->setFont(QFont(u"monospace"_s, 10));
     l->addWidget(t);
 
     if (cmd.contains("UEFI_CODE_NOT_FOUND"_L1) || cmd.contains("VM_VARS_FILE_MISSING"_L1)) {
-        QString warnText = currentConfig.useSecureBoot()
-            ? i18n("WARNING: UEFI Secure Boot firmware not found! "
-                   "Make sure a Secure Boot-capable OVMF package is installed "
-                   "(e.g. 'edk2-ovmf' on Arch, 'ovmf' on Debian/Ubuntu) "
-                   "or set the firmware path in Settings.")
-            : i18n("WARNING: UEFI files missing! "
-                   "Make sure 'edk2-ovmf' is installed or set the path in Settings.");
-        auto* warn = new QLabel(warnText);
+        const QString warnText = currentConfig.useSecureBoot() ? i18n(
+                                                                     "WARNING: UEFI Secure Boot firmware not found! "
+                                                                     "Make sure a Secure Boot-capable OVMF package is installed "
+                                                                     "(e.g. 'edk2-ovmf' on Arch, 'ovmf' on Debian/Ubuntu) "
+                                                                     "or set the firmware path in Settings.")
+                                                               : i18n(
+                                                                     "WARNING: UEFI files missing! "
+                                                                     "Make sure 'edk2-ovmf' is installed or set the path in "
+                                                                     "Settings.");
+        auto *warn = new QLabel(warnText);
         warn->setWordWrap(true);
         l->addWidget(warn);
     }
 
-    auto* btnLayout = new QHBoxLayout();
-    auto* btnCopy = new QPushButton(QIcon::fromTheme(u"edit-copy"_s), i18n("Copy"));
+    auto *btnLayout = new QHBoxLayout();
+    auto *btnCopy = new QPushButton(QIcon::fromTheme(u"edit-copy"_s), i18n("Copy"));
     connect(btnCopy, &QPushButton::clicked, this, [cmd]() {
         QApplication::clipboard()->setText(cmd);
     });
 
-    auto* btnClose = new QPushButton(QIcon::fromTheme(u"dialog-close"_s), i18n("Close"));
+    auto *btnClose = new QPushButton(QIcon::fromTheme(u"dialog-close"_s), i18n("Close"));
     connect(btnClose, &QPushButton::clicked, &d, &QDialog::accept);
 
     btnLayout->addStretch();
@@ -2547,32 +2451,32 @@ void MainWindow::startVM(bool headless)
     m_userInitiatedShutdowns.remove(vmName);
 
     if (currentConfig.useKvm() && !QFile::exists(u"/dev/kvm"_s))
-        KMessageBox::error(this, i18n("/dev/kvm not found. Hardware virtualization may be disabled in BIOS."), i18n("KVM not available"));
+        KMessageBox::error(this,
+                           i18n("/dev/kvm not found. Hardware virtualization may "
+                                "be disabled in BIOS."),
+                           i18n("KVM not available"));
 
     if (currentConfig.gpuType() == VMSpecs::GpuType::VgaISA) {
-        const QString qemuDataDir = QFileInfo(ExternalTools::instance().path(ExternalTools::QemuSystem))
-                                        .absoluteDir()
-                                        .absoluteFilePath(u"../share/qemu"_s);
+        const QString qemuDataDir = QFileInfo(ExternalTools::instance().path(ExternalTools::QemuSystem)).absoluteDir().absoluteFilePath(u"../share/qemu"_s);
         const QString romPath = QDir(qemuDataDir).absoluteFilePath(u"vgabios.bin"_s);
         if (!QFile::exists(romPath)) {
             const QString isavgaRom = QDir(qemuDataDir).absoluteFilePath(u"vgabios-isavga.bin"_s);
             QString detail;
             if (QFile::exists(isavgaRom)) {
-                detail = i18n("<p>A compatible ROM was found at:<br/>"
-                              "<tt>%1</tt></p>"
-                              "<p>To fix this, create a symbolic link:</p>"
-                              "<pre>sudo ln -s vgabios-isavga.bin %2</pre>",
-                    isavgaRom, romPath);
+                detail = i18n(
+                    "<p>A compatible ROM was found at:<br/>"
+                    "<tt>%1</tt></p>"
+                    "<p>To fix this, create a symbolic link:</p>"
+                    "<pre>sudo ln -s vgabios-isavga.bin %2</pre>",
+                    isavgaRom,
+                    romPath);
             } else {
                 detail = i18n("Please install the QEMU VGA BIOS package for your distribution.");
             }
             KMessageBox::error(this,
-                u"<p>"_s
-                    + i18n("The ISA VGA device requires %1 which was not found in:",
-                        u"<tt>vgabios.bin</tt><br/>"_s)
-                    + u"<tt>"_s + qemuDataDir + u"</tt></p>"_s
-                    + detail,
-                i18n("Missing VGA BIOS ROM"));
+                               u"<p>"_s + i18n("The ISA VGA device requires %1 which was not found in:", u"<tt>vgabios.bin</tt><br/>"_s) + u"<tt>"_s
+                                   + qemuDataDir + u"</tt></p>"_s + detail,
+                               i18n("Missing VGA BIOS ROM"));
             return;
         }
     }
@@ -2582,13 +2486,13 @@ void MainWindow::startVM(bool headless)
         const auto fallbackType = VMSpecs::DisplayType::Gtk;
 
         const auto result = KMessageBox::warningTwoActions(this,
-            i18n("The configured display type '%1' is currently not available.\n"
-                 "KEMU will use '%2' instead.\n\n",
-                VMConfig::toUIString(configuredType),
-                VMConfig::toUIString(fallbackType)),
-            i18n("Display Type Unavailable"),
-            KStandardGuiItem::cont(),
-            KStandardGuiItem::cancel());
+                                                           i18n("The configured display type '%1' is currently not available.\n"
+                                                                "KEMU will use '%2' instead.\n\n",
+                                                                VMConfig::toUIString(configuredType),
+                                                                VMConfig::toUIString(fallbackType)),
+                                                           i18n("Display Type Unavailable"),
+                                                           KStandardGuiItem::cont(),
+                                                           KStandardGuiItem::cancel());
 
         if (result != KMessageBox::PrimaryAction)
             return;
@@ -2614,8 +2518,7 @@ void MainWindow::startVM(bool headless)
         }
     }
 
-    if (!currentConfig.sharedPath().isEmpty()
-        && currentConfig.osType() == VMSpecs::OsType::Windows) {
+    if (!currentConfig.sharedPath().isEmpty() && currentConfig.osType() == VMSpecs::OsType::Windows) {
         if (!startVirtiofsd(vmName)) {
             tearDownVmRuntime(vmName);
             return;
@@ -2649,21 +2552,19 @@ void MainWindow::startVM(bool headless)
     if (!requireTool(ExternalTools::QemuSystem))
         return;
 
-    KProcess* process = new KProcess(this);
+    KProcess *process = new KProcess(this);
     process->setOutputChannelMode(KProcess::SeparateChannels);
 
     // Capture QEMU stderr in a rolling tail buffer for diagnostics
     constexpr int kStderrTailLimit = 65536;
-    connect(process, &QProcess::readyReadStandardError, this,
-        [this, process, vmName]() {
-            QByteArray& tail = m_qemuStderrTails[vmName];
-            tail.append(process->readAllStandardError());
-            if (tail.size() > kStderrTailLimit)
-                tail.remove(0, tail.size() - kStderrTailLimit);
-        });
+    connect(process, &QProcess::readyReadStandardError, this, [this, process, vmName]() {
+        QByteArray &tail = m_qemuStderrTails[vmName];
+        tail.append(process->readAllStandardError());
+        if (tail.size() > kStderrTailLimit)
+            tail.remove(0, tail.size() - kStderrTailLimit);
+    });
 
-    if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
-        && !tapDevice.isEmpty()) {
+    if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !tapDevice.isEmpty()) {
         const qint64 nsPid = m_networkManager->namespacePid(currentConfig.virtualNetworkName());
         NamespaceHelper::prepareProcessForNamespace(process, nsPid);
         // PR_SET_PDEATHSIG is handled inside prepareProcessForNamespace.
@@ -2723,12 +2624,11 @@ void MainWindow::startVM(bool headless)
         });
     }
 
-    QMPClient* client = new QMPClient(this);
+    QMPClient *client = new QMPClient(this);
     veModel->setQmpClient(vmName, client);
-    connect(client, &QMPClient::eventReceived, this,
-        [this, vmName](const QString& eventName, const QJsonObject& data) {
-            this->onQMPEvent(vmName, eventName, data);
-        });
+    connect(client, &QMPClient::eventReceived, this, [this, vmName](const QString &eventName, const QJsonObject &data) {
+        this->onQMPEvent(vmName, eventName, data);
+    });
 
     connect(client, &QMPClient::connected, this, [this, client, vmName]() {
         client->startPerformanceTimer(1000);
@@ -2741,7 +2641,7 @@ void MainWindow::startVM(bool headless)
         client->sendCommand(u"qom-set"_s, balloonArgs);
 
         if (selectedVmName() == vmName && perfMonitor) {
-            const VmEntry* e = veModel->entryByName(vmName);
+            const VmEntry *e = veModel->entryByName(vmName);
             if (e) {
                 perfMonitor->setHistory(PerformanceMonitorWidget::Cpu, e->cpuHistory);
                 perfMonitor->setHistory(PerformanceMonitorWidget::Ram, e->ramHistory);
@@ -2751,45 +2651,38 @@ void MainWindow::startVM(bool headless)
         }
     });
 
-    connect(client, &QMPClient::cpuUsageUpdated, this,
-        [this, vmName](const VmCpuUsage& usage) {
-            if (!usage.isValid)
-                return;
-            veModel->appendPerfSample(vmName, 0, usage.averagePercent);
-            if (selectedVmName() == vmName && perfMonitor)
-                perfMonitor->addSample(PerformanceMonitorWidget::Cpu,
-                    usage.averagePercent);
-        });
+    connect(client, &QMPClient::cpuUsageUpdated, this, [this, vmName](const VmCpuUsage &usage) {
+        if (!usage.isValid)
+            return;
+        veModel->appendPerfSample(vmName, 0, usage.averagePercent);
+        if (selectedVmName() == vmName && perfMonitor)
+            perfMonitor->addSample(PerformanceMonitorWidget::Cpu, usage.averagePercent);
+    });
 
-    connect(client, &QMPClient::memoryUsageUpdated, this,
-        [this, vmName](const VmMemoryUsage& usage) {
-            if (!usage.isValid)
-                return;
-            veModel->appendPerfSample(vmName, 1, usage.usagePercent);
-            if (selectedVmName() == vmName && perfMonitor)
-                perfMonitor->addSample(PerformanceMonitorWidget::Ram,
-                    usage.usagePercent);
-        });
+    connect(client, &QMPClient::memoryUsageUpdated, this, [this, vmName](const VmMemoryUsage &usage) {
+        if (!usage.isValid)
+            return;
+        veModel->appendPerfSample(vmName, 1, usage.usagePercent);
+        if (selectedVmName() == vmName && perfMonitor)
+            perfMonitor->addSample(PerformanceMonitorWidget::Ram, usage.usagePercent);
+    });
 
-    connect(client, &QMPClient::blockStatsUpdated, this,
-        [this, vmName](const VmBlockStats& stats) {
-            if (!stats.isValid)
-                return;
-            VmEntry* e = veModel->entryByName(vmName);
-            if (!e)
-                return;
+    connect(client, &QMPClient::blockStatsUpdated, this, [this, vmName](const VmBlockStats &stats) {
+        if (!stats.isValid)
+            return;
+        VmEntry *e = veModel->entryByName(vmName);
+        if (!e)
+            return;
 
-            double totalBps = stats.totalRdBytesPerSec + stats.totalWrBytesPerSec;
-            if (totalBps > e->ioPeakBytesPerSec)
-                e->ioPeakBytesPerSec = totalBps;
-            double pct = (e->ioPeakBytesPerSec > 0.0)
-                ? (totalBps / e->ioPeakBytesPerSec * 100.0)
-                : 0.0;
+        const double totalBps = stats.totalRdBytesPerSec + stats.totalWrBytesPerSec;
+        if (totalBps > e->ioPeakBytesPerSec)
+            e->ioPeakBytesPerSec = totalBps;
+        const double pct = (e->ioPeakBytesPerSec > 0.0) ? (totalBps / e->ioPeakBytesPerSec * 100.0) : 0.0;
 
-            veModel->appendPerfSample(vmName, 2, pct);
-            if (selectedVmName() == vmName && perfMonitor)
-                perfMonitor->addSample(PerformanceMonitorWidget::Io, pct);
-        });
+        veModel->appendPerfSample(vmName, 2, pct);
+        if (selectedVmName() == vmName && perfMonitor)
+            perfMonitor->addSample(PerformanceMonitorWidget::Io, pct);
+    });
 
     if (Utils::waitForSocket(sockPath, 2000)) {
         client->connectToVm(sockPath);
@@ -2806,22 +2699,21 @@ void MainWindow::startVMHeadless()
 void MainWindow::shutdownVM()
 {
     if (!veModel->isRunning(currentConfig.name())
-        && !(veModel->entryByName(currentConfig.name())
-            && veModel->entryByName(currentConfig.name())->state == VmEntry::State::Deploying))
+        && !(veModel->entryByName(currentConfig.name()) && veModel->entryByName(currentConfig.name())->state == VmEntry::State::Deploying))
         return;
 
     // Handle deployment shutdown
-    const VmEntry* deployEntry = veModel->entryByName(currentConfig.name());
+    const VmEntry *deployEntry = veModel->entryByName(currentConfig.name());
     if (deployEntry && deployEntry->state == VmEntry::State::Deploying) {
         auto answer = KMessageBox::questionTwoActionsCancel(this,
-            i18n("VM '%1' is currently being deployed.\n\n"
-                 "Stopping now will abort the installation. "
-                 "Do you also want to delete the VM?",
-                currentConfig.name()),
-            i18n("Abort Deployment"),
-            KGuiItem(i18n("Stop && Keep"), u"media-playback-stop"_s),
-            KGuiItem(i18n("Stop && Delete"), u"edit-delete"_s),
-            KStandardGuiItem::cancel());
+                                                            i18n("VM '%1' is currently being deployed.\n\n"
+                                                                 "Stopping now will abort the installation. "
+                                                                 "Do you also want to delete the VM?",
+                                                                 currentConfig.name()),
+                                                            i18n("Abort Deployment"),
+                                                            KGuiItem(i18n("Stop && Keep"), u"media-playback-stop"_s),
+                                                            KGuiItem(i18n("Stop && Delete"), u"edit-delete"_s),
+                                                            KStandardGuiItem::cancel());
 
         if (answer == KMessageBox::PrimaryAction)
             abortDeployment(currentConfig.name(), false);
@@ -2830,10 +2722,10 @@ void MainWindow::shutdownVM()
         return;
     }
 
-    const VmEntry* entry = veModel->entryByName(currentConfig.name());
+    const VmEntry *entry = veModel->entryByName(currentConfig.name());
     if (!entry)
         return;
-    QPointer<QMPClient> client = entry->qmpClient;
+    const QPointer<QMPClient> client = entry->qmpClient;
     if (!client || !client->isConnected()) {
         KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
         return;
@@ -2841,7 +2733,7 @@ void MainWindow::shutdownVM()
 
     m_userInitiatedShutdowns.insert(currentConfig.name());
 
-    QMPResult result = client->sendCommandSync(u"system_powerdown"_s);
+    const QMPResult result = client->sendCommandSync(u"system_powerdown"_s);
 
     if (!result.success) {
         m_userInitiatedShutdowns.remove(currentConfig.name());
@@ -2856,16 +2748,16 @@ void MainWindow::resetVM()
 {
     if (!veModel->isRunning(currentConfig.name()))
         return;
-    const VmEntry* entry = veModel->entryByName(currentConfig.name());
+    const VmEntry *entry = veModel->entryByName(currentConfig.name());
     if (!entry)
         return;
-    QPointer<QMPClient> client = entry->qmpClient;
+    const QPointer<QMPClient> client = entry->qmpClient;
     if (!client || !client->isConnected()) {
         KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
         return;
     }
 
-    QMPResult result = client->sendCommandSync(u"system_reset"_s);
+    const QMPResult result = client->sendCommandSync(u"system_reset"_s);
 
     if (!result.success) {
         KMessageBox::error(this, i18n("Reset Failed"), result.errorMessage);
@@ -2877,21 +2769,21 @@ void MainWindow::resetVM()
 
 void MainWindow::killVM()
 {
-    const VmEntry* killEntry = veModel->entryByName(currentConfig.name());
+    const VmEntry *killEntry = veModel->entryByName(currentConfig.name());
     if (!killEntry || (killEntry->state != VmEntry::State::Running && killEntry->state != VmEntry::State::Deploying))
         return;
 
     if (killEntry->state == VmEntry::State::Deploying) {
         auto answer = KMessageBox::questionTwoActionsCancel(this,
-            i18n("VM '%1' is currently being deployed.\n\n"
-                 "Force-stopping now will abort the installation "
-                 "and may leave the disk in an inconsistent state.\n\n"
-                 "Do you also want to delete the VM?",
-                currentConfig.name()),
-            i18n("Abort Deployment"),
-            KGuiItem(i18n("Stop && Keep"), u"media-playback-stop"_s),
-            KGuiItem(i18n("Stop && Delete"), u"edit-delete"_s),
-            KStandardGuiItem::cancel());
+                                                            i18n("VM '%1' is currently being deployed.\n\n"
+                                                                 "Force-stopping now will abort the installation "
+                                                                 "and may leave the disk in an inconsistent state.\n\n"
+                                                                 "Do you also want to delete the VM?",
+                                                                 currentConfig.name()),
+                                                            i18n("Abort Deployment"),
+                                                            KGuiItem(i18n("Stop && Keep"), u"media-playback-stop"_s),
+                                                            KGuiItem(i18n("Stop && Delete"), u"edit-delete"_s),
+                                                            KStandardGuiItem::cancel());
 
         if (answer == KMessageBox::PrimaryAction)
             abortDeployment(currentConfig.name(), false);
@@ -2900,39 +2792,34 @@ void MainWindow::killVM()
         return;
     }
 
-    const VmEntry* entry = veModel->entryByName(currentConfig.name());
+    const VmEntry *entry = veModel->entryByName(currentConfig.name());
     if (!entry)
         return;
 
     const QString vmName = currentConfig.name();
 
-    QPointer<KProcess> process = entry->qemuProcess;
+    const QPointer<KProcess> process = entry->qemuProcess;
     if (!process)
         return;
 
-    KGuiItem stopItem(
-        i18n("Force Stop"),
-        u"kt-stop"_s,
-        i18n("Forcefully stop the virtual machine"));
+    const KGuiItem stopItem(i18n("Force Stop"), u"kt-stop"_s, i18n("Forcefully stop the virtual machine"));
 
-    auto result = KMessageBox::warningTwoActions(
-        this,
-        i18n("Are you sure you want to force a power-off for '%1'? "
-             "This is equivalent to pulling the plug and may cause data loss.",
-            vmName),
-        i18nc("@title:window", "Confirm Force Stop"),
-        stopItem,
-        KStandardGuiItem::cancel());
+    auto result = KMessageBox::warningTwoActions(this,
+                                                 i18n("Are you sure you want to force a power-off for '%1'? "
+                                                      "This is equivalent to pulling the plug and may cause data loss.",
+                                                      vmName),
+                                                 i18nc("@title:window", "Confirm Force Stop"),
+                                                 stopItem,
+                                                 KStandardGuiItem::cancel());
 
     if (result == KMessageBox::PrimaryAction) {
-
         m_userInitiatedShutdowns.insert(vmName);
 
         bool qmpSuccess = false;
 
-        QPointer<QMPClient> client = entry->qmpClient;
+        const QPointer<QMPClient> client = entry->qmpClient;
         if (client && client->isConnected()) {
-            QMPResult res = client->sendCommandSync(u"quit"_s, QJsonObject(), 2000);
+            const QMPResult res = client->sendCommandSync(u"quit"_s, QJsonObject(), 2000);
             qmpSuccess = res.success;
         }
 
@@ -2956,13 +2843,13 @@ void MainWindow::killVM()
 
 void MainWindow::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus)
 {
-    QPointer<KProcess> p = qobject_cast<KProcess*>(sender());
+    const QPointer<KProcess> p = qobject_cast<KProcess *>(sender());
     if (!p)
         return;
 
     QString vmName;
-    for (const QString& name : veModel->vmNames()) {
-        const VmEntry* e = veModel->entryByName(name);
+    for (const QString &name : veModel->vmNames()) {
+        const VmEntry *e = veModel->entryByName(name);
         if (e && e->qemuProcess == p) {
             vmName = name;
             break;
@@ -2974,14 +2861,14 @@ void MainWindow::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus
         return;
     }
 
-    VmEntry* entry = veModel->entryByName(vmName);
+    const VmEntry *entry = veModel->entryByName(vmName);
     const bool wasDeploying = entry && entry->state == VmEntry::State::Deploying;
     const bool userInitiated = m_userInitiatedShutdowns.contains(vmName);
     const bool abnormal = (exitStatus != KProcess::NormalExit) || (exitCode != 0);
 
     // Drain any remaining stderr before tear-down clears the buffer
     if (p) {
-        QByteArray& tail = m_qemuStderrTails[vmName];
+        QByteArray &tail = m_qemuStderrTails[vmName];
         tail.append(p->readAllStandardError());
     }
     const QByteArray stderrTail = m_qemuStderrTails.value(vmName);
@@ -2991,8 +2878,7 @@ void MainWindow::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus
     if (wasDeploying) {
         finalizeDeployment(vmName);
     } else if (abnormal && !userInitiated) {
-        showQemuFailureDialog(vmName, /*startupFailed=*/false,
-            exitCode, exitStatus, stderrTail);
+        showQemuFailureDialog(vmName, /*startupFailed=*/false, exitCode, exitStatus, stderrTail);
     } else {
         statusBar()->showMessage(i18n("VM '%1' stopped.", vmName));
     }
@@ -3009,7 +2895,7 @@ void MainWindow::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus
     p->deleteLater();
 }
 
-void MainWindow::onQMPEvent(const QString& vmName, const QString& eventName, const QJsonObject& data)
+void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, const QJsonObject &data)
 {
     qDebug() << "QMP Event for" << vmName << ":" << eventName << data;
 
@@ -3028,7 +2914,7 @@ void MainWindow::onQMPEvent(const QString& vmName, const QString& eventName, con
     else if (eventName == u"DEVICE_TRAY_MOVED"_s) {
         if (data.value(u"id"_s).toString() == u"cdrom0"_s && data.value(u"tray-open"_s).toBool()) {
             if (currentConfig.name() == vmName && !currentConfig.isoPath().isEmpty()) {
-                currentConfig.setISOPath({ });
+                currentConfig.setISOPath({});
                 saveVmConfig(getVmDir(vmName).absolutePath(), currentConfig);
                 updateDetails();
                 statusBar()->showMessage(i18n("VM '%1' ejected the ISO.", vmName));
@@ -3041,31 +2927,31 @@ void MainWindow::onUsbMenuAboutToShow()
 {
     usbActionMenu->menu()->clear();
 
-    VmEntry* entry = veModel ? veModel->entryByName(selectedVmName()) : nullptr;
+    const VmEntry *entry = veModel ? veModel->entryByName(selectedVmName()) : nullptr;
 
     if (!entry || entry->state != VmEntry::State::Running || !entry->qmpClient) {
-        auto* a = usbActionMenu->menu()->addAction(i18n("VM not running"));
+        auto *a = usbActionMenu->menu()->addAction(i18n("VM not running"));
         a->setEnabled(false);
         return;
     }
 
-    QList<UsbDeviceInfo> devices = UsbEnumerator::enumerate();
+    const QList<UsbDeviceInfo> devices = UsbEnumerator::enumerate();
 
     if (devices.isEmpty()) {
-        auto* a = usbActionMenu->menu()->addAction(i18n("No USB devices found"));
+        auto *a = usbActionMenu->menu()->addAction(i18n("No USB devices found"));
         a->setEnabled(false);
         return;
     }
 
-    for (const auto& dev : devices) {
-        QString label = QStringLiteral("%1  [%2]").arg(dev.displayName(), dev.idString());
+    for (const auto &dev : devices) {
+        const QString label = QStringLiteral("%1  [%2]").arg(dev.displayName(), dev.idString());
 
-        QAction* action = usbActionMenu->menu()->addAction(label);
+        QAction *action = usbActionMenu->menu()->addAction(label);
         action->setCheckable(true);
         action->setChecked(entry->attachedUsb.contains(dev.busKey()));
 
         // Store device info for the handler
-        action->setData(QVariantList { dev.busNum, dev.devAddr, dev.busKey(), dev.qemuId() });
+        action->setData(QVariantList{dev.busNum, dev.devAddr, dev.busKey(), dev.qemuId()});
 
         connect(action, &QAction::triggered, this, &MainWindow::onUsbActionTriggered);
     }
@@ -3073,7 +2959,7 @@ void MainWindow::onUsbMenuAboutToShow()
 
 void MainWindow::onUsbActionTriggered()
 {
-    auto* action = qobject_cast<QAction*>(sender());
+    auto *action = qobject_cast<QAction *>(sender());
     if (!action)
         return;
 
@@ -3083,27 +2969,27 @@ void MainWindow::onUsbActionTriggered()
     const QString busKey = d[2].toString();
     const QString qemuId = d[3].toString();
 
-    VmEntry* entry = veModel ? veModel->entryByName(selectedVmName()) : nullptr;
+    VmEntry *entry = veModel ? veModel->entryByName(selectedVmName()) : nullptr;
     if (!entry || !entry->qmpClient)
         return;
 
     if (action->isChecked()) {
         // Attach
-        QMPResult r = entry->qmpClient->attachUsbDevice(busNum, devAddr, qemuId);
+        const QMPResult r = entry->qmpClient->attachUsbDevice(busNum, devAddr, qemuId);
         if (r.success) {
             entry->attachedUsb.insert(busKey, qemuId);
         } else {
             action->setChecked(false);
             KMessageBox::error(this,
-                i18n("Could not attach USB device.\n\n%1\n\n"
-                     "Make sure QEMU was started with a USB controller "
-                     "and has permission to access /dev/bus/usb/.",
-                    r.errorMessage),
-                i18n("USB Passthrough"));
+                               i18n("Could not attach USB device.\n\n%1\n\n"
+                                    "Make sure QEMU was started with a USB controller "
+                                    "and has permission to access /dev/bus/usb/.",
+                                    r.errorMessage),
+                               i18n("USB Passthrough"));
         }
     } else {
         // Detach
-        QMPResult r = entry->qmpClient->detachUsbDevice(qemuId);
+        const QMPResult r = entry->qmpClient->detachUsbDevice(qemuId);
         if (r.success) {
             entry->attachedUsb.remove(busKey);
         } else {
@@ -3113,30 +2999,27 @@ void MainWindow::onUsbActionTriggered()
     }
 }
 
-void MainWindow::importOVA(const QString& filePath)
+void MainWindow::importOVA(const QString &filePath)
 {
-
-    auto* job = new OvaImportJob(filePath, getVmBaseDir().absolutePath(), 0, this);
+    auto *job = new OvaImportJob(filePath, getVmBaseDir().absolutePath(), 0, this);
 
     if (jobTracker) {
         jobTracker->registerJob(job);
     }
     activeImports.append(job);
 
-    connect(job, &OvaImportJob::finished, this, [this](KJob* kjob) {
-        auto* importJob = qobject_cast<OvaImportJob*>(kjob);
+    connect(job, &OvaImportJob::finished, this, [this](KJob *kjob) {
+        auto *importJob = qobject_cast<OvaImportJob *>(kjob);
         if (!importJob)
             return;
 
         activeImports.removeOne(importJob);
 
         if (importJob->error()) {
-
             statusBar()->showMessage(i18n("OVA import failed: %1", importJob->errorText()));
             KMessageBox::error(this, i18n("Failed to import OVA:\n%1", importJob->errorText()), i18n("Import Failed"));
 
         } else {
-
             VMConfig config = importJob->importedConfig();
             if (SettingsDialog::importRegenerateMac()) {
                 config.setMacAddress(Utils::generateRandomMac(usedMacAddresses()));
@@ -3156,7 +3039,7 @@ void MainWindow::importOVA(const QString& filePath)
     statusBar()->showMessage(i18n("Importing OVA..."));
 }
 
-void MainWindow::exportOVA(const QString& filePath)
+void MainWindow::exportOVA(const QString &filePath)
 {
     const DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
     const int diskGb = dInfo.isValid ? qRound(dInfo.virtualSizeGb) : currentConfig.diskSizeGb();
@@ -3164,27 +3047,23 @@ void MainWindow::exportOVA(const QString& filePath)
     VMConfig exportConfig = currentConfig;
     exportConfig.setDiskSizeGb(diskGb);
 
-    auto* job = new OvaExportJob(currentConfig.name(),
-        exportConfig,
-        currentConfig.diskPath(),
-        filePath, this);
+    auto *job = new OvaExportJob(currentConfig.name(), exportConfig, currentConfig.diskPath(), filePath, this);
 
     if (jobTracker) {
         jobTracker->registerJob(job);
     }
     veModel->setVmState(currentConfig.name(), VmEntry::State::Exporting);
 
-    connect(job, &OvaExportJob::finished, this, [this](KJob* kjob) {
-        auto* exportJob = qobject_cast<OvaExportJob*>(kjob);
+    connect(job, &OvaExportJob::finished, this, [this](KJob *kjob) {
+        auto *exportJob = qobject_cast<OvaExportJob *>(kjob);
         if (!exportJob)
             return;
 
-        QString vmName = exportJob->vmName();
+        const QString vmName = exportJob->vmName();
         veModel->setVmState(vmName, VmEntry::State::Stopped);
 
         if (exportJob->error()) {
-            statusBar()->showMessage(
-                i18n("OVA export of VM '%1' failed: %2", vmName, exportJob->errorText()));
+            statusBar()->showMessage(i18n("OVA export of VM '%1' failed: %2", vmName, exportJob->errorText()));
             KMessageBox::error(this, i18n("Failed to export VM '%1' as OVA:\n%2", vmName, exportJob->errorText()), i18n("Export Failed"));
         } else {
             statusBar()->showMessage(i18n("VM '%1' exported as OVA.", vmName));
@@ -3218,7 +3097,7 @@ void MainWindow::createNewVM()
         return;
 
     VMConfig newConfig = dialog.getResult();
-    QDir baseDir = getVmBaseDir();
+    const QDir baseDir = getVmBaseDir();
 
     if (newConfig.name().isEmpty() || baseDir.exists(newConfig.name())) {
         KMessageBox::error(this, i18n("Invalid name or VM already exists."));
@@ -3238,7 +3117,7 @@ void MainWindow::createNewVM()
         KProcess imgProcess;
         imgProcess.setOutputChannelMode(KProcess::SeparateChannels);
         imgProcess.setProgram(ExternalTools::instance().path(ExternalTools::QemuImg));
-        imgProcess.setArguments({ u"create"_s, u"-f"_s, u"qcow2"_s, diskPath, u"%1G"_s.arg(newConfig.diskSizeGb()) });
+        imgProcess.setArguments({u"create"_s, u"-f"_s, u"qcow2"_s, diskPath, u"%1G"_s.arg(newConfig.diskSizeGb())});
         imgProcess.start();
         imgProcess.waitForFinished(10000);
 
@@ -3257,19 +3136,21 @@ void MainWindow::createNewVM()
             QFile varsFile(vmPath + u"/OVMF_VARS.fd"_s);
             varsFile.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ReadUser | QFile::WriteUser);
 
-            if (newConfig.useSecureBoot()
-                && !ovmf.varsPath.contains(u"ms"_s, Qt::CaseInsensitive)
+            if (newConfig.useSecureBoot() && !ovmf.varsPath.contains(u"ms"_s, Qt::CaseInsensitive)
                 && !ovmf.varsPath.contains(u"secboot"_s, Qt::CaseInsensitive)) {
                 KMessageBox::information(this,
-                    i18n("The OVMF VARS template found does not appear to contain "
-                         "pre-enrolled Microsoft keys. Secure Boot may require "
-                         "manual key enrollment in the UEFI firmware setup.\n\n"
-                         "For pre-enrolled keys, install the appropriate package "
-                         "(e.g. 'edk2-ovmf' on Arch, 'ovmf' on Debian/Ubuntu)."),
-                    i18n("Note"));
+                                         i18n("The OVMF VARS template found does not appear to contain "
+                                              "pre-enrolled Microsoft keys. Secure Boot may require "
+                                              "manual key enrollment in the UEFI firmware setup.\n\n"
+                                              "For pre-enrolled keys, install the appropriate package "
+                                              "(e.g. 'edk2-ovmf' on Arch, 'ovmf' on Debian/Ubuntu)."),
+                                         i18n("Note"));
             }
         } else {
-            KMessageBox::error(this, i18n("Could not find OVMF_VARS template. Please install 'edk2-ovmf' or set the firmware path in Settings."), i18n("Warning"));
+            KMessageBox::error(this,
+                               i18n("Could not find OVMF_VARS template. Please install 'edk2-ovmf' "
+                                    "or set the firmware path in Settings."),
+                               i18n("Warning"));
         }
     }
 
@@ -3278,8 +3159,8 @@ void MainWindow::createNewVM()
         const CloudImageInfo image = dialog.selectedCloudImage();
         const CloudDeployConfig cloudCfg = dialog.cloudConfig();
 
-        QString imageLocalPath = ImageDatabase::localImagePath(image.url);
-        bool needsDownload = !ImageDatabase::isImageCached(image.url);
+        const QString imageLocalPath = ImageDatabase::localImagePath(image.url);
+        const bool needsDownload = !ImageDatabase::isImageCached(image.url);
 
         newConfig.setImageType(VMConfig::ImageType::CloudImage);
         newConfig.setDeployState(VMConfig::DeployState::Deploying);
@@ -3301,28 +3182,29 @@ void MainWindow::createNewVM()
         if (needsDownload) {
             statusBar()->showMessage(i18n("Deploying '%1' -- downloading cloud image...", newConfig.name()));
 
-            auto* job = new DownloadJob(image.url, imageLocalPath, Utils::ChecksumType::NONE, { }, this);
+            auto *job = new DownloadJob(image.url, imageLocalPath, Utils::ChecksumType::NONE, {}, this);
             jobTracker->registerJob(job);
 
-            connect(job, &DownloadJob::statusMessage, this, [this](const QString& msg) { statusBar()->showMessage(msg); });
+            connect(job, &DownloadJob::statusMessage, this, [this](const QString &msg) {
+                statusBar()->showMessage(msg);
+            });
 
-            connect(job, &KJob::finished, this,
-                [this, vmName = newConfig.name()](KJob* kjob) {
-                    auto* dlJob = qobject_cast<DownloadJob*>(kjob);
-                    if (!dlJob)
-                        return;
+            connect(job, &KJob::finished, this, [this, vmName = newConfig.name()](KJob *kjob) {
+                auto *dlJob = qobject_cast<DownloadJob *>(kjob);
+                if (!dlJob)
+                    return;
 
-                    if (dlJob->error()) {
-                        statusBar()->showMessage(i18n("Image download for '%1' failed: %2", vmName, dlJob->errorText()));
-                        KMessageBox::error(this, i18n("Image download failed:\n%1", dlJob->errorText()));
-                        abortDeployment(vmName, false);
-                    } else {
-                        QTimer::singleShot(0, this, [this, vmName]() {
-                            deployCloudImage(vmName);
-                        });
-                    }
-                    dlJob->deleteLater();
-                });
+                if (dlJob->error()) {
+                    statusBar()->showMessage(i18n("Image download for '%1' failed: %2", vmName, dlJob->errorText()));
+                    KMessageBox::error(this, i18n("Image download failed:\n%1", dlJob->errorText()));
+                    abortDeployment(vmName, false);
+                } else {
+                    QTimer::singleShot(0, this, [this, vmName]() {
+                        deployCloudImage(vmName);
+                    });
+                }
+                dlJob->deleteLater();
+            });
 
             job->start();
         } else {
@@ -3395,10 +3277,11 @@ void MainWindow::editVM()
 
             if (!baseDir.rename(oldName, newName)) {
                 KMessageBox::error(this,
-                    i18n("Could not rename VM folder from '%1' to '%2'.\n"
-                         "Check file permissions and try again.",
-                        oldName, newName),
-                    i18n("Rename Failed"));
+                                   i18n("Could not rename VM folder from '%1' to '%2'.\n"
+                                        "Check file permissions and try again.",
+                                        oldName,
+                                        newName),
+                                   i18n("Rename Failed"));
                 return;
             }
 
@@ -3409,7 +3292,7 @@ void MainWindow::editVM()
 
             KConfig kconfig(u"kemurc"_s);
             KConfigGroup grp = kconfig.group(u"Folders"_s);
-            QString folder = grp.readEntry(oldName, { });
+            const QString folder = grp.readEntry(oldName, {});
             if (!folder.isEmpty()) {
                 grp.deleteEntry(oldName);
                 grp.writeEntry(newName, folder);
@@ -3438,12 +3321,11 @@ void MainWindow::deleteVM()
     if (veModel->isBusy(currentConfig.name()))
         return;
 
-    const auto answer = KMessageBox::questionTwoActions(
-        this,
-        i18n("Delete VM '%1' and all associated files?", currentConfig.name()),
-        i18n("Delete VM"),
-        KGuiItem(i18n("Delete"), QStringLiteral("edit-delete")),
-        KStandardGuiItem::cancel());
+    const auto answer = KMessageBox::questionTwoActions(this,
+                                                        i18n("Delete VM '%1' and all associated files?", currentConfig.name()),
+                                                        i18n("Delete VM"),
+                                                        KGuiItem(i18n("Delete"), QStringLiteral("edit-delete")),
+                                                        KStandardGuiItem::cancel());
 
     if (answer == KMessageBox::PrimaryAction) {
         getVmDir(currentConfig.name()).removeRecursively();
@@ -3471,10 +3353,7 @@ void MainWindow::cloneVM()
         suggestion = u"%1_clone%2"_s.arg(srcName).arg(++suffix);
 
     bool ok = false;
-    QString cloneName = QInputDialog::getText(this,
-        i18n("Clone VM"),
-        i18n("Name for the cloned VM:"),
-        QLineEdit::Normal, suggestion, &ok);
+    QString cloneName = QInputDialog::getText(this, i18n("Clone VM"), i18n("Name for the cloned VM:"), QLineEdit::Normal, suggestion, &ok);
 
     if (!ok || cloneName.trimmed().isEmpty())
         return;
@@ -3490,85 +3369,77 @@ void MainWindow::cloneVM()
     const QString srcPath = baseDir.filePath(srcName);
     const QString dstPath = baseDir.filePath(cloneName);
 
-    auto* job = new CloneJob(srcName, srcPath, dstPath, this);
+    auto *job = new CloneJob(srcName, srcPath, dstPath, this);
 
     if (jobTracker)
         jobTracker->registerJob(job);
 
     veModel->setVmState(srcName, VmEntry::State::Cloning);
 
-    connect(job, &CloneJob::finished, this,
-        [this, srcName, cloneName, dstPath](KJob* kjob) {
-            auto* cloneJob = qobject_cast<CloneJob*>(kjob);
-            if (!cloneJob)
-                return;
+    connect(job, &CloneJob::finished, this, [this, srcName, cloneName, dstPath](KJob *kjob) {
+        auto *cloneJob = qobject_cast<CloneJob *>(kjob);
+        if (!cloneJob)
+            return;
 
-            veModel->setVmState(srcName, VmEntry::State::Stopped);
+        veModel->setVmState(srcName, VmEntry::State::Stopped);
 
-            if (cloneJob->error()) {
-                statusBar()->showMessage(i18n("Cloning of VM '%1' failed: %2", srcName, cloneJob->errorText()));
-                KMessageBox::error(this, i18n("Failed to clone VM '%1':\n%2", srcName, cloneJob->errorText()), i18n("Clone Failed"));
-            } else {
+        if (cloneJob->error()) {
+            statusBar()->showMessage(i18n("Cloning of VM '%1' failed: %2", srcName, cloneJob->errorText()));
+            KMessageBox::error(this, i18n("Failed to clone VM '%1':\n%2", srcName, cloneJob->errorText()), i18n("Clone Failed"));
+        } else {
+            // collect used macs to exclude random generation matches
+            QStringList usedMacs;
+            for (const QString &name : existingVmNames()) {
+                const VMConfig cfg = loadVmConfig(getVmBaseDir().filePath(name));
+                if (!cfg.macAddress().isEmpty())
+                    usedMacs << cfg.macAddress();
+            }
 
-                // collect used macs to exclude random generation matches
-                QStringList usedMacs;
-                for (const QString& name : existingVmNames()) {
-                    VMConfig cfg = loadVmConfig(getVmBaseDir().filePath(name));
-                    if (!cfg.macAddress().isEmpty())
-                        usedMacs << cfg.macAddress();
-                }
+            VMConfig cloneConfig = loadVmConfig(dstPath);
+            cloneConfig.setName(cloneName);
+            cloneConfig.setDiskPath(dstPath + u"/disk.qcow2"_s);
+            cloneConfig.setDeployState(VMConfig::DeployState::Complete);
 
-                VMConfig cloneConfig = loadVmConfig(dstPath);
-                cloneConfig.setName(cloneName);
-                cloneConfig.setDiskPath(dstPath + u"/disk.qcow2"_s);
-                cloneConfig.setDeployState(VMConfig::DeployState::Complete);
+            if (SettingsDialog::cloneRegenerateMac()) {
+                const QStringList macs = usedMacAddresses();
 
-                if (SettingsDialog::cloneRegenerateMac()) {
-                    QStringList macs = usedMacAddresses();
+                if (!cloneConfig.macAddress().isEmpty()) {
+                    auto answer = KMessageBox::questionTwoActions(this,
+                                                                  i18n("The source VM has an explicit MAC address (%1).\n\n"
+                                                                       "Using the same MAC on two VMs causes network "
+                                                                       "conflicts. Would you like to enter a new MAC "
+                                                                       "address, or clear it so QEMU generates a "
+                                                                       "random one?",
+                                                                       cloneConfig.macAddress()),
+                                                                  i18n("MAC Address"),
+                                                                  KGuiItem(i18n("Enter New MAC..."), u"document-edit"_s),
+                                                                  KGuiItem(i18n("Generate Random"), u"roll"_s));
 
-                    if (!cloneConfig.macAddress().isEmpty()) {
-                        auto answer = KMessageBox::questionTwoActions(this,
-                            i18n("The source VM has an explicit MAC address (%1).\n\n"
-                                 "Using the same MAC on two VMs causes network "
-                                 "conflicts. Would you like to enter a new MAC "
-                                 "address, or clear it so QEMU generates a "
-                                 "random one?",
-                                cloneConfig.macAddress()),
-                            i18n("MAC Address"),
-                            KGuiItem(i18n("Enter New MAC..."), u"document-edit"_s),
-                            KGuiItem(i18n("Generate Random"), u"roll"_s));
-
-                        if (answer == KMessageBox::PrimaryAction) {
-                            bool macOk = false;
-                            QString newMac = QInputDialog::getText(this,
-                                i18n("New MAC Address"),
-                                i18n("MAC Address (e.g. 52:54:00:11:22:33):"),
-                                QLineEdit::Normal, { }, &macOk);
-                            cloneConfig.setMacAddress(
-                                (macOk && !newMac.trimmed().isEmpty())
-                                    ? newMac.trimmed()
-                                    : Utils::generateRandomMac(macs));
-                        } else {
-                            cloneConfig.setMacAddress(Utils::generateRandomMac(macs));
-                        }
+                    if (answer == KMessageBox::PrimaryAction) {
+                        bool macOk = false;
+                        const QString newMac =
+                            QInputDialog::getText(this, i18n("New MAC Address"), i18n("MAC Address (e.g. 52:54:00:11:22:33):"), QLineEdit::Normal, {}, &macOk);
+                        cloneConfig.setMacAddress((macOk && !newMac.trimmed().isEmpty()) ? newMac.trimmed() : Utils::generateRandomMac(macs));
                     } else {
                         cloneConfig.setMacAddress(Utils::generateRandomMac(macs));
                     }
+                } else {
+                    cloneConfig.setMacAddress(Utils::generateRandomMac(macs));
                 }
-
-                saveVmConfig(dstPath, cloneConfig);
-                loadVmList();
-                selectVmByName(cloneName);
-                statusBar()->showMessage(
-                    i18n("VM '%1' cloned as '%2'.", srcName, cloneName));
             }
 
-            if (currentConfig.name() == srcName)
-                updateDetails();
-            updateActionStates();
+            saveVmConfig(dstPath, cloneConfig);
+            loadVmList();
+            selectVmByName(cloneName);
+            statusBar()->showMessage(i18n("VM '%1' cloned as '%2'.", srcName, cloneName));
+        }
 
-            cloneJob->deleteLater();
-        });
+        if (currentConfig.name() == srcName)
+            updateDetails();
+        updateActionStates();
+
+        cloneJob->deleteLater();
+    });
 
     job->start();
 
@@ -3580,7 +3451,7 @@ void MainWindow::cloneVM()
 void MainWindow::createFolder()
 {
     bool ok = false;
-    const QString name = QInputDialog::getText(this, i18n("New Folder"), i18n("Folder name:"), QLineEdit::Normal, { }, &ok);
+    const QString name = QInputDialog::getText(this, i18n("New Folder"), i18n("Folder name:"), QLineEdit::Normal, {}, &ok);
     if (!ok || name.trimmed().isEmpty())
         return;
 
@@ -3603,8 +3474,7 @@ void MainWindow::deleteFolder()
 void MainWindow::renameFolder()
 {
     const QModelIndex idx = veTreeView->currentIndex();
-    if (!idx.isValid()
-        || idx.data(VirtualEnvironmentModel::ItemTypeRole).toInt() != VirtualEnvironmentModel::Folder)
+    if (!idx.isValid() || idx.data(VirtualEnvironmentModel::ItemTypeRole).toInt() != VirtualEnvironmentModel::Folder)
         return;
 
     bool ok = false;
@@ -3615,7 +3485,7 @@ void MainWindow::renameFolder()
     }
 }
 
-void MainWindow::selectVmByName(const QString& vmName)
+void MainWindow::selectVmByName(const QString &vmName)
 {
     const QModelIndex idx = veModel->indexForVm(vmName);
     if (!idx.isValid())
@@ -3630,9 +3500,9 @@ QString MainWindow::selectedVmName() const
 {
     const QModelIndex idx = veTreeView->currentIndex();
     if (!idx.isValid())
-        return { };
+        return {};
     if (idx.data(VirtualEnvironmentModel::ItemTypeRole).toInt() != VirtualEnvironmentModel::Vm)
-        return { };
+        return {};
     return idx.data(VirtualEnvironmentModel::VmNameRole).toString();
 }
 
@@ -3648,12 +3518,12 @@ QMap<QString, QString> MainWindow::loadFolderAssignments() const
 {
     QMap<QString, QString> map;
     KConfig config(u"kemurc"_s);
-    KConfigGroup grp = config.group(u"Folders"_s);
+    const KConfigGroup grp = config.group(u"Folders"_s);
 
     const QStringList keys = grp.keyList();
-    for (const QString& key : keys) {
+    for (const QString &key : keys) {
         if (key != u"order"_s)
-            map.insert(key, grp.readEntry(key, { }));
+            map.insert(key, grp.readEntry(key, {}));
     }
     return map;
 }
@@ -3663,7 +3533,7 @@ void MainWindow::saveFolderStructure() const
     KConfig config(u"kemurc"_s);
     KConfigGroup grp = config.group(u"Folders"_s);
 
-    for (const QString& key : grp.keyList())
+    for (const QString &key : grp.keyList())
         grp.deleteEntry(key);
 
     const QMap<QString, QString> assignments = veModel->folderAssignments();
@@ -3671,8 +3541,8 @@ void MainWindow::saveFolderStructure() const
         grp.writeEntry(it.key(), it.value());
 
     QStringList collapsedFolders;
-    for (const QString& name : veModel->folderNames()) {
-        QModelIndex idx = veModel->indexForFolder(name);
+    for (const QString &name : veModel->folderNames()) {
+        const QModelIndex idx = veModel->indexForFolder(name);
         if (idx.isValid() && !veTreeView->isExpanded(idx))
             collapsedFolders << name;
     }
@@ -3680,15 +3550,9 @@ void MainWindow::saveFolderStructure() const
     grp.sync();
 }
 
-void MainWindow::showQemuFailureDialog(const QString& vmName,
-    bool startupFailed,
-    int exitCode,
-    KProcess::ExitStatus exitStatus,
-    const QByteArray& stderrTail)
+void MainWindow::showQemuFailureDialog(const QString &vmName, bool startupFailed, int exitCode, KProcess::ExitStatus exitStatus, const QByteArray &stderrTail)
 {
-    const QString title = startupFailed
-        ? i18nc("@title:window", "Failed to Start VM")
-        : i18nc("@title:window", "VM Terminated Unexpectedly");
+    const QString title = startupFailed ? i18nc("@title:window", "Failed to Start VM") : i18nc("@title:window", "VM Terminated Unexpectedly");
 
     QString summary;
     if (startupFailed) {
@@ -3704,27 +3568,23 @@ void MainWindow::showQemuFailureDialog(const QString& vmName,
 
     const QString stderrText = QString::fromUtf8(stderrTail).trimmed();
     if (!stderrText.isEmpty()) {
-        body += u"<pre style='white-space: pre-wrap;'>"_s
-            + stderrText.toHtmlEscaped()
-            + u"</pre>"_s;
+        body += u"<pre style='white-space: pre-wrap;'>"_s + stderrText.toHtmlEscaped() + u"</pre>"_s;
     } else {
-        body += u"<p><i>"_s
-            + i18n("(No diagnostic output captured.)").toHtmlEscaped()
-            + u"</i></p>"_s;
+        body += u"<p><i>"_s + i18n("(No diagnostic output captured.)").toHtmlEscaped() + u"</i></p>"_s;
     }
 
     KMessageBox::error(this, body, title);
 }
 
-void MainWindow::startDeployment(const QString& vmName, const bool disable_headless)
+void MainWindow::startDeployment(const QString &vmName, const bool disable_headless)
 {
-    VmEntry* entry = veModel->entryByName(vmName);
+    VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || entry->state != VmEntry::State::Deploying)
         return;
 
     // Load current config from disk
     const QString vmPath = getVmDir(vmName).absolutePath();
-    VMConfig config = loadVmConfig(vmPath);
+    const VMConfig config = loadVmConfig(vmPath);
     entry->config = config;
 
     if (config.useTpm()) {
@@ -3734,8 +3594,7 @@ void MainWindow::startDeployment(const QString& vmName, const bool disable_headl
         }
     }
 
-    if (!config.sharedPath().isEmpty()
-        && config.osType() == VMSpecs::OsType::Windows) {
+    if (!config.sharedPath().isEmpty() && config.osType() == VMSpecs::OsType::Windows) {
         if (!startVirtiofsd(vmName)) {
             abortDeployment(vmName, false);
             return;
@@ -3779,12 +3638,10 @@ void MainWindow::startDeployment(const QString& vmName, const bool disable_headl
         return;
     }
 
-    KProcess* process = new KProcess(this);
+    KProcess *process = new KProcess(this);
 
-    if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
-        && !tapDevice.isEmpty()) {
-        const qint64 nsPid = m_networkManager->namespacePid(
-            currentConfig.virtualNetworkName());
+    if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !tapDevice.isEmpty()) {
+        const qint64 nsPid = m_networkManager->namespacePid(currentConfig.virtualNetworkName());
         NamespaceHelper::prepareProcessForNamespace(process, nsPid);
     }
     process->setProgram(ExternalTools::instance().path(ExternalTools::QemuSystem));
@@ -3814,13 +3671,12 @@ void MainWindow::startDeployment(const QString& vmName, const bool disable_headl
     updateActionStates();
 
     // QMP connection for monitoring shutdown
-    QMPClient* client = new QMPClient(this);
+    QMPClient *client = new QMPClient(this);
     veModel->setQmpClient(vmName, client);
 
-    connect(client, &QMPClient::eventReceived, this,
-        [this, vmName](const QString& eventName, const QJsonObject& data) {
-            this->onQMPEvent(vmName, eventName, data);
-        });
+    connect(client, &QMPClient::eventReceived, this, [this, vmName](const QString &eventName, const QJsonObject &data) {
+        this->onQMPEvent(vmName, eventName, data);
+    });
 
     connect(client, &QMPClient::connected, this, [client]() {
         client->startPerformanceTimer(1000);
@@ -3832,12 +3688,12 @@ void MainWindow::startDeployment(const QString& vmName, const bool disable_headl
         qWarning() << "Deployment QMP: socket not ready for" << vmName;
 }
 
-void MainWindow::finalizeDeployment(const QString& vmName)
+void MainWindow::finalizeDeployment(const QString &vmName)
 {
     m_pendingDeployments.remove(vmName);
 
     const QString vmPath = getVmDir(vmName).absolutePath();
-    QDir vmDir(vmPath);
+    const QDir vmDir(vmPath);
 
     CloudImageDeployer::removeNoCloudIso(vmDir);
 
@@ -3854,15 +3710,14 @@ void MainWindow::finalizeDeployment(const QString& vmName)
         updateDetails();
     }
 
-    statusBar()->showMessage(
-        i18n("Deployment of '%1' complete. VM is ready.", vmName));
+    statusBar()->showMessage(i18n("Deployment of '%1' complete. VM is ready.", vmName));
 }
 
-void MainWindow::abortDeployment(const QString& vmName, bool deleteVm)
+void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
 {
     m_pendingDeployments.remove(vmName);
 
-    VmEntry* entry = veModel->entryByName(vmName);
+    const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry)
         return;
 
@@ -3920,18 +3775,16 @@ void MainWindow::abortDeployment(const QString& vmName, bool deleteVm)
         getVmDir(vmName).removeRecursively();
         loadVmList();
         onVmSelectionChanged();
-        statusBar()->showMessage(
-            i18n("Deployment of '%1' cancelled. VM deleted.", vmName));
+        statusBar()->showMessage(i18n("Deployment of '%1' cancelled. VM deleted.", vmName));
     } else {
         veModel->clearRuntimeState(vmName);
         updateDetails();
         updateActionStates();
-        statusBar()->showMessage(
-            i18n("Deployment of '%1' cancelled.", vmName));
+        statusBar()->showMessage(i18n("Deployment of '%1' cancelled.", vmName));
     }
 }
 
-void MainWindow::deployCloudImage(const QString& vmName)
+void MainWindow::deployCloudImage(const QString &vmName)
 {
     if (!m_pendingDeployments.contains(vmName))
         return;

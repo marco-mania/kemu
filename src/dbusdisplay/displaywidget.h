@@ -28,14 +28,12 @@
 
 using namespace Qt::StringLiterals;
 
-class QemuDisplayWidget : public QOpenGLWidget, protected QOpenGLFunctions {
+class QemuDisplayWidget : public QOpenGLWidget, protected QOpenGLFunctions
+{
     Q_OBJECT
 
 public:
-    QemuDisplayWidget(QemuDisplayListener* listener,
-        QDBusConnection& conn,
-        const QString& consolePath,
-        QWidget* parent = nullptr);
+    QemuDisplayWidget(QemuDisplayListener *listener, QDBusConnection &conn, const QString &consolePath, QWidget *parent = nullptr);
     ~QemuDisplayWidget() override;
 
     // Monitor GLib socket FD (instead of polling timer).
@@ -54,17 +52,17 @@ protected:
     void paintGL() override;
     void resizeGL(int w, int h) override;
 
-    void keyPressEvent(QKeyEvent* event) override;
-    void keyReleaseEvent(QKeyEvent* event) override;
-    void mouseMoveEvent(QMouseEvent* event) override;
-    void mousePressEvent(QMouseEvent* event) override;
-    void mouseReleaseEvent(QMouseEvent* event) override;
-    void wheelEvent(QWheelEvent* event) override;
+    void keyPressEvent(QKeyEvent *event) override;
+    void keyReleaseEvent(QKeyEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
 
 private Q_SLOTS:
     void onScanoutChanged(int width, int height);
     void onDmaBufScanout(int width, int height);
-    void onRegionUpdated(const QRect& rect);
+    void onRegionUpdated(const QRect &rect);
     void onCursorChanged();
     void dispatchGLib();
     void onFrameTick();
@@ -80,21 +78,21 @@ private:
 
     static uint32_t evdevToQnum(uint32_t evdev);
     static int qtButtonToQemu(Qt::MouseButton button);
-    QPointF mapToFramebuffer(const QPointF& widgetPos) const;
+    QPointF mapToFramebuffer(const QPointF &widgetPos) const;
 
-    QemuDisplayListener* m_listener;
-    QDBusInterface* m_keyboard;
-    QDBusInterface* m_mouse;
+    QemuDisplayListener *m_listener;
+    QDBusInterface *m_keyboard;
+    QDBusInterface *m_mouse;
 
     // GLib integration: event-driven instead of polling
-    QList<QSocketNotifier*> m_glibNotifiers;
+    QList<QSocketNotifier *> m_glibNotifiers;
 
     // Frame timer for update coalescing (~60 FPS)
-    QTimer* m_frameTimer;
+    QTimer *m_frameTimer;
     bool m_needsRepaint = false;
 
     // OpenGL
-    QOpenGLShaderProgram* m_shader = nullptr;
+    QOpenGLShaderProgram *m_shader = nullptr;
     GLuint m_textureId = 0;
     GLuint m_vbo = 0;
 
@@ -112,7 +110,7 @@ private:
     EGLImageKHR m_eglImage = EGL_NO_IMAGE_KHR;
     PFNEGLCREATEIMAGEKHRPROC m_eglCreateImageKHR = nullptr;
     PFNEGLDESTROYIMAGEKHRPROC m_eglDestroyImageKHR = nullptr;
-    typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(GLenum, void*);
+    typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(GLenum, void *);
     PFNGLEGLIMAGETARGETTEXTURE2DOESPROC m_glEGLImageTargetTexture2DOES = nullptr;
     bool m_eglAvailable = false;
 

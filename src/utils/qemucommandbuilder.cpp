@@ -11,16 +11,17 @@
 
 using namespace Qt::StringLiterals;
 
-QStringList QemuCommandBuilder::build(const VMConfig& config,
-    const QDir& vmDir,
-    const QString& monitorSocketPath,
-    const NetworkContext& networkContext,
-    const bool relativePaths,
-    const bool headless)
+QStringList QemuCommandBuilder::build(const VMConfig &config,
+                                      const QDir &vmDir,
+                                      const QString &monitorSocketPath,
+                                      const NetworkContext &networkContext,
+                                      const bool relativePaths,
+                                      const bool headless)
 {
     QStringList args;
 
-    // Use guest= form so commas in the VM name aren't parsed as further -name options.
+    // Use guest= form so commas in the VM name aren't parsed as further -name
+    // options.
     args << u"-name"_s << u"guest=%1"_s.arg(config.name());
 
     // --- Chipset ---
@@ -56,10 +57,10 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
 
     // -- SMP Topology --
     // Always 1 socket; 2 threads/core for even vCPU counts.
-    int sockets = 1;
+    const int sockets = 1;
     int cores = 1;
     int threads = 1;
-    int totalCpuCores = config.cpuCoreCount();
+    const int totalCpuCores = config.cpuCoreCount();
 
     if (totalCpuCores == 1) {
         cores = 1;
@@ -68,14 +69,14 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
         threads = 2;
         cores = totalCpuCores / 2;
     } else {
-        // Odd vCPU count - SMT cannot be distributed evenly, fall back to 1 thread per core.
+        // Odd vCPU count - SMT cannot be distributed evenly, fall back to 1 thread
+        // per core.
         threads = 1;
         cores = totalCpuCores;
     }
 
     // Pass the total number of CPUs (%1) as the first argument!
-    args << u"-smp"_s
-         << u"cpus=%1,cores=%2,threads=%3,sockets=%4"_s.arg(totalCpuCores).arg(cores).arg(threads).arg(sockets);
+    args << u"-smp"_s << u"cpus=%1,cores=%2,threads=%3,sockets=%4"_s.arg(totalCpuCores).arg(cores).arg(threads).arg(sockets);
 
     if (config.useKvm())
         args << u"-global"_s << u"kvm-pit.lost_tick_policy=discard"_s;
@@ -99,9 +100,7 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
         args << u"-mem-prealloc"_s;
 
     // --- RTC ---
-    QString rtcParam = config.useLocalTime()
-        ? u"base=localtime,clock=host"_s
-        : u"base=utc,clock=host"_s;
+    QString rtcParam = config.useLocalTime() ? u"base=localtime,clock=host"_s : u"base=utc,clock=host"_s;
     if (config.osType() == VMSpecs::OsType::Windows)
         rtcParam += u",driftfix=slew"_s;
     args << u"-rtc"_s << rtcParam;
@@ -113,13 +112,10 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
 
         if (!ovmf.codePath.isEmpty() && QFile::exists(localVarsPath)) {
             if (config.useSecureBoot())
-                args << u"-global"_s
-                     << u"driver=cfi.pflash01,property=secure,value=on"_s;
+                args << u"-global"_s << u"driver=cfi.pflash01,property=secure,value=on"_s;
 
-            args << u"-drive"_s
-                 << u"if=pflash,format=raw,readonly=on,unit=0,file=%1"_s.arg(ovmf.codePath);
-            args << u"-drive"_s
-                 << u"if=pflash,format=raw,unit=1,file=%1"_s.arg(relativePaths ? QFileInfo(localVarsPath).fileName() : localVarsPath);
+            args << u"-drive"_s << u"if=pflash,format=raw,readonly=on,unit=0,file=%1"_s.arg(ovmf.codePath);
+            args << u"-drive"_s << u"if=pflash,format=raw,unit=1,file=%1"_s.arg(relativePaths ? QFileInfo(localVarsPath).fileName() : localVarsPath);
         } else {
             if (ovmf.codePath.isEmpty())
                 args << u"-drive"_s << u"if=pflash,file=UEFI_CODE_NOT_FOUND"_s;
@@ -134,23 +130,17 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
         args << u"-chardev"_s << u"socket,id=chrtpm,path=%1"_s.arg(relativePaths ? QFileInfo(sockPath).fileName() : sockPath);
         args << u"-tpmdev"_s << u"emulator,id=tpm0,chardev=chrtpm"_s;
         // CRB preferred for Q35 / Windows 11; TIS as fallback.
-        args << u"-device"_s
-             << (config.machineType() == VMSpecs::MachineType::Q35
-                        ? u"tpm-crb,tpmdev=tpm0"_s
-                        : u"tpm-tis,tpmdev=tpm0"_s);
+        args << u"-device"_s << (config.machineType() == VMSpecs::MachineType::Q35 ? u"tpm-crb,tpmdev=tpm0"_s : u"tpm-tis,tpmdev=tpm0"_s);
     }
 
     // --- Disk ---
     const QString driveId = u"sysdisk"_s;
-    args << u"-drive"_s
-         << u"file=%1,format=qcow2,if=none,id=%2"_s.arg(relativePaths ? QFileInfo(config.diskPath()).fileName() : config.diskPath(), driveId);
+    args << u"-drive"_s << u"file=%1,format=qcow2,if=none,id=%2"_s.arg(relativePaths ? QFileInfo(config.diskPath()).fileName() : config.diskPath(), driveId);
 
     if (config.diskInterface() == VMSpecs::DiskInterface::Nvme)
-        args << u"-device"_s
-             << u"%1,drive=%2,serial=serial0"_s.arg(VMConfig::toQemuString(config.diskInterface()), driveId);
+        args << u"-device"_s << u"%1,drive=%2,serial=serial0"_s.arg(VMConfig::toQemuString(config.diskInterface()), driveId);
     else
-        args << u"-device"_s
-             << u"%1,drive=%2"_s.arg(VMConfig::toQemuString(config.diskInterface()), driveId);
+        args << u"-device"_s << u"%1,drive=%2"_s.arg(VMConfig::toQemuString(config.diskInterface()), driveId);
 
     // --- ISO ---
     if (config.machineType() == VMSpecs::MachineType::Q35) {
@@ -158,8 +148,8 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
 
         if (!config.isoPath().isEmpty()) {
             args << u"-drive"_s
-                 << u"file=%1,format=raw,if=none,id=drive-cdrom0,media=cdrom,readonly=on"_s
-                        .arg(relativePaths ? QFileInfo(config.isoPath()).fileName() : config.isoPath());
+                 << u"file=%1,format=raw,if=none,id=drive-cdrom0,media=cdrom,readonly=on"_s.arg(relativePaths ? QFileInfo(config.isoPath()).fileName()
+                                                                                                              : config.isoPath());
             args << u"-device"_s << u"scsi-cd,drive=drive-cdrom0,id=cdrom0"_s;
         } else {
             args << u"-drive"_s << u"if=none,id=drive-cdrom0,media=cdrom"_s;
@@ -168,8 +158,8 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
     } else {
         if (!config.isoPath().isEmpty()) {
             args << u"-drive"_s
-                 << u"file=%1,format=raw,if=none,id=drive-cdrom0,media=cdrom,readonly=on"_s
-                        .arg(relativePaths ? QFileInfo(config.isoPath()).fileName() : config.isoPath());
+                 << u"file=%1,format=raw,if=none,id=drive-cdrom0,media=cdrom,readonly=on"_s.arg(relativePaths ? QFileInfo(config.isoPath()).fileName()
+                                                                                                              : config.isoPath());
             args << u"-device"_s << u"ide-cd,drive=drive-cdrom0,id=cdrom0"_s;
         } else {
             args << u"-drive"_s << u"if=none,id=drive-cdrom0,media=cdrom"_s;
@@ -181,8 +171,8 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
     if (config.machineType() != VMSpecs::MachineType::Q35) {
         if (!config.floppyPath().isEmpty()) {
             args << u"-drive"_s
-                 << u"file=%1,format=raw,if=none,id=drive-fda,readonly=off"_s
-                        .arg(relativePaths ? QFileInfo(config.floppyPath()).fileName() : config.floppyPath());
+                 << u"file=%1,format=raw,if=none,id=drive-fda,readonly=off"_s.arg(relativePaths ? QFileInfo(config.floppyPath()).fileName()
+                                                                                                : config.floppyPath());
         } else {
             args << u"-drive"_s << u"if=none,id=drive-fda"_s;
         }
@@ -192,12 +182,9 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
     // --- Cloud-Init NoCloud ISO ---
     const QString cidataIso = vmDir.absoluteFilePath(u"cidata.iso"_s);
     if (QFile::exists(cidataIso)) {
-        const QString ciDevType = (config.machineType() == VMSpecs::MachineType::Q35)
-            ? u"scsi-cd"_s
-            : u"ide-cd"_s;
+        const QString ciDevType = (config.machineType() == VMSpecs::MachineType::Q35) ? u"scsi-cd"_s : u"ide-cd"_s;
         args << u"-drive"_s
-             << u"file=%1,format=raw,if=none,id=drive-cidata,media=cdrom,readonly=on"_s
-                    .arg(relativePaths ? QFileInfo(cidataIso).fileName() : cidataIso);
+             << u"file=%1,format=raw,if=none,id=drive-cidata,media=cdrom,readonly=on"_s.arg(relativePaths ? QFileInfo(cidataIso).fileName() : cidataIso);
         args << u"-device"_s << u"%1,drive=drive-cidata,id=cidata"_s.arg(ciDevType);
     }
 
@@ -215,7 +202,6 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
 
     // -- Shared Folders ---
     if (!config.sharedPath().isEmpty()) {
-
         const QString mountTag = config.sharedName().isEmpty() ? u"share"_s : config.sharedName();
 
         if (config.osType() == VMSpecs::OsType::Windows) {
@@ -224,10 +210,8 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
             // QEMU connects via a vhost-user socket.
             const QString virtiofsSock = vmDir.absoluteFilePath(u"virtiofsd.sock"_s);
 
-            args << u"-chardev"_s
-                 << u"socket,id=char_virtiofs,path=%1"_s.arg(relativePaths ? QFileInfo(virtiofsSock).fileName() : virtiofsSock);
-            args << u"-device"_s
-                 << u"vhost-user-fs-pci,queue-size=1024,chardev=char_virtiofs,tag=%1"_s.arg(mountTag);
+            args << u"-chardev"_s << u"socket,id=char_virtiofs,path=%1"_s.arg(relativePaths ? QFileInfo(virtiofsSock).fileName() : virtiofsSock);
+            args << u"-device"_s << u"vhost-user-fs-pci,queue-size=1024,chardev=char_virtiofs,tag=%1"_s.arg(mountTag);
 
             // Shared memory for virtio-fs
             QString memObj = u"memory-backend-file,id=mem,size=%1M,mem-path=/dev/shm,share=on"_s.arg(config.ramMb());
@@ -245,17 +229,18 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
             // which stores guest UIDs in xattrs on the host.
             const QString secModel = (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) ? u"mapped-xattr"_s : u"none"_s;
             args << u"-virtfs"_s
-                 << u"local,path=%1,mount_tag=%2,security_model=%3,id=fs0"_s.arg(relativePaths ? QFileInfo(config.sharedPath()).fileName() : config.sharedPath(), mountTag, secModel);
+                 << u"local,path=%1,mount_tag=%2,security_model=%3,id=fs0"_s.arg(relativePaths ? QFileInfo(config.sharedPath()).fileName()
+                                                                                               : config.sharedPath(),
+                                                                                 mountTag,
+                                                                                 secModel);
         }
     }
 
     // --- Graphics ---
     // 3D acceleration requires a GL display backend (GTK or SDL).
     // Disable it for headless mode and SPICE.
-    const bool effective3d = config.gpu3dAcceleration()
-        && config.gpuType() == VMSpecs::GpuType::Virtio
-        && !headless
-        && config.displayType() != VMSpecs::DisplayType::Spice;
+    const bool effective3d =
+        config.gpu3dAcceleration() && config.gpuType() == VMSpecs::GpuType::Virtio && !headless && config.displayType() != VMSpecs::DisplayType::Spice;
 
     const int mem = qBound(VMConfig::vgaMemMbLowerLimit(config.gpuType()), config.gpuMemMb(), VMConfig::vgaMemMbUpperLimit(config.gpuType()));
 
@@ -264,12 +249,7 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
     } else if (config.gpuType() == VMSpecs::GpuType::Virtio) {
         const QSize res = config.displayResolution();
         const QString device = effective3d ? u"virtio-vga-gl"_s : u"virtio-vga"_s;
-        args << u"-device"_s
-             << u"%1,xres=%2,yres=%3,max_hostmem=%4M"_s
-                    .arg(device)
-                    .arg(res.width())
-                    .arg(res.height())
-                    .arg(mem);
+        args << u"-device"_s << u"%1,xres=%2,yres=%3,max_hostmem=%4M"_s.arg(device).arg(res.width()).arg(res.height()).arg(mem);
     } else if (config.gpuType() == VMSpecs::GpuType::CirrusGD5446) {
         args << u"-device"_s << u"cirrus-vga,vgamem_mb=%1"_s.arg(mem);
     } else if (config.gpuType() == VMSpecs::GpuType::CirrusGD5430) {
@@ -283,8 +263,7 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
     // --- Display Frontend ---
     if (config.displayType() == VMSpecs::DisplayType::Spice) {
         const QString spiceSock = vmDir.absoluteFilePath(u"spice.sock"_s);
-        args << u"-spice"_s
-             << u"unix=on,addr=%1,disable-ticketing=on"_s.arg(relativePaths ? QFileInfo(spiceSock).fileName() : spiceSock);
+        args << u"-spice"_s << u"unix=on,addr=%1,disable-ticketing=on"_s.arg(relativePaths ? QFileInfo(spiceSock).fileName() : spiceSock);
         args << u"-display"_s << u"none"_s;
 
         if (config.spiceAgent()) {
@@ -306,17 +285,13 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
             args << u"-display"_s << u"none"_s;
         } else {
             const QString busSock = vmDir.absoluteFilePath(u"dbus-bus.sock"_s);
-            const QString sockArg = relativePaths
-                ? u"dbus-bus.sock"_s
-                : busSock;
+            const QString sockArg = relativePaths ? u"dbus-bus.sock"_s : busSock;
 
             QString displayOpt = u"dbus,addr=unix:path=%1"_s.arg(QString::fromLatin1(sockArg.toUtf8().toPercentEncoding()));
             if (effective3d)
                 displayOpt += u",gl=on"_s;
             if (config.audioDevice() != VMSpecs::AudioDevice::None) {
-                const QString audioId = (config.audioDevice() == VMSpecs::AudioDevice::Hda)
-                    ? u"audio0"_s
-                    : u"snd0"_s;
+                const QString audioId = (config.audioDevice() == VMSpecs::AudioDevice::Hda) ? u"audio0"_s : u"snd0"_s;
                 displayOpt += u",audiodev=%1"_s.arg(audioId);
             }
             args << u"-display"_s << displayOpt;
@@ -342,8 +317,7 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
         } else {
             args << u"-audiodev"_s << u"%1,id=snd0"_s.arg(audioBackend);
             QString audioDevice = u"%1,audiodev=snd0"_s.arg(VMConfig::toQemuString(config.audioDevice()));
-            if (config.audioDevice() == VMSpecs::AudioDevice::Sb16
-                && !config.sb16Config().isDefault()) {
+            if (config.audioDevice() == VMSpecs::AudioDevice::Sb16 && !config.sb16Config().isDefault()) {
                 audioDevice += u",%1"_s.arg(config.sb16Config().toPropertyString());
             }
             args << u"-device"_s << audioDevice;
@@ -352,7 +326,6 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
 
     // --- Network ---
     if (config.networkCard() != VMSpecs::NetworkCard::None) {
-
         QString netDevice = u"%1,netdev=nic0"_s.arg(VMConfig::toQemuString(config.networkCard()));
         if (!config.macAddress().isEmpty())
             netDevice.append(u",mac=%1"_s.arg(config.macAddress()));
@@ -363,20 +336,13 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
             // QEMU itself must be launched inside the namespace via nsenter.
             // The caller MUST provide the tap name - otherwise we fail loud
             // rather than silently falling back to passt.
-            Q_ASSERT_X(!networkContext.tapDevice.isEmpty(),
-                "QemuCommandBuilder::build",
-                "VirtualNetwork mode requires NetworkContext::tapDevice to be set");
+            Q_ASSERT_X(!networkContext.tapDevice.isEmpty(), "QemuCommandBuilder::build", "VirtualNetwork mode requires NetworkContext::tapDevice to be set");
 
-            args << u"-netdev"_s
-                 << u"tap,id=nic0,ifname=%1,script=no,downscript=no"_s.arg(networkContext.tapDevice);
+            args << u"-netdev"_s << u"tap,id=nic0,ifname=%1,script=no,downscript=no"_s.arg(networkContext.tapDevice);
         } else {
             // Passt: user-mode networking via unix stream socket.
-            const QString passtSock = networkContext.passtSocketPath.isEmpty()
-                ? vmDir.absoluteFilePath(u"passt.sock"_s)
-                : networkContext.passtSocketPath;
-            args << u"-netdev"_s
-                 << u"stream,id=nic0,server=off,addr.type=unix,addr.path=%1"_s
-                        .arg(relativePaths ? QFileInfo(passtSock).fileName() : passtSock);
+            const QString passtSock = networkContext.passtSocketPath.isEmpty() ? vmDir.absoluteFilePath(u"passt.sock"_s) : networkContext.passtSocketPath;
+            args << u"-netdev"_s << u"stream,id=nic0,server=off,addr.type=unix,addr.path=%1"_s.arg(relativePaths ? QFileInfo(passtSock).fileName() : passtSock);
         }
     }
 
@@ -418,108 +384,78 @@ QStringList QemuCommandBuilder::build(const VMConfig& config,
     return args;
 }
 
-QString QemuCommandBuilder::buildShellScript(const VMConfig& config,
-    const QDir& vmDir,
-    const QString& monitorSocketPath,
-    const NetworkContext& networkContext,
-    const VirtualNetwork& network,
-    const bool relativePaths)
+QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
+                                             const QDir &vmDir,
+                                             const QString &monitorSocketPath,
+                                             const NetworkContext &networkContext,
+                                             const VirtualNetwork &network,
+                                             const bool relativePaths)
 {
     const QStringList args = build(config, vmDir, monitorSocketPath, networkContext, relativePaths);
 
     QString script;
 
     if (relativePaths) {
-        script += u"#!/bin/sh\n"_s
-            + u"# Generated by %1 %2\n\n"_s.arg(
-                QCoreApplication::applicationName(),
-                QCoreApplication::applicationVersion())
+        script += u"#!/bin/sh\n"_s + u"# Generated by %1 %2\n\n"_s.arg(QCoreApplication::applicationName(), QCoreApplication::applicationVersion())
             + u"cd \"$(dirname \"$0\")\" || exit 1\n\n"_s;
     }
 
     // --- swtpm ---
     if (config.useTpm()) {
-        const QString swtpmPath = relativePaths
-            ? u"swtpm"_s
-            : ExternalTools::instance().path(ExternalTools::Swtpm);
-        const QString sockArg = relativePaths
-            ? u"swtpm.sock"_s
-            : vmDir.absoluteFilePath(u"swtpm.sock"_s);
-        const QString stateArg = relativePaths
-            ? u"."_s
-            : vmDir.absolutePath();
+        const QString swtpmPath = relativePaths ? u"swtpm"_s : ExternalTools::instance().path(ExternalTools::Swtpm);
+        const QString sockArg = relativePaths ? u"swtpm.sock"_s : vmDir.absoluteFilePath(u"swtpm.sock"_s);
+        const QString stateArg = relativePaths ? u"."_s : vmDir.absolutePath();
 
         script += u"# Start software TPM emulator\n"_s;
         if (!relativePaths)
             script += u"# %1\n"_s.arg(ExternalTools::instance().version(ExternalTools::Swtpm));
-        script += u"%1 socket \\\n"_s.arg(swtpmPath)
-            + u"  --ctrl type=unixio,path=%1 \\\n"_s.arg(sockArg)
-            + u"  --terminate \\\n"_s
-            + u"  --tpmstate dir=%1 \\\n"_s.arg(stateArg)
-            + u"  --tpm2 &\n"_s
-            + u"sleep 1\n\n"_s;
+        script += u"%1 socket \\\n"_s.arg(swtpmPath) + u"  --ctrl type=unixio,path=%1 \\\n"_s.arg(sockArg) + u"  --terminate \\\n"_s
+            + u"  --tpmstate dir=%1 \\\n"_s.arg(stateArg) + u"  --tpm2 &\n"_s + u"sleep 1\n\n"_s;
     }
 
     // --- virtiofsd (Windows shared folders) ---
-    if (!config.sharedPath().isEmpty()
-        && config.osType() == VMSpecs::OsType::Windows) {
-        const QString virtiofsdPath = relativePaths
-            ? u"virtiofsd"_s
-            : ExternalTools::instance().path(ExternalTools::Virtiofsd);
-        const QString sockArg = relativePaths
-            ? u"virtiofsd.sock"_s
-            : vmDir.absoluteFilePath(u"virtiofsd.sock"_s);
+    if (!config.sharedPath().isEmpty() && config.osType() == VMSpecs::OsType::Windows) {
+        const QString virtiofsdPath = relativePaths ? u"virtiofsd"_s : ExternalTools::instance().path(ExternalTools::Virtiofsd);
+        const QString sockArg = relativePaths ? u"virtiofsd.sock"_s : vmDir.absoluteFilePath(u"virtiofsd.sock"_s);
 
         script += u"# Start virtiofsd for shared folder\n"_s;
-        script += u"%1 \\\n"_s.arg(virtiofsdPath)
-            + u"  --socket-path=%1 \\\n"_s.arg(sockArg)
-            + u"  --shared-dir=%1 \\\n"_s.arg(config.sharedPath())
-            + u"  --cache=auto \\\n"_s
-            + u"  --sandbox=none &\n"_s
-            + u"sleep 1\n\n"_s;
+        script += u"%1 \\\n"_s.arg(virtiofsdPath) + u"  --socket-path=%1 \\\n"_s.arg(sockArg) + u"  --shared-dir=%1 \\\n"_s.arg(config.sharedPath())
+            + u"  --cache=auto \\\n"_s + u"  --sandbox=none &\n"_s + u"sleep 1\n\n"_s;
     }
 
     // --- Network ---
     if (config.networkCard() != VMSpecs::NetworkCard::None) {
         if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
-            const QString gw = network.gateway.isEmpty()
-                ? u"192.168.100.1"_s
-                : network.gateway;
+            const QString gw = network.gateway.isEmpty() ? u"192.168.100.1"_s : network.gateway;
 
-            script += u"# Create network namespace\n"_s
-                + u"unshare --user --net --map-root-user -- sleep infinity &\n"_s
-                + u"NS_PID=$!\n"_s
-                + u"sleep 0.5\n\n"_s;
+            script +=
+                u"# Create network namespace\n"_s + u"unshare --user --net --map-root-user -- sleep infinity &\n"_s + u"NS_PID=$!\n"_s + u"sleep 0.5\n\n"_s;
 
             script += u"# Start NAT connector (must run before bridge setup)\n"_s;
             if (network.enableNat) {
-                script += u"pasta --userns /proc/$NS_PID/ns/user \\\n"_s
-                    + u"  --netns /proc/$NS_PID/ns/net \\\n"_s
-                    + u"  --config-net -f &\n"_s
-                    + u"sleep 2\n\n"_s;
+                script +=
+                    u"pasta --userns /proc/$NS_PID/ns/user \\\n"_s + u"  --netns /proc/$NS_PID/ns/net \\\n"_s + u"  --config-net -f &\n"_s + u"sleep 2\n\n"_s;
             }
 
-            script += u"# Configure bridge\n"_s
-                + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link set lo up\n"_s
+            script += u"# Configure bridge\n"_s + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link set lo up\n"_s
                 + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link add br0 type bridge\n"_s
                 + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link set dev br0 type bridge stp_state 0\n"_s
-                + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip addr add %1/%2 dev br0\n"_s
-                      .arg(gw)
-                      .arg(network.prefixLength)
+                + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip addr add %1/%2 dev br0\n"_s.arg(gw).arg(network.prefixLength)
                 + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link set br0 up\n"_s;
 
             if (network.enableNat) {
-                script += u"\n# Enable IP forwarding and setup NAT\n"_s
-                    + u"nsenter -t $NS_PID -U --preserve-credentials -n -- "
-                      u"sh -c 'echo 1 > /proc/sys/net/ipv4/ip_forward'\n"_s
-                    + u"NS_IFACE=$(nsenter -t $NS_PID -U --preserve-credentials -n -- "
-                      u"ip -o route show default | awk '{print $5}')\n"_s
-                    + u"nsenter -t $NS_PID -U --preserve-credentials -n -- "
-                      u"nft add table ip nat\n"_s
-                    + u"nsenter -t $NS_PID -U --preserve-credentials -n -- "
-                      u"nft add chain ip nat postrouting '{ type nat hook postrouting priority 100; }'\n"_s
-                    + u"nsenter -t $NS_PID -U --preserve-credentials -n -- "
-                      u"nft add rule ip nat postrouting oif \"$NS_IFACE\" masquerade\n"_s;
+                script +=
+            u"\n# Enable IP forwarding and setup NAT\n"_s +
+            u"nsenter -t $NS_PID -U --preserve-credentials -n -- "
+            u"sh -c 'echo 1 > /proc/sys/net/ipv4/ip_forward'\n"_s +
+            u"NS_IFACE=$(nsenter -t $NS_PID -U --preserve-credentials -n -- "
+            u"ip -o route show default | awk '{print $5}')\n"_s +
+            u"nsenter -t $NS_PID -U --preserve-credentials -n -- "
+            u"nft add table ip nat\n"_s +
+            u"nsenter -t $NS_PID -U --preserve-credentials -n -- "
+            u"nft add chain ip nat postrouting '{ type nat hook postrouting priority 100; }'\n"_s +
+            u"nsenter -t $NS_PID -U --preserve-credentials -n -- "
+            u"nft add rule ip nat postrouting oif \"$NS_IFACE\" masquerade\n"_s;
             }
 
             if (network.enableDhcp) {
@@ -533,40 +469,25 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig& config,
                         rangeEnd = prefix + u".200"_s;
                     }
                 }
-                script += u"\n# Start DHCP server\n"_s
-                    + u"nsenter -t $NS_PID -U --preserve-credentials -n -- dnsmasq \\\n"_s
-                    + u"  --interface=br0 --bind-interfaces \\\n"_s
-                    + u"  --dhcp-range=%1,%2,12h \\\n"_s.arg(rangeStart, rangeEnd)
+                script += u"\n# Start DHCP server\n"_s + u"nsenter -t $NS_PID -U --preserve-credentials -n -- dnsmasq \\\n"_s
+                    + u"  --interface=br0 --bind-interfaces \\\n"_s + u"  --dhcp-range=%1,%2,12h \\\n"_s.arg(rangeStart, rangeEnd)
                     + u"  --no-daemon --no-resolv --server=1.1.1.1 &\n"_s;
             }
 
-            const QString tapName = networkContext.tapDevice.isEmpty()
-                ? u"tap0"_s
-                : networkContext.tapDevice;
-            script += u"\n# Create tap device for VM\n"_s
-                + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip tuntap add dev %1 mode tap\n"_s.arg(tapName)
+            const QString tapName = networkContext.tapDevice.isEmpty() ? u"tap0"_s : networkContext.tapDevice;
+            script += u"\n# Create tap device for VM\n"_s + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip tuntap add dev %1 mode tap\n"_s.arg(tapName)
                 + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link set %1 master br0\n"_s.arg(tapName)
-                + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link set %1 up\n"_s.arg(tapName)
-                + u"sleep 1\n\n"_s;
+                + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link set %1 up\n"_s.arg(tapName) + u"sleep 1\n\n"_s;
 
         } else {
-            const QString passtPath = relativePaths
-                ? u"passt"_s
-                : ExternalTools::instance().path(ExternalTools::Passt);
-            const QString sockArg = relativePaths
-                ? u"passt.sock"_s
-                : vmDir.absoluteFilePath(u"passt.sock"_s);
+            const QString passtPath = relativePaths ? u"passt"_s : ExternalTools::instance().path(ExternalTools::Passt);
+            const QString sockArg = relativePaths ? u"passt.sock"_s : vmDir.absoluteFilePath(u"passt.sock"_s);
 
-            script += u"# Start passt for user-mode networking\n"_s
-                + u"%1 \\\n"_s.arg(passtPath)
-                + u"  --socket %1 \\\n"_s.arg(sockArg)
-                + u"  -f -q"_s;
+            script += u"# Start passt for user-mode networking\n"_s + u"%1 \\\n"_s.arg(passtPath) + u"  --socket %1 \\\n"_s.arg(sockArg) + u"  -f -q"_s;
 
             QStringList tcpPorts, udpPorts;
-            for (const auto& rule : config.portForwards()) {
-                QString mapping = (rule.hostPort != rule.guestPort)
-                    ? u"%1:%2"_s.arg(rule.hostPort).arg(rule.guestPort)
-                    : QString::number(rule.hostPort);
+            for (const auto &rule : config.portForwards()) {
+                const QString mapping = (rule.hostPort != rule.guestPort) ? u"%1:%2"_s.arg(rule.hostPort).arg(rule.guestPort) : QString::number(rule.hostPort);
                 if (rule.protocol == PortForwardRule::Protocol::Tcp)
                     tcpPorts << mapping;
                 else
@@ -585,43 +506,26 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig& config,
     if (!relativePaths)
         script += u"# %1\n"_s.arg(ExternalTools::instance().version(ExternalTools::QemuSystem));
 
-    const QString qemuPath = relativePaths
-        ? u"qemu-system-x86_64"_s
-        : ExternalTools::instance().path(ExternalTools::QemuSystem);
+    const QString qemuPath = relativePaths ? u"qemu-system-x86_64"_s : ExternalTools::instance().path(ExternalTools::QemuSystem);
 
     if (config.displayType() == VMSpecs::DisplayType::Spice) {
-        const QString spiceSock = relativePaths
-            ? u"spice.sock"_s
-            : vmDir.absoluteFilePath(u"spice.sock"_s);
-        const QString vvFile = relativePaths
-            ? u"spice.vv"_s
-            : vmDir.absoluteFilePath(u"spice.vv"_s);
-        const QString viewerPath = relativePaths
-            ? u"remote-viewer"_s
-            : ExternalTools::instance().path(ExternalTools::RemoteViewer);
+        const QString spiceSock = relativePaths ? u"spice.sock"_s : vmDir.absoluteFilePath(u"spice.sock"_s);
+        const QString vvFile = relativePaths ? u"spice.vv"_s : vmDir.absoluteFilePath(u"spice.vv"_s);
+        const QString viewerPath = relativePaths ? u"remote-viewer"_s : ExternalTools::instance().path(ExternalTools::RemoteViewer);
 
-        script += u"# Write SPICE connection file\n"_s
-            + u"cat > %1 << EOF\n"_s.arg(vvFile)
-            + u"[virt-viewer]\n"_s
-            + u"type=spice\n"_s
-            + u"unix-path=%1\n"_s.arg(spiceSock)
-            + u"EOF\n\n"_s;
+        script += u"# Write SPICE connection file\n"_s + u"cat > %1 << EOF\n"_s.arg(vvFile) + u"[virt-viewer]\n"_s + u"type=spice\n"_s
+            + u"unix-path=%1\n"_s.arg(spiceSock) + u"EOF\n\n"_s;
 
-        script += u"# Start SPICE viewer (will connect once QEMU is ready)\n"_s
-            + u"( sleep 2 && %1 %2 ) &\n\n"_s
-                  .arg(viewerPath, vvFile);
+        script += u"# Start SPICE viewer (will connect once QEMU is ready)\n"_s + u"( sleep 2 && %1 %2 ) &\n\n"_s.arg(viewerPath, vvFile);
     } else if (config.displayType() == VMSpecs::DisplayType::Dbus) {
-        const QString sockArg = relativePaths
-            ? u"dbus-display.sock"_s
-            : vmDir.absoluteFilePath(u"dbus-display.sock"_s);
+        const QString sockArg = relativePaths ? u"dbus-display.sock"_s : vmDir.absoluteFilePath(u"dbus-display.sock"_s);
         script += u"# D-Bus display: QEMU listens on a private Unix socket.\n"_s;
         script += u"# Inside KEMU, the integrated viewer connects automatically.\n"_s;
         script += u"# For standalone use, connect with a D-Bus display viewer:\n"_s;
         script += u"#   <viewer> --dbus-address unix:path=%1\n\n"_s.arg(sockArg);
     }
 
-    if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
-        && config.networkCard() != VMSpecs::NetworkCard::None) {
+    if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && config.networkCard() != VMSpecs::NetworkCard::None) {
         script += u"exec nsenter -t $NS_PID -U --preserve-credentials -n -- \\\n  "_s;
     } else {
         script += u"exec "_s;
@@ -632,21 +536,19 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig& config,
     return script;
 }
 
-QString QemuCommandBuilder::argsToReadableString(const QStringList& args)
+QString QemuCommandBuilder::argsToReadableString(const QStringList &args)
 {
     QStringList formattedLines;
     QString currentLine;
 
-    for (const QString& arg : args) {
+    for (const QString &arg : args) {
         if (arg.startsWith(u'-')) {
             if (!currentLine.isEmpty())
                 formattedLines << currentLine;
             currentLine = arg;
         } else {
             const QString quotedArg = Utils::quoteShellArg(arg);
-            currentLine += currentLine.isEmpty()
-                ? quotedArg
-                : u" "_s + quotedArg;
+            currentLine += currentLine.isEmpty() ? quotedArg : u" "_s + quotedArg;
         }
     }
 

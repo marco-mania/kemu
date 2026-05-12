@@ -52,6 +52,13 @@ find_package(
 
 find_package(LibArchive REQUIRED)
 
+find_package(ECM REQUIRED NO_MODULE)
+set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH})
+
+include(KDEClangFormat)
+file(GLOB_RECURSE ALL_SOURCE_FILES *.cpp *.h)
+kde_clang_format(${ALL_SOURCE_FILES})
+
 pkg_check_modules(MNL REQUIRED libmnl)
 pkg_check_modules(NFTNL REQUIRED libnftnl)
 pkg_check_modules(UDEV REQUIRED libudev)

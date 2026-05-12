@@ -11,7 +11,8 @@
 
 using namespace Qt::StringLiterals;
 
-namespace KEMUConst {
+namespace KEMUConst
+{
 
 inline constexpr auto DetailViewIconSize = 64; // pixel x pixel
 inline constexpr auto ListViewIconSize = 32; // pixel x pixel
@@ -32,12 +33,10 @@ inline constexpr auto DefaultDisplaySize = QSize(1280, 780);
 inline constexpr auto DefaultDisplayType = "GTK"_L1; //
 
 // Hardcoded custom paths for external tools not included in $PATH
-inline const QStringList FallbackPaths = {
-    u"/usr/libexec"_s, // Fedora, RHEL, openSUSE
-    u"/usr/lib/qemu"_s, // Debian, Ubuntu
-    u"/usr/lib"_s, // General lib directory
-    u"/usr/local/libexec"_s, // Custom builds
-    u"/usr/sbin"_s
-};
+inline const QStringList FallbackPaths = {u"/usr/libexec"_s, // Fedora, RHEL, openSUSE
+                                          u"/usr/lib/qemu"_s, // Debian, Ubuntu
+                                          u"/usr/lib"_s, // General lib directory
+                                          u"/usr/local/libexec"_s, // Custom builds
+                                          u"/usr/sbin"_s};
 
-}
+} // namespace KEMUConst

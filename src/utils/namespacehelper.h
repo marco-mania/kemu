@@ -30,7 +30,8 @@
  *   - libnftnl (libnftnl-dev / libnftnl-devel): nftables netlink helpers
  *   Both are available on all major distributions.
  */
-class NamespaceHelper {
+class NamespaceHelper
+{
 public:
     // ---- Namespace Lifecycle ----
 
@@ -41,7 +42,7 @@ public:
      *
      * @return PID of the namespace anchor process, or -1 on failure.
      */
-    static qint64 createNamespace(QString* error = nullptr);
+    static qint64 createNamespace(QString *error = nullptr);
 
     /**
      * Check whether unprivileged user namespaces are supported.
@@ -56,17 +57,17 @@ public:
      *
      * Call BEFORE process->start(). Works with both QProcess and KProcess.
      */
-    static bool prepareProcessForNamespace(KProcess* process, qint64 nsPid);
+    static bool prepareProcessForNamespace(KProcess *process, qint64 nsPid);
 
     // ---- Interface Management (Netlink) ----
 
-    static bool setInterfaceUp(qint64 nsPid, const QString& iface, QString* error = nullptr);
-    static bool createBridge(qint64 nsPid, const QString& name, QString* error = nullptr);
-    static bool setBridgeStp(qint64 nsPid, const QString& bridge, bool enabled, QString* error = nullptr);
-    static bool addAddress(qint64 nsPid, const QString& iface, const QString& addr, int prefixLen, QString* error = nullptr);
-    static bool createTapDevice(qint64 nsPid, const QString& name, QString* error = nullptr);
-    static bool addInterfaceToBridge(qint64 nsPid, const QString& iface, const QString& bridge, QString* error = nullptr);
-    static bool removeInterface(qint64 nsPid, const QString& iface);
+    static bool setInterfaceUp(qint64 nsPid, const QString &iface, QString *error = nullptr);
+    static bool createBridge(qint64 nsPid, const QString &name, QString *error = nullptr);
+    static bool setBridgeStp(qint64 nsPid, const QString &bridge, bool enabled, QString *error = nullptr);
+    static bool addAddress(qint64 nsPid, const QString &iface, const QString &addr, int prefixLen, QString *error = nullptr);
+    static bool createTapDevice(qint64 nsPid, const QString &name, QString *error = nullptr);
+    static bool addInterfaceToBridge(qint64 nsPid, const QString &iface, const QString &bridge, QString *error = nullptr);
+    static bool removeInterface(qint64 nsPid, const QString &iface);
 
     // ---- Route Queries ----
 
@@ -86,7 +87,7 @@ public:
      * Set up a NAT masquerade rule for the given outbound interface.
      * Creates table "nat", chain "postrouting", and a masquerade rule.
      */
-    static bool setupMasquerade(qint64 nsPid, const QString& outIface, QString* error = nullptr);
+    static bool setupMasquerade(qint64 nsPid, const QString &outIface, QString *error = nullptr);
 
 private:
     NamespaceHelper() = delete;
@@ -98,15 +99,10 @@ private:
     // Fork a child that enters the namespace and runs the given function.
     // Returns true if the child exited with code 0.
     // Optionally captures up to maxOutput bytes of data from the child via pipe.
-    static bool forkInNamespace(qint64 nsPid,
-        std::function<int()> childFunc,
-        QString* error = nullptr);
+    static bool forkInNamespace(qint64 nsPid, std::function<int()> childFunc, QString *error = nullptr);
 
-    static bool forkInNamespaceWithOutput(qint64 nsPid,
-        std::function<int(int writeFd)> childFunc,
-        QByteArray& output,
-        QString* error = nullptr);
+    static bool forkInNamespaceWithOutput(qint64 nsPid, std::function<int(int writeFd)> childFunc, QByteArray &output, QString *error = nullptr);
 
     // Netlink helpers (called inside the namespace child)
-    static int netlinkGetIfindex(int nlFd, const char* ifname);
+    static int netlinkGetIfindex(int nlFd, const char *ifname);
 };

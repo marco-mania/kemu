@@ -10,15 +10,15 @@
 
 using namespace Qt::StringLiterals;
 
-CloudConfigDialog::CloudConfigDialog(QWidget* parent)
+CloudConfigDialog::CloudConfigDialog(QWidget *parent)
     : QDialog(parent)
 {
     setWindowTitle(i18n("Cloud Image Configuration"));
     resize(480, 0);
 
-    auto* layout = new QVBoxLayout(this);
+    auto *layout = new QVBoxLayout(this);
 
-    auto* form = new QFormLayout();
+    auto *form = new QFormLayout();
     form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     hostnameEdit = new QLineEdit();
@@ -42,12 +42,12 @@ CloudConfigDialog::CloudConfigDialog(QWidget* parent)
     passwordMismatchLabel = new QLabel();
     passwordMismatchLabel->setStyleSheet(u"color: %1; font-size: 11px;"_s.arg(scheme.foreground(KColorScheme::NegativeText).color().name()));
     passwordMismatchLabel->setFixedHeight(passwordMismatchLabel->fontMetrics().height() + 2);
-    form->addRow({ }, passwordMismatchLabel);
+    form->addRow({}, passwordMismatchLabel);
 
     // Timezone
     timezoneCombo = new QComboBox();
     timezoneCombo->setEditable(true);
-    for (const QByteArray& tzId : QTimeZone::availableTimeZoneIds())
+    for (const QByteArray &tzId : QTimeZone::availableTimeZoneIds())
         timezoneCombo->addItem(QString::fromUtf8(tzId));
     // Pre-select system timezone
     timezoneCombo->setCurrentText(QString::fromUtf8(QTimeZone::systemTimeZoneId()));
@@ -60,11 +60,11 @@ CloudConfigDialog::CloudConfigDialog(QWidget* parent)
     localeCombo->completer()->setCaseSensitivity(Qt::CaseInsensitive);
 
     const auto locales = availableLocales();
-    for (const auto& loc : locales)
+    for (const auto &loc : locales)
         localeCombo->addItem(u"%1"_s.arg(loc.displayName), loc.code);
 
     const QString sysLocaleCode = QLocale::system().name() + u".UTF-8"_s;
-    int locIdx = localeCombo->findData(sysLocaleCode);
+    const int locIdx = localeCombo->findData(sysLocaleCode);
     if (locIdx >= 0)
         localeCombo->setCurrentIndex(locIdx);
     else
@@ -80,7 +80,7 @@ CloudConfigDialog::CloudConfigDialog(QWidget* parent)
 
     const auto keyboards = availableKeyboards();
     for (int i = 0; i < keyboards.size(); ++i) {
-        const auto& kb = keyboards[i];
+        const auto &kb = keyboards[i];
         QString label = kb.displayName;
         if (!kb.variant.isEmpty())
             label += u" -- %1"_s.arg(kb.variant);
@@ -92,8 +92,7 @@ CloudConfigDialog::CloudConfigDialog(QWidget* parent)
     const QString hostLayout = Utils::detectHostKeyboardLayout();
     for (int i = 0; i < keyboards.size(); ++i) {
         if (keyboards[i].layout == hostLayout) {
-            kbLayoutCombo->setCurrentIndex(
-                kbLayoutCombo->findData(i));
+            kbLayoutCombo->setCurrentIndex(kbLayoutCombo->findData(i));
             break;
         }
     }
@@ -106,16 +105,16 @@ CloudConfigDialog::CloudConfigDialog(QWidget* parent)
     sshKeysEdit->setMaximumHeight(80);
     form->addRow(i18n("SSH Keys:"), sshKeysEdit);
 
-    auto* sshButtonLayout = new QHBoxLayout();
-    auto* addKeyButton = new QPushButton(i18n("Import from File..."));
+    auto *sshButtonLayout = new QHBoxLayout();
+    auto *addKeyButton = new QPushButton(i18n("Import from File..."));
     sshButtonLayout->addWidget(addKeyButton);
     sshButtonLayout->addStretch();
-    form->addRow({ }, sshButtonLayout);
+    form->addRow({}, sshButtonLayout);
     connect(addKeyButton, &QPushButton::clicked, this, &CloudConfigDialog::onAddSshKey);
 
     // Desktop environment
     installDesktopCheck = new QCheckBox(i18n("Install the default desktop environment"));
-    form->addRow({ }, installDesktopCheck);
+    form->addRow({}, installDesktopCheck);
 
     // Extra packages (generic, not tied to desktop checkbox)
     extraPackagesEdit = new QLineEdit();
@@ -133,7 +132,7 @@ CloudConfigDialog::CloudConfigDialog(QWidget* parent)
     connect(passwordConfirmEdit, &QLineEdit::textChanged, this, &CloudConfigDialog::validate);
 }
 
-void CloudConfigDialog::setConfig(const CloudDeployConfig& cfg)
+void CloudConfigDialog::setConfig(const CloudDeployConfig &cfg)
 {
     hostnameEdit->setText(cfg.hostname);
     usernameEdit->setText(cfg.username);
@@ -142,7 +141,7 @@ void CloudConfigDialog::setConfig(const CloudDeployConfig& cfg)
 
     // Locale
     if (!cfg.locale.isEmpty()) {
-        int idx = localeCombo->findData(cfg.locale);
+        const int idx = localeCombo->findData(cfg.locale);
         if (idx >= 0)
             localeCombo->setCurrentIndex(idx);
         else
@@ -153,9 +152,8 @@ void CloudConfigDialog::setConfig(const CloudDeployConfig& cfg)
     if (!cfg.kbLayout.isEmpty()) {
         const auto keyboards = availableKeyboards();
         for (int i = 0; i < keyboards.size(); ++i) {
-            if (keyboards[i].layout == cfg.kbLayout
-                && keyboards[i].variant == cfg.kbVariant) {
-                int idx = kbLayoutCombo->findData(i);
+            if (keyboards[i].layout == cfg.kbLayout && keyboards[i].variant == cfg.kbVariant) {
+                const int idx = kbLayoutCombo->findData(i);
                 if (idx >= 0)
                     kbLayoutCombo->setCurrentIndex(idx);
                 break;
@@ -184,8 +182,7 @@ CloudDeployConfig CloudConfigDialog::getResult() const
 
     // Locale
     const QVariant localeData = localeCombo->currentData();
-    cfg.locale = localeData.isValid() ? localeData.toString()
-                                      : localeCombo->currentText().trimmed();
+    cfg.locale = localeData.isValid() ? localeData.toString() : localeCombo->currentText().trimmed();
 
     // Keyboard (independent from locale)
     const int kbIdx = kbLayoutCombo->currentData().toInt();
@@ -203,7 +200,7 @@ CloudDeployConfig CloudConfigDialog::getResult() const
     const QString pkgText = extraPackagesEdit->text().trimmed();
     if (!pkgText.isEmpty()) {
         const auto parts = pkgText.split(u","_s, Qt::SkipEmptyParts);
-        for (const auto& p : parts)
+        for (const auto &p : parts)
             cfg.extraPackages.append(p.trimmed());
     }
 
@@ -216,8 +213,8 @@ CloudDeployConfig CloudConfigDialog::getResult() const
 
 void CloudConfigDialog::onAddSshKey()
 {
-    const QString path = QFileDialog::getOpenFileName(this, i18n("Select SSH Public Key"),
-        QDir::homePath() + u"/.ssh"_s, i18n("Public Keys (*.pub);;All Files (*)"));
+    const QString path =
+        QFileDialog::getOpenFileName(this, i18n("Select SSH Public Key"), QDir::homePath() + u"/.ssh"_s, i18n("Public Keys (*.pub);;All Files (*)"));
     if (path.isEmpty())
         return;
 

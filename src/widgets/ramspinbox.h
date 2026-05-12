@@ -14,12 +14,12 @@
 
 using namespace Qt::StringLiterals;
 
-class RamSpinBox : public QDoubleSpinBox {
-
+class RamSpinBox : public QDoubleSpinBox
+{
     Q_OBJECT
 
 public:
-    explicit RamSpinBox(QWidget* parent = nullptr)
+    explicit RamSpinBox(QWidget *parent = nullptr)
         : QDoubleSpinBox(parent)
     {
         setDecimals(2);
@@ -47,7 +47,7 @@ protected:
         }
     }
 
-    double valueFromText(const QString& text) const override
+    double valueFromText(const QString &text) const override
     {
         QString str = text.trimmed().toUpper();
         double multiplier = 1.0;
@@ -69,7 +69,7 @@ protected:
         return val * multiplier;
     }
 
-    QValidator::State validate(QString& /*input*/, int& /*pos*/) const override
+    QValidator::State validate(QString & /*input*/, int & /*pos*/) const override
     {
         return QValidator::Acceptable;
     }

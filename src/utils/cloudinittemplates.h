@@ -12,20 +12,21 @@
 
 using namespace Qt::StringLiterals;
 
-namespace CloudInitTemplates {
+namespace CloudInitTemplates
+{
 
 inline QString templateDir()
 {
     return u"kemu/data/cloud-init-templates"_s;
 }
 
-inline QString locateTemplate(const QString& templateId)
+inline QString locateTemplate(const QString &templateId)
 {
     const QString fileName = templateId + u".yaml.tpl"_s;
     return QStandardPaths::locate(QStandardPaths::GenericDataLocation, templateDir() + u"/"_s + fileName);
 }
 
-inline QString loadTemplate(const QString& templateId)
+inline QString loadTemplate(const QString &templateId)
 {
     QString path = locateTemplate(templateId);
     if (path.isEmpty() && templateId != u"default"_s)

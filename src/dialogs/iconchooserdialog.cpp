@@ -8,13 +8,13 @@
 
 #include "utils/vmconfig.h"
 
-IconChooserDialog::IconChooserDialog(QWidget* parent)
+IconChooserDialog::IconChooserDialog(QWidget *parent)
     : QDialog(parent)
 {
     setWindowTitle(i18n("Choose VM Icon"));
     resize(420, 340);
 
-    auto* layout = new QVBoxLayout(this);
+    auto *layout = new QVBoxLayout(this);
 
     listWidget = new QListWidget();
     listWidget->setViewMode(QListWidget::IconMode);
@@ -25,9 +25,9 @@ IconChooserDialog::IconChooserDialog(QWidget* parent)
     listWidget->setUniformItemSizes(true);
     layout->addWidget(listWidget);
 
-    QString dir = VMConfig::osIconDir();
+    const QString dir = VMConfig::osIconDir();
     if (!dir.isEmpty()) {
-        QDirIterator it(dir, { u"*.svg"_s }, QDir::Files, QDirIterator::Subdirectories);
+        QDirIterator it(dir, {u"*.svg"_s}, QDir::Files, QDirIterator::Subdirectories);
 
         while (it.hasNext()) {
             const QString path = it.next();
@@ -35,14 +35,14 @@ IconChooserDialog::IconChooserDialog(QWidget* parent)
 
             const QString label = info.completeBaseName();
 
-            auto* item = new QListWidgetItem(QIcon(path), label);
+            auto *item = new QListWidgetItem(QIcon(path), label);
             item->setData(Qt::UserRole, path);
             item->setToolTip(label);
             listWidget->addItem(item);
         }
     }
 
-    auto* bbox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    auto *bbox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     connect(bbox, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(bbox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     layout->addWidget(bbox);
@@ -52,6 +52,6 @@ IconChooserDialog::IconChooserDialog(QWidget* parent)
 
 QString IconChooserDialog::selectedIconPath() const
 {
-    auto* item = listWidget->currentItem();
+    auto *item = listWidget->currentItem();
     return item ? item->data(Qt::UserRole).toString() : QString();
 }

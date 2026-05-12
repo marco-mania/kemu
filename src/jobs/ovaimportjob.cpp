@@ -9,10 +9,7 @@
 #include "utils/externaltools.h"
 #include "utils/vmconfig.h"
 
-OvaImportJob::OvaImportJob(const QString& ovaPath,
-    const QString& vmBaseDir,
-    int diskSizeGb,
-    QObject* parent)
+OvaImportJob::OvaImportJob(const QString &ovaPath, const QString &vmBaseDir, int diskSizeGb, QObject *parent)
     : KJob(parent)
     , m_ovaPath(ovaPath)
     , m_vmBaseDir(vmBaseDir)
@@ -32,9 +29,9 @@ void OvaImportJob::start()
     }
 
     Q_EMIT description(this,
-        i18n("Importing OVA"),
-        QPair<QString, QString>(i18n("File"), QFileInfo(m_ovaPath).fileName()),
-        QPair<QString, QString>(i18n("Step"), i18n("Extracting archive...")));
+                       i18n("Importing OVA"),
+                       QPair<QString, QString>(i18n("File"), QFileInfo(m_ovaPath).fileName()),
+                       QPair<QString, QString>(i18n("Step"), i18n("Extracting archive...")));
 
     emitPercent(0, 1000);
 
@@ -44,13 +41,13 @@ void OvaImportJob::start()
     connect(m_watcher, &QFutureWatcher<bool>::finished, this, &OvaImportJob::onExtractionFinished);
 
     // Start extraction in a background thread to prevent UI freezing
-    QFuture<bool> future = QtConcurrent::run(&OvaImportJob::performOvaExtraction, this);
+    const QFuture<bool> future = QtConcurrent::run(&OvaImportJob::performOvaExtraction, this);
     m_watcher->setFuture(future);
 }
 
 bool OvaImportJob::performOvaExtraction()
 {
-    struct archive* a = archive_read_new();
+    struct archive *a = archive_read_new();
     archive_read_support_filter_all(a);
     archive_read_support_format_all(a);
 
@@ -63,7 +60,7 @@ bool OvaImportJob::performOvaExtraction()
     if (totalCompressedBytes <= 0)
         totalCompressedBytes = 1;
 
-    struct archive_entry* entry;
+    struct archive_entry *entry;
     bool success = true;
     char buffer[1024 * 1024]; // 1 MB chunk buffer
 
@@ -73,14 +70,14 @@ bool OvaImportJob::performOvaExtraction()
             break;
         }
 
-        QString currentFileName = QString::fromUtf8(archive_entry_pathname(entry));
+        const QString currentFileName = QString::fromUtf8(archive_entry_pathname(entry));
 
         // Security check: prevent directory traversal
         if (currentFileName.contains(u"..") || currentFileName.startsWith(u"/")) {
             continue;
         }
 
-        QString fullPath = m_stagingDir.filePath(currentFileName);
+        const QString fullPath = m_stagingDir.filePath(currentFileName);
         QFile outFile(fullPath);
 
         if (currentFileName.endsWith(u".ovf"_s, Qt::CaseInsensitive)) {
@@ -100,7 +97,7 @@ bool OvaImportJob::performOvaExtraction()
                 break;
             }
 
-            la_ssize_t readBytes = archive_read_data(a, buffer, sizeof(buffer));
+            const la_ssize_t readBytes = archive_read_data(a, buffer, sizeof(buffer));
             if (readBytes == 0)
                 break; // EOF
             if (readBytes < 0) {
@@ -111,13 +108,23 @@ bool OvaImportJob::performOvaExtraction()
             outFile.write(buffer, readBytes);
 
             // Report progress (thread-safe dispatch)
-            qint64 processedBytes = archive_filter_bytes(a, -1);
-            int extractPercent = static_cast<int>((processedBytes * 100) / totalCompressedBytes);
+            const qint64 processedBytes = archive_filter_bytes(a, -1);
+            const int extractPercent = static_cast<int>((processedBytes * 100) / totalCompressedBytes);
 
             // Map 0-100% extraction to 0-150 (out of 1000) for the total job progress
-            int scaledPercent = qMin(static_cast<int>(extractPercent * 1.5), 150);
+            const int scaledPercent = qMin(static_cast<int>(extractPercent * 1.5), 150);
 
-            QMetaObject::invokeMethod(this, [this, scaledPercent]() { QMetaObject::invokeMethod(this, [this, scaledPercent]() { emitPercent(scaledPercent, 1000); }, Qt::QueuedConnection); }, Qt::QueuedConnection);
+            QMetaObject::invokeMethod(
+                this,
+                [this, scaledPercent]() {
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, scaledPercent]() {
+                            emitPercent(scaledPercent, 1000);
+                        },
+                        Qt::QueuedConnection);
+                },
+                Qt::QueuedConnection);
         }
 
         outFile.close();
@@ -133,7 +140,7 @@ bool OvaImportJob::performOvaExtraction()
 
 void OvaImportJob::onExtractionFinished()
 {
-    bool success = m_watcher->result();
+    const bool success = m_watcher->result();
     m_watcher->deleteLater();
     m_watcher = nullptr;
 
@@ -164,9 +171,10 @@ void OvaImportJob::onExtractionFinished()
     // Check if a VM with this name already exists
     if (QDir(m_vmBaseDir + u"/"_s + m_vmName).exists()) {
         setError(4);
-        setErrorText(i18n("A VM named '%1' already exists. "
-                          "Please rename or delete it first.",
-            m_vmName));
+        setErrorText(
+            i18n("A VM named '%1' already exists. "
+                 "Please rename or delete it first.",
+                 m_vmName));
         emitResult();
         return;
     }
@@ -198,15 +206,14 @@ bool OvaImportJob::parseOvf()
                 vmName = xml.attributes().value(u"ovf:id"_s).toString();
             }
             // Name element (child of VirtualSystem)
-            else if (xml.name() == u"Name"
-                && !xml.attributes().hasAttribute(u"ovf:id"_s)) {
-                QString text = xml.readElementText();
+            else if (xml.name() == u"Name" && !xml.attributes().hasAttribute(u"ovf:id"_s)) {
+                const QString text = xml.readElementText();
                 if (!text.isEmpty())
                     vmName = text;
             }
             // ResourceType + VirtualQuantity
             else if (xml.name() == u"ResourceType") {
-                QString resType = xml.readElementText();
+                const QString resType = xml.readElementText();
 
                 // Forward-reading within the same item
                 // We need VirtualQuantity as a sibling element
@@ -216,49 +223,43 @@ bool OvaImportJob::parseOvf()
                     // CPU – VirtualQuantity follows
                     while (!xml.atEnd()) {
                         xml.readNext();
-                        if (xml.isStartElement()
-                            && xml.name() == u"VirtualQuantity") {
+                        if (xml.isStartElement() && xml.name() == u"VirtualQuantity") {
                             cpuCoreCount = xml.readElementText().toInt();
                             break;
                         }
-                        if (xml.isEndElement()
-                            && xml.name() == u"Item")
+                        if (xml.isEndElement() && xml.name() == u"Item")
                             break;
                     }
                 } else if (resType == u"4"_s) {
                     // Memory
                     while (!xml.atEnd()) {
                         xml.readNext();
-                        if (xml.isStartElement()
-                            && xml.name() == u"VirtualQuantity") {
+                        if (xml.isStartElement() && xml.name() == u"VirtualQuantity") {
                             ramMb = xml.readElementText().toInt();
                             break;
                         }
-                        if (xml.isEndElement()
-                            && xml.name() == u"Item")
+                        if (xml.isEndElement() && xml.name() == u"Item")
                             break;
                     }
                 } else if (resType == u"10"_s) {
                     // Network Adapter
                     while (!xml.atEnd()) {
                         xml.readNext();
-                        if (xml.isStartElement()
-                            && xml.name() == u"MACAddress") {
+                        if (xml.isStartElement() && xml.name() == u"MACAddress") {
                             QString mac = xml.readElementText();
 
-                            // OVF often stores the MAC address without colons (e.g., "525400123456").
-                            // We reformat it for QEMU and the UI to make it look nice:
+                            // OVF often stores the MAC address without colons (e.g.,
+                            // "525400123456"). We reformat it for QEMU and the UI to make it
+                            // look nice:
                             if (mac.length() == 12 && !mac.contains(u':')) {
                                 mac = QString(u"%1:%2:%3:%4:%5:%6"_s)
-                                          .arg(mac.mid(0, 2), mac.mid(2, 2), mac.mid(4, 2),
-                                              mac.mid(6, 2), mac.mid(8, 2), mac.mid(10, 2));
+                                          .arg(mac.mid(0, 2), mac.mid(2, 2), mac.mid(4, 2), mac.mid(6, 2), mac.mid(8, 2), mac.mid(10, 2));
                             }
 
                             m_importedConfig.setMacAddress(mac);
                             break;
                         }
-                        if (xml.isEndElement()
-                            && xml.name() == u"Item")
+                        if (xml.isEndElement() && xml.name() == u"Item")
                             break;
                     }
                 }
@@ -288,7 +289,7 @@ bool OvaImportJob::parseOvf()
 
 void OvaImportJob::convertDisk()
 {
-    const auto& tools = ExternalTools::instance();
+    const auto &tools = ExternalTools::instance();
 
     if (!tools.isAvailable(ExternalTools::QemuImg)) {
         setError(1);
@@ -298,25 +299,19 @@ void OvaImportJob::convertDisk()
     }
 
     Q_EMIT description(this,
-        i18n("Importing OVA"),
-        QPair<QString, QString>(i18n("VM"), m_vmName),
-        QPair<QString, QString>(i18n("Step"), i18n("Converting disk format...")));
+                       i18n("Importing OVA"),
+                       QPair<QString, QString>(i18n("VM"), m_vmName),
+                       QPair<QString, QString>(i18n("Step"), i18n("Converting disk format...")));
 
-    QString targetQcow2 = m_vmBaseDir + u"/"_s + m_vmName + u"/disk.qcow2"_s;
+    const QString targetQcow2 = m_vmBaseDir + u"/"_s + m_vmName + u"/disk.qcow2"_s;
 
     m_process = new KProcess(this);
     m_process->setOutputChannelMode(KProcess::SeparateChannels);
     m_process->setProgram(tools.path(ExternalTools::QemuImg));
-    m_process->setArguments({ u"convert"_s,
-        u"-p"_s,
-        u"-O"_s,
-        u"qcow2"_s,
-        m_vmdkPath, targetQcow2 });
+    m_process->setArguments({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, m_vmdkPath, targetQcow2});
 
-    connect(m_process, &KProcess::readyReadStandardOutput,
-        this, &OvaImportJob::onConvertReadyRead);
-    connect(m_process, static_cast<void (KProcess::*)(int, QProcess::ExitStatus)>(&KProcess::finished),
-        this, &OvaImportJob::onConvertFinished);
+    connect(m_process, &KProcess::readyReadStandardOutput, this, &OvaImportJob::onConvertReadyRead);
+    connect(m_process, static_cast<void (KProcess::*)(int, QProcess::ExitStatus)>(&KProcess::finished), this, &OvaImportJob::onConvertFinished);
 
     m_process->start();
 }
@@ -325,15 +320,16 @@ void OvaImportJob::onConvertReadyRead()
 {
     m_process->setReadChannel(QProcess::StandardOutput);
     while (m_process->canReadLine()) {
-        QString line = QString::fromUtf8(m_process->readLine()).trimmed();
+        const QString line = QString::fromUtf8(m_process->readLine()).trimmed();
 
-        QRegularExpression rx(u"\\((\\d+\\.\\d+)/100%\\)"_s);
-        QRegularExpressionMatch match = rx.match(line);
+        const QRegularExpression rx(u"\\((\\d+\\.\\d+)/100%\\)"_s);
+        const QRegularExpressionMatch match = rx.match(line);
         if (match.hasMatch()) {
             bool ok;
-            double percent = match.captured(1).toDouble(&ok);
+            const double percent = match.captured(1).toDouble(&ok);
             if (ok) {
-                // 15% (150) were used for extraction, the remaining 85% (850) are for conversion
+                // 15% (150) were used for extraction, the remaining 85% (850) are for
+                // conversion
                 emitPercent(150 + qRound(percent * 8.5), 1000);
             }
         }

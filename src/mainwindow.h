@@ -73,16 +73,17 @@ struct DiskInfo {
     bool isValid = false;
 };
 
-class MainWindow : public KXmlGuiWindow {
+class MainWindow : public KXmlGuiWindow
+{
     Q_OBJECT
 
 public:
-    explicit MainWindow(QWidget* parent = nullptr);
+    explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
 
 protected:
     bool queryClose() override;
-    bool eventFilter(QObject* watched, QEvent* event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private Q_SLOTS:
     void openSettings();
@@ -110,26 +111,26 @@ private Q_SLOTS:
     void reconnectViewer();
 
     void onTreeSelectionChanged();
-    void onTreeDoubleClicked(const QModelIndex& index);
+    void onTreeDoubleClicked(const QModelIndex &index);
     void onDropCompleted();
 
-    void showContextMenu(const QPoint& pos);
+    void showContextMenu(const QPoint &pos);
 
     void onVmSelectionChanged();
     void onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus);
 
-    void onQMPEvent(const QString& vmName, const QString& eventName, const QJsonObject& data);
+    void onQMPEvent(const QString &vmName, const QString &eventName, const QJsonObject &data);
 
     void onUsbMenuAboutToShow();
     void onUsbActionTriggered();
 
-    void importOVA(const QString& filePath);
-    void exportOVA(const QString& filePath);
+    void importOVA(const QString &filePath);
+    void exportOVA(const QString &filePath);
 
 private:
     ImageDatabase m_imageDatabase;
 
-    VirtualNetworkManager* m_networkManager = nullptr;
+    VirtualNetworkManager *m_networkManager = nullptr;
 
     void loadVmList();
     void setupUi();
@@ -137,44 +138,44 @@ private:
     void updateDetails();
     void updateActionStates();
 
-    QString encodeThemeIcon(const QString& name, int sizePx) const;
+    QString encodeThemeIcon(const QString &name, int sizePx) const;
 
     QStringList existingVmNames() const;
     QStringList usedMacAddresses() const;
     QList<MacUsageInfo> macUsageInfo() const;
 
-    void saveVmConfig(const QString& vmPath, const VMConfig& config);
-    void generateShellScript(const QString& vmPath, const VMConfig& config);
-    VMConfig loadVmConfig(const QString& vmPath) const;
+    void saveVmConfig(const QString &vmPath, const VMConfig &config);
+    void generateShellScript(const QString &vmPath, const VMConfig &config);
+    VMConfig loadVmConfig(const QString &vmPath) const;
 
-    DiskInfo getDiskInfo(const QString& diskPath);
+    DiskInfo getDiskInfo(const QString &diskPath);
     bool vmSupportsScreendump() const;
 
-    QString ensureNetworkRunning(const QString& networkName, const QString& vmName);
-    void releaseNetwork(const VMConfig& config);
-    void tearDownVmRuntime(const QString& vmName);
+    QString ensureNetworkRunning(const QString &networkName, const QString &vmName);
+    void releaseNetwork(const VMConfig &config);
+    void tearDownVmRuntime(const QString &vmName);
 
     QDir getVmBaseDir() const;
-    QDir getVmDir(const QString& vmName) const;
-    QString monitorSocketPath(const QString& vmName) const;
+    QDir getVmDir(const QString &vmName) const;
+    QString monitorSocketPath(const QString &vmName) const;
 
-    bool startSwtpm(const QString& vmName);
-    bool startVirtiofsd(const QString& vmName);
-    bool startPasst(const QString& vmName, const QList<PortForwardRule>& portForwards = QList<PortForwardRule>());
-    bool startSpiceViewer(const QString& vmName);
-    bool startDbusDaemon(const QString& vmName);
-    QString dbusBusAddress(const QString& vmName) const;
+    bool startSwtpm(const QString &vmName);
+    bool startVirtiofsd(const QString &vmName);
+    bool startPasst(const QString &vmName, const QList<PortForwardRule> &portForwards = QList<PortForwardRule>());
+    bool startSpiceViewer(const QString &vmName);
+    bool startDbusDaemon(const QString &vmName);
+    QString dbusBusAddress(const QString &vmName) const;
 
     // D-Bus integrated viewer lifecycle
-    bool startDbusViewer(const QString& vmName);
-    void stopDbusViewer(const QString& vmName);
-    void cleanupDbusSocket(const QString& vmName);
+    bool startDbusViewer(const QString &vmName);
+    void stopDbusViewer(const QString &vmName);
+    void cleanupDbusSocket(const QString &vmName);
 
     struct DbusViewerState {
         QPointer<DbusViewerWindow> window;
-        QemuDisplayListener* displayListener = nullptr;
-        QemuAudioListener* audioOut = nullptr;
-        QemuAudioInListener* audioIn = nullptr;
+        QemuDisplayListener *displayListener = nullptr;
+        QemuAudioListener *audioOut = nullptr;
+        QemuAudioInListener *audioIn = nullptr;
         QString connectionName;
     };
     QMap<QString, DbusViewerState> m_dbusViewers;
@@ -182,8 +183,8 @@ private:
     bool requireTool(const ExternalTools::Tool tool);
     bool isDisplayTypeAvailable(const VMSpecs::DisplayType type);
 
-    VirtualEnvironmentTreeView* veTreeView = nullptr;
-    VirtualEnvironmentModel* veModel = nullptr;
+    VirtualEnvironmentTreeView *veTreeView = nullptr;
+    VirtualEnvironmentModel *veModel = nullptr;
 
     QPointer<KActionMenu> usbActionMenu;
 
@@ -191,7 +192,7 @@ private:
     void createFolder();
     void deleteFolder();
     void renameFolder();
-    void selectVmByName(const QString& vmName);
+    void selectVmByName(const QString &vmName);
     QString selectedVmName() const;
     bool isCurrentItemFolder() const;
     void saveFolderStructure() const;
@@ -203,36 +204,34 @@ private:
     QMap<QString, QByteArray> m_qemuStderrTails;
     QSet<QString> m_userInitiatedShutdowns;
 
-    void showQemuFailureDialog(const QString& vmName,
-        bool startupFailed,
-        int exitCode,
-        KProcess::ExitStatus exitStatus,
-        const QByteArray& stderrTail);
+    void showQemuFailureDialog(const QString &vmName, bool startupFailed, int exitCode, KProcess::ExitStatus exitStatus, const QByteArray &stderrTail);
 
-    QTextBrowser* detailsBrowser = nullptr;
-    PerformanceMonitorWidget* perfMonitor = nullptr;
-    QToolBar* vmActionBar = nullptr;
+    QTextBrowser *detailsBrowser = nullptr;
+    PerformanceMonitorWidget *perfMonitor = nullptr;
+    QToolBar *vmActionBar = nullptr;
 
     QList<QPointer<CreateVmJob>> creatingVMs;
     QList<QPointer<KJob>> activeImports;
 
     // Deployment handling
     struct PendingDeployment {
-        enum class Type { CloudImage,
-            ManualIso };
+        enum class Type {
+            CloudImage,
+            ManualIso
+        };
         Type type = Type::ManualIso;
         QString imageUrl;
         QString imageLocalPath;
         CloudDeployConfig cloudConfig;
     };
     QMap<QString, PendingDeployment> m_pendingDeployments;
-    void startDeployment(const QString& vmName, const bool disable_headless = false);
-    void finalizeDeployment(const QString& vmName);
-    void abortDeployment(const QString& vmName, bool deleteVm);
+    void startDeployment(const QString &vmName, const bool disable_headless = false);
+    void finalizeDeployment(const QString &vmName);
+    void abortDeployment(const QString &vmName, bool deleteVm);
 
-    void deployCloudImage(const QString& vmName);
+    void deployCloudImage(const QString &vmName);
 
-    KUiServerV2JobTracker* jobTracker = nullptr;
+    KUiServerV2JobTracker *jobTracker = nullptr;
 
     VMConfig currentConfig;
 };

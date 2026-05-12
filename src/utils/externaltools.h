@@ -22,7 +22,8 @@
 using namespace Qt::StringLiterals;
 
 /**
- * @brief Central registry for external tool dependencies (qemu-system, qemu-img, swtpm, ...).
+ * @brief Central registry for external tool dependencies (qemu-system,
+ * qemu-img, swtpm, ...).
  *
  * Singleton. Call ExternalTools::instance().refresh() once at startup.
  * After that, query paths, versions and availability from anywhere:
@@ -32,7 +33,8 @@ using namespace Qt::StringLiterals;
  *   QString path = tools.path(ExternalTools::QemuImg);
  *
  */
-class ExternalTools : public QObject {
+class ExternalTools : public QObject
+{
     Q_OBJECT
 
 public:
@@ -69,12 +71,12 @@ public:
         bool suppressible; // false for Core: cannot be silenced
     };
 
-    static ExternalTools& instance();
+    static ExternalTools &instance();
 
     [[nodiscard]] QString path(Tool tool) const;
     [[nodiscard]] QString version(Tool tool) const;
     [[nodiscard]] bool isAvailable(Tool tool) const;
-    [[nodiscard]] bool isAvailable(const QList<Tool>& tools) const;
+    [[nodiscard]] bool isAvailable(const QList<Tool> &tools) const;
     [[nodiscard]] QString configKey(Tool tool) const;
     [[nodiscard]] QString defaultBinary(Tool tool) const;
 
@@ -100,7 +102,7 @@ public:
      *
      * Used by SettingsDialog to validate user-entered paths before saving.
      */
-    [[nodiscard]] static QString probeVersionString(Tool tool, const QString& path);
+    [[nodiscard]] static QString probeVersionString(Tool tool, const QString &path);
 
     // Convenience: list of tools that are configured but NOT available.
     [[nodiscard]] QStringList missingToolNames() const;
@@ -132,7 +134,7 @@ Q_SIGNALS:
     void toolsRefreshed();
 
 private:
-    explicit ExternalTools(QObject* parent = nullptr);
+    explicit ExternalTools(QObject *parent = nullptr);
     ~ExternalTools() override = default;
     Q_DISABLE_COPY_MOVE(ExternalTools)
 
@@ -146,7 +148,7 @@ private:
 
     QHash<Tool, ToolInfo> m_tools;
 
-    void registerTool(Tool id, const QString& configKey, const QString& defaultBinary);
-    void detectPath(ToolInfo& info);
-    void probeVersion(Tool tool, ToolInfo& info);
+    void registerTool(Tool id, const QString &configKey, const QString &defaultBinary);
+    void detectPath(ToolInfo &info);
+    void probeVersion(Tool tool, ToolInfo &info);
 };

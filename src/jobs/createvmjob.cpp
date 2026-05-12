@@ -7,7 +7,7 @@
 #include "createvmjob.h"
 #include "utils/externaltools.h"
 
-CreateVmJob::CreateVmJob(const VMConfig& config, const QString& diskPath, QObject* parent)
+CreateVmJob::CreateVmJob(const VMConfig &config, const QString &diskPath, QObject *parent)
     : KJob(parent)
     , m_config(config)
     , m_diskPath(diskPath)
@@ -17,7 +17,7 @@ CreateVmJob::CreateVmJob(const VMConfig& config, const QString& diskPath, QObjec
 
 void CreateVmJob::start()
 {
-    const auto& tools = ExternalTools::instance();
+    const auto &tools = ExternalTools::instance();
 
     if (!tools.isAvailable(ExternalTools::QemuImg)) {
         setError(1);
@@ -27,17 +27,16 @@ void CreateVmJob::start()
     }
 
     Q_EMIT description(this,
-        i18n("Creating virtual machine disk"),
-        QPair<QString, QString>(i18n("VM"), m_config.name()),
-        QPair<QString, QString>(i18n("Disk"), QFileInfo(m_diskPath).fileName()));
+                       i18n("Creating virtual machine disk"),
+                       QPair<QString, QString>(i18n("VM"), m_config.name()),
+                       QPair<QString, QString>(i18n("Disk"), QFileInfo(m_diskPath).fileName()));
 
     m_process = new KProcess(this);
     m_process->setOutputChannelMode(KProcess::MergedChannels);
     m_process->setProgram(tools.path(ExternalTools::QemuImg));
 
     QStringList args;
-    args << u"create"_s
-         << u"-f"_s << u"qcow2"_s;
+    args << u"create"_s << u"-f"_s << u"qcow2"_s;
 
     if (m_config.preallocMemory()) {
         args << u"-o"_s << u"preallocation=metadata"_s;

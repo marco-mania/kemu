@@ -50,22 +50,22 @@
 
 using namespace Qt::StringLiterals;
 
-class CreateVmDialog : public QDialog {
-
+class CreateVmDialog : public QDialog
+{
     Q_OBJECT
 
 public:
-    explicit CreateVmDialog(QWidget* parent = nullptr);
+    explicit CreateVmDialog(QWidget *parent = nullptr);
 
     VMConfig getResult() const;
 
-    void setupForEdit(const VMConfig& config);
+    void setupForEdit(const VMConfig &config);
 
-    void setExistingVmNames(const QStringList& names);
-    void setMacUsageInfo(const QList<MacUsageInfo>& info);
+    void setExistingVmNames(const QStringList &names);
+    void setMacUsageInfo(const QList<MacUsageInfo> &info);
 
-    void setImageDatabase(ImageDatabase* db);
-    void setNetworkManager(VirtualNetworkManager* mgr);
+    void setImageDatabase(ImageDatabase *db);
+    void setNetworkManager(VirtualNetworkManager *mgr);
 
     [[nodiscard]] bool isCloudDeployRequested() const;
     [[nodiscard]] CloudImageInfo selectedCloudImage() const;
@@ -79,7 +79,7 @@ private Q_SLOTS:
     void chooseThemeIcon();
     void browseCustomIcon();
     void clearIcon();
-    void showIconContextMenu(const QPoint& pos);
+    void showIconContextMenu(const QPoint &pos);
 
     void openCloudConfigDialog();
     void browseQdIso();
@@ -94,7 +94,7 @@ private Q_SLOTS:
     void onVersionChanged(int index);
     void onAutomatedDeployToggled(bool checked);
 
-    void onNameChanged(const QString& text);
+    void onNameChanged(const QString &text);
 
     void addPortForwardRow();
     void removePortForwardRow();
@@ -106,7 +106,7 @@ private:
 
     void populateVersions();
     void populateEditions();
-    void applyReleaseDefaults(const VMConfig& defaults);
+    void applyReleaseDefaults(const VMConfig &defaults);
 
     void updateAutomatedDeployWidgets();
     void updateCloudImageStatus();
@@ -122,97 +122,97 @@ private:
 
     QString originalMac;
 
-    QLineEdit* nameEdit = nullptr;
-    QPlainTextEdit* commentEdit = nullptr;
-    QComboBox* osTypeCombo = nullptr;
-    QComboBox* osNameCombo = nullptr;
-    QLabel* osNameLabel = nullptr;
-    QPushButton* applyDefaultsButton = nullptr;
+    QLineEdit *nameEdit = nullptr;
+    QPlainTextEdit *commentEdit = nullptr;
+    QComboBox *osTypeCombo = nullptr;
+    QComboBox *osNameCombo = nullptr;
+    QLabel *osNameLabel = nullptr;
+    QPushButton *applyDefaultsButton = nullptr;
 
-    QComboBox* versionCombo = nullptr;
-    QLabel* versionLabel = nullptr;
-    QCheckBox* automatedDeployCheck = nullptr;
-    QComboBox* cloudImageCombo = nullptr;
-    QLabel* cloudImageLabel = nullptr;
-    QLabel* cloudImageStatusLabel = nullptr;
+    QComboBox *versionCombo = nullptr;
+    QLabel *versionLabel = nullptr;
+    QCheckBox *automatedDeployCheck = nullptr;
+    QComboBox *cloudImageCombo = nullptr;
+    QLabel *cloudImageLabel = nullptr;
+    QLabel *cloudImageStatusLabel = nullptr;
 
     // Automated Deploy Section
-    QWidget* adContainer = nullptr;
-    KUrlRequester* adIsoPathRequester = nullptr;
-    QLabel* adIsoLabel = nullptr;
-    QPushButton* cloudInitButton = nullptr;
-    QLabel* cloudInitLabel = nullptr;
+    QWidget *adContainer = nullptr;
+    KUrlRequester *adIsoPathRequester = nullptr;
+    QLabel *adIsoLabel = nullptr;
+    QPushButton *cloudInitButton = nullptr;
+    QLabel *cloudInitLabel = nullptr;
 
     CloudDeployConfig m_cloudConfig;
 
-    QPushButton* iconDisplayButton = nullptr;
+    QPushButton *iconDisplayButton = nullptr;
     QString selectedIconName;
     QString selectedIconSetFilename;
     QIcon customIcon;
 
-    QComboBox* cpuCombo = nullptr;
-    QCheckBox* kvmCheck = nullptr;
-    QSlider* ramSlider = nullptr;
-    RamSpinBox* ramSpin = nullptr;
-    QCheckBox* balloonCheck = nullptr;
-    QCheckBox* preallocCheck = nullptr;
-    QSpinBox* cpuSpin = nullptr;
-    QSpinBox* diskSpin = nullptr;
-    QLabel* diskLabel = nullptr;
-    KUrlRequester* isoPathRequester = nullptr;
-    QLabel* isoPathLabel = nullptr;
-    QCheckBox* bootFromIsoCheck = nullptr;
-    KUrlRequester* floppyPathRequester = nullptr;
-    QLabel* floppyPathLabel = nullptr;
-    QCheckBox* bootFromFloppyCheck = nullptr;
-    QLineEdit* extraArgsEdit = nullptr;
-    QComboBox* displayCombo = nullptr;
-    QCheckBox* spiceAgentCheck = nullptr;
-    QCheckBox* spiceUsbRedirCheck = nullptr;
-    QSpinBox* spiceUsbRedirCountSpin = nullptr;
-    QLabel* spiceUsbRedirCountLabel = nullptr;
-    QGroupBox* spiceGroup = nullptr;
-    QComboBox* gpuCombo = nullptr;
-    QSpinBox* gpuMemSpin = nullptr;
-    QCheckBox* accel3dCheck = nullptr;
-    QComboBox* resolutionCombo = nullptr;
-    QLabel* resolutionLabel = nullptr;
-    QLabel* vgaMemLabel = nullptr;
-    QLabel* gpuHintLabel = nullptr;
-    QComboBox* audioCombo = nullptr;
-    QPushButton* sb16ConfigButton = nullptr;
-    QComboBox* diskInterfaceCombo = nullptr;
-    QLabel* diskHintLabel = nullptr;
-    QLabel* usbControllerLabel = nullptr;
-    QComboBox* usbCombo = nullptr;
-    QCheckBox* usbTabletCheck = nullptr;
-    QCheckBox* usbKeyboardCheck = nullptr;
-    QComboBox* machineCombo = nullptr;
-    QCheckBox* uefiCheck = nullptr;
-    QCheckBox* localTimeCheck = nullptr;
-    QCheckBox* tpmCheck = nullptr;
-    QCheckBox* secureBootCheck = nullptr;
-    QCheckBox* acpiCheck = nullptr;
-    QLineEdit* sharedPathEdit = nullptr;
-    QLineEdit* sharedNameEdit = nullptr;
-    QComboBox* netCombo = nullptr;
-    QLineEdit* macEdit = nullptr;
-    QPushButton* regenerateMacButton = nullptr;
-    QTableWidget* portForwardTable = nullptr;
-    QPushButton* addPortFwdButton = nullptr;
-    QPushButton* removePortFwdButton = nullptr;
-    QComboBox* networkModeCombo = nullptr;
-    QComboBox* virtualNetworkCombo = nullptr;
-    QWidget* passtGroup = nullptr;
-    QWidget* vdeGroup = nullptr;
+    QComboBox *cpuCombo = nullptr;
+    QCheckBox *kvmCheck = nullptr;
+    QSlider *ramSlider = nullptr;
+    RamSpinBox *ramSpin = nullptr;
+    QCheckBox *balloonCheck = nullptr;
+    QCheckBox *preallocCheck = nullptr;
+    QSpinBox *cpuSpin = nullptr;
+    QSpinBox *diskSpin = nullptr;
+    QLabel *diskLabel = nullptr;
+    KUrlRequester *isoPathRequester = nullptr;
+    QLabel *isoPathLabel = nullptr;
+    QCheckBox *bootFromIsoCheck = nullptr;
+    KUrlRequester *floppyPathRequester = nullptr;
+    QLabel *floppyPathLabel = nullptr;
+    QCheckBox *bootFromFloppyCheck = nullptr;
+    QLineEdit *extraArgsEdit = nullptr;
+    QComboBox *displayCombo = nullptr;
+    QCheckBox *spiceAgentCheck = nullptr;
+    QCheckBox *spiceUsbRedirCheck = nullptr;
+    QSpinBox *spiceUsbRedirCountSpin = nullptr;
+    QLabel *spiceUsbRedirCountLabel = nullptr;
+    QGroupBox *spiceGroup = nullptr;
+    QComboBox *gpuCombo = nullptr;
+    QSpinBox *gpuMemSpin = nullptr;
+    QCheckBox *accel3dCheck = nullptr;
+    QComboBox *resolutionCombo = nullptr;
+    QLabel *resolutionLabel = nullptr;
+    QLabel *vgaMemLabel = nullptr;
+    QLabel *gpuHintLabel = nullptr;
+    QComboBox *audioCombo = nullptr;
+    QPushButton *sb16ConfigButton = nullptr;
+    QComboBox *diskInterfaceCombo = nullptr;
+    QLabel *diskHintLabel = nullptr;
+    QLabel *usbControllerLabel = nullptr;
+    QComboBox *usbCombo = nullptr;
+    QCheckBox *usbTabletCheck = nullptr;
+    QCheckBox *usbKeyboardCheck = nullptr;
+    QComboBox *machineCombo = nullptr;
+    QCheckBox *uefiCheck = nullptr;
+    QCheckBox *localTimeCheck = nullptr;
+    QCheckBox *tpmCheck = nullptr;
+    QCheckBox *secureBootCheck = nullptr;
+    QCheckBox *acpiCheck = nullptr;
+    QLineEdit *sharedPathEdit = nullptr;
+    QLineEdit *sharedNameEdit = nullptr;
+    QComboBox *netCombo = nullptr;
+    QLineEdit *macEdit = nullptr;
+    QPushButton *regenerateMacButton = nullptr;
+    QTableWidget *portForwardTable = nullptr;
+    QPushButton *addPortFwdButton = nullptr;
+    QPushButton *removePortFwdButton = nullptr;
+    QComboBox *networkModeCombo = nullptr;
+    QComboBox *virtualNetworkCombo = nullptr;
+    QWidget *passtGroup = nullptr;
+    QWidget *vdeGroup = nullptr;
 
-    QLabel* nameWarningLabel = nullptr;
-    QLabel* macWarningLabel = nullptr;
+    QLabel *nameWarningLabel = nullptr;
+    QLabel *macWarningLabel = nullptr;
 
-    QDialogButtonBox* buttonBox = nullptr;
+    QDialogButtonBox *buttonBox = nullptr;
 
-    ImageDatabase* m_imageDatabase = nullptr;
-    VirtualNetworkManager* m_networkManager = nullptr;
+    ImageDatabase *m_imageDatabase = nullptr;
+    VirtualNetworkManager *m_networkManager = nullptr;
 
     QList<MacUsageInfo> m_macUsageInfo;
     QStringList usedMacAddresses() const;

@@ -22,8 +22,8 @@ using namespace Qt::StringLiterals;
  * Per-VM tap devices are attached to the bridge at VM start time.
  */
 struct VirtualNetwork {
-
-    /// Unique, user-visible name (also used as KConfig group key and runtime-dir suffix).
+    /// Unique, user-visible name (also used as KConfig group key and runtime-dir
+    /// suffix).
     QString name;
 
     // --- Subnet ---
@@ -40,7 +40,8 @@ struct VirtualNetwork {
     bool enableDhcp = true;
 
     /// First address of the DHCP range, e.g. "192.168.100.100".
-    /// If empty and enableDhcp is true, a sensible default is derived from the gateway.
+    /// If empty and enableDhcp is true, a sensible default is derived from the
+    /// gateway.
     QString dhcpRangeStart;
 
     /// Last address of the DHCP range, e.g. "192.168.100.200".
@@ -64,7 +65,7 @@ struct VirtualNetwork {
         return !name.isEmpty() && !gateway.isEmpty();
     }
 
-    bool operator==(const VirtualNetwork& other) const
+    bool operator==(const VirtualNetwork &other) const
     {
         return name == other.name;
     }

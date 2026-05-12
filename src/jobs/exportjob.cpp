@@ -8,10 +8,7 @@
 
 #include "const.h"
 
-ExportJob::ExportJob(const QString& vmName,
-    const QString& vmPath,
-    const QString& outputFilePath,
-    QObject* parent)
+ExportJob::ExportJob(const QString &vmName, const QString &vmPath, const QString &outputFilePath, QObject *parent)
     : KJob(parent)
     , m_vmName(vmName)
     , m_vmPath(vmPath)
@@ -27,9 +24,9 @@ void ExportJob::start()
     QFile::remove(m_tmpOutputPath);
 
     Q_EMIT description(this,
-        i18n("Exporting virtual machine"),
-        QPair<QString, QString>(i18n("VM"), m_vmName),
-        QPair<QString, QString>(i18n("File"), QFileInfo(m_outputFilePath).fileName()));
+                       i18n("Exporting virtual machine"),
+                       QPair<QString, QString>(i18n("VM"), m_vmName),
+                       QPair<QString, QString>(i18n("File"), QFileInfo(m_outputFilePath).fileName()));
 
     // Remove host specs from config.json
     if (!prepareConfig()) {
@@ -40,11 +37,11 @@ void ExportJob::start()
     }
 
     // Verify which files actually exist and calculate total size
-    QDir vmDir(m_vmPath);
+    const QDir vmDir(m_vmPath);
     m_totalBytesToPack = 0;
     m_filesToPack.clear();
 
-    for (const QString& fileName : std::as_const(DEFAULT_FILES_TO_EXPORT)) {
+    for (const QString &fileName : std::as_const(DEFAULT_FILES_TO_EXPORT)) {
         if (vmDir.exists(fileName)) {
             m_filesToPack << fileName;
             m_totalBytesToPack += QFileInfo(vmDir, fileName).size();
@@ -67,21 +64,25 @@ void ExportJob::start()
     }
 
     // Check disk space
-    QFileInfo targetInfo(m_tmpOutputPath);
-    QStorageInfo storage(targetInfo.absoluteDir());
+    const QFileInfo targetInfo(m_tmpOutputPath);
+    const QStorageInfo storage(targetInfo.absoluteDir());
 
     if (storage.isValid() && storage.isReady()) {
         // Buffer of 50 MB
-        qint64 requiredSpace = m_totalBytesToPack + (50 * 1024 * 1024);
+        const qint64 requiredSpace = m_totalBytesToPack + (50 * 1024 * 1024);
 
         if (storage.bytesAvailable() < requiredSpace) {
-            KFormat format;
+            const KFormat format;
             const QString requiredStr = format.formatByteSize(requiredSpace);
             const QString availableStr = format.formatByteSize(storage.bytesAvailable());
             restoreConfig();
             QFile::remove(m_tmpOutputPath);
             setError(5);
-            setErrorText(i18n("Not enough free disk space on target drive.\nRequired: %1\nAvailable: %2", requiredStr, availableStr));
+            setErrorText(
+                i18n("Not enough free disk space on target "
+                     "drive.\nRequired: %1\nAvailable: %2",
+                     requiredStr,
+                     availableStr));
             emitResult();
             return;
         }
@@ -93,14 +94,14 @@ void ExportJob::start()
     connect(m_watcher, &QFutureWatcher<bool>::finished, this, &ExportJob::onExportFinished);
 
     // Start the export in a background thread to prevent UI freezing
-    QFuture<bool> future = QtConcurrent::run(&ExportJob::performArchiveExport, this);
+    const QFuture<bool> future = QtConcurrent::run(&ExportJob::performArchiveExport, this);
     m_watcher->setFuture(future);
 }
 
 bool ExportJob::performArchiveExport()
 {
     // Initialize libarchive for writing
-    struct archive* a = archive_write_new();
+    struct archive *a = archive_write_new();
     if (!a) {
         return false;
     }
@@ -123,13 +124,13 @@ bool ExportJob::performArchiveExport()
     char buffer[1024 * 1024]; // 1 MB chunk buffer
     bool success = true;
 
-    for (const QString& fileName : std::as_const(m_filesToPack)) {
+    for (const QString &fileName : std::as_const(m_filesToPack)) {
         if (m_cancelExport) {
             success = false;
             break;
         } // Cancellation check
 
-        QString filePath = m_vmPath + u"/"_s + fileName;
+        const QString filePath = m_vmPath + u"/"_s + fileName;
         QFile inFile(filePath);
         if (!inFile.open(QIODevice::ReadOnly)) {
             success = false;
@@ -137,7 +138,7 @@ bool ExportJob::performArchiveExport()
         }
 
         // Create and configure archive entry
-        struct archive_entry* entry = archive_entry_new();
+        struct archive_entry *entry = archive_entry_new();
         archive_entry_set_pathname(entry, fileName.toUtf8().constData());
         archive_entry_set_size(entry, inFile.size());
         archive_entry_set_filetype(entry, AE_IFREG);
@@ -157,17 +158,21 @@ bool ExportJob::performArchiveExport()
                 break;
             }
 
-            qint64 readBytes = inFile.read(buffer, sizeof(buffer));
+            const qint64 readBytes = inFile.read(buffer, sizeof(buffer));
             if (readBytes > 0) {
                 archive_write_data(a, buffer, readBytes);
                 processedBytes += readBytes;
 
                 // Calculate progress and dispatch thread-safely to main thread
                 if (m_totalBytesToPack > 0) {
-                    int percent = static_cast<int>((processedBytes * 100) / m_totalBytesToPack);
-                    QMetaObject::invokeMethod(this, [this, percent]() {
-                        setPercent(percent); // Updates KJob progress
-                        Q_EMIT infoMessage(this, i18n("Exporting archive... %1%", percent)); }, Qt::QueuedConnection);
+                    const int percent = static_cast<int>((processedBytes * 100) / m_totalBytesToPack);
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, percent]() {
+                            setPercent(percent); // Updates KJob progress
+                            Q_EMIT infoMessage(this, i18n("Exporting archive... %1%", percent));
+                        },
+                        Qt::QueuedConnection);
                 }
             }
         }
@@ -187,7 +192,7 @@ bool ExportJob::performArchiveExport()
 void ExportJob::onExportFinished()
 {
     // Retrieve thread result
-    bool success = m_watcher->result();
+    const bool success = m_watcher->result();
     m_watcher->deleteLater();
     m_watcher = nullptr;
 
@@ -235,7 +240,7 @@ bool ExportJob::doKill()
 
 bool ExportJob::prepareConfig()
 {
-    QString configPath = m_vmPath + u"/config.json"_s;
+    const QString configPath = m_vmPath + u"/config.json"_s;
     QFile configFile(configPath);
     if (!configFile.open(QIODevice::ReadOnly))
         return false;
@@ -243,18 +248,18 @@ bool ExportJob::prepareConfig()
     m_originalConfigData = configFile.readAll();
     configFile.close();
 
-    QJsonDocument doc = QJsonDocument::fromJson(m_originalConfigData);
+    const QJsonDocument doc = QJsonDocument::fromJson(m_originalConfigData);
     QJsonObject obj = doc.object();
 
     // Remove or clear shared_path
     if (obj.contains(u"shared_path"_s) && !obj[u"shared_path"_s].toString().isEmpty()) {
-        obj[u"shared_path"_s] = { };
+        obj[u"shared_path"_s] = {};
         m_configModified = true;
     }
 
     // Remove iso path (system-specific)
     if (obj.contains(u"iso"_s) && !obj[u"iso"_s].toString().isEmpty()) {
-        obj[u"iso"_s] = { };
+        obj[u"iso"_s] = {};
         m_configModified = true;
     }
 
@@ -262,7 +267,7 @@ bool ExportJob::prepareConfig()
     if (obj.contains(u"icon_source"_s) && obj[u"icon_source"_s].toString() == u"custom"_s) {
         QString iconId = obj[u"icon_identifier"_s].toString();
         if (!iconId.isEmpty()) {
-            QString iconPath = m_vmPath + u"/"_s + iconId;
+            const QString iconPath = m_vmPath + u"/"_s + iconId;
             if (QFile::exists(iconPath)) {
                 m_customIconFileName = iconId;
             }
@@ -270,7 +275,7 @@ bool ExportJob::prepareConfig()
     }
 
     if (m_configModified) {
-        QJsonDocument newDoc(obj);
+        const QJsonDocument newDoc(obj);
         if (!configFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
             return false;
         configFile.write(newDoc.toJson(QJsonDocument::Indented));
@@ -285,7 +290,7 @@ void ExportJob::restoreConfig()
     if (!m_configModified)
         return;
 
-    QString configPath = m_vmPath + u"/config.json"_s;
+    const QString configPath = m_vmPath + u"/config.json"_s;
     QFile configFile(configPath);
     if (configFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         configFile.write(m_originalConfigData);

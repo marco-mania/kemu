@@ -39,60 +39,61 @@ struct CursorInfo {
     bool visible = false;
 };
 
-class QemuDisplayListener : public QObject {
+class QemuDisplayListener : public QObject
+{
     Q_OBJECT
 
 public:
-    explicit QemuDisplayListener(QObject* parent = nullptr);
+    explicit QemuDisplayListener(QObject *parent = nullptr);
     ~QemuDisplayListener() override;
 
     int createSocketPair();
     bool connectListener();
 
     QImage currentImage() const;
-    bool takeDmaBufScanout(DmaBufScanout& out);
+    bool takeDmaBufScanout(DmaBufScanout &out);
     bool isDmaBuf() const;
     CursorInfo cursorInfo() const;
 
     // FD of the GDBus socket (for QSocketNotifier-based event integration)
-    int socketFd() const { return m_socketFd; }
+    int socketFd() const
+    {
+        return m_socketFd;
+    }
 
-    static void onMethodCall(GDBusConnection* connection,
-        const gchar* sender,
-        const gchar* object_path,
-        const gchar* interface_name,
-        const gchar* method_name,
-        GVariant* parameters,
-        GDBusMethodInvocation* invocation,
-        gpointer user_data);
-    static void onConnectionClosed(GDBusConnection* connection,
-        gboolean remote_peer_vanished,
-        GError* error,
-        gpointer user_data);
+    static void onMethodCall(GDBusConnection *connection,
+                             const gchar *sender,
+                             const gchar *object_path,
+                             const gchar *interface_name,
+                             const gchar *method_name,
+                             GVariant *parameters,
+                             GDBusMethodInvocation *invocation,
+                             gpointer user_data);
+    static void onConnectionClosed(GDBusConnection *connection, gboolean remote_peer_vanished, GError *error, gpointer user_data);
 
 Q_SIGNALS:
     void scanoutChanged(int width, int height);
     void dmaBufScanout(int width, int height);
-    void regionUpdated(const QRect& rect);
+    void regionUpdated(const QRect &rect);
     void cursorChanged();
     void connectionLost();
 
 private:
-    void handleScanout(GVariant* parameters, GDBusMethodInvocation* invocation);
-    void handleScanoutMap(GVariant* parameters, GDBusMethodInvocation* invocation);
-    void handleScanoutDMABUF(GVariant* parameters, GDBusMethodInvocation* invocation);
-    void handleUpdate(GVariant* parameters, GDBusMethodInvocation* invocation);
-    void handleUpdateMap(GVariant* parameters, GDBusMethodInvocation* invocation);
-    void handleUpdateDMABUF(GVariant* parameters, GDBusMethodInvocation* invocation);
-    void handleDisable(GDBusMethodInvocation* invocation);
-    void handleMouseSet(GVariant* parameters, GDBusMethodInvocation* invocation);
-    void handleCursorDefine(GVariant* parameters, GDBusMethodInvocation* invocation);
+    void handleScanout(GVariant *parameters, GDBusMethodInvocation *invocation);
+    void handleScanoutMap(GVariant *parameters, GDBusMethodInvocation *invocation);
+    void handleScanoutDMABUF(GVariant *parameters, GDBusMethodInvocation *invocation);
+    void handleUpdate(GVariant *parameters, GDBusMethodInvocation *invocation);
+    void handleUpdateMap(GVariant *parameters, GDBusMethodInvocation *invocation);
+    void handleUpdateDMABUF(GVariant *parameters, GDBusMethodInvocation *invocation);
+    void handleDisable(GDBusMethodInvocation *invocation);
+    void handleMouseSet(GVariant *parameters, GDBusMethodInvocation *invocation);
+    void handleCursorDefine(GVariant *parameters, GDBusMethodInvocation *invocation);
 
     void unmapMemory();
     void closeDmaBuf();
     static QImage::Format pixmanFormatToQt(uint32_t pixman_format);
 
-    GDBusConnection* m_listenerConn = nullptr;
+    GDBusConnection *m_listenerConn = nullptr;
     guint m_registrationId = 0;
     guint m_registrationIdUnix = 0;
 
@@ -104,7 +105,7 @@ private:
 
     QImage m_image;
     QByteArray m_imageData;
-    void* m_mappedMemory = nullptr;
+    void *m_mappedMemory = nullptr;
     size_t m_mappedSize = 0;
 
     DmaBufScanout m_dmaBuf;

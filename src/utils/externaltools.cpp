@@ -10,13 +10,13 @@
 
 // --- Singleton ---
 
-ExternalTools& ExternalTools::instance()
+ExternalTools &ExternalTools::instance()
 {
     static ExternalTools s_instance;
     return s_instance;
 }
 
-ExternalTools::ExternalTools(QObject* parent)
+ExternalTools::ExternalTools(QObject *parent)
     : QObject(parent)
 {
     // Register every external tool the project depends on.
@@ -35,7 +35,7 @@ ExternalTools::ExternalTools(QObject* parent)
 
 // --- Registration ---
 
-void ExternalTools::registerTool(Tool id, const QString& configKey, const QString& defaultBinary)
+void ExternalTools::registerTool(Tool id, const QString &configKey, const QString &defaultBinary)
 {
     ToolInfo info;
     info.configKey = configKey;
@@ -54,12 +54,12 @@ void ExternalTools::refresh()
     Q_EMIT toolsRefreshed();
 }
 
-void ExternalTools::detectPath(ToolInfo& info)
+void ExternalTools::detectPath(ToolInfo &info)
 {
     // 1) User override from KConfig
     KConfig config(u"kemurc"_s);
-    KConfigGroup general = config.group(u"General"_s);
-    const QString configured = general.readEntry(info.configKey, { });
+    const KConfigGroup general = config.group(u"General"_s);
+    const QString configured = general.readEntry(info.configKey, {});
 
     if (!configured.isEmpty() && QFileInfo::exists(configured)) {
         info.resolvedPath = configured;
@@ -88,7 +88,7 @@ void ExternalTools::detectPath(ToolInfo& info)
     info.resolvedPath = QStandardPaths::findExecutable(info.defaultBinary, KEMUConst::FallbackPaths);
 }
 
-void ExternalTools::probeVersion(Tool tool, ToolInfo& info)
+void ExternalTools::probeVersion(Tool tool, ToolInfo &info)
 {
     info.detectedVersion.clear();
     info.available = false;
@@ -119,7 +119,7 @@ bool ExternalTools::isAvailable(Tool tool) const
     return m_tools.value(tool).available;
 }
 
-bool ExternalTools::isAvailable(const QList<ExternalTools::Tool>& tools) const
+bool ExternalTools::isAvailable(const QList<ExternalTools::Tool> &tools) const
 {
     for (const auto tool : tools)
         if (!m_tools.value(tool).available)
@@ -161,41 +161,40 @@ QString ExternalTools::displayName(Tool tool)
     case DbusDaemon:
         return i18n("D-Bus Daemon");
     }
-    return { };
+    return {};
 }
 
 QList<ExternalTools::Tool> ExternalTools::allTools()
 {
-    return { QemuSystem, QemuImg, Swtpm, Virtiofsd, GenIsoImage,
-        Passt, Pasta, Dnsmasq, RemoteViewer, DbusDaemon };
+    return {QemuSystem, QemuImg, Swtpm, Virtiofsd, GenIsoImage, Passt, Pasta, Dnsmasq, RemoteViewer, DbusDaemon};
 }
 
 QList<ExternalTools::Tool> ExternalTools::coreTools()
 {
-    return { QemuSystem, QemuImg, Passt };
+    return {QemuSystem, QemuImg, Passt};
 }
 
 QList<ExternalTools::Tool> ExternalTools::virtualNetworkTools()
 {
-    return { Pasta, Dnsmasq };
+    return {Pasta, Dnsmasq};
 }
 
 QList<ExternalTools::Tool> ExternalTools::spiceDisplayTools()
 {
-    return { RemoteViewer };
+    return {RemoteViewer};
 }
 
 QList<ExternalTools::Tool> ExternalTools::dbusDisplayTools()
 {
-    return { DbusDaemon };
+    return {DbusDaemon};
 }
 
-QString ExternalTools::probeVersionString(Tool /*tool*/, const QString& path)
+QString ExternalTools::probeVersionString(Tool /*tool*/, const QString &path)
 {
     if (path.isEmpty() || !QFileInfo::exists(path))
-        return { };
+        return {};
 
-    const QStringList versionArgs = { u"--version"_s };
+    const QStringList versionArgs = {u"--version"_s};
 
     KProcess process;
     process.setOutputChannelMode(KProcess::MergedChannels);
@@ -204,7 +203,7 @@ QString ExternalTools::probeVersionString(Tool /*tool*/, const QString& path)
     process.start();
 
     if (!process.waitForFinished(2000) || process.exitCode() != 0)
-        return { };
+        return {};
 
     QString output = QString::fromLocal8Bit(process.readAllStandardOutput()).trimmed();
     if (output.isEmpty())
@@ -216,7 +215,7 @@ QString ExternalTools::probeVersionString(Tool /*tool*/, const QString& path)
 QStringList ExternalTools::missingToolNames() const
 {
     QStringList missing;
-    for (Tool t : allTools()) {
+    for (const Tool t : allTools()) {
         if (!isAvailable(t))
             missing << displayName(t);
     }
@@ -225,7 +224,7 @@ QStringList ExternalTools::missingToolNames() const
 
 bool ExternalTools::isVirtualNetworkCapable() const
 {
-    for (Tool t : virtualNetworkTools()) {
+    for (const Tool t : virtualNetworkTools()) {
         if (!isAvailable(t))
             return false;
     }
@@ -236,50 +235,25 @@ bool ExternalTools::isVirtualNetworkCapable() const
 
 QList<ExternalTools::FeatureGroup> ExternalTools::featureGroups()
 {
-    return {
-        { Core,
-            i18n("Core Functionality"),
-            i18n("Required for basic VM operation. This warning cannot be disabled."),
-            coreTools(),
-            false },
-        { VirtualNetwork,
-            i18n("Virtual Networks"),
-            i18n("User-defined isolated networks with built-in DHCP and DNS."),
-            virtualNetworkTools(),
-            true },
-        { SpiceDisplay,
-            i18n("SPICE Display"),
-            i18n("External SPICE viewer for VM consoles."),
-            spiceDisplayTools(),
-            true },
-        { DbusDisplay,
-            i18n("D-Bus Integrated Display"),
-            i18n("Embedded display via a per-VM D-Bus session."),
-            dbusDisplayTools(),
-            true },
-        { TpmEmulation,
-            i18n("TPM Emulation"),
-            i18n("Software TPM 2.0 device for guests that require it (e.g. Windows 11)."),
-            { Swtpm },
-            true },
-        { SharedFolders,
-            i18n("Shared Folders"),
-            i18n("Host-to-guest folder sharing via virtio-fs."),
-            { Virtiofsd },
-            true },
-        { CloudInitIso,
-            i18n("Cloud-Init / ISO Creation"),
-            i18n("Generate seed ISOs for automated cloud-image deployment."),
-            { GenIsoImage },
-            true }
-    };
+    return {{Core, i18n("Core Functionality"), i18n("Required for basic VM operation. This warning cannot be disabled."), coreTools(), false},
+            {VirtualNetwork, i18n("Virtual Networks"), i18n("User-defined isolated networks with built-in DHCP and DNS."), virtualNetworkTools(), true},
+            {SpiceDisplay, i18n("SPICE Display"), i18n("External SPICE viewer for VM consoles."), spiceDisplayTools(), true},
+            {DbusDisplay, i18n("D-Bus Integrated Display"), i18n("Embedded display via a per-VM D-Bus session."), dbusDisplayTools(), true},
+            {TpmEmulation,
+             i18n("TPM Emulation"),
+             i18n("Software TPM 2.0 device for guests that require it (e.g. Windows "
+                  "11)."),
+             {Swtpm},
+             true},
+            {SharedFolders, i18n("Shared Folders"), i18n("Host-to-guest folder sharing via virtio-fs."), {Virtiofsd}, true},
+            {CloudInitIso, i18n("Cloud-Init / ISO Creation"), i18n("Generate seed ISOs for automated cloud-image deployment."), {GenIsoImage}, true}};
 }
 
 QList<ExternalTools::FeatureGroup> ExternalTools::missingFeatureGroups() const
 {
     QList<FeatureGroup> result;
-    for (const auto& group : featureGroups()) {
-        for (Tool t : group.tools) {
+    for (const auto &group : featureGroups()) {
+        for (const Tool t : group.tools) {
             if (!isAvailable(t)) {
                 result.append(group);
                 break;
@@ -307,13 +281,13 @@ QString ExternalTools::suppressionConfigKey(FeatureGroupId id)
     case CloudInitIso:
         return u"IgnoreMissing_CloudInitIso"_s;
     }
-    return { };
+    return {};
 }
 
 bool ExternalTools::isWarningSuppressed(FeatureGroupId id)
 {
     KConfig config(u"kemurc"_s);
-    KConfigGroup g = config.group(u"MissingToolWarnings"_s);
+    const KConfigGroup g = config.group(u"MissingToolWarnings"_s);
     return g.readEntry(suppressionConfigKey(id), false);
 }
 
@@ -328,7 +302,7 @@ void ExternalTools::setWarningSuppressed(FeatureGroupId id, bool suppressed)
 QList<ExternalTools::FeatureGroupId> ExternalTools::suppressedFeatureGroups()
 {
     QList<FeatureGroupId> result;
-    for (const auto& g : featureGroups()) {
+    for (const auto &g : featureGroups()) {
         if (g.suppressible && isWarningSuppressed(g.id))
             result.append(g.id);
     }

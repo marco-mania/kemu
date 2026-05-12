@@ -31,19 +31,23 @@ extern "C" {
 
 using namespace Qt::StringLiterals;
 
-class OvaImportJob : public KJob {
+class OvaImportJob : public KJob
+{
     Q_OBJECT
 
 public:
-    explicit OvaImportJob(const QString& ovaPath,
-        const QString& vmBaseDir,
-        int diskSizeGb,
-        QObject* parent = nullptr);
+    explicit OvaImportJob(const QString &ovaPath, const QString &vmBaseDir, int diskSizeGb, QObject *parent = nullptr);
 
     void start() override;
 
-    [[nodiscard]] QString vmName() const { return m_vmName; }
-    [[nodiscard]] VMConfig importedConfig() const { return m_importedConfig; }
+    [[nodiscard]] QString vmName() const
+    {
+        return m_vmName;
+    }
+    [[nodiscard]] VMConfig importedConfig() const
+    {
+        return m_importedConfig;
+    }
 
 protected:
     bool doKill() override;
@@ -69,9 +73,9 @@ private:
     QString m_vmName;
     VMConfig m_importedConfig;
 
-    KProcess* m_process = nullptr;
+    KProcess *m_process = nullptr;
 
     // Threading and cancellation for the extraction step
-    QFutureWatcher<bool>* m_watcher = nullptr;
-    std::atomic<bool> m_cancelImport { false };
+    QFutureWatcher<bool> *m_watcher = nullptr;
+    std::atomic<bool> m_cancelImport{false};
 };

@@ -9,11 +9,7 @@
 
 using namespace Qt::StringLiterals;
 
-DownloadJob::DownloadJob(const QString& url,
-    const QString& localPath,
-    const Utils::ChecksumType checksumType,
-    const QString& checksum,
-    QObject* parent)
+DownloadJob::DownloadJob(const QString &url, const QString &localPath, const Utils::ChecksumType checksumType, const QString &checksum, QObject *parent)
     : KJob(parent)
     , m_url(url)
     , m_localPath(localPath)
@@ -31,7 +27,6 @@ DownloadJob::~DownloadJob()
 
 void DownloadJob::start()
 {
-
     if (QFile::exists(m_localPath)) {
         Q_EMIT statusMessage(i18n("ISO already downloaded."));
         emitResult();
@@ -76,12 +71,13 @@ void DownloadJob::startDownload()
     if (m_checksumType != Utils::ChecksumType::NONE)
         m_runningHash = new QCryptographicHash(hashAlgorithm());
 
-    QNetworkRequest request { QUrl(m_url) };
+    QNetworkRequest request{QUrl(m_url)};
 
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
 
     // Set a recognizable User-Agent
-    request.setHeader(QNetworkRequest::UserAgentHeader, u"%1/%2 (KDE Virtual Machine Manager)"_s.arg(QCoreApplication::applicationName(), QCoreApplication::applicationVersion()));
+    request.setHeader(QNetworkRequest::UserAgentHeader,
+                      u"%1/%2 (KDE Virtual Machine Manager)"_s.arg(QCoreApplication::applicationName(), QCoreApplication::applicationVersion()));
 
     m_reply = m_nam->get(request);
 
@@ -107,15 +103,12 @@ void DownloadJob::onDownloadProgress(qint64 received, qint64 total)
         setTotalAmount(KJob::Bytes, total);
         setProcessedAmount(KJob::Bytes, received);
 
-        unsigned long pct = static_cast<unsigned long>(received * 100 / total);
+        const unsigned long pct = static_cast<unsigned long>(received * 100 / total);
         setPercent(pct);
 
-        double receivedMb = received / (1024.0 * 1024.0);
-        double totalMb = total / (1024.0 * 1024.0);
-        Q_EMIT statusMessage(i18n("Downloading: %1 / %2 MB (%3%)",
-            QString::number(receivedMb, 'f', 1),
-            QString::number(totalMb, 'f', 1),
-            pct));
+        const double receivedMb = received / (1024.0 * 1024.0);
+        const double totalMb = total / (1024.0 * 1024.0);
+        Q_EMIT statusMessage(i18n("Downloading: %1 / %2 MB (%3%)", QString::number(receivedMb, 'f', 1), QString::number(totalMb, 'f', 1), pct));
     }
 }
 
@@ -137,7 +130,7 @@ void DownloadJob::onDownloadFinished()
         return;
     }
 
-    int httpStatus = m_reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const int httpStatus = m_reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     if (httpStatus >= 400) {
         setError(3);
         setErrorText(i18n("HTTP error %1", httpStatus));

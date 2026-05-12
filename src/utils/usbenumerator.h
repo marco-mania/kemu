@@ -10,7 +10,6 @@
 #include <QString>
 
 struct UsbDeviceInfo {
-
     QString name;
     QString manufacturer;
     uint16_t vendorId = 0;
@@ -26,6 +25,7 @@ struct UsbDeviceInfo {
 
 using namespace Qt::StringLiterals;
 
-namespace UsbEnumerator {
+namespace UsbEnumerator
+{
 QList<UsbDeviceInfo> enumerate();
 }

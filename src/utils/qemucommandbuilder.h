@@ -38,25 +38,27 @@ struct NetworkContext {
     QString passtSocketPath;
 };
 
-class QemuCommandBuilder {
-
+class QemuCommandBuilder
+{
 public:
     /**
      * @brief Constructs the complete argument list for the QEMU process.
      *
      * @param config             The VM configuration.
-     * @param vmDir              The directory containing the VM files (disk, VARS).
+     * @param vmDir              The directory containing the VM files (disk,
+     * VARS).
      * @param monitorSocketPath  Path to the QMP socket.
-     * @param networkContext     Network-mode-specific context (tap device or passt socket).
+     * @param networkContext     Network-mode-specific context (tap device or
+     * passt socket).
      * @param relativePaths      Whether to emit relative paths.
      * @param headless           Whether to suppress display output.
      */
-    static QStringList build(const VMConfig& config,
-        const QDir& vmDir,
-        const QString& monitorSocketPath,
-        const NetworkContext& networkContext = { },
-        const bool relativePaths = false,
-        const bool headless = false);
+    static QStringList build(const VMConfig &config,
+                             const QDir &vmDir,
+                             const QString &monitorSocketPath,
+                             const NetworkContext &networkContext = {},
+                             const bool relativePaths = false,
+                             const bool headless = false);
 
     /**
      * @brief Generates a complete, self-contained shell script to launch the VM.
@@ -69,21 +71,22 @@ public:
      * @param monitorSocketPath  Path to the QMP socket.
      * @param networkContext     Network-mode-specific context.
      * @param network            Virtual network config (if applicable).
-     * @param relativePaths      Whether to emit relative paths (for portable scripts).
+     * @param relativePaths      Whether to emit relative paths (for portable
+     * scripts).
      */
-    static QString buildShellScript(const VMConfig& config,
-        const QDir& vmDir,
-        const QString& monitorSocketPath,
-        const NetworkContext& networkContext,
-        const VirtualNetwork& network = { },
-        const bool relativePaths = false);
+    static QString buildShellScript(const VMConfig &config,
+                                    const QDir &vmDir,
+                                    const QString &monitorSocketPath,
+                                    const NetworkContext &networkContext,
+                                    const VirtualNetwork &network = {},
+                                    const bool relativePaths = false);
 
     /**
      * @brief Formats the QEMU argument list into a readable multi-line string.
      * @param args  The list of QEMU arguments.
      * @return A formatted string with line continuation characters.
      */
-    static QString argsToReadableString(const QStringList& args);
+    static QString argsToReadableString(const QStringList &args);
 
 private:
     QemuCommandBuilder() = delete;

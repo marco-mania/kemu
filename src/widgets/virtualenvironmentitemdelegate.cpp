@@ -8,7 +8,7 @@
 
 #include "models/virtualenvironmentmodel.h"
 
-void VirtualEnvironmentItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
+void VirtualEnvironmentItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const
 {
     QStyleOptionViewItem opt = option;
     initStyleOption(&opt, index);
@@ -22,9 +22,7 @@ void VirtualEnvironmentItemDelegate::paint(QPainter* painter, const QStyleOption
     const int iconSize = opt.decorationSize.height();
 
     // --- Icon ---
-    const QRect iconRect(opt.rect.left() + margin,
-        opt.rect.top() + (opt.rect.height() - iconSize) / 2,
-        iconSize, iconSize);
+    const QRect iconRect(opt.rect.left() + margin, opt.rect.top() + (opt.rect.height() - iconSize) / 2, iconSize, iconSize);
     icon.paint(painter, iconRect);
 
     const int textLeft = iconRect.right() + margin + 2;
@@ -45,15 +43,15 @@ void VirtualEnvironmentItemDelegate::paint(QPainter* painter, const QStyleOption
         // --- Folder: single-line, bold---
         QFont folderFont = opt.font;
         folderFont.setBold(true);
-        QFontMetrics fm(folderFont);
+        const QFontMetrics fm(folderFont);
 
-        int y = opt.rect.top() + (opt.rect.height() - fm.height()) / 2 + fm.ascent();
+        const int y = opt.rect.top() + (opt.rect.height() - fm.height()) / 2 + fm.ascent();
 
         painter->setFont(folderFont);
         painter->setPen(textPen);
 
         // Title + child count
-        int childCount = index.model()->rowCount(index);
+        const int childCount = index.model()->rowCount(index);
         QString label = title;
         if (childCount > 0)
             label += QStringLiteral(" (%1)").arg(childCount);
@@ -76,7 +74,7 @@ void VirtualEnvironmentItemDelegate::paint(QPainter* painter, const QStyleOption
             QFont subFont = titleFont;
             subFont.setPointSizeF(titleFont.pointSizeF() * 0.85);
             const QFontMetrics subFm(subFont);
-            int subY = titleY + titleFm.descent() + 2 + subFm.ascent();
+            const int subY = titleY + titleFm.descent() + 2 + subFm.ascent();
 
             painter->setFont(subFont);
             painter->setPen(opt.palette.color((opt.state & QStyle::State_Selected) ? QPalette::HighlightedText : QPalette::Mid));
@@ -100,18 +98,18 @@ void VirtualEnvironmentItemDelegate::paint(QPainter* painter, const QStyleOption
     painter->restore();
 }
 
-QSize VirtualEnvironmentItemDelegate::sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const
+QSize VirtualEnvironmentItemDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const
 {
     QStyleOptionViewItem opt = option;
     initStyleOption(&opt, index);
 
-    int itemType = index.data(VirtualEnvironmentModel::ItemTypeRole).toInt();
+    const int itemType = index.data(VirtualEnvironmentModel::ItemTypeRole).toInt();
 
     if (itemType == VirtualEnvironmentModel::Folder) {
         QFont folderFont = opt.font;
         folderFont.setBold(true);
-        QFontMetrics fm(folderFont);
-        int h = qMax(fm.height(), opt.decorationSize.height()) + 8;
+        const QFontMetrics fm(folderFont);
+        const int h = qMax(fm.height(), opt.decorationSize.height()) + 8;
         return QSize(opt.rect.width(), h);
     }
 
@@ -121,20 +119,20 @@ QSize VirtualEnvironmentItemDelegate::sizeHint(const QStyleOptionViewItem& optio
     subFont.setPointSizeF(opt.font.pointSizeF() * 0.85);
     const QFontMetrics subFm(subFont);
 
-    int textHeight = titleFm.height() + 2 + subFm.height();
-    int h = qMax(textHeight, opt.decorationSize.height()) + 8;
+    const int textHeight = titleFm.height() + 2 + subFm.height();
+    const int h = qMax(textHeight, opt.decorationSize.height()) + 8;
     return QSize(opt.rect.width(), h);
 }
 
-QRect VirtualEnvironmentItemDelegate::mediaIconRect(const QStyleOptionViewItem& option, MediaType type, bool hasOther)
+QRect VirtualEnvironmentItemDelegate::mediaIconRect(const QStyleOptionViewItem &option, MediaType type, bool hasOther)
 {
     const int y = option.rect.top() + (option.rect.height() - MediaIconSize) / 2;
     const int rightEdge = option.rect.right() - MediaIconMargin;
 
     if (type == MediaType::Floppy)
-        return { rightEdge - MediaIconSize, y, MediaIconSize, MediaIconSize };
+        return {rightEdge - MediaIconSize, y, MediaIconSize, MediaIconSize};
 
     // CD: rightmost if no floppy, otherwise left of floppy
     const int offset = hasOther ? (MediaIconSize + MediaIconMargin) : 0;
-    return { rightEdge - MediaIconSize - offset, y, MediaIconSize, MediaIconSize };
+    return {rightEdge - MediaIconSize - offset, y, MediaIconSize, MediaIconSize};
 }

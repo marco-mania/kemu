@@ -20,19 +20,23 @@
 
 using namespace Qt::StringLiterals;
 
-class CloneJob : public KJob {
+class CloneJob : public KJob
+{
     Q_OBJECT
 
 public:
-    explicit CloneJob(const QString& vmName,
-        const QString& srcPath,
-        const QString& dstPath,
-        QObject* parent = nullptr);
+    explicit CloneJob(const QString &vmName, const QString &srcPath, const QString &dstPath, QObject *parent = nullptr);
 
     void start() override;
 
-    [[nodiscard]] QString vmName() const { return m_vmName; }
-    [[nodiscard]] QString cloneName() const { return m_cloneName; }
+    [[nodiscard]] QString vmName() const
+    {
+        return m_vmName;
+    }
+    [[nodiscard]] QString cloneName() const
+    {
+        return m_cloneName;
+    }
 
 protected:
     bool doKill() override;
@@ -49,7 +53,7 @@ private:
     QString m_srcPath;
     QString m_dstPath;
 
-    KProcess* m_process = nullptr;
+    KProcess *m_process = nullptr;
     QByteArray m_outputBuffer;
     bool m_killed = false;
 };

@@ -16,17 +16,19 @@
 
 using namespace Qt::StringLiterals;
 
-class ShrinkJob : public KJob {
+class ShrinkJob : public KJob
+{
     Q_OBJECT
 
 public:
-    explicit ShrinkJob(const QString& vmName,
-        const QString& diskPath,
-        QObject* parent = nullptr);
+    explicit ShrinkJob(const QString &vmName, const QString &diskPath, QObject *parent = nullptr);
 
     void start() override;
 
-    [[nodiscard]] QString vmName() const { return m_vmName; }
+    [[nodiscard]] QString vmName() const
+    {
+        return m_vmName;
+    }
 
 protected:
     bool doKill() override;
@@ -39,7 +41,7 @@ private:
     QString m_vmName;
     QString m_diskPath;
     QString m_tmpPath;
-    KProcess* m_process = nullptr;
+    KProcess *m_process = nullptr;
 
     QByteArray m_outputBuffer;
 };

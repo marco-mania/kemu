@@ -9,3 +9,4 @@ build/
 *.kate-swp
 *.bak
 compile_commands.json
+.clang-format

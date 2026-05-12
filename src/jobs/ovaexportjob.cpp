@@ -8,11 +8,7 @@
 
 #include "utils/externaltools.h"
 
-OvaExportJob::OvaExportJob(const QString& vmName,
-    const VMConfig& config,
-    const QString& diskPath,
-    const QString& outputFilePath,
-    QObject* parent)
+OvaExportJob::OvaExportJob(const QString &vmName, const VMConfig &config, const QString &diskPath, const QString &outputFilePath, QObject *parent)
     : KJob(parent)
     , m_vmName(vmName)
     , m_config(config)
@@ -32,7 +28,7 @@ void OvaExportJob::start()
         return;
     }
 
-    const auto& tools = ExternalTools::instance();
+    const auto &tools = ExternalTools::instance();
 
     if (!tools.isAvailable(ExternalTools::QemuImg)) {
         setError(1);
@@ -46,27 +42,20 @@ void OvaExportJob::start()
     m_mfFileName = m_vmName + u".mf"_s;
 
     Q_EMIT description(this,
-        i18n("Exporting as OVA"),
-        QPair<QString, QString>(i18n("VM"), m_vmName),
-        QPair<QString, QString>(i18n("Step"), i18n("Converting disk image...")));
+                       i18n("Exporting as OVA"),
+                       QPair<QString, QString>(i18n("VM"), m_vmName),
+                       QPair<QString, QString>(i18n("Step"), i18n("Converting disk image...")));
 
     // step 1: qcow2 → vmdk
-    QString vmdkPath = m_stagingDir.filePath(m_vmdkFileName);
+    const QString vmdkPath = m_stagingDir.filePath(m_vmdkFileName);
 
     m_process = new KProcess(this);
     m_process->setOutputChannelMode(KProcess::SeparateChannels);
     m_process->setProgram(tools.path(ExternalTools::QemuImg));
-    m_process->setArguments({ u"convert"_s,
-        u"-p"_s,
-        u"-O"_s, u"vmdk"_s,
-        u"-o"_s, u"subformat=streamOptimized"_s,
-        m_diskPath,
-        vmdkPath });
+    m_process->setArguments({u"convert"_s, u"-p"_s, u"-O"_s, u"vmdk"_s, u"-o"_s, u"subformat=streamOptimized"_s, m_diskPath, vmdkPath});
 
-    connect(m_process, &KProcess::readyReadStandardOutput,
-        this, &OvaExportJob::onConvertReadyRead);
-    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&KProcess::finished),
-        this, &OvaExportJob::onConvertFinished);
+    connect(m_process, &KProcess::readyReadStandardOutput, this, &OvaExportJob::onConvertReadyRead);
+    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&KProcess::finished), this, &OvaExportJob::onConvertFinished);
 
     m_process->start();
 
@@ -83,7 +72,7 @@ void OvaExportJob::onConvertReadyRead()
 
     int lastBreakIndex = -1;
     for (int i = m_outputBuffer.size() - 1; i >= 0; --i) {
-        char c = m_outputBuffer.at(i);
+        const char c = m_outputBuffer.at(i);
         if (c == '\r' || c == '\n') {
             lastBreakIndex = i;
             break;
@@ -95,19 +84,19 @@ void OvaExportJob::onConvertReadyRead()
     const QByteArray completeData = m_outputBuffer.left(lastBreakIndex);
     m_outputBuffer.remove(0, lastBreakIndex + 1);
 
-    QString output = QString::fromLocal8Bit(completeData);
-    QStringView view(output);
+    const QString output = QString::fromLocal8Bit(completeData);
+    const QStringView view(output);
 
     const QStringView suffix(u"/100%)");
     const QChar prefix(u'(');
     int endIndex = view.lastIndexOf(suffix);
 
     while (endIndex != -1) {
-        int startIndex = view.lastIndexOf(prefix, endIndex);
+        const int startIndex = view.lastIndexOf(prefix, endIndex);
         if (startIndex != -1) {
-            QStringView numberView = view.mid(startIndex + 1, endIndex - startIndex - 1);
+            const QStringView numberView = view.mid(startIndex + 1, endIndex - startIndex - 1);
             bool ok;
-            double percent = numberView.toDouble(&ok);
+            const double percent = numberView.toDouble(&ok);
             if (ok) {
                 // disk conversion is ~80% of whole job
                 emitPercent(qRound(percent * 8), 1000);
@@ -133,13 +122,18 @@ void OvaExportJob::onConvertFinished(int exitCode, QProcess::ExitStatus exitStat
     m_watcher = new QFutureWatcher<bool>(this);
     connect(m_watcher, &QFutureWatcher<bool>::finished, this, &OvaExportJob::onPackageFinished);
 
-    QFuture<bool> future = QtConcurrent::run(&OvaExportJob::performBackgroundTasks, this);
+    const QFuture<bool> future = QtConcurrent::run(&OvaExportJob::performBackgroundTasks, this);
     m_watcher->setFuture(future);
 }
 
 bool OvaExportJob::performBackgroundTasks()
 {
-    QMetaObject::invokeMethod(this, [this]() { Q_EMIT infoMessage(this, i18n("Creating Manifest (SHA256)...")); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(
+        this,
+        [this]() {
+            Q_EMIT infoMessage(this, i18n("Creating Manifest (SHA256)..."));
+        },
+        Qt::QueuedConnection);
 
     if (!createManifestInThread()) {
         return false;
@@ -149,20 +143,25 @@ bool OvaExportJob::performBackgroundTasks()
         return false;
     }
 
-    QMetaObject::invokeMethod(this, [this]() { Q_EMIT infoMessage(this, i18n("Packaging OVA...")); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(
+        this,
+        [this]() {
+            Q_EMIT infoMessage(this, i18n("Packaging OVA..."));
+        },
+        Qt::QueuedConnection);
 
     return performOvaPackagingInThread();
 }
 
 void OvaExportJob::createOvfDescriptor()
 {
-    QString ovfPath = m_stagingDir.filePath(m_ovfFileName);
+    const QString ovfPath = m_stagingDir.filePath(m_ovfFileName);
     QFile file(ovfPath);
     if (!file.open(QIODevice::WriteOnly))
         return;
 
-    QFileInfo vmdkInfo(m_stagingDir.filePath(m_vmdkFileName));
-    qint64 vmdkSize = vmdkInfo.size();
+    const QFileInfo vmdkInfo(m_stagingDir.filePath(m_vmdkFileName));
+    const qint64 vmdkSize = vmdkInfo.size();
 
     QXmlStreamWriter xml(&file);
     xml.setAutoFormatting(true);
@@ -171,14 +170,10 @@ void OvaExportJob::createOvfDescriptor()
     // OVF Envelope
     xml.writeStartElement(u"Envelope"_s);
     xml.writeAttribute(u"xmlns"_s, u"http://schemas.dmtf.org/ovf/envelope/1"_s);
-    xml.writeAttribute(u"xmlns:rasd"_s,
-        u"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData"_s);
-    xml.writeAttribute(u"xmlns:vssd"_s,
-        u"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData"_s);
-    xml.writeAttribute(u"xmlns:ovf"_s,
-        u"http://schemas.dmtf.org/ovf/envelope/1"_s);
-    xml.writeAttribute(u"xmlns:vbox"_s,
-        u"http://www.virtualbox.org/ovf/machine"_s);
+    xml.writeAttribute(u"xmlns:rasd"_s, u"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData"_s);
+    xml.writeAttribute(u"xmlns:vssd"_s, u"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData"_s);
+    xml.writeAttribute(u"xmlns:ovf"_s, u"http://schemas.dmtf.org/ovf/envelope/1"_s);
+    xml.writeAttribute(u"xmlns:vbox"_s, u"http://www.virtualbox.org/ovf/machine"_s);
 
     // References
     xml.writeStartElement(u"References"_s);
@@ -195,12 +190,10 @@ void OvaExportJob::createOvfDescriptor()
     xml.writeCharacters(u"Virtual disk information"_s);
     xml.writeEndElement();
     xml.writeStartElement(u"Disk"_s);
-    xml.writeAttribute(u"ovf:capacity"_s,
-        QString::number(static_cast<qint64>(m_config.diskSizeGb()) * 1073741824LL));
+    xml.writeAttribute(u"ovf:capacity"_s, QString::number(static_cast<qint64>(m_config.diskSizeGb()) * 1073741824LL));
     xml.writeAttribute(u"ovf:diskId"_s, u"vmdisk1"_s);
     xml.writeAttribute(u"ovf:fileRef"_s, u"file1"_s);
-    xml.writeAttribute(u"ovf:format"_s,
-        u"http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"_s);
+    xml.writeAttribute(u"ovf:format"_s, u"http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"_s);
     xml.writeEndElement(); // Disk
     xml.writeEndElement(); // DiskSection
 
@@ -219,9 +212,7 @@ void OvaExportJob::createOvfDescriptor()
     xml.writeAttribute(u"ovf:id"_s, m_vmName);
 
     xml.writeStartElement(u"Info"_s);
-    xml.writeCharacters(m_config.comment().isEmpty()
-            ? i18n("Exported from KEMU")
-            : m_config.comment());
+    xml.writeCharacters(m_config.comment().isEmpty() ? i18n("Exported from KEMU") : m_config.comment());
     xml.writeEndElement();
 
     xml.writeStartElement(u"Name"_s);
@@ -362,19 +353,19 @@ void OvaExportJob::createOvfDescriptor()
 
 bool OvaExportJob::createManifestInThread()
 {
-    QString mfPath = m_stagingDir.filePath(m_mfFileName);
-    QStringList files = { m_ovfFileName, m_vmdkFileName };
+    const QString mfPath = m_stagingDir.filePath(m_mfFileName);
+    QStringList files = {m_ovfFileName, m_vmdkFileName};
     QStringList lines;
 
     qint64 totalBytes = 0;
-    for (const QString& fileName : std::as_const(files)) {
+    for (const QString &fileName : std::as_const(files)) {
         totalBytes += QFileInfo(m_stagingDir.filePath(fileName)).size();
     }
 
     qint64 processedBytes = 0;
     char buffer[1024 * 1024]; // 1 MB Chunk-Buffer
 
-    for (const QString& fileName : std::as_const(files)) {
+    for (const QString &fileName : std::as_const(files)) {
         if (m_cancelExport)
             return false;
 
@@ -388,16 +379,21 @@ bool OvaExportJob::createManifestInThread()
             if (m_cancelExport)
                 return false;
 
-            qint64 readBytes = f.read(buffer, sizeof(buffer));
+            const qint64 readBytes = f.read(buffer, sizeof(buffer));
             if (readBytes > 0) {
                 hash.addData(QByteArrayView(buffer, readBytes));
                 processedBytes += readBytes;
 
                 if (totalBytes > 0) {
-                    int hashPercent = static_cast<int>((processedBytes * 50) / totalBytes);
-                    int totalPercent = 850 + hashPercent;
+                    const int hashPercent = static_cast<int>((processedBytes * 50) / totalBytes);
+                    const int totalPercent = 850 + hashPercent;
 
-                    QMetaObject::invokeMethod(this, [this, totalPercent]() { emitPercent(totalPercent, 1000); }, Qt::QueuedConnection);
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, totalPercent]() {
+                            emitPercent(totalPercent, 1000);
+                        },
+                        Qt::QueuedConnection);
                 }
             }
         }
@@ -426,13 +422,13 @@ void OvaExportJob::packageOva()
     connect(m_watcher, &QFutureWatcher<bool>::finished, this, &OvaExportJob::onPackageFinished);
 
     // Start packaging in a background thread to prevent UI freezing
-    QFuture<bool> future = QtConcurrent::run(&OvaExportJob::performOvaPackagingInThread, this);
+    const QFuture<bool> future = QtConcurrent::run(&OvaExportJob::performOvaPackagingInThread, this);
     m_watcher->setFuture(future);
 }
 
 bool OvaExportJob::performOvaPackagingInThread()
 {
-    struct archive* a = archive_write_new();
+    struct archive *a = archive_write_new();
     archive_write_set_format_ustar(a);
 
     if (archive_write_open_filename(a, m_outputFilePath.toUtf8().constData()) != ARCHIVE_OK) {
@@ -442,10 +438,10 @@ bool OvaExportJob::performOvaPackagingInThread()
 
     // Important for the OVA standard: The order must be correct!
     // First OVF, then manifest (MF), then the VMDK(s).
-    QStringList filesToPack = { m_ovfFileName, m_mfFileName, m_vmdkFileName };
+    QStringList filesToPack = {m_ovfFileName, m_mfFileName, m_vmdkFileName};
 
     qint64 totalBytes = 0;
-    for (const QString& fileName : std::as_const(filesToPack)) {
+    for (const QString &fileName : std::as_const(filesToPack)) {
         totalBytes += QFileInfo(m_stagingDir.filePath(fileName)).size();
     }
 
@@ -453,20 +449,20 @@ bool OvaExportJob::performOvaPackagingInThread()
     char buffer[1024 * 1024];
     bool success = true;
 
-    for (const QString& fileName : std::as_const(filesToPack)) {
+    for (const QString &fileName : std::as_const(filesToPack)) {
         if (m_cancelExport) {
             success = false;
             break;
         }
 
-        QString fullPath = m_stagingDir.filePath(fileName);
+        const QString fullPath = m_stagingDir.filePath(fileName);
         QFile file(fullPath);
         if (!file.open(QIODevice::ReadOnly)) {
             success = false;
             break;
         }
 
-        struct archive_entry* entry = archive_entry_new();
+        struct archive_entry *entry = archive_entry_new();
         archive_entry_set_pathname(entry, fileName.toUtf8().constData());
         archive_entry_set_size(entry, file.size());
         archive_entry_set_filetype(entry, AE_IFREG);
@@ -484,10 +480,9 @@ bool OvaExportJob::performOvaPackagingInThread()
                 break;
             }
 
-            qint64 readBytes = file.read(buffer, sizeof(buffer));
+            const qint64 readBytes = file.read(buffer, sizeof(buffer));
             if (readBytes > 0) {
-
-                la_ssize_t written = archive_write_data(a, buffer, readBytes);
+                const la_ssize_t written = archive_write_data(a, buffer, readBytes);
                 if (written < 0) {
                     // An error occurred during writing (e.g., disk is full)
                     // We record the error and break out of the loops.
@@ -499,10 +494,15 @@ bool OvaExportJob::performOvaPackagingInThread()
 
                 if (totalBytes > 0) {
                     // Fortschritt für das Packen liegt zwischen 900 und 1000
-                    int packagePercent = static_cast<int>((processedBytes * 100) / totalBytes);
-                    int totalPercent = 900 + packagePercent;
+                    const int packagePercent = static_cast<int>((processedBytes * 100) / totalBytes);
+                    const int totalPercent = 900 + packagePercent;
 
-                    QMetaObject::invokeMethod(this, [this, totalPercent]() { emitPercent(totalPercent, 1000); }, Qt::QueuedConnection);
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, totalPercent]() {
+                            emitPercent(totalPercent, 1000);
+                        },
+                        Qt::QueuedConnection);
                 }
             }
         }
@@ -522,7 +522,7 @@ bool OvaExportJob::performOvaPackagingInThread()
 void OvaExportJob::onPackageFinished()
 {
     // Retrieve the boolean result from performBackgroundTasks()
-    bool success = m_watcher->result();
+    const bool success = m_watcher->result();
     m_watcher->deleteLater();
     m_watcher = nullptr;
 

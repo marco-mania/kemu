@@ -6,63 +6,57 @@
 
 #include "snapshotmanager.h"
 
-SnapshotManager::SnapshotManager(QObject* parent)
+SnapshotManager::SnapshotManager(QObject *parent)
     : QObject(parent)
 {
 }
 
 // Offline (qemu-img)
 
-QList<SnapshotInfo> SnapshotManager::listSnapshots(const QString& diskPath) const
+QList<SnapshotInfo> SnapshotManager::listSnapshots(const QString &diskPath) const
 {
     // Try JSON output first
-    auto resJson = runQemuImg({ u"snapshot"_s, u"--output=json"_s, u"-l"_s, diskPath });
+    auto resJson = runQemuImg({u"snapshot"_s, u"--output=json"_s, u"-l"_s, diskPath});
     if (resJson.exitCode == 0) {
         QList<SnapshotInfo> list = parseSnapshotListJson(resJson.out);
         if (!list.isEmpty()) {
-            for (SnapshotInfo& snap : list)
+            for (SnapshotInfo &snap : list)
                 snap.description = loadDescription(diskPath, snap.name);
             return list;
         }
     }
 
     // Fallback to text parsing
-    auto resText = runQemuImg({ u"snapshot"_s, u"-l"_s, diskPath });
+    auto resText = runQemuImg({u"snapshot"_s, u"-l"_s, diskPath});
     if (resText.exitCode != 0)
-        return { };
+        return {};
 
     QList<SnapshotInfo> list = parseSnapshotListText(resText.out);
-    for (SnapshotInfo& snap : list)
+    for (SnapshotInfo &snap : list)
         snap.description = loadDescription(diskPath, snap.name);
 
     return list;
 }
 
-bool SnapshotManager::createOfflineSnapshot(const QString& diskPath,
-    const QString& name,
-    QString* errorOut)
+bool SnapshotManager::createOfflineSnapshot(const QString &diskPath, const QString &name, QString *errorOut)
 {
-    auto res = runQemuImg({ u"snapshot"_s, u"-c"_s, name, diskPath });
+    auto res = runQemuImg({u"snapshot"_s, u"-c"_s, name, diskPath});
     if (res.exitCode != 0 && errorOut)
         *errorOut = res.err.trimmed();
     return res.exitCode == 0;
 }
 
-bool SnapshotManager::revertOfflineSnapshot(const QString& diskPath,
-    const QString& name,
-    QString* errorOut)
+bool SnapshotManager::revertOfflineSnapshot(const QString &diskPath, const QString &name, QString *errorOut)
 {
-    auto res = runQemuImg({ u"snapshot"_s, u"-a"_s, name, diskPath });
+    auto res = runQemuImg({u"snapshot"_s, u"-a"_s, name, diskPath});
     if (res.exitCode != 0 && errorOut)
         *errorOut = res.err.trimmed();
     return res.exitCode == 0;
 }
 
-bool SnapshotManager::deleteOfflineSnapshot(const QString& diskPath,
-    const QString& name,
-    QString* errorOut)
+bool SnapshotManager::deleteOfflineSnapshot(const QString &diskPath, const QString &name, QString *errorOut)
 {
-    auto res = runQemuImg({ u"snapshot"_s, u"-d"_s, name, diskPath });
+    auto res = runQemuImg({u"snapshot"_s, u"-d"_s, name, diskPath});
     if (res.exitCode != 0 && errorOut)
         *errorOut = res.err.trimmed();
     return res.exitCode == 0;
@@ -70,110 +64,87 @@ bool SnapshotManager::deleteOfflineSnapshot(const QString& diskPath,
 
 // Online (QMP via human-monitor-command)
 
-QJsonObject SnapshotManager::hmc(const QString& cmd) const
+QJsonObject SnapshotManager::hmc(const QString &cmd) const
 {
-    return QJsonObject { { u"command-line"_s, cmd } };
+    return QJsonObject{{u"command-line"_s, cmd}};
 }
 
-void SnapshotManager::createLiveSnapshot(QMPClient* qmp,
-    const QString& name,
-    std::function<void(bool, QString)> callback)
+void SnapshotManager::createLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback)
 {
-    qmp->sendCommand(u"human-monitor-command"_s,
-        hmc(u"savevm %1"_s.arg(name)),
-        [callback](QMPResult r) {
-            callback(r.success, r.errorMessage);
-        });
+    qmp->sendCommand(u"human-monitor-command"_s, hmc(u"savevm %1"_s.arg(name)), [callback](QMPResult r) {
+        callback(r.success, r.errorMessage);
+    });
 }
 
-void SnapshotManager::revertLiveSnapshot(QMPClient* qmp,
-    const QString& name,
-    std::function<void(bool, QString)> callback)
+void SnapshotManager::revertLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback)
 {
-    qmp->sendCommand(u"human-monitor-command"_s,
-        hmc(u"loadvm %1"_s.arg(name)),
-        [callback](QMPResult r) {
-            callback(r.success, r.errorMessage);
-        });
+    qmp->sendCommand(u"human-monitor-command"_s, hmc(u"loadvm %1"_s.arg(name)), [callback](QMPResult r) {
+        callback(r.success, r.errorMessage);
+    });
 }
 
-void SnapshotManager::deleteLiveSnapshot(QMPClient* qmp,
-    const QString& name,
-    std::function<void(bool, QString)> callback)
+void SnapshotManager::deleteLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback)
 {
-    qmp->sendCommand(u"human-monitor-command"_s,
-        hmc(u"delvm %1"_s.arg(name)),
-        [callback](QMPResult r) {
-            callback(r.success, r.errorMessage);
-        });
+    qmp->sendCommand(u"human-monitor-command"_s, hmc(u"delvm %1"_s.arg(name)), [callback](QMPResult r) {
+        callback(r.success, r.errorMessage);
+    });
 }
 
 // Combined (auto-detect)
 
-void SnapshotManager::createSnapshot(const QString& diskPath,
-    const QString& name,
-    QMPClient* qmp,
-    std::function<void(bool, QString)> callback)
+void SnapshotManager::createSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, std::function<void(bool, QString)> callback)
 {
     if (qmp && qmp->isConnected()) {
         createLiveSnapshot(qmp, name, callback);
     } else {
         QString err;
-        bool ok = createOfflineSnapshot(diskPath, name, &err);
+        const bool ok = createOfflineSnapshot(diskPath, name, &err);
         callback(ok, err);
     }
 }
 
-void SnapshotManager::revertSnapshot(const QString& diskPath,
-    const QString& name,
-    QMPClient* qmp,
-    std::function<void(bool, QString)> callback)
+void SnapshotManager::revertSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, std::function<void(bool, QString)> callback)
 {
     if (qmp && qmp->isConnected()) {
         revertLiveSnapshot(qmp, name, callback);
     } else {
         QString err;
-        bool ok = revertOfflineSnapshot(diskPath, name, &err);
+        const bool ok = revertOfflineSnapshot(diskPath, name, &err);
         callback(ok, err);
     }
 }
 
-void SnapshotManager::deleteSnapshot(const QString& diskPath,
-    const QString& name,
-    QMPClient* qmp,
-    std::function<void(bool, QString)> callback)
+void SnapshotManager::deleteSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, std::function<void(bool, QString)> callback)
 {
     if (qmp && qmp->isConnected()) {
         deleteLiveSnapshot(qmp, name, callback);
     } else {
         QString err;
-        bool ok = deleteOfflineSnapshot(diskPath, name, &err);
+        const bool ok = deleteOfflineSnapshot(diskPath, name, &err);
         callback(ok, err);
     }
 }
 
 // Descriptions (Sidecar JSON)
 
-QString SnapshotManager::sidecarPath(const QString& diskPath) const
+QString SnapshotManager::sidecarPath(const QString &diskPath) const
 {
     return diskPath + u".snapshots.json"_s;
 }
 
-void SnapshotManager::saveDescription(const QString& diskPath,
-    const QString& snapshotName,
-    const QString& description) const
+void SnapshotManager::saveDescription(const QString &diskPath, const QString &snapshotName, const QString &description) const
 {
-    QString path = sidecarPath(diskPath);
+    const QString path = sidecarPath(diskPath);
     QJsonObject root;
     QFile f(path);
 
     if (f.open(QIODevice::ReadOnly)) {
-        QByteArray data = f.readAll();
+        const QByteArray data = f.readAll();
         f.close();
 
         if (!data.isEmpty()) {
             QJsonParseError error;
-            QJsonDocument doc = QJsonDocument::fromJson(data, &error);
+            const QJsonDocument doc = QJsonDocument::fromJson(data, &error);
 
             if (error.error == QJsonParseError::NoError && doc.isObject()) {
                 root = doc.object();
@@ -202,42 +173,38 @@ void SnapshotManager::saveDescription(const QString& diskPath,
     }
 }
 
-QString SnapshotManager::loadDescription(const QString& diskPath, const QString& snapshotName) const
+QString SnapshotManager::loadDescription(const QString &diskPath, const QString &snapshotName) const
 {
     QFile f(sidecarPath(diskPath));
     if (!f.open(QIODevice::ReadOnly))
-        return { };
-    QJsonObject root = QJsonDocument::fromJson(f.readAll()).object();
+        return {};
+    const QJsonObject root = QJsonDocument::fromJson(f.readAll()).object();
     return root.value(snapshotName).toString();
 }
 
 // Private
 
-SnapshotManager::ProcResult SnapshotManager::runQemuImg(const QStringList& args) const
+SnapshotManager::ProcResult SnapshotManager::runQemuImg(const QStringList &args) const
 {
     QProcess proc;
     proc.start(u"qemu-img"_s, args);
     proc.waitForFinished(15000);
-    return {
-        proc.exitCode(),
-        QString::fromUtf8(proc.readAllStandardOutput()),
-        QString::fromUtf8(proc.readAllStandardError())
-    };
+    return {proc.exitCode(), QString::fromUtf8(proc.readAllStandardOutput()), QString::fromUtf8(proc.readAllStandardError())};
 }
 
-QList<SnapshotInfo> SnapshotManager::parseSnapshotListJson(const QString& output) const
+QList<SnapshotInfo> SnapshotManager::parseSnapshotListJson(const QString &output) const
 {
     QList<SnapshotInfo> result;
 
     QJsonParseError error;
-    QJsonDocument doc = QJsonDocument::fromJson(output.toUtf8(), &error);
+    const QJsonDocument doc = QJsonDocument::fromJson(output.toUtf8(), &error);
     if (error.error != QJsonParseError::NoError)
         return result;
 
     QJsonValue rootVal;
 
     if (doc.isObject()) {
-        QJsonObject root = doc.object();
+        const QJsonObject root = doc.object();
         if (!root.contains(u"snapshots"_s)) {
             return result;
         }
@@ -251,10 +218,10 @@ QList<SnapshotInfo> SnapshotManager::parseSnapshotListJson(const QString& output
     if (!rootVal.isArray())
         return result;
 
-    QJsonArray snapshots = rootVal.toArray();
+    const QJsonArray snapshots = rootVal.toArray();
 
-    for (const QJsonValue& val : snapshots) {
-        QJsonObject snap = val.toObject();
+    for (const QJsonValue &val : snapshots) {
+        const QJsonObject snap = val.toObject();
         if (snap.isEmpty())
             continue;
 
@@ -270,14 +237,12 @@ QList<SnapshotInfo> SnapshotManager::parseSnapshotListJson(const QString& output
         }
 
         if (snap.contains(u"date-sec"_s)) {
-            quint64 dateSec = snap.value(u"date-sec"_s).toVariant().toULongLong();
+            const quint64 dateSec = snap.value(u"date-sec"_s).toVariant().toULongLong();
             quint32 dateNsec = 0;
             if (snap.contains(u"date-nsec"_s)) {
                 dateNsec = snap.value(u"date-nsec"_s).toVariant().toUInt();
             }
-            info.dateTime = QDateTime::fromMSecsSinceEpoch(
-                static_cast<qint64>(dateSec) * 1000 + static_cast<qint64>(dateNsec) / 1000000,
-                QTimeZone::UTC);
+            info.dateTime = QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(dateSec) * 1000 + static_cast<qint64>(dateNsec) / 1000000, QTimeZone::UTC);
         }
 
         result.append(info);
@@ -286,17 +251,16 @@ QList<SnapshotInfo> SnapshotManager::parseSnapshotListJson(const QString& output
     return result;
 }
 
-QList<SnapshotInfo> SnapshotManager::parseSnapshotListText(const QString& output) const
+QList<SnapshotInfo> SnapshotManager::parseSnapshotListText(const QString &output) const
 {
     // qemu-img snapshot -l provides:
     // ID        TAG                VM SIZE                DATE       VM CLOCK
     // 1         snap1                    0 B 2025-06-01 14:30:00   00:00:00.000
     QList<SnapshotInfo> result;
 
-    static const QRegularExpression lineRe(
-        uR"(^\s*(\d+)\s+(\S+)\s+(\d+)\s+\S+\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}))"_s);
+    static const QRegularExpression lineRe(uR"(^\s*(\d+)\s+(\S+)\s+(\d+)\s+\S+\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}))"_s);
 
-    for (const QString& line : output.split(u'\n')) {
+    for (const QString &line : output.split(u'\n')) {
         auto m = lineRe.match(line);
         if (!m.hasMatch())
             continue;
@@ -305,9 +269,7 @@ QList<SnapshotInfo> SnapshotManager::parseSnapshotListText(const QString& output
         info.id = m.captured(1);
         info.name = m.captured(2);
         info.vmStateSizeBytes = m.captured(3).toULongLong();
-        info.dateTime = QDateTime::fromString(
-            m.captured(4) + u' ' + m.captured(5),
-            u"yyyy-MM-dd HH:mm:ss"_s);
+        info.dateTime = QDateTime::fromString(m.captured(4) + u' ' + m.captured(5), u"yyyy-MM-dd HH:mm:ss"_s);
         result.append(info);
     }
     return result;

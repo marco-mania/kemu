@@ -39,24 +39,28 @@
 
 using namespace Qt::StringLiterals;
 
-class SettingsDialog : public KPageDialog {
-
+class SettingsDialog : public KPageDialog
+{
     Q_OBJECT
 
 public:
-    explicit SettingsDialog(QWidget* parent = nullptr);
+    explicit SettingsDialog(QWidget *parent = nullptr);
 
-    enum Page { General,
+    enum Page {
+        General,
         Firmware,
         Executables,
         Monitoring,
         Display,
         AutomatedDeploy,
-        VirtualNetworks };
+        VirtualNetworks
+    };
     void setPage(Page page);
 
-    enum SpiceViewerCloseAction { SwitchToHeadless,
-        ShutdownVm };
+    enum SpiceViewerCloseAction {
+        SwitchToHeadless,
+        ShutdownVm
+    };
 
     static QString getVmBasePath();
     static QString getOvmfPath();
@@ -70,7 +74,7 @@ public:
     static bool deploySerialLog();
     static SpiceViewerCloseAction spiceViewerCloseAction();
 
-    void setNetworkManager(VirtualNetworkManager* mgr);
+    void setNetworkManager(VirtualNetworkManager *mgr);
 
 private Q_SLOTS:
     void browseVmDir();
@@ -94,34 +98,34 @@ private:
     void setupVirtualNetworksPage();
     void refreshNetworkTable();
 
-    QMap<Page, KPageWidgetItem*> m_pages;
+    QMap<Page, KPageWidgetItem *> m_pages;
 
-    QLineEdit* pathEdit = nullptr;
-    QLineEdit* ovmfEdit = nullptr;
+    QLineEdit *pathEdit = nullptr;
+    QLineEdit *ovmfEdit = nullptr;
 
     struct ToolWidgets {
         ExternalTools::Tool tool;
-        QLineEdit* pathEdit = nullptr;
-        QLabel* statusLabel = nullptr;
+        QLineEdit *pathEdit = nullptr;
+        QLabel *statusLabel = nullptr;
     };
     QList<ToolWidgets> m_toolWidgets;
     void updateToolVersion(int index);
 
-    QCheckBox* deployHeadlessCheck = nullptr;
-    QCheckBox* deploySerialLogCheck = nullptr;
-    QComboBox* spiceCloseActionCombo = nullptr;
+    QCheckBox *deployHeadlessCheck = nullptr;
+    QCheckBox *deploySerialLogCheck = nullptr;
+    QComboBox *spiceCloseActionCombo = nullptr;
 
-    QCheckBox* perfMonitorCheck = nullptr;
-    QComboBox* resolutionCombo = nullptr;
-    QCheckBox* dbusDisplayCheck = nullptr;
+    QCheckBox *perfMonitorCheck = nullptr;
+    QComboBox *resolutionCombo = nullptr;
+    QCheckBox *dbusDisplayCheck = nullptr;
 
-    QCheckBox* allArchCheck = nullptr;
-    QCheckBox* cloneRegenerateMacCheck = nullptr;
-    QCheckBox* importRegenerateMacCheck = nullptr;
+    QCheckBox *allArchCheck = nullptr;
+    QCheckBox *cloneRegenerateMacCheck = nullptr;
+    QCheckBox *importRegenerateMacCheck = nullptr;
 
-    VirtualNetworkManager* m_networkManager = nullptr;
-    QTableWidget* networkTable = nullptr;
-    QPushButton* netAddButton = nullptr;
-    QPushButton* netEditButton = nullptr;
-    QPushButton* netRemoveButton = nullptr;
+    VirtualNetworkManager *m_networkManager = nullptr;
+    QTableWidget *networkTable = nullptr;
+    QPushButton *netAddButton = nullptr;
+    QPushButton *netEditButton = nullptr;
+    QPushButton *netRemoveButton = nullptr;
 };

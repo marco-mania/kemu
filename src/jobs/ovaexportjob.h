@@ -31,19 +31,18 @@ extern "C" {
 
 using namespace Qt::StringLiterals;
 
-class OvaExportJob : public KJob {
-
+class OvaExportJob : public KJob
+{
     Q_OBJECT
 
 public:
-    explicit OvaExportJob(const QString& vmName,
-        const VMConfig& config,
-        const QString& diskPath,
-        const QString& outputFilePath,
-        QObject* parent = nullptr);
+    explicit OvaExportJob(const QString &vmName, const VMConfig &config, const QString &diskPath, const QString &outputFilePath, QObject *parent = nullptr);
 
     void start() override;
-    [[nodiscard]] QString vmName() const { return m_vmName; }
+    [[nodiscard]] QString vmName() const
+    {
+        return m_vmName;
+    }
 
 protected:
     bool doKill() override;
@@ -74,10 +73,10 @@ private:
     QString m_ovfFileName;
     QString m_mfFileName;
 
-    KProcess* m_process = nullptr;
+    KProcess *m_process = nullptr;
     QByteArray m_outputBuffer;
 
     // Threading and cancellation for the packaging step
-    QFutureWatcher<bool>* m_watcher = nullptr;
-    std::atomic<bool> m_cancelExport { false };
+    QFutureWatcher<bool> *m_watcher = nullptr;
+    std::atomic<bool> m_cancelExport{false};
 };

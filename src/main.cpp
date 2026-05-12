@@ -15,9 +15,9 @@
 
 using namespace Qt::StringLiterals;
 
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
-    QApplication app(argc, argv);
+    const QApplication app(argc, argv);
 
     app.setDesktopFileName(u"org.kde.kemu"_s);
 
@@ -29,27 +29,25 @@ int main(int argc, char* argv[])
 
     const QIcon appIcon = QIcon::fromTheme(u"org.kde.kemu"_s);
 
-    KAboutData aboutData(
-        "kemu"_L1,
-        QApplication::applicationName(),
-        QApplication::applicationVersion(),
-        i18n("A KDE-based QEMU Virtual Machine Manager"),
-        KAboutLicense::GPL_V3,
-        i18n("© 2021-2026"));
+    KAboutData aboutData("kemu"_L1,
+                         QApplication::applicationName(),
+                         QApplication::applicationVersion(),
+                         i18n("A KDE-based QEMU Virtual Machine Manager"),
+                         KAboutLicense::GPL_V3,
+                         i18n("© 2021-2026"));
     aboutData.addAuthor(u"Marco Nelles"_s, i18n("Main Developer"));
     aboutData.addAuthor(u"Jin Liu"_s, i18n("Contributor"));
 
-    aboutData.addCredit(
-        u"Papirus Development Team"_s,
-        i18n("Papirus Icon Theme (GPL-3.0)"),
-        { },
-        u"https://github.com/PapirusDevelopmentTeam/papirus-icon-theme"_s);
+    aboutData.addCredit(u"Papirus Development Team"_s,
+                        i18n("Papirus Icon Theme (GPL-3.0)"),
+                        {},
+                        u"https://github.com/PapirusDevelopmentTeam/papirus-icon-theme"_s);
 
-    aboutData.addCredit(
-        u"Marshall Kirk McKusick"_s,
-        i18n("BSD Daemon Copyright 1988 by Marshall Kirk McKusick. All Rights Reserved."),
-        { },
-        u"https://www.mckusick.com/beastie/mainpage/copyright.html"_s);
+    aboutData.addCredit(u"Marshall Kirk McKusick"_s,
+                        i18n("BSD Daemon Copyright 1988 by Marshall Kirk McKusick. All Rights "
+                             "Reserved."),
+                        {},
+                        u"https://www.mckusick.com/beastie/mainpage/copyright.html"_s);
 
     aboutData.setProgramLogo(appIcon.pixmap(128, 128));
 
@@ -59,19 +57,18 @@ int main(int argc, char* argv[])
 
     KCrash::initialize();
 
-    KDBusService service(KDBusService::Unique);
+    const KDBusService service(KDBusService::Unique);
 
-    auto* mainwindow = new MainWindow();
+    auto *mainwindow = new MainWindow();
     mainwindow->setAttribute(Qt::WA_DeleteOnClose);
     mainwindow->show();
 
-    QObject::connect(&service, &KDBusService::activateRequested,
-        mainwindow, [mainwindow](const QStringList& /*args*/, const QString& /*workingDir*/) {
-            mainwindow->show();
-            mainwindow->raise();
-            mainwindow->activateWindow();
-            // KWindowSystem::forceActiveWindow(mainwindow->winId());
-        });
+    QObject::connect(&service, &KDBusService::activateRequested, mainwindow, [mainwindow](const QStringList & /*args*/, const QString & /*workingDir*/) {
+        mainwindow->show();
+        mainwindow->raise();
+        mainwindow->activateWindow();
+        // KWindowSystem::forceActiveWindow(mainwindow->winId());
+    });
 
     const int rc = app.exec();
     std::quick_exit(rc);

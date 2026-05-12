@@ -17,13 +17,14 @@
 
 using namespace Qt::StringLiterals;
 
-class IconChooserDialog : public QDialog {
+class IconChooserDialog : public QDialog
+{
     Q_OBJECT
 
 public:
-    explicit IconChooserDialog(QWidget* parent = nullptr);
+    explicit IconChooserDialog(QWidget *parent = nullptr);
     QString selectedIconPath() const;
 
 private:
-    QListWidget* listWidget = nullptr;
+    QListWidget *listWidget = nullptr;
 };

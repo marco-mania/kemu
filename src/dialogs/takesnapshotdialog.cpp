@@ -6,20 +6,20 @@
 
 #include "takesnapshotdialog.h"
 
-TakeSnapshotDialog::TakeSnapshotDialog(const QString& vmName, QWidget* parent)
+TakeSnapshotDialog::TakeSnapshotDialog(const QString &vmName, QWidget *parent)
     : QDialog(parent)
 {
     setWindowTitle(i18n("Take Snapshot – %1", vmName));
     setMinimumWidth(440);
 
-    auto* layout = new QVBoxLayout(this);
+    auto *layout = new QVBoxLayout(this);
     layout->setSpacing(12);
 
-    auto* infoLabel = new QLabel(i18n("Save the current state of <b>%1</b> as a snapshot.", vmName));
+    auto *infoLabel = new QLabel(i18n("Save the current state of <b>%1</b> as a snapshot.", vmName));
     infoLabel->setWordWrap(true);
     layout->addWidget(infoLabel);
 
-    auto* form = new QFormLayout;
+    auto *form = new QFormLayout;
     form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     m_nameEdit = new QLineEdit(this);
@@ -29,12 +29,12 @@ TakeSnapshotDialog::TakeSnapshotDialog(const QString& vmName, QWidget* parent)
 
     m_nameHintLabel = new QLabel(this);
     {
-        KColorScheme scheme(QPalette::Active, KColorScheme::View);
-        QString col = scheme.foreground(KColorScheme::InactiveText).color().name();
+        const KColorScheme scheme(QPalette::Active, KColorScheme::View);
+        const QString col = scheme.foreground(KColorScheme::InactiveText).color().name();
         m_nameHintLabel->setStyleSheet(u"color: %1; font-size: 11px;"_s.arg(col));
     }
     m_nameHintLabel->setText(i18n("Spaces will be replaced by underscores."));
-    form->addRow({ }, m_nameHintLabel);
+    form->addRow({}, m_nameHintLabel);
 
     m_descriptionEdit = new QTextEdit(this);
     m_descriptionEdit->setPlaceholderText(i18n("Optional: describe what this snapshot captures..."));
@@ -53,11 +53,11 @@ TakeSnapshotDialog::TakeSnapshotDialog(const QString& vmName, QWidget* parent)
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 }
 
-void TakeSnapshotDialog::onNameChanged(const QString& text)
+void TakeSnapshotDialog::onNameChanged(const QString &text)
 {
     // Only alphanumeric, -, _ allowed (QEMU restriction)
     static const QRegularExpression validChars(u"[^A-Za-z0-9_-]"_s);
-    bool valid = !text.trimmed().isEmpty();
+    const bool valid = !text.trimmed().isEmpty();
     m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(valid);
 
     QString cleaned = text;

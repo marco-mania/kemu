@@ -45,7 +45,7 @@ int VMConfig::maxCoresForModel(VMSpecs::CpuModel type)
     default:
         // Returns the physical/logical threads of the actual host PC
         // (Fallback to 8 if idealThreadCount returns -1)
-        int hostThreads = QThread::idealThreadCount();
+        const int hostThreads = QThread::idealThreadCount();
         return hostThreads > 0 ? hostThreads : 8;
     }
 }
@@ -63,7 +63,8 @@ VMSpecs::MachineType VMConfig::recommendedMachineType(VMSpecs::CpuModel type)
     case VMSpecs::CpuModel::Qemu32: // for old systems
         return VMSpecs::MachineType::Pc;
 
-        // All modern CPUs from the Core era onwards benefit from the Q35 chipset (PCIe bus)
+        // All modern CPUs from the Core era onwards benefit from the Q35 chipset
+        // (PCIe bus)
     case VMSpecs::CpuModel::Host:
     case VMSpecs::CpuModel::Qemu64:
     case VMSpecs::CpuModel::CoreDuo:
@@ -79,7 +80,7 @@ VMSpecs::MachineType VMConfig::recommendedMachineType(VMSpecs::CpuModel type)
     }
 }
 
-int VMConfig::vgaMemMbLowerLimit(const VMSpecs::GpuType& type)
+int VMConfig::vgaMemMbLowerLimit(const VMSpecs::GpuType &type)
 {
     switch (type) {
     case VMSpecs::GpuType::CirrusGD5430:
@@ -90,7 +91,7 @@ int VMConfig::vgaMemMbLowerLimit(const VMSpecs::GpuType& type)
     }
 }
 
-int VMConfig::vgaMemMbUpperLimit(const VMSpecs::GpuType& type)
+int VMConfig::vgaMemMbUpperLimit(const VMSpecs::GpuType &type)
 {
     switch (type) {
     case VMSpecs::GpuType::VgaISA:
@@ -108,7 +109,7 @@ int VMConfig::vgaMemMbUpperLimit(const VMSpecs::GpuType& type)
     }
 }
 
-void VMConfig::ensureMacAddress(const QStringList& usedMacs)
+void VMConfig::ensureMacAddress(const QStringList &usedMacs)
 {
     if (!m_macAddress.isEmpty())
         return;
@@ -121,15 +122,12 @@ void VMConfig::ensureMacAddress(const QStringList& usedMacs)
 
 bool VMConfig::isIsaDevice(VMSpecs::GpuType type)
 {
-    return type == VMSpecs::GpuType::VgaISA
-        || type == VMSpecs::GpuType::CirrusGD5430;
+    return type == VMSpecs::GpuType::VgaISA || type == VMSpecs::GpuType::CirrusGD5430;
 }
 
 bool VMConfig::isIsaDevice(VMSpecs::AudioDevice device)
 {
-    return device == VMSpecs::AudioDevice::Sb16
-        || device == VMSpecs::AudioDevice::Adlib
-        || device == VMSpecs::AudioDevice::PcSpkr;
+    return device == VMSpecs::AudioDevice::Sb16 || device == VMSpecs::AudioDevice::Adlib || device == VMSpecs::AudioDevice::PcSpkr;
 }
 
 bool VMConfig::isIsaDevice(VMSpecs::NetworkCard card)
@@ -139,14 +137,12 @@ bool VMConfig::isIsaDevice(VMSpecs::NetworkCard card)
 
 bool VMConfig::supportsIsaBus(VMSpecs::MachineType type)
 {
-    return type == VMSpecs::MachineType::Pc
-        || type == VMSpecs::MachineType::PcISA;
+    return type == VMSpecs::MachineType::Pc || type == VMSpecs::MachineType::PcISA;
 }
 
 bool VMConfig::supportsPciBus(VMSpecs::MachineType type)
 {
-    return type == VMSpecs::MachineType::Q35
-        || type == VMSpecs::MachineType::Pc;
+    return type == VMSpecs::MachineType::Q35 || type == VMSpecs::MachineType::Pc;
 }
 
 bool VMConfig::isCpuCompatible(VMSpecs::CpuModel cpu, VMSpecs::MachineType machine)
@@ -192,15 +188,15 @@ QIcon VMConfig::icon(int /*size*/) const
 QString VMConfig::iconSetPath() const
 {
     if (m_iconSource != IconSource::IconSet || m_iconIdentifier.isEmpty())
-        return { };
+        return {};
     QString dir = osIconDir();
     if (dir.isEmpty())
-        return { };
-    QString fullPath = dir + u"/"_s + m_iconIdentifier;
+        return {};
+    const QString fullPath = dir + u"/"_s + m_iconIdentifier;
     return QFile::exists(fullPath) ? fullPath : QString();
 }
 
-bool VMConfig::saveCustomIcon(const QDir& dir) const
+bool VMConfig::saveCustomIcon(const QDir &dir) const
 {
     if (m_iconSource != IconSource::Custom || m_customIcon.isNull()) {
         return false;
@@ -216,7 +212,7 @@ bool VMConfig::saveCustomIcon(const QDir& dir) const
     return m_customIcon.pixmap(KEMUConst::CustomIconStoreSize, KEMUConst::CustomIconStoreSize).save(&iconFile, KEMUConst::CustomIconFileFormat.constData());
 }
 
-bool VMConfig::loadCustomIcon(const QDir& dir)
+bool VMConfig::loadCustomIcon(const QDir &dir)
 {
     if (m_iconSource != IconSource::Custom) {
         return false;
@@ -241,7 +237,7 @@ bool VMConfig::loadCustomIcon(const QDir& dir)
     return true;
 }
 
-bool VMConfig::removeCustomIcon(const QDir& dir)
+bool VMConfig::removeCustomIcon(const QDir &dir)
 {
     QString iconPath;
     if (!m_iconIdentifier.isEmpty())
@@ -257,8 +253,7 @@ bool VMConfig::removeCustomIcon(const QDir& dir)
 
 // --- Static Icon Helper ---
 
-QIcon VMConfig::styledVmIcon(const QIcon& baseIcon, bool isRunning,
-    bool isHeadless, int size)
+QIcon VMConfig::styledVmIcon(const QIcon &baseIcon, bool isRunning, bool isHeadless, int size)
 {
     const qreal dpr = qApp->devicePixelRatio();
     const int margin = 4;
@@ -272,7 +267,7 @@ QIcon VMConfig::styledVmIcon(const QIcon& baseIcon, bool isRunning,
 
     // Request base icon at logical size with DPR hint –
     // Qt returns a high-res pixmap with DPR already set
-    QPixmap basePix = baseIcon.pixmap(QSize(size, size), dpr);
+    const QPixmap basePix = baseIcon.pixmap(QSize(size, size), dpr);
     if (basePix.isNull())
         return baseIcon;
 
@@ -292,9 +287,9 @@ QIcon VMConfig::styledVmIcon(const QIcon& baseIcon, bool isRunning,
 
         painter.drawPixmap(QRect(margin, margin, size, size), basePix);
 
-        int emblemSize = size / 2;
-        int ex = totalSize - emblemSize - 1;
-        int ey = totalSize - emblemSize - 1;
+        const int emblemSize = size / 2;
+        const int ex = totalSize - emblemSize - 1;
+        const int ey = totalSize - emblemSize - 1;
 
         painter.setPen(Qt::NoPen);
         painter.setBrush(QColor(255, 255, 255, 200));
@@ -304,29 +299,25 @@ QIcon VMConfig::styledVmIcon(const QIcon& baseIcon, bool isRunning,
         painter.drawEllipse(ex, ey, emblemSize, emblemSize);
 
         painter.setBrush(Qt::white);
-        int m = emblemSize / 4;
+        const int m = emblemSize / 4;
         QPolygon tri;
-        tri << QPoint(ex + m + 2, ey + m)
-            << QPoint(ex + emblemSize - m, ey + emblemSize / 2)
-            << QPoint(ex + m + 2, ey + emblemSize - m);
+        tri << QPoint(ex + m + 2, ey + m) << QPoint(ex + emblemSize - m, ey + emblemSize / 2) << QPoint(ex + m + 2, ey + emblemSize - m);
         painter.drawPolygon(tri);
     } else {
         QImage img = basePix.toImage();
         for (int y = 0; y < img.height(); ++y) {
             for (int x = 0; x < img.width(); ++x) {
-                QColor c = img.pixelColor(x, y);
-                int gray = qGray(c.red(), c.green(), c.blue());
-                img.setPixelColor(x, y,
-                    QColor(gray, gray, gray, c.alpha() * 0.5));
+                const QColor c = img.pixelColor(x, y);
+                const int gray = qGray(c.red(), c.green(), c.blue());
+                img.setPixelColor(x, y, QColor(gray, gray, gray, c.alpha() * 0.5));
             }
         }
         // Map full device-pixel image into logical rect
-        painter.drawImage(QRectF(margin, margin, size, size),
-            img, QRectF(0, 0, img.width(), img.height()));
+        painter.drawImage(QRectF(margin, margin, size, size), img, QRectF(0, 0, img.width(), img.height()));
 
-        int emblemSize = size / 2;
-        int ex = totalSize - emblemSize - 1;
-        int ey = totalSize - emblemSize - 1;
+        const int emblemSize = size / 2;
+        const int ex = totalSize - emblemSize - 1;
+        const int ey = totalSize - emblemSize - 1;
 
         painter.setPen(Qt::NoPen);
         painter.setBrush(QColor(255, 255, 255, 200));
@@ -336,9 +327,8 @@ QIcon VMConfig::styledVmIcon(const QIcon& baseIcon, bool isRunning,
         painter.drawEllipse(ex, ey, emblemSize, emblemSize);
 
         painter.setBrush(Qt::white);
-        int sm = emblemSize / 3;
-        painter.drawRect(ex + sm, ey + sm,
-            emblemSize - 2 * sm, emblemSize - 2 * sm);
+        const int sm = emblemSize / 3;
+        painter.drawRect(ex + sm, ey + sm, emblemSize - 2 * sm, emblemSize - 2 * sm);
     }
 
     painter.end();
@@ -373,12 +363,12 @@ QString VMConfig::defaultIconForType(VMSpecs::OsType type)
 
     QString dir = osIconDir();
     if (dir.isEmpty()) {
-        return { };
+        return {};
     }
     return dir + u"/"_s + filename;
 }
 
-QString VMConfig::defaultIconFor(VMSpecs::OsType type, const QString& variant)
+QString VMConfig::defaultIconFor(VMSpecs::OsType type, const QString &variant)
 {
     const QString lv = variant.toLower().remove(u' ');
     QString filename;
@@ -505,9 +495,9 @@ QString VMConfig::toQemuString(VMSpecs::NetworkCard card)
     case VMSpecs::NetworkCard::I82559er:
         return u"i82559er"_s;
     case VMSpecs::NetworkCard::None:
-        return { };
+        return {};
     }
-    return { };
+    return {};
 }
 
 QString VMConfig::toQemuString(VMSpecs::DiskInterface interface)
@@ -520,7 +510,7 @@ QString VMConfig::toQemuString(VMSpecs::DiskInterface interface)
     case VMSpecs::DiskInterface::SataIde:
         return u"ide-hd"_s;
     }
-    return { };
+    return {};
 }
 
 QString VMConfig::toQemuString(VMSpecs::DisplayType type)
@@ -535,7 +525,7 @@ QString VMConfig::toQemuString(VMSpecs::DisplayType type)
     case VMSpecs::DisplayType::Dbus:
         return u"dbus"_s;
     }
-    return { };
+    return {};
 }
 
 QString VMConfig::toQemuString(VMSpecs::AudioDevice device)
@@ -554,9 +544,9 @@ QString VMConfig::toQemuString(VMSpecs::AudioDevice device)
     case VMSpecs::AudioDevice::PcSpkr:
         return u"pcspk"_s;
     case VMSpecs::AudioDevice::None:
-        return { };
+        return {};
     }
-    return { };
+    return {};
 }
 
 // --- UI Strings (i18n) ---
@@ -625,7 +615,7 @@ QString VMConfig::toUIString(VMSpecs::NetworkCard card)
     case VMSpecs::NetworkCard::Ne2000:
         return i18n("Novell NE2000");
     }
-    return { };
+    return {};
 }
 
 QString VMConfig::toUIString(VMSpecs::AudioDevice device)
@@ -646,7 +636,7 @@ QString VMConfig::toUIString(VMSpecs::AudioDevice device)
     case VMSpecs::AudioDevice::PcSpkr:
         return i18n("PC Speaker");
     }
-    return { };
+    return {};
 }
 
 QString VMConfig::toUIString(VMSpecs::DiskInterface interface)
@@ -659,7 +649,7 @@ QString VMConfig::toUIString(VMSpecs::DiskInterface interface)
     case VMSpecs::DiskInterface::SataIde:
         return u"SATA/IDE"_s;
     }
-    return { };
+    return {};
 }
 
 QString VMConfig::toUIString(VMSpecs::GpuType type)
@@ -678,7 +668,7 @@ QString VMConfig::toUIString(VMSpecs::GpuType type)
     case VMSpecs::GpuType::Qxl:
         return i18n("QXL");
     }
-    return { };
+    return {};
 }
 
 QString VMConfig::toUIString(VMSpecs::DisplayType type)
@@ -693,7 +683,7 @@ QString VMConfig::toUIString(VMSpecs::DisplayType type)
     case VMSpecs::DisplayType::Dbus:
         return i18n("D-Bus (Integrated Viewer)");
     }
-    return { };
+    return {};
 }
 
 QString VMConfig::toUIString(VMSpecs::UsbController controller)
@@ -708,7 +698,7 @@ QString VMConfig::toUIString(VMSpecs::UsbController controller)
     case VMSpecs::UsbController::Default:
         return i18n("USB 1.1");
     }
-    return { };
+    return {};
 }
 
 QString VMConfig::toUIString(VMSpecs::MachineType type)
@@ -721,7 +711,7 @@ QString VMConfig::toUIString(VMSpecs::MachineType type)
     case VMSpecs::MachineType::PcISA:
         return i18n("ISA-only PC Vintage (IBM PC/AT)");
     }
-    return { };
+    return {};
 }
 
 QString VMConfig::toUIString(VMSpecs::OsType type)
@@ -738,7 +728,7 @@ QString VMConfig::toUIString(VMSpecs::OsType type)
     case VMSpecs::OsType::Other:
         return i18n("Other");
     }
-    return { };
+    return {};
 }
 
 QString VMConfig::toUIString(VMSpecs::NetworkMode mode)
@@ -749,7 +739,7 @@ QString VMConfig::toUIString(VMSpecs::NetworkMode mode)
     case VMSpecs::NetworkMode::VirtualNetwork:
         return i18n("Virtual Network");
     }
-    return { };
+    return {};
 }
 
 QString VMConfig::firmwareToUIString(bool useUefi, bool useSecureBoot)
@@ -975,7 +965,7 @@ QString VMConfig::toString(IconSource source)
 
 // --- Parse Strings ---
 
-VMSpecs::CpuModel VMConfig::parseCpuModel(const QString& str)
+VMSpecs::CpuModel VMConfig::parseCpuModel(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == i18n("host"))
@@ -1014,7 +1004,7 @@ VMSpecs::CpuModel VMConfig::parseCpuModel(const QString& str)
     return VMSpecs::CpuModel::Host;
 }
 
-VMSpecs::DisplayType VMConfig::parseDisplayType(const QString& str)
+VMSpecs::DisplayType VMConfig::parseDisplayType(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == u"sdl"_s)
@@ -1033,7 +1023,7 @@ VMSpecs::DisplayType VMConfig::parseDisplayType(const QString& str)
     return parseDisplayType(KEMUConst::DefaultDisplayType);
 }
 
-VMSpecs::MachineType VMConfig::parseMachineType(const QString& str)
+VMSpecs::MachineType VMConfig::parseMachineType(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == u"pc_isa"_s)
@@ -1043,7 +1033,7 @@ VMSpecs::MachineType VMConfig::parseMachineType(const QString& str)
     return VMSpecs::MachineType::Pc;
 }
 
-VMSpecs::GpuType VMConfig::parseGpuType(const QString& str)
+VMSpecs::GpuType VMConfig::parseGpuType(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == u"vga_isa"_s)
@@ -1059,7 +1049,7 @@ VMSpecs::GpuType VMConfig::parseGpuType(const QString& str)
     return VMSpecs::GpuType::Vga;
 }
 
-VMSpecs::AudioDevice VMConfig::parseAudioDevice(const QString& str)
+VMSpecs::AudioDevice VMConfig::parseAudioDevice(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == u"none"_s)
@@ -1077,7 +1067,7 @@ VMSpecs::AudioDevice VMConfig::parseAudioDevice(const QString& str)
     return VMSpecs::AudioDevice::Hda;
 }
 
-VMSpecs::NetworkCard VMConfig::parseNetworkCard(const QString& str)
+VMSpecs::NetworkCard VMConfig::parseNetworkCard(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == u"e1000"_s)
@@ -1101,7 +1091,7 @@ VMSpecs::NetworkCard VMConfig::parseNetworkCard(const QString& str)
     return VMSpecs::NetworkCard::Virtio;
 }
 
-VMSpecs::DiskInterface VMConfig::parseDiskInterface(const QString& str)
+VMSpecs::DiskInterface VMConfig::parseDiskInterface(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == u"nvme"_s)
@@ -1111,7 +1101,7 @@ VMSpecs::DiskInterface VMConfig::parseDiskInterface(const QString& str)
     return VMSpecs::DiskInterface::Virtio;
 }
 
-VMSpecs::UsbController VMConfig::parseUSBController(const QString& str)
+VMSpecs::UsbController VMConfig::parseUSBController(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == u"ehci"_s)
@@ -1123,14 +1113,12 @@ VMSpecs::UsbController VMConfig::parseUSBController(const QString& str)
     return VMSpecs::UsbController::None;
 }
 
-PortForwardRule::Protocol VMConfig::parseProtocol(const QString& str)
+PortForwardRule::Protocol VMConfig::parseProtocol(const QString &str)
 {
-    return (str.toLower().trimmed() == u"udp"_s)
-        ? PortForwardRule::Protocol::Udp
-        : PortForwardRule::Protocol::Tcp;
+    return (str.toLower().trimmed() == u"udp"_s) ? PortForwardRule::Protocol::Udp : PortForwardRule::Protocol::Tcp;
 }
 
-VMSpecs::OsType VMConfig::parseOsType(const QString& str)
+VMSpecs::OsType VMConfig::parseOsType(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == u"windows"_s)
@@ -1144,14 +1132,14 @@ VMSpecs::OsType VMConfig::parseOsType(const QString& str)
     return VMSpecs::OsType::Linux;
 }
 
-VMSpecs::NetworkMode VMConfig::parseNetworkMode(const QString& str)
+VMSpecs::NetworkMode VMConfig::parseNetworkMode(const QString &str)
 {
     if (str.toLower().trimmed() == u"virtual_network"_s)
         return VMSpecs::NetworkMode::VirtualNetwork;
     return VMSpecs::NetworkMode::Passt;
 }
 
-VMConfig::ImageType VMConfig::parseImageType(const QString& str)
+VMConfig::ImageType VMConfig::parseImageType(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == u"cloud"_s)
@@ -1161,7 +1149,7 @@ VMConfig::ImageType VMConfig::parseImageType(const QString& str)
     return ImageType::Manual;
 }
 
-VMConfig::DeployState VMConfig::parseDeployState(const QString& str)
+VMConfig::DeployState VMConfig::parseDeployState(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == u"deploying"_s)
@@ -1173,7 +1161,7 @@ VMConfig::DeployState VMConfig::parseDeployState(const QString& str)
     return DeployState::None;
 }
 
-VMConfig::IconSource VMConfig::parseIconSource(const QString& str)
+VMConfig::IconSource VMConfig::parseIconSource(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == u"custom"_s)
@@ -1185,39 +1173,39 @@ VMConfig::IconSource VMConfig::parseIconSource(const QString& str)
     return IconSource::None;
 }
 
-QPair<VMSpecs::OsType, QString> VMConfig::guessOSFromText(const QString& string, bool* found)
+QPair<VMSpecs::OsType, QString> VMConfig::guessOSFromText(const QString &string, bool *found)
 {
-    QString lowerz = string.toLower().remove(u' ');
+    const QString lowerz = string.toLower().remove(u' ');
 
     // Windows
     if (lowerz.contains(u"windows11"_s) || lowerz.contains(u"win11"_s)) {
         if (found)
             *found = true;
-        return { VMSpecs::OsType::Windows, u"windows11"_s };
+        return {VMSpecs::OsType::Windows, u"windows11"_s};
     } else if (lowerz.contains(u"windows10"_s) || lowerz.contains(u"win10"_s)) {
         if (found)
             *found = true;
-        return { VMSpecs::OsType::Windows, u"windows10"_s };
+        return {VMSpecs::OsType::Windows, u"windows10"_s};
     } else if (lowerz.contains(u"windows7"_s) || lowerz.contains(u"win7"_s)) {
         if (found)
             *found = true;
-        return { VMSpecs::OsType::Windows, u"windows7"_s };
+        return {VMSpecs::OsType::Windows, u"windows7"_s};
     } else if (lowerz.contains(u"windowsxp"_s) || lowerz.contains(u"winxp"_s)) {
         if (found)
             *found = true;
-        return { VMSpecs::OsType::Windows, u"windowsxp"_s };
+        return {VMSpecs::OsType::Windows, u"windowsxp"_s};
     } else if (lowerz.contains(u"windows2000"_s) || lowerz.contains(u"win2000"_s) || lowerz.contains(u"windows2k"_s) || lowerz.contains(u"win2k"_s)) {
         if (found)
             *found = true;
-        return { VMSpecs::OsType::Windows, u"windows2000"_s };
+        return {VMSpecs::OsType::Windows, u"windows2000"_s};
     } else if (lowerz.contains(u"windowsnt4"_s) || lowerz.contains(u"winnt4"_s)) {
         if (found)
             *found = true;
-        return { VMSpecs::OsType::Windows, u"windowsnt4"_s };
+        return {VMSpecs::OsType::Windows, u"windowsnt4"_s};
     } else if (lowerz.contains(u"windows"_s)) {
         if (found)
             *found = true;
-        return { VMSpecs::OsType::Windows, { } };
+        return {VMSpecs::OsType::Windows, {}};
     }
 
     // Linux-Distros
@@ -1226,29 +1214,29 @@ QPair<VMSpecs::OsType, QString> VMConfig::guessOSFromText(const QString& string,
         QString variantId;
     };
     static const QList<VariantHint> linuxHints = {
-        { u"kubuntu"_s, u"kubuntu"_s },
-        { u"ubuntu"_s, u"ubuntu"_s },
-        { u"neon"_s, u"kdeneon"_s },
-        { u"debian"_s, u"debian"_s },
-        { u"fedora"_s, u"fedora"_s },
-        { u"arch"_s, u"archlinux"_s },
-        { u"manjaro"_s, u"manjaro"_s },
-        { u"opensuse"_s, u"opensuse"_s },
-        { u"suse"_s, u"opensuse"_s },
-        { u"redhat"_s, u"redhat"_s },
-        { u"rhel"_s, u"redhat"_s },
-        { u"centos"_s, u"centos"_s },
-        { u"mint"_s, u"linuxmint"_s },
-        { u"nixos"_s, u"nixos"_s },
-        { u"void"_s, u"voidlinux"_s },
-        { u"gentoo"_s, u"gentoo"_s },
+        {u"kubuntu"_s, u"kubuntu"_s},
+        {u"ubuntu"_s, u"ubuntu"_s},
+        {u"neon"_s, u"kdeneon"_s},
+        {u"debian"_s, u"debian"_s},
+        {u"fedora"_s, u"fedora"_s},
+        {u"arch"_s, u"archlinux"_s},
+        {u"manjaro"_s, u"manjaro"_s},
+        {u"opensuse"_s, u"opensuse"_s},
+        {u"suse"_s, u"opensuse"_s},
+        {u"redhat"_s, u"redhat"_s},
+        {u"rhel"_s, u"redhat"_s},
+        {u"centos"_s, u"centos"_s},
+        {u"mint"_s, u"linuxmint"_s},
+        {u"nixos"_s, u"nixos"_s},
+        {u"void"_s, u"voidlinux"_s},
+        {u"gentoo"_s, u"gentoo"_s},
     };
 
-    for (const auto& hint : linuxHints) {
+    for (const auto &hint : linuxHints) {
         if (lowerz.contains(hint.keyword)) {
             if (found)
                 *found = true;
-            return { VMSpecs::OsType::Linux, hint.variantId };
+            return {VMSpecs::OsType::Linux, hint.variantId};
         }
     }
 
@@ -1256,24 +1244,24 @@ QPair<VMSpecs::OsType, QString> VMConfig::guessOSFromText(const QString& string,
     if (lowerz.contains(u"freebsd"_s)) {
         if (found)
             *found = true;
-        return { VMSpecs::OsType::BSD, u"freebsd"_s };
+        return {VMSpecs::OsType::BSD, u"freebsd"_s};
     }
     if (lowerz.contains(u"openbsd"_s)) {
         if (found)
             *found = true;
-        return { VMSpecs::OsType::BSD, u"openbsd"_s };
+        return {VMSpecs::OsType::BSD, u"openbsd"_s};
     }
 
     // DOS
     if (lowerz.contains(u"dos"_s) || lowerz.contains(u"freedos"_s)) {
         if (found)
             *found = true;
-        return { VMSpecs::OsType::DOS, lowerz.contains(u"freedos"_s) ? u"freedos"_s : u"msdos"_s };
+        return {VMSpecs::OsType::DOS, lowerz.contains(u"freedos"_s) ? u"freedos"_s : u"msdos"_s};
     }
 
     if (found)
         *found = false;
-    return { VMSpecs::OsType::Other, { } };
+    return {VMSpecs::OsType::Other, {}};
 }
 
 QJsonObject VMConfig::toJson() const
@@ -1340,7 +1328,7 @@ QJsonObject VMConfig::toJson() const
 
     if (!m_portForwards.isEmpty()) {
         QJsonArray portFwdArray;
-        for (const auto& rule : m_portForwards) {
+        for (const auto &rule : m_portForwards) {
             QJsonObject ruleObj;
             ruleObj[u"protocol"_s] = toString(rule.protocol);
             ruleObj[u"host_port"_s] = rule.hostPort;
@@ -1360,7 +1348,7 @@ QJsonObject VMConfig::toJson() const
     return j;
 }
 
-VMConfig VMConfig::fromJson(const QJsonObject& j)
+VMConfig VMConfig::fromJson(const QJsonObject &j)
 {
     VMConfig c;
 
@@ -1394,9 +1382,8 @@ VMConfig VMConfig::fromJson(const QJsonObject& j)
     c.m_gpuType = parseGpuType(j[u"gpu_type"_s].toString());
     c.m_gpu3dAcceleration = j[u"gpu_3d_acceleration"_s].toBool(GlobalDefaults.gpu3dAcceleration);
     c.m_gpuMemMb = j[u"gpu_mem"_s].toInt(GlobalDefaults.GpuMemMb);
-    c.m_displayResolution = QSize(
-        j[u"display_width"_s].toInt(GlobalDefaults.displayResolution.width()),
-        j[u"display_height"_s].toInt(GlobalDefaults.displayResolution.height()));
+    c.m_displayResolution =
+        QSize(j[u"display_width"_s].toInt(GlobalDefaults.displayResolution.width()), j[u"display_height"_s].toInt(GlobalDefaults.displayResolution.height()));
 
     c.m_audioDevice = parseAudioDevice(j[u"audio_device"_s].toString());
     if (j.contains(u"sb16_config"_s)) {
@@ -1425,7 +1412,7 @@ VMConfig VMConfig::fromJson(const QJsonObject& j)
 
     if (j.contains(u"port_forwards"_s)) {
         const QJsonArray arr = j[u"port_forwards"_s].toArray();
-        for (const auto& val : arr) {
+        for (const auto &val : arr) {
             const QJsonObject ruleObj = val.toObject();
             PortForwardRule rule;
             rule.protocol = parseProtocol(ruleObj[u"protocol"_s].toString());
@@ -1445,12 +1432,12 @@ VMConfig VMConfig::fromJson(const QJsonObject& j)
     return c;
 }
 
-void VMConfig::normalizePaths(const QDir& baseDir)
+void VMConfig::normalizePaths(const QDir &baseDir)
 {
-    auto makeAbsolute = [&baseDir](const QString& path) -> QString {
+    auto makeAbsolute = [&baseDir](const QString &path) -> QString {
         if (path.isEmpty())
             return path;
-        QFileInfo fi(path);
+        const QFileInfo fi(path);
         if (fi.isAbsolute())
             return fi.absoluteFilePath();
         return baseDir.absoluteFilePath(path);

@@ -10,14 +10,14 @@
 // Constructor
 // =============================================================================
 
-DbusViewerWindow::DbusViewerWindow(QemuDisplayListener* listener,
-    QDBusConnection& bus,
-    const QString& consolePath,
-    QemuAudioListener* audioOut,
-    QemuAudioInListener* audioIn,
-    bool audioOutConnected,
-    bool audioInConnected,
-    QWidget* parent)
+DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
+                                   QDBusConnection &bus,
+                                   const QString &consolePath,
+                                   QemuAudioListener *audioOut,
+                                   QemuAudioInListener *audioIn,
+                                   bool audioOutConnected,
+                                   bool audioInConnected,
+                                   QWidget *parent)
     : QMainWindow(parent)
     , m_bus(bus)
     , m_consolePath(consolePath)
@@ -49,8 +49,7 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener* listener,
 
     connect(m_display, &QemuDisplayWidget::fullscreenToggleRequested, m_actFullscreen, &QAction::trigger);
 
-    qDebug() << "DbusViewerWindow: audioOutConnected=" << m_audioOutConnected
-             << "audioInConnected=" << m_audioInConnected;
+    qDebug() << "DbusViewerWindow: audioOutConnected=" << m_audioOutConnected << "audioInConnected=" << m_audioInConnected;
 
     resize(m_lastTargetW, m_lastTargetH);
 }
@@ -92,7 +91,9 @@ void DbusViewerWindow::createActions()
     if (m_audioOutConnected) {
         m_actAudioOut->setStatusTip(i18n("Toggle audio output (playback)"));
     } else {
-        m_actAudioOut->setStatusTip(i18n("Audio runs via system audio – start QEMU with -audiodev dbus for D-Bus control"));
+        m_actAudioOut->setStatusTip(
+            i18n("Audio runs via system audio – start QEMU "
+                 "with -audiodev dbus for D-Bus control"));
     }
     connect(m_actAudioOut, &QAction::toggled, this, &DbusViewerWindow::onToggleAudioOut);
 
@@ -103,12 +104,14 @@ void DbusViewerWindow::createActions()
     if (m_audioInConnected) {
         m_actAudioIn->setStatusTip(i18n("Toggle audio input (microphone)"));
     } else {
-        m_actAudioIn->setStatusTip(i18n("Microphone runs via system audio – start QEMU with -audiodev dbus for D-Bus control"));
+        m_actAudioIn->setStatusTip(
+            i18n("Microphone runs via system audio – start QEMU with -audiodev "
+                 "dbus for D-Bus control"));
     }
     connect(m_actAudioIn, &QAction::toggled, this, &DbusViewerWindow::onToggleAudioIn);
 
     // --- Devices: Clipboard ---
-    auto* clipGroup = new QActionGroup(this);
+    auto *clipGroup = new QActionGroup(this);
     clipGroup->setExclusive(true);
 
     m_actClipOff = new QAction(i18n("Off"), this);
@@ -144,30 +147,30 @@ void DbusViewerWindow::createActions()
 void DbusViewerWindow::createMenus()
 {
     // Machine
-    QMenu* machineMenu = menuBar()->addMenu(i18n("&Machine"));
+    QMenu *machineMenu = menuBar()->addMenu(i18n("&Machine"));
     machineMenu->addAction(m_actQuit);
 
     // View
-    QMenu* viewMenu = menuBar()->addMenu(i18n("&View"));
+    QMenu *viewMenu = menuBar()->addMenu(i18n("&View"));
     viewMenu->addAction(m_actFullscreen);
     viewMenu->addSeparator();
     viewMenu->addAction(m_actNativeSize);
 
     // Devices
-    QMenu* devicesMenu = menuBar()->addMenu(i18n("&Devices"));
+    QMenu *devicesMenu = menuBar()->addMenu(i18n("&Devices"));
 
     devicesMenu->addAction(m_actAudioOut);
     devicesMenu->addAction(m_actAudioIn);
     devicesMenu->addSeparator();
 
-    QMenu* clipMenu = devicesMenu->addMenu(i18n("&Clipboard"));
+    QMenu *clipMenu = devicesMenu->addMenu(i18n("&Clipboard"));
     clipMenu->addAction(m_actClipOff);
     clipMenu->addAction(m_actClipToHost);
     clipMenu->addAction(m_actClipToGuest);
     clipMenu->addAction(m_actClipBoth);
 
     // Help
-    QMenu* helpMenu = menuBar()->addMenu(i18n("&Help"));
+    QMenu *helpMenu = menuBar()->addMenu(i18n("&Help"));
     helpMenu->addAction(m_actAbout);
 }
 
@@ -265,10 +268,7 @@ void DbusViewerWindow::onToggleFullscreen(bool checked)
 {
     if (checked) {
         // First-time hint; KMessageBox persists the user's choice in kemurc.
-        KMessageBox::information(this,
-            i18n("Press <b>F11</b> to leave fullscreen mode again."),
-            i18n("Fullscreen Mode"),
-            u"ShowFullscreenHint"_s);
+        KMessageBox::information(this, i18n("Press <b>F11</b> to leave fullscreen mode again."), i18n("Fullscreen Mode"), u"ShowFullscreenHint"_s);
         showFullScreen();
     } else {
         showNormal();
@@ -288,7 +288,9 @@ void DbusViewerWindow::onResetToNativeSize()
         m_actFullscreen->setChecked(false);
     }
 
-    auto doResize = [this] { resize(m_lastTargetW, m_lastTargetH); };
+    auto doResize = [this] {
+        resize(m_lastTargetW, m_lastTargetH);
+    };
 
     // Defer the resize until the window state transition has settled,
     // otherwise the WM may overwrite our geometry while leaving fullscreen.
@@ -358,10 +360,9 @@ void DbusViewerWindow::setupClipboard(ClipboardDirection dir)
 
     m_clipboard = new QemuClipboardManager(m_bus, dir, this);
     if (!m_clipboard->setup()) {
-        statusBar()->showMessage(
-            i18n("Clipboard registration failed – "
-                 "QEMU needs a clipboard agent in the guest"),
-            5000);
+        statusBar()->showMessage(i18n("Clipboard registration failed – "
+                                      "QEMU needs a clipboard agent in the guest"),
+                                 5000);
         delete m_clipboard;
         m_clipboard = nullptr;
         m_clipDirection = ClipboardDirection::Off;
@@ -381,8 +382,7 @@ void DbusViewerWindow::setupClipboard(ClipboardDirection dir)
         default:
             break;
         }
-        statusBar()->showMessage(
-            i18n("Clipboard enabled: %1").arg(dirStr), 3000);
+        statusBar()->showMessage(i18n("Clipboard enabled: %1").arg(dirStr), 3000);
     }
 
     updateStatusBar();
@@ -407,13 +407,14 @@ void DbusViewerWindow::onScanoutChanged(int width, int height)
 
         // Adjust window size to framebuffer (+ menu/status bar)
         if (!isFullScreen()) {
-            qreal dpr = devicePixelRatio();
-            int menuH = menuBar()->isVisible() ? menuBar()->height() : 0;
-            int statusH = statusBar()->isVisible() ? statusBar()->height() : 0;
-            int targetW = qRound(width / dpr);
-            int targetH = qRound(height / dpr) + menuH + statusH;
+            const qreal dpr = devicePixelRatio();
+            const int menuH = menuBar()->isVisible() ? menuBar()->height() : 0;
+            const int statusH = statusBar()->isVisible() ? statusBar()->height() : 0;
+            const int targetW = qRound(width / dpr);
+            const int targetH = qRound(height / dpr) + menuH + statusH;
 
-            // Prevent fighting with tiling window managers: Only resize if the target size actually changes.
+            // Prevent fighting with tiling window managers: Only resize if the target
+            // size actually changes.
             if (targetW != m_lastTargetW || targetH != m_lastTargetH) {
                 resize(targetW, targetH);
                 m_lastTargetW = targetW;
@@ -431,25 +432,26 @@ void DbusViewerWindow::onScanoutChanged(int width, int height)
 
 void DbusViewerWindow::onAbout()
 {
-    QMessageBox::about(this, i18n("About QEMU VM Viewer"),
-        i18n("<h3>QEMU VM Viewer</h3>"
-             "<p>A Qt6-based viewer for QEMU VMs "
-             "via the D-Bus display protocol.</p>"
-             "<p><b>Features:</b></p>"
-             "<ul>"
-             "<li>Framebuffer display (Software + DMA-BUF)</li>"
-             "<li>Keyboard and mouse forwarding</li>"
-             "<li>Audio output and input</li>"
-             "<li>Clipboard synchronization</li>"
-             "</ul>"
-             "<p>Requires QEMU with <code>-display dbus</code>.</p>"));
+    QMessageBox::about(this,
+                       i18n("About QEMU VM Viewer"),
+                       i18n("<h3>QEMU VM Viewer</h3>"
+                            "<p>A Qt6-based viewer for QEMU VMs "
+                            "via the D-Bus display protocol.</p>"
+                            "<p><b>Features:</b></p>"
+                            "<ul>"
+                            "<li>Framebuffer display (Software + DMA-BUF)</li>"
+                            "<li>Keyboard and mouse forwarding</li>"
+                            "<li>Audio output and input</li>"
+                            "<li>Clipboard synchronization</li>"
+                            "</ul>"
+                            "<p>Requires QEMU with <code>-display dbus</code>.</p>"));
 }
 
 // =============================================================================
 // Close Event
 // =============================================================================
 
-void DbusViewerWindow::closeEvent(QCloseEvent* event)
+void DbusViewerWindow::closeEvent(QCloseEvent *event)
 {
     teardownClipboard();
     Q_EMIT viewerClosed();
@@ -460,7 +462,7 @@ void DbusViewerWindow::closeEvent(QCloseEvent* event)
 // Change Event
 // =============================================================================
 
-void DbusViewerWindow::changeEvent(QEvent* event)
+void DbusViewerWindow::changeEvent(QEvent *event)
 {
     if (event->type() == QEvent::WindowStateChange) {
         // Check if the current state is FullScreen
@@ -513,7 +515,8 @@ void DbusViewerWindow::onQemuDisconnected()
     m_display->stopAllGLibWatching();
 
     // Delayed close – we might still be inside a GLib callback.
-    // Calling close() directly would destroy Qt widgets from within a GLib stack frame.
+    // Calling close() directly would destroy Qt widgets from within a GLib stack
+    // frame.
     QTimer::singleShot(0, this, &QWidget::close);
 }
 

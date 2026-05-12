@@ -6,7 +6,7 @@
 
 #include "qmpclient.h"
 
-QMPClient::QMPClient(QObject* parent)
+QMPClient::QMPClient(QObject *parent)
     : QObject(parent)
 {
     connect(&m_socket, &QLocalSocket::readyRead, this, &QMPClient::onReadyRead);
@@ -30,7 +30,7 @@ QMPClient::~QMPClient()
     disconnectFromVm();
 }
 
-void QMPClient::connectToVm(const QString& socketPath)
+void QMPClient::connectToVm(const QString &socketPath)
 {
     if (m_socket.state() != QLocalSocket::UnconnectedState) {
         m_socket.abort();
@@ -60,15 +60,15 @@ bool QMPClient::isConnected() const
     return m_socket.state() == QLocalSocket::ConnectedState && m_handshakeComplete;
 }
 
-void QMPClient::sendCommand(const QString& command, const QJsonObject& args, std::function<void(QMPResult)> callback)
+void QMPClient::sendCommand(const QString &command, const QJsonObject &args, std::function<void(QMPResult)> callback)
 {
     if (!m_socket.isOpen()) {
         if (callback)
-            callback({ false, u"Socket is not connected."_s, { }, QJsonArray() });
+            callback({false, u"Socket is not connected."_s, {}, QJsonArray()});
         return;
     }
 
-    QString cmdId = u"cmd_%1"_s.arg(++m_commandCounter);
+    const QString cmdId = u"cmd_%1"_s.arg(++m_commandCounter);
 
     QJsonObject cmdObj;
     cmdObj.insert(u"execute"_s, command);
@@ -85,7 +85,7 @@ void QMPClient::sendCommand(const QString& command, const QJsonObject& args, std
     m_socket.flush();
 }
 
-QMPResult QMPClient::sendCommandSync(const QString& command, const QJsonObject& args, int timeoutMs)
+QMPResult QMPClient::sendCommandSync(const QString &command, const QJsonObject &args, int timeoutMs)
 {
     QMPResult finalResult;
     QEventLoop loop;
@@ -116,7 +116,7 @@ QMPResult QMPClient::sendCommandSync(const QString& command, const QJsonObject& 
 // Screenshot
 // ---------------------------------------------------------------------------
 
-void QMPClient::startScreenshotTimer(const QString& dumpPath, int intervalMs)
+void QMPClient::startScreenshotTimer(const QString &dumpPath, int intervalMs)
 {
     m_screenshotDumpPath = dumpPath;
     m_screenshotInFlight = false;
@@ -136,7 +136,7 @@ bool QMPClient::isScreenshotTimerActive() const
     return m_screenshotTimer.isActive();
 }
 
-void QMPClient::requestScreenshot(const QString& dumpPath)
+void QMPClient::requestScreenshot(const QString &dumpPath)
 {
     if (!isConnected() || m_screenshotInFlight)
         return;
@@ -154,7 +154,7 @@ void QMPClient::requestScreenshot(const QString& dumpPath)
             return;
         }
 
-        QImage image(dumpPath);
+        const QImage image(dumpPath);
         if (image.isNull()) {
             qDebug() << "Failed to load screendump image from" << dumpPath;
             return;
@@ -186,14 +186,11 @@ QMPClient::ProcCpuSample QMPClient::readProcStat(qint64 tid)
     const QByteArray data = f.readAll();
     f.close();
 
-    int closeParenPos = data.lastIndexOf(')');
+    const int closeParenPos = data.lastIndexOf(')');
     if (closeParenPos < 0)
         return sample;
 
-    const QList<QByteArray> fields = QByteArray::fromRawData(
-        data.constData() + closeParenPos + 2,
-        data.size() - closeParenPos - 2)
-                                         .split(' ');
+    const QList<QByteArray> fields = QByteArray::fromRawData(data.constData() + closeParenPos + 2, data.size() - closeParenPos - 2).split(' ');
 
     if (fields.size() > 12) {
         sample.utime = fields.at(11).toLongLong();
@@ -207,11 +204,11 @@ void QMPClient::requestCpuUsage(std::function<void(VmCpuUsage)> callback)
 {
     if (!isConnected()) {
         if (callback)
-            callback({ });
+            callback({});
         return;
     }
 
-    sendCommand(u"query-cpus-fast"_s, { }, [this, callback](QMPResult result) {
+    sendCommand(u"query-cpus-fast"_s, {}, [this, callback](QMPResult result) {
         VmCpuUsage usage;
 
         if (!result.success) {
@@ -234,10 +231,10 @@ void QMPClient::requestCpuUsage(std::function<void(VmCpuUsage)> callback)
         usage.isValid = true;
         double totalPercent = 0.0;
 
-        for (const QJsonValue& val : cpuArray) {
-            QJsonObject cpu = val.toObject();
-            int cpuIndex = cpu.value(u"cpu-index"_s).toInt();
-            qint64 tid = cpu.value(u"thread-id"_s).toVariant().toLongLong();
+        for (const QJsonValue &val : cpuArray) {
+            const QJsonObject cpu = val.toObject();
+            const int cpuIndex = cpu.value(u"cpu-index"_s).toInt();
+            const qint64 tid = cpu.value(u"thread-id"_s).toVariant().toLongLong();
 
             ProcCpuSample current = readProcStat(tid);
             current.wallNs = nowNs;
@@ -247,13 +244,12 @@ void QMPClient::requestCpuUsage(std::function<void(VmCpuUsage)> callback)
             info.threadId = tid;
 
             if (m_lastCpuSamples.contains(tid)) {
-                const ProcCpuSample& prev = m_lastCpuSamples.value(tid);
-                qint64 dticks = (current.utime + current.stime)
-                    - (prev.utime + prev.stime);
-                double dsecs = static_cast<double>(current.wallNs - prev.wallNs) / 1.0e9;
+                const ProcCpuSample &prev = m_lastCpuSamples.value(tid);
+                const qint64 dticks = (current.utime + current.stime) - (prev.utime + prev.stime);
+                const double dsecs = static_cast<double>(current.wallNs - prev.wallNs) / 1.0e9;
 
                 if (dsecs > 0.0 && ticksPerSec > 0) {
-                    double cpuSecs = static_cast<double>(dticks) / ticksPerSec;
+                    const double cpuSecs = static_cast<double>(dticks) / ticksPerSec;
                     info.usagePercent = qBound(0.0, (cpuSecs / dsecs) * 100.0, 100.0);
                 }
             }
@@ -323,7 +319,7 @@ void QMPClient::performCpuUsageSample()
 
     m_cpuUsageInFlight = true;
 
-    sendCommand(u"query-cpus-fast"_s, { }, [this](QMPResult result) {
+    sendCommand(u"query-cpus-fast"_s, {}, [this](QMPResult result) {
         m_cpuUsageInFlight = false;
 
         if (!result.success) {
@@ -342,10 +338,10 @@ void QMPClient::performCpuUsageSample()
         usage.isValid = true;
         double totalPercent = 0.0;
 
-        for (const QJsonValue& val : cpuArray) {
-            QJsonObject cpu = val.toObject();
-            int cpuIndex = cpu.value(u"cpu-index"_s).toInt();
-            qint64 tid = cpu.value(u"thread-id"_s).toVariant().toLongLong();
+        for (const QJsonValue &val : cpuArray) {
+            const QJsonObject cpu = val.toObject();
+            const int cpuIndex = cpu.value(u"cpu-index"_s).toInt();
+            const qint64 tid = cpu.value(u"thread-id"_s).toVariant().toLongLong();
 
             ProcCpuSample current = readProcStat(tid);
             current.wallNs = nowNs;
@@ -355,13 +351,12 @@ void QMPClient::performCpuUsageSample()
             info.threadId = tid;
 
             if (m_lastCpuSamples.contains(tid)) {
-                const ProcCpuSample& prev = m_lastCpuSamples.value(tid);
-                qint64 dticks = (current.utime + current.stime)
-                    - (prev.utime + prev.stime);
-                double dsecs = static_cast<double>(current.wallNs - prev.wallNs) / 1.0e9;
+                const ProcCpuSample &prev = m_lastCpuSamples.value(tid);
+                const qint64 dticks = (current.utime + current.stime) - (prev.utime + prev.stime);
+                const double dsecs = static_cast<double>(current.wallNs - prev.wallNs) / 1.0e9;
 
                 if (dsecs > 0.0 && ticksPerSec > 0) {
-                    double cpuSecs = static_cast<double>(dticks) / ticksPerSec;
+                    const double cpuSecs = static_cast<double>(dticks) / ticksPerSec;
                     info.usagePercent = qBound(0.0, (cpuSecs / dsecs) * 100.0, 100.0);
                 }
             }
@@ -386,11 +381,11 @@ void QMPClient::requestMemoryUsage(std::function<void(VmMemoryUsage)> callback)
 {
     if (!isConnected()) {
         if (callback)
-            callback({ });
+            callback({});
         return;
     }
 
-    sendCommand(u"query-balloon"_s, { }, [this, callback](QMPResult result) {
+    sendCommand(u"query-balloon"_s, {}, [this, callback](QMPResult result) {
         VmMemoryUsage usage;
 
         if (result.success) {
@@ -460,43 +455,39 @@ void QMPClient::startBalloonDiscovery()
 {
     m_memorySampleState = MemorySampleState::Discovering;
 
-    sendCommand(u"qom-list"_s,
-        QJsonObject { { u"path"_s, u"/machine/peripheral-anon"_s } },
-        [this](QMPResult result) {
-            if (result.success) {
-                for (const auto& val : result.dataArray) {
-                    QJsonObject obj = val.toObject();
-                    QString type = obj.value(u"type"_s).toString();
-                    if (type.contains(u"balloon"_s, Qt::CaseInsensitive)) {
-                        m_balloonPath = u"/machine/peripheral-anon/%1"_s.arg(obj.value(u"name"_s).toString());
-                        break;
-                    }
+    sendCommand(u"qom-list"_s, QJsonObject{{u"path"_s, u"/machine/peripheral-anon"_s}}, [this](QMPResult result) {
+        if (result.success) {
+            for (const auto &val : result.dataArray) {
+                const QJsonObject obj = val.toObject();
+                const QString type = obj.value(u"type"_s).toString();
+                if (type.contains(u"balloon"_s, Qt::CaseInsensitive)) {
+                    m_balloonPath = u"/machine/peripheral-anon/%1"_s.arg(obj.value(u"name"_s).toString());
+                    break;
                 }
             }
+        }
 
-            if (m_balloonPath.isEmpty()) {
-                sendCommand(u"qom-list"_s,
-                    QJsonObject { { u"path"_s, u"/machine/peripheral"_s } },
-                    [this](QMPResult r2) {
-                        if (r2.success) {
-                            for (const auto& val : r2.dataArray) {
-                                QJsonObject obj = val.toObject();
-                                QString type = obj.value(u"type"_s).toString();
-                                if (type.contains(u"balloon"_s, Qt::CaseInsensitive)) {
-                                    m_balloonPath = u"/machine/peripheral/%1"_s.arg(obj.value(u"name"_s).toString());
-                                    break;
-                                }
-                            }
+        if (m_balloonPath.isEmpty()) {
+            sendCommand(u"qom-list"_s, QJsonObject{{u"path"_s, u"/machine/peripheral"_s}}, [this](QMPResult r2) {
+                if (r2.success) {
+                    for (const auto &val : r2.dataArray) {
+                        const QJsonObject obj = val.toObject();
+                        const QString type = obj.value(u"type"_s).toString();
+                        if (type.contains(u"balloon"_s, Qt::CaseInsensitive)) {
+                            m_balloonPath = u"/machine/peripheral/%1"_s.arg(obj.value(u"name"_s).toString());
+                            break;
                         }
-                        m_memorySampleState = MemorySampleState::Idle;
-                        startBalloonDiscovery();
-                    });
-                return;
-            }
+                    }
+                }
+                m_memorySampleState = MemorySampleState::Idle;
+                startBalloonDiscovery();
+            });
+            return;
+        }
 
-            m_memorySampleState = MemorySampleState::Idle;
-            performMemorySample();
-        });
+        m_memorySampleState = MemorySampleState::Idle;
+        performMemorySample();
+    });
 }
 
 void QMPClient::enableGuestStats()
@@ -533,14 +524,14 @@ void QMPClient::readGuestStats()
         m_memorySampleState = MemorySampleState::Idle;
 
         if (result.success) {
-            QJsonObject stats = result.data.value(u"stats"_s).toObject();
-            qint64 totalMem = stats.value(u"stat-total-memory"_s).toInteger();
-            qint64 availableMem = stats.value(u"stat-available-memory"_s).toInteger();
-            qint64 freeMem = stats.value(u"stat-free-memory"_s).toInteger();
+            const QJsonObject stats = result.data.value(u"stats"_s).toObject();
+            const qint64 totalMem = stats.value(u"stat-total-memory"_s).toInteger();
+            const qint64 availableMem = stats.value(u"stat-available-memory"_s).toInteger();
+            const qint64 freeMem = stats.value(u"stat-free-memory"_s).toInteger();
 
             if (totalMem > 0) {
-                qint64 effectiveFree = (availableMem > 0) ? availableMem : freeMem;
-                qint64 usedMem = totalMem - effectiveFree;
+                const qint64 effectiveFree = (availableMem > 0) ? availableMem : freeMem;
+                const qint64 usedMem = totalMem - effectiveFree;
 
                 VmMemoryUsage usage;
                 usage.maxBytes = totalMem;
@@ -552,10 +543,10 @@ void QMPClient::readGuestStats()
             }
         }
 
-        sendCommand(u"query-balloon"_s, { }, [this](QMPResult fbResult) {
+        sendCommand(u"query-balloon"_s, {}, [this](QMPResult fbResult) {
             VmMemoryUsage usage;
             if (fbResult.success) {
-                qint64 actual = fbResult.data.value(u"actual"_s).toVariant().toLongLong();
+                const qint64 actual = fbResult.data.value(u"actual"_s).toVariant().toLongLong();
                 if (m_maxMemoryBytes == 0 && actual > 0)
                     m_maxMemoryBytes = actual;
 
@@ -579,11 +570,11 @@ void QMPClient::requestBlockStats(std::function<void(VmBlockStats)> callback)
 {
     if (!isConnected()) {
         if (callback)
-            callback({ });
+            callback({});
         return;
     }
 
-    sendCommand(u"query-blockstats"_s, { }, [this, callback](QMPResult result) {
+    sendCommand(u"query-blockstats"_s, {}, [this, callback](QMPResult result) {
         VmBlockStats stats;
 
         if (!result.success) {
@@ -602,17 +593,17 @@ void QMPClient::requestBlockStats(std::function<void(VmBlockStats)> callback)
         const qint64 nowNs = m_blockSampleClock.nsecsElapsed();
         stats.isValid = true;
 
-        for (const QJsonValue& val : devices) {
-            QJsonObject entry = val.toObject();
-            QString device = entry.value(u"device"_s).toString();
-            QString node = entry.value(u"node-name"_s).toString();
-            QJsonObject s = entry.value(u"stats"_s).toObject();
+        for (const QJsonValue &val : devices) {
+            const QJsonObject entry = val.toObject();
+            const QString device = entry.value(u"device"_s).toString();
+            const QString node = entry.value(u"node-name"_s).toString();
+            const QJsonObject s = entry.value(u"stats"_s).toObject();
 
             if (s.isEmpty())
                 continue;
 
             // Use node-name as key; fall back to device name
-            QString key = node.isEmpty() ? device : node;
+            const QString key = node.isEmpty() ? device : node;
             if (key.isEmpty())
                 continue;
 
@@ -625,8 +616,8 @@ void QMPClient::requestBlockStats(std::function<void(VmBlockStats)> callback)
             ds.wrOps = s.value(u"wr_operations"_s).toVariant().toLongLong();
 
             if (m_lastBlockSamples.contains(key)) {
-                const BlockIoSnapshot& prev = m_lastBlockSamples.value(key);
-                double dsecs = static_cast<double>(nowNs - prev.wallNs) / 1.0e9;
+                const BlockIoSnapshot &prev = m_lastBlockSamples.value(key);
+                const double dsecs = static_cast<double>(nowNs - prev.wallNs) / 1.0e9;
 
                 if (dsecs > 0.0) {
                     ds.rdBytesPerSec = qMax(0.0, static_cast<double>(ds.rdBytes - prev.rdBytes) / dsecs);
@@ -636,7 +627,7 @@ void QMPClient::requestBlockStats(std::function<void(VmBlockStats)> callback)
                 }
             }
 
-            m_lastBlockSamples.insert(key, { ds.rdBytes, ds.wrBytes, ds.rdOps, ds.wrOps, nowNs });
+            m_lastBlockSamples.insert(key, {ds.rdBytes, ds.wrBytes, ds.rdOps, ds.wrOps, nowNs});
 
             stats.devices.append(ds);
             stats.totalRdBytesPerSec += ds.rdBytesPerSec;
@@ -683,7 +674,7 @@ void QMPClient::performBlockStatsSample()
 
     m_blockStatsInFlight = true;
 
-    sendCommand(u"query-blockstats"_s, { }, [this](QMPResult result) {
+    sendCommand(u"query-blockstats"_s, {}, [this](QMPResult result) {
         m_blockStatsInFlight = false;
 
         if (!result.success)
@@ -698,16 +689,16 @@ void QMPClient::performBlockStatsSample()
         VmBlockStats stats;
         stats.isValid = true;
 
-        for (const QJsonValue& val : devices) {
-            QJsonObject entry = val.toObject();
-            QString device = entry.value(u"device"_s).toString();
-            QString node = entry.value(u"node-name"_s).toString();
-            QJsonObject s = entry.value(u"stats"_s).toObject();
+        for (const QJsonValue &val : devices) {
+            const QJsonObject entry = val.toObject();
+            const QString device = entry.value(u"device"_s).toString();
+            const QString node = entry.value(u"node-name"_s).toString();
+            const QJsonObject s = entry.value(u"stats"_s).toObject();
 
             if (s.isEmpty())
                 continue;
 
-            QString key = node.isEmpty() ? device : node;
+            const QString key = node.isEmpty() ? device : node;
             if (key.isEmpty())
                 continue;
 
@@ -720,8 +711,8 @@ void QMPClient::performBlockStatsSample()
             ds.wrOps = s.value(u"wr_operations"_s).toVariant().toLongLong();
 
             if (m_lastBlockSamples.contains(key)) {
-                const BlockIoSnapshot& prev = m_lastBlockSamples.value(key);
-                double dsecs = static_cast<double>(nowNs - prev.wallNs) / 1.0e9;
+                const BlockIoSnapshot &prev = m_lastBlockSamples.value(key);
+                const double dsecs = static_cast<double>(nowNs - prev.wallNs) / 1.0e9;
 
                 if (dsecs > 0.0) {
                     ds.rdBytesPerSec = qMax(0.0, static_cast<double>(ds.rdBytes - prev.rdBytes) / dsecs);
@@ -731,7 +722,7 @@ void QMPClient::performBlockStatsSample()
                 }
             }
 
-            m_lastBlockSamples.insert(key, { ds.rdBytes, ds.wrBytes, ds.rdOps, ds.wrOps, nowNs });
+            m_lastBlockSamples.insert(key, {ds.rdBytes, ds.wrBytes, ds.rdOps, ds.wrOps, nowNs});
 
             stats.devices.append(ds);
             stats.totalRdBytesPerSec += ds.rdBytesPerSec;
@@ -797,7 +788,7 @@ void QMPClient::performAllSamples()
 // USB
 // ---------------------------------------------------------------------------
 
-QMPResult QMPClient::attachUsbDevice(int busNum, int devAddr, const QString& id)
+QMPResult QMPClient::attachUsbDevice(int busNum, int devAddr, const QString &id)
 {
     QJsonObject args;
     args[u"driver"_s] = u"usb-host"_s;
@@ -807,7 +798,7 @@ QMPResult QMPClient::attachUsbDevice(int busNum, int devAddr, const QString& id)
     return sendCommandSync(u"device_add"_s, args, 5000);
 }
 
-QMPResult QMPClient::detachUsbDevice(const QString& id)
+QMPResult QMPClient::detachUsbDevice(const QString &id)
 {
     QJsonObject args;
     args[u"id"_s] = id;
@@ -823,7 +814,7 @@ void QMPClient::onReadyRead()
     m_buffer.append(m_socket.readAll());
 
     while (true) {
-        int newlinePos = m_buffer.indexOf('\n');
+        const int newlinePos = m_buffer.indexOf('\n');
         if (newlinePos < 0)
             break;
 
@@ -833,16 +824,16 @@ void QMPClient::onReadyRead()
     }
 }
 
-void QMPClient::processLine(const QByteArray& line)
+void QMPClient::processLine(const QByteArray &line)
 {
     QJsonParseError error;
-    QJsonDocument doc = QJsonDocument::fromJson(line, &error);
+    const QJsonDocument doc = QJsonDocument::fromJson(line, &error);
 
     if (error.error != QJsonParseError::NoError || !doc.isObject()) {
         return;
     }
 
-    QJsonObject root = doc.object();
+    const QJsonObject root = doc.object();
 
     if (root.contains(u"QMP"_s) && !m_handshakeComplete) {
         QJsonObject capObj;
@@ -853,8 +844,8 @@ void QMPClient::processLine(const QByteArray& line)
     }
 
     if (root.contains(u"event"_s)) {
-        QString eventName = root.value(u"event"_s).toString();
-        QJsonObject eventData = root.value(u"data"_s).toObject();
+        const QString eventName = root.value(u"event"_s).toString();
+        const QJsonObject eventData = root.value(u"data"_s).toObject();
         Q_EMIT eventReceived(eventName, eventData);
         return;
     }
@@ -866,19 +857,19 @@ void QMPClient::processLine(const QByteArray& line)
             return;
         }
 
-        QString cmdId = root.value(u"id"_s).toString();
+        const QString cmdId = root.value(u"id"_s).toString();
 
         if (m_pendingRequests.contains(cmdId)) {
             auto callback = m_pendingRequests.take(cmdId);
 
             QMPResult result;
             if (root.contains(u"error"_s)) {
-                QJsonObject err = root.value(u"error"_s).toObject();
+                const QJsonObject err = root.value(u"error"_s).toObject();
                 result.success = false;
                 result.errorMessage = err.value(u"desc"_s).toString();
             } else {
                 result.success = true;
-                QJsonValue retVal = root.value(u"return"_s);
+                const QJsonValue retVal = root.value(u"return"_s);
                 if (retVal.isObject()) {
                     result.data = retVal.toObject();
                 } else if (retVal.isArray()) {

@@ -18,15 +18,19 @@
 
 using namespace Qt::StringLiterals;
 
-class CreateVmJob : public KJob {
+class CreateVmJob : public KJob
+{
     Q_OBJECT
 
 public:
-    explicit CreateVmJob(const VMConfig& config, const QString& diskPath, QObject* parent = nullptr);
+    explicit CreateVmJob(const VMConfig &config, const QString &diskPath, QObject *parent = nullptr);
 
     void start() override;
 
-    [[nodiscard]] QString vmName() const { return m_config.name(); }
+    [[nodiscard]] QString vmName() const
+    {
+        return m_config.name();
+    }
 
 protected:
     bool doKill() override;
@@ -37,6 +41,6 @@ private Q_SLOTS:
 private:
     VMConfig m_config;
     QString m_diskPath;
-    KProcess* m_process = nullptr;
+    KProcess *m_process = nullptr;
     bool m_killed = false;
 };

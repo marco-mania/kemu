@@ -7,12 +7,13 @@
 #include "utils.h"
 
 extern "C" {
-char* __crypt_sha512(const char* key, const char* setting, char* output);
+char *__crypt_sha512(const char *key, const char *setting, char *output);
 }
 
-namespace Utils {
+namespace Utils
+{
 
-QString generateCloudInitPasswordHash(const QString& password)
+QString generateCloudInitPasswordHash(const QString &password)
 {
     if (password.isEmpty()) {
         return password;
@@ -30,12 +31,12 @@ QString generateCloudInitPasswordHash(const QString& password)
     salt.append(u"$"_s); // Salt terminator
 
     // Convert Qt strings to proper C strings (UTF-8)
-    QByteArray passBytes = password.toUtf8();
-    QByteArray saltBytes = salt.toUtf8();
+    const QByteArray passBytes = password.toUtf8();
+    const QByteArray saltBytes = salt.toUtf8();
 
-    char outputBuffer[128] = { 0 };
+    char outputBuffer[128] = {0};
 
-    char* hashResult = __crypt_sha512(passBytes.constData(), saltBytes.constData(), outputBuffer);
+    const char *hashResult = __crypt_sha512(passBytes.constData(), saltBytes.constData(), outputBuffer);
 
     if (hashResult && qstrcmp(hashResult, "*") != 0) {
         return QString::fromUtf8(hashResult);
@@ -46,14 +47,14 @@ QString generateCloudInitPasswordHash(const QString& password)
     return u"!"_s;
 }
 
-bool waitForSocket(const QString& sockPath, int timeoutMs)
+bool waitForSocket(const QString &sockPath, int timeoutMs)
 {
     if (QFile::exists(sockPath)) {
         return true;
     }
 
-    QFileInfo fileInfo(sockPath);
-    QString dirPath = fileInfo.absolutePath();
+    const QFileInfo fileInfo(sockPath);
+    const QString dirPath = fileInfo.absolutePath();
 
     QEventLoop loop;
     QTimer timer;
@@ -86,98 +87,80 @@ bool waitForSocket(const QString& sockPath, int timeoutMs)
     return found;
 }
 
-OvmfPaths findOvmfPaths(bool secureBoot, const QString& customDir)
+OvmfPaths findOvmfPaths(bool secureBoot, const QString &customDir)
 {
     if (!customDir.isEmpty()) {
-        QDir dir(customDir);
+        const QDir dir(customDir);
 
         QStringList codeNames;
         QStringList varsNames;
 
         if (secureBoot) {
-            codeNames = {
-                u"OVMF_CODE.secboot.4m.fd"_s,
-                u"OVMF_CODE_4M.secboot.fd"_s,
-                u"OVMF_CODE.secboot.fd"_s,
-                u"OVMF_CODE.4m.fd"_s,
-                u"OVMF_CODE.fd"_s
-            };
-            varsNames = {
-                u"OVMF_VARS.4m.ms.fd"_s,
-                u"OVMF_VARS_4M.ms.fd"_s,
-                u"OVMF_VARS.ms.fd"_s,
-                u"OVMF_VARS.4m.fd"_s,
-                u"OVMF_VARS.fd"_s
-            };
+            codeNames = {u"OVMF_CODE.secboot.4m.fd"_s, u"OVMF_CODE_4M.secboot.fd"_s, u"OVMF_CODE.secboot.fd"_s, u"OVMF_CODE.4m.fd"_s, u"OVMF_CODE.fd"_s};
+            varsNames = {u"OVMF_VARS.4m.ms.fd"_s, u"OVMF_VARS_4M.ms.fd"_s, u"OVMF_VARS.ms.fd"_s, u"OVMF_VARS.4m.fd"_s, u"OVMF_VARS.fd"_s};
         } else {
-            codeNames = {
-                u"OVMF_CODE.4m.fd"_s, u"OVMF_CODE.fd"_s, u"OVMF.fd"_s
-            };
-            varsNames = {
-                u"OVMF_VARS.4m.fd"_s, u"OVMF_VARS.fd"_s
-            };
+            codeNames = {u"OVMF_CODE.4m.fd"_s, u"OVMF_CODE.fd"_s, u"OVMF.fd"_s};
+            varsNames = {u"OVMF_VARS.4m.fd"_s, u"OVMF_VARS.fd"_s};
         }
 
         QString foundCode, foundVars;
-        for (const auto& n : codeNames)
+        for (const auto &n : codeNames)
             if (dir.exists(n)) {
                 foundCode = dir.filePath(n);
                 break;
             }
-        for (const auto& n : varsNames)
+        for (const auto &n : varsNames)
             if (dir.exists(n)) {
                 foundVars = dir.filePath(n);
                 break;
             }
         if (!foundCode.isEmpty())
-            return { foundCode, foundVars };
+            return {foundCode, foundVars};
     }
 
     if (secureBoot) {
         // Secure Boot
         const QList<QPair<QString, QString>> sbPairs = {
             // Arch / edk2-ovmf
-            { u"/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.4m.fd"_s },
-            { u"/usr/share/edk2/x64/OVMF_CODE.4m.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.4m.fd"_s },
+            {u"/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.4m.fd"_s},
+            {u"/usr/share/edk2/x64/OVMF_CODE.4m.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.4m.fd"_s},
             // Fedora
-            { u"/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd"_s, u"/usr/share/edk2/ovmf/OVMF_VARS.secboot.fd"_s },
+            {u"/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd"_s, u"/usr/share/edk2/ovmf/OVMF_VARS.secboot.fd"_s},
             // Debian / Ubuntu
-            { u"/usr/share/OVMF/OVMF_CODE_4M.secboot.fd"_s, u"/usr/share/OVMF/OVMF_VARS_4M.ms.fd"_s },
-            { u"/usr/share/OVMF/OVMF_CODE.secboot.fd"_s, u"/usr/share/OVMF/OVMF_VARS.ms.fd"_s },
-            { u"/usr/share/OVMF/OVMF_CODE_4M.secboot.fd"_s, u"/usr/share/OVMF/OVMF_VARS_4M.fd"_s },
-            { u"/usr/share/OVMF/OVMF_CODE.secboot.fd"_s, u"/usr/share/OVMF/OVMF_VARS.fd"_s },
+            {u"/usr/share/OVMF/OVMF_CODE_4M.secboot.fd"_s, u"/usr/share/OVMF/OVMF_VARS_4M.ms.fd"_s},
+            {u"/usr/share/OVMF/OVMF_CODE.secboot.fd"_s, u"/usr/share/OVMF/OVMF_VARS.ms.fd"_s},
+            {u"/usr/share/OVMF/OVMF_CODE_4M.secboot.fd"_s, u"/usr/share/OVMF/OVMF_VARS_4M.fd"_s},
+            {u"/usr/share/OVMF/OVMF_CODE.secboot.fd"_s, u"/usr/share/OVMF/OVMF_VARS.fd"_s},
             // openSUSE
-            { u"/usr/share/qemu/ovmf-x86_64-smm-ms-code.bin"_s, u"/usr/share/qemu/ovmf-x86_64-smm-ms-vars.bin"_s },
-            { u"/usr/share/qemu/ovmf-x86_64-smm-code.bin"_s, u"/usr/share/qemu/ovmf-x86_64-smm-vars.bin"_s },
+            {u"/usr/share/qemu/ovmf-x86_64-smm-ms-code.bin"_s, u"/usr/share/qemu/ovmf-x86_64-smm-ms-vars.bin"_s},
+            {u"/usr/share/qemu/ovmf-x86_64-smm-code.bin"_s, u"/usr/share/qemu/ovmf-x86_64-smm-vars.bin"_s},
         };
 
-        for (const auto& pair : sbPairs)
+        for (const auto &pair : sbPairs)
             if (QFile::exists(pair.first))
-                return { pair.first, pair.second };
+                return {pair.first, pair.second};
     }
 
-    const QList<QPair<QString, QString>> ovmfPairs = {
-        { u"/usr/share/edk2/x64/OVMF_CODE.4m.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.4m.fd"_s },
-        { u"/usr/share/edk2/x64/OVMF_CODE.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.fd"_s },
-        { u"/usr/share/OVMF/OVMF_CODE.fd"_s, u"/usr/share/OVMF/OVMF_VARS.fd"_s },
-        { u"/usr/share/OVMF/OVMF_CODE.4m.fd"_s, u"/usr/share/OVMF/OVMF_VARS.4m.fd"_s },
-        { u"/usr/share/ovmf/OVMF.fd"_s, u"/usr/share/ovmf/OVMF_VARS.fd"_s },
-        { u"/usr/share/ovmf/OVMF.4m.fd"_s, u"/usr/share/ovmf/OVMF_VARS.4m.fd"_s },
-        { u"/usr/share/qemu/OVMF.fd"_s, u"/usr/share/qemu/OVMF_VARS.fd"_s }
-    };
+    const QList<QPair<QString, QString>> ovmfPairs = {{u"/usr/share/edk2/x64/OVMF_CODE.4m.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.4m.fd"_s},
+                                                      {u"/usr/share/edk2/x64/OVMF_CODE.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.fd"_s},
+                                                      {u"/usr/share/OVMF/OVMF_CODE.fd"_s, u"/usr/share/OVMF/OVMF_VARS.fd"_s},
+                                                      {u"/usr/share/OVMF/OVMF_CODE.4m.fd"_s, u"/usr/share/OVMF/OVMF_VARS.4m.fd"_s},
+                                                      {u"/usr/share/ovmf/OVMF.fd"_s, u"/usr/share/ovmf/OVMF_VARS.fd"_s},
+                                                      {u"/usr/share/ovmf/OVMF.4m.fd"_s, u"/usr/share/ovmf/OVMF_VARS.4m.fd"_s},
+                                                      {u"/usr/share/qemu/OVMF.fd"_s, u"/usr/share/qemu/OVMF_VARS.fd"_s}};
 
-    for (const auto& pair : ovmfPairs)
+    for (const auto &pair : ovmfPairs)
         if (QFile::exists(pair.first))
-            return { pair.first, pair.second };
+            return {pair.first, pair.second};
 
-    return { };
+    return {};
 }
 
 QString detectHostKeyboardLayout()
 {
-    KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kxkbrc"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kxkbrc"_s);
 
-    KConfigGroup layoutGroup(config, u"Layout"_s);
+    const KConfigGroup layoutGroup(config, u"Layout"_s);
 
     const QStringList layouts = layoutGroup.readEntry(u"LayoutList"_s, QStringList());
 
@@ -188,26 +171,25 @@ QString detectHostKeyboardLayout()
     return QLocale::system().name().left(2);
 }
 
-QString generateRandomMac(const QStringList& excludes)
+QString generateRandomMac(const QStringList &excludes)
 {
-    QRandomGenerator* rng = QRandomGenerator::global();
+    QRandomGenerator *rng = QRandomGenerator::global();
     QString mac;
     do {
-        mac = u"52:54:00:%1:%2:%3"_s
-                  .arg(rng->bounded(256), 2, 16, QChar(u'0'))
+        mac = u"52:54:00:%1:%2:%3"_s.arg(rng->bounded(256), 2, 16, QChar(u'0'))
                   .arg(rng->bounded(256), 2, 16, QChar(u'0'))
                   .arg(rng->bounded(256), 2, 16, QChar(u'0'));
     } while (excludes.contains(mac, Qt::CaseInsensitive));
     return mac;
 }
 
-bool isValidMacAddress(const QString& mac)
+bool isValidMacAddress(const QString &mac)
 {
     static const QRegularExpression re(u"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"_s);
     return re.match(mac).hasMatch();
 }
 
-QString quoteShellArg(const QString& arg)
+QString quoteShellArg(const QString &arg)
 {
     const QStringView view = arg;
     bool needsQuoting = false;

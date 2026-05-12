@@ -14,7 +14,7 @@
 #include "utils/vmconfig.h"
 #include <kmessagebox.h>
 
-CreateVmDialog::CreateVmDialog(QWidget* parent)
+CreateVmDialog::CreateVmDialog(QWidget *parent)
     : QDialog(parent)
 {
     setWindowTitle(i18n("VM Configuration"));
@@ -22,22 +22,22 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
 
     KColorScheme scheme(QPalette::Active, KColorScheme::View);
 
-    auto* mainLayout = new QVBoxLayout(this);
-    auto* tabs = new QTabWidget();
+    auto *mainLayout = new QVBoxLayout(this);
+    auto *tabs = new QTabWidget();
 
     // --- General Tab ---
-    auto* generalTab = new QWidget();
-    auto* genMainLayout = new QVBoxLayout(generalTab);
+    auto *generalTab = new QWidget();
+    auto *genMainLayout = new QVBoxLayout(generalTab);
 
-    auto* contentWidget = new QWidget();
+    auto *contentWidget = new QWidget();
     contentWidget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
-    auto* contentLayout = new QVBoxLayout(contentWidget);
+    auto *contentLayout = new QVBoxLayout(contentWidget);
     contentLayout->setContentsMargins(0, 0, 0, 0);
 
     // Top section: Name + Comment on left, Icon on right
-    auto* topLayout = new QHBoxLayout();
+    auto *topLayout = new QHBoxLayout();
 
-    auto* topFormLayout = new QFormLayout();
+    auto *topFormLayout = new QFormLayout();
     topFormLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     nameEdit = new QLineEdit();
@@ -54,7 +54,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     nameWarningLabel->setStyleSheet(infoStyle(KColorScheme::NegativeText));
     nameWarningLabel->setWordWrap(false);
     nameWarningLabel->setFixedHeight(nameWarningLabel->fontMetrics().height() + 2);
-    topFormLayout->addRow({ }, nameWarningLabel);
+    topFormLayout->addRow({}, nameWarningLabel);
 
     commentEdit = new QPlainTextEdit();
     commentEdit->setPlaceholderText(i18n("Optional notes about this VM"));
@@ -77,7 +77,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     topLayout->addWidget(iconDisplayButton, 0, Qt::AlignTop);
 
     // Remaining form fields
-    auto* genLayout = new QFormLayout();
+    auto *genLayout = new QFormLayout();
     genLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     osTypeCombo = new QComboBox();
@@ -91,9 +91,9 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     osTypeCombo->setCurrentIndex(0);
     genLayout->addRow(i18n("OS Type:"), osTypeCombo);
 
-    auto* osTypeModel = qobject_cast<QStandardItemModel*>(osTypeCombo->model());
+    auto *osTypeModel = qobject_cast<QStandardItemModel *>(osTypeCombo->model());
     if (osTypeModel) {
-        QStandardItem* item = osTypeModel->item(0);
+        QStandardItem *item = osTypeModel->item(0);
         item->setEnabled(false); // Disabled and non-reselectable once selected
     }
 
@@ -107,24 +107,24 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     osNameCombo->completer()->setModel(osNameCombo->model());
     osNameCombo->setInsertPolicy(QComboBox::NoInsert);
 
-    applyDefaultsButton = new QPushButton(QIcon::fromTheme(u"document-import"_s), { });
+    applyDefaultsButton = new QPushButton(QIcon::fromTheme(u"document-import"_s), {});
     applyDefaultsButton->setToolTip(i18n("Apply recommended RAM, CPU, disk and device settings for this OS"));
     applyDefaultsButton->setEnabled(false);
     applyDefaultsButton->setFixedWidth(applyDefaultsButton->sizeHint().height());
 
-    auto* nameLayout = new QHBoxLayout();
+    auto *nameLayout = new QHBoxLayout();
     nameLayout->addWidget(osNameCombo, 1);
     nameLayout->addWidget(applyDefaultsButton);
 
     genLayout->addRow(i18n("OS Name:"), nameLayout);
 
-    osNameLabel = qobject_cast<QLabel*>(genLayout->labelForField(nameLayout));
+    osNameLabel = qobject_cast<QLabel *>(genLayout->labelForField(nameLayout));
 
     // --- Automated Deploy Container ---
     adContainer = new QWidget();
     {
-        KColorScheme qdcontainerscheme(QPalette::Active, KColorScheme::Header);
-        QColor bg = qdcontainerscheme.background(KColorScheme::NormalBackground).color();
+        const KColorScheme qdcontainerscheme(QPalette::Active, KColorScheme::Header);
+        const QColor bg = qdcontainerscheme.background(KColorScheme::NormalBackground).color();
         adContainer->setStyleSheet(
             u"QWidget#adContainer {"
             "  background-color: %1;"
@@ -133,36 +133,36 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     }
     adContainer->setObjectName(u"adContainer"_s);
 
-    auto* adFormLayout = new QFormLayout(adContainer);
+    auto *adFormLayout = new QFormLayout(adContainer);
     adFormLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     adFormLayout->setContentsMargins(8, 8, 8, 8);
 
     automatedDeployCheck = new QCheckBox(i18n("Automated Deploy"));
     automatedDeployCheck->setToolTip(i18n("Deploy from a pre-built cloud image with cloud-init configuration."));
     automatedDeployCheck->setEnabled(false);
-    adFormLayout->addRow({ }, automatedDeployCheck);
+    adFormLayout->addRow({}, automatedDeployCheck);
 
     versionCombo = new QComboBox();
     versionCombo->addItem(i18n("(no version data available)"));
     versionCombo->setEnabled(false);
     versionCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     adFormLayout->addRow(i18n("Version:"), versionCombo);
-    versionLabel = qobject_cast<QLabel*>(adFormLayout->labelForField(versionCombo));
+    versionLabel = qobject_cast<QLabel *>(adFormLayout->labelForField(versionCombo));
 
     cloudImageCombo = new QComboBox();
     cloudImageCombo->addItem(i18n("(select a version first)"));
     cloudImageCombo->setEnabled(false);
     cloudImageCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     adFormLayout->addRow(i18n("Image:"), cloudImageCombo);
-    cloudImageLabel = qobject_cast<QLabel*>(adFormLayout->labelForField(cloudImageCombo));
+    cloudImageLabel = qobject_cast<QLabel *>(adFormLayout->labelForField(cloudImageCombo));
 
     cloudImageStatusLabel = new QLabel();
     cloudImageStatusLabel->setStyleSheet(infoStyle(KColorScheme::NeutralText));
     cloudImageStatusLabel->setFixedHeight(cloudImageStatusLabel->fontMetrics().height() + 2);
-    adFormLayout->addRow({ }, cloudImageStatusLabel);
+    adFormLayout->addRow({}, cloudImageStatusLabel);
 
     // Manual ISO path (for distros without cloud images, e.g. Windows)
-    auto* adIsoLayout = new QHBoxLayout();
+    auto *adIsoLayout = new QHBoxLayout();
     adIsoPathRequester = new KUrlRequester();
     adIsoPathRequester->setEnabled(false);
     adIsoPathRequester->lineEdit()->setPlaceholderText(i18n("Select the ISO file"));
@@ -171,18 +171,17 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     adIsoPathRequester->setNameFilter(i18n("ISO Images (*.iso)"));
     adIsoLayout->addWidget(adIsoPathRequester);
     adFormLayout->addRow(i18n("ISO Image:"), adIsoLayout);
-    adIsoLabel = qobject_cast<QLabel*>(adFormLayout->labelForField(adIsoLayout));
+    adIsoLabel = qobject_cast<QLabel *>(adFormLayout->labelForField(adIsoLayout));
     if (adIsoLabel)
         adIsoLabel->setEnabled(false);
 
     // Cloud Config Button
-    cloudInitButton = new QPushButton(
-        QIcon::fromTheme(u"preferences-system"_s), i18n("Cloud Image Settings..."));
+    cloudInitButton = new QPushButton(QIcon::fromTheme(u"preferences-system"_s), i18n("Cloud Image Settings..."));
     cloudInitButton->setToolTip(i18n("Configure hostname, user, password, SSH keys and more."));
     cloudInitButton->setEnabled(false);
     cloudInitButton->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
 
-    auto* cloudInitLayout = new QHBoxLayout();
+    auto *cloudInitLayout = new QHBoxLayout();
     cloudInitLayout->addStretch();
     cloudInitLayout->addWidget(cloudInitButton);
     adFormLayout->addRow(cloudInitLayout);
@@ -194,7 +193,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     diskSpin->setValue(40);
     diskSpin->setSuffix(i18n(" GB"));
     genLayout->addRow(i18n("Disk:"), diskSpin);
-    diskLabel = qobject_cast<QLabel*>(genLayout->labelForField(diskSpin));
+    diskLabel = qobject_cast<QLabel *>(genLayout->labelForField(diskSpin));
 
     isoPathRequester = new KUrlRequester();
     isoPathRequester->lineEdit()->setPlaceholderText(i18n("Leave empty for HDD boot"));
@@ -202,12 +201,12 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     isoPathRequester->setMode(KFile::File | KFile::ExistingOnly | KFile::LocalOnly);
     isoPathRequester->setNameFilter(i18n("ISO Images (*.iso)"));
     genLayout->addRow(i18n("ISO Image:"), isoPathRequester);
-    isoPathLabel = qobject_cast<QLabel*>(genLayout->labelForField(isoPathRequester));
+    isoPathLabel = qobject_cast<QLabel *>(genLayout->labelForField(isoPathRequester));
 
     bootFromIsoCheck = new QCheckBox(i18n("Boot from ISO"));
     bootFromIsoCheck->setToolTip(i18n("If checked, the VM boots from the ISO image instead of the hard disk."));
     bootFromIsoCheck->setEnabled(!isoPathRequester->text().isEmpty());
-    genLayout->addRow({ }, bootFromIsoCheck);
+    genLayout->addRow({}, bootFromIsoCheck);
 
     floppyPathRequester = new KUrlRequester();
     floppyPathRequester->lineEdit()->setPlaceholderText(i18n("Leave empty if not needed"));
@@ -215,17 +214,17 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     floppyPathRequester->setMode(KFile::File | KFile::ExistingOnly | KFile::LocalOnly);
     floppyPathRequester->setNameFilter(i18n("Floppy Images (*.img *.ima *.flp *.vfd);;All Files (*)"));
     genLayout->addRow(i18n("Floppy Image:"), floppyPathRequester);
-    floppyPathLabel = qobject_cast<QLabel*>(genLayout->labelForField(floppyPathRequester));
+    floppyPathLabel = qobject_cast<QLabel *>(genLayout->labelForField(floppyPathRequester));
 
     bootFromFloppyCheck = new QCheckBox(i18n("Boot from Floppy"));
     bootFromFloppyCheck->setToolTip(i18n("If checked, the VM boots from the floppy image (drive A:)."));
     bootFromFloppyCheck->setEnabled(false);
-    genLayout->addRow({ }, bootFromFloppyCheck);
+    genLayout->addRow({}, bootFromFloppyCheck);
 
-    auto* shareLayout = new QHBoxLayout();
+    auto *shareLayout = new QHBoxLayout();
     sharedPathEdit = new QLineEdit();
     sharedPathEdit->setPlaceholderText(i18n("Host directory"));
-    auto* btnBrowseShare = new QPushButton(QIcon::fromTheme(u"document-open"_s), { });
+    auto *btnBrowseShare = new QPushButton(QIcon::fromTheme(u"document-open"_s), {});
     sharedPathEdit->setClearButtonEnabled(true);
     shareLayout->addWidget(sharedPathEdit);
     shareLayout->addWidget(btnBrowseShare);
@@ -246,8 +245,8 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     tabs->addTab(generalTab, QIcon::fromTheme(u"computer"_s), i18n("General"));
 
     // --- System Tab ---
-    auto* sysTab = new QWidget();
-    auto* sysLayout = new QFormLayout(sysTab);
+    auto *sysTab = new QWidget();
+    auto *sysLayout = new QFormLayout(sysTab);
     sysLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     cpuCombo = new QComboBox();
@@ -272,7 +271,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
         i18n("Uses KVM for near-native performance. Disable for pure "
              "software emulation (TCG), which is much slower but does "
              "not require KVM and supports all CPU models."));
-    sysLayout->addRow({ }, kvmCheck);
+    sysLayout->addRow({}, kvmCheck);
 
     machineCombo = new QComboBox();
     machineCombo->addItem(VMConfig::toUIString(VMSpecs::MachineType::Q35), static_cast<int>(VMSpecs::MachineType::Q35));
@@ -282,21 +281,25 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
 
     uefiCheck = new QCheckBox(i18n("Use UEFI firmware (OVMF)"));
     uefiCheck->setToolTip(i18n("Required for Windows 11. Creates a separate VARS file."));
-    sysLayout->addRow({ }, uefiCheck);
+    sysLayout->addRow({}, uefiCheck);
 
     localTimeCheck = new QCheckBox(i18n("Use local time"));
-    localTimeCheck->setToolTip(i18n("Sets the hardware clock to local time instead of UTC.\nThis should be set for Windows/DOS guests."));
-    sysLayout->addRow({ }, localTimeCheck);
+    localTimeCheck->setToolTip(
+        i18n("Sets the hardware clock to local time instead of UTC.\nThis should "
+             "be set for Windows/DOS guests."));
+    sysLayout->addRow({}, localTimeCheck);
 
     tpmCheck = new QCheckBox(i18n("Emulate TPM 2.0 (swtpm)"));
     tpmCheck->setToolTip(i18n("Required for Windows 11. Uses swtpm as software TPM emulator."));
-    sysLayout->addRow({ }, tpmCheck);
+    sysLayout->addRow({}, tpmCheck);
 
     // Secure Boot
     secureBootCheck = new QCheckBox(i18n("Enable Secure Boot"));
-    secureBootCheck->setToolTip(i18n("Requires UEFI and Q35 chipset. Uses OVMF firmware with enrolled Microsoft keys."));
+    secureBootCheck->setToolTip(
+        i18n("Requires UEFI and Q35 chipset. Uses OVMF "
+             "firmware with enrolled Microsoft keys."));
     secureBootCheck->setEnabled(false); // Initially disabled until UEFI+Q35
-    sysLayout->addRow({ }, secureBootCheck);
+    sysLayout->addRow({}, secureBootCheck);
 
     // ACPI
     acpiCheck = new QCheckBox(i18n("Enable ACPI"));
@@ -305,17 +308,14 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
         i18n("Advanced Configuration and Power Interface. Disable for "
              "legacy guest OSes (e.g. Windows NT4, DOS) that do not "
              "support ACPI and may fail to boot with it enabled."));
-    sysLayout->addRow({ }, acpiCheck);
+    sysLayout->addRow({}, acpiCheck);
 
     // RAM
-    auto* ramContainer = new QVBoxLayout();
-    auto* ramSliderLayout = new QHBoxLayout();
+    auto *ramContainer = new QVBoxLayout();
+    auto *ramSliderLayout = new QHBoxLayout();
 
-    const QList<int> ramSteps = {
-        16, 32, 64, 128, 256, 512, 768, 1024, 1536, 2048,
-        3072, 4096, 6144, 8192, 12288, 16384, 24576, 32768,
-        49152, 65536, 98304, 131072
-    };
+    const QList<int> ramSteps = {16,   32,   64,   128,   256,   512,   768,   1024,  1536,  2048,  3072,
+                                 4096, 6144, 8192, 12288, 16384, 24576, 32768, 49152, 65536, 98304, 131072};
 
     ramSlider = new QSlider(Qt::Horizontal);
     ramSlider->setRange(0, ramSteps.size() - 1);
@@ -329,9 +329,15 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
 
     balloonCheck = new QCheckBox(i18n("VirtIO Memory Ballooning"));
     balloonCheck->setChecked(true);
-    balloonCheck->setToolTip(i18n("Allows the host system to dynamically adjust the VM's memory based on its actual usage.\nEnable this to efficiently share memory (RAM) among multiple virtual machines."));
+    balloonCheck->setToolTip(
+        i18n("Allows the host system to dynamically adjust the VM's memory based "
+             "on its actual usage.\nEnable this to efficiently share memory "
+             "(RAM) among multiple virtual machines."));
     preallocCheck = new QCheckBox(i18n("Pre-allocate Memory"));
-    preallocCheck->setToolTip(i18n("Allocates the full amount of configured memory (RAM) immediately when the VM starts.\nThis improves guest performance but strictly reserves the memory on the host."));
+    preallocCheck->setToolTip(
+        i18n("Allocates the full amount of configured memory (RAM) immediately "
+             "when the VM starts.\nThis improves guest performance but strictly "
+             "reserves the memory on the host."));
 
     ramContainer->addLayout(ramSliderLayout);
     ramContainer->addWidget(balloonCheck);
@@ -341,8 +347,8 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     tabs->addTab(sysTab, QIcon::fromTheme(u"preferences-system"_s), i18n("System"));
 
     // --- Hardware Tab ---
-    auto* hwTab = new QWidget();
-    auto* hwLayout = new QFormLayout(hwTab);
+    auto *hwTab = new QWidget();
+    auto *hwLayout = new QFormLayout(hwTab);
     hwLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     diskInterfaceCombo = new QComboBox();
@@ -353,7 +359,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
 
     diskHintLabel = new QLabel();
     diskHintLabel->setStyleSheet(infoStyle(KColorScheme::NeutralText));
-    hwLayout->addRow({ }, diskHintLabel);
+    hwLayout->addRow({}, diskHintLabel);
 
     usbCombo = new QComboBox();
     usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Xhci), static_cast<int>(VMSpecs::UsbController::Xhci));
@@ -361,17 +367,21 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Default), static_cast<int>(VMSpecs::UsbController::Default));
     usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::None), static_cast<int>(VMSpecs::UsbController::None));
     hwLayout->addRow(i18n("USB Controller:"), usbCombo);
-    usbControllerLabel = qobject_cast<QLabel*>(hwLayout->labelForField(usbCombo));
+    usbControllerLabel = qobject_cast<QLabel *>(hwLayout->labelForField(usbCombo));
 
     usbTabletCheck = new QCheckBox(i18n("USB tablet (absolute mouse positioning)"));
     usbTabletCheck->setChecked(true);
-    usbTabletCheck->setToolTip(i18n("Appends a USB HID mouse device. Provides seamless mouse integration without grabbing. Default: PS/2."));
-    hwLayout->addRow({ }, usbTabletCheck);
+    usbTabletCheck->setToolTip(
+        i18n("Appends a USB HID mouse device. Provides seamless mouse "
+             "integration without grabbing. Default: PS/2."));
+    hwLayout->addRow({}, usbTabletCheck);
 
     usbKeyboardCheck = new QCheckBox(i18n("USB keyboard"));
     usbKeyboardCheck->setChecked(false);
-    usbKeyboardCheck->setToolTip(i18n("Appends a USB HID keyboard device. Recommended for modern guests to avoid PS/2 interrupt latency. Default: PS/2."));
-    hwLayout->addRow({ }, usbKeyboardCheck);
+    usbKeyboardCheck->setToolTip(
+        i18n("Appends a USB HID keyboard device. Recommended for modern guests "
+             "to avoid PS/2 interrupt latency. Default: PS/2."));
+    hwLayout->addRow({}, usbKeyboardCheck);
 
     displayCombo = new QComboBox();
     displayCombo->addItem(VMConfig::toUIString(VMSpecs::DisplayType::Gtk), static_cast<int>(VMSpecs::DisplayType::Gtk));
@@ -426,7 +436,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
         }
     }
     hwLayout->addRow(i18n("Initial Resolution:"), resolutionCombo);
-    resolutionLabel = qobject_cast<QLabel*>(hwLayout->labelForField(resolutionCombo));
+    resolutionLabel = qobject_cast<QLabel *>(hwLayout->labelForField(resolutionCombo));
 
     audioCombo = new QComboBox();
     {
@@ -439,12 +449,12 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     audioCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     audioCombo->setCurrentIndex(1);
 
-    sb16ConfigButton = new QPushButton(QIcon::fromTheme(u"configure"_s), { });
+    sb16ConfigButton = new QPushButton(QIcon::fromTheme(u"configure"_s), {});
     sb16ConfigButton->setToolTip(i18n("Configure SB16 ISA resources"));
     sb16ConfigButton->setFixedWidth(sb16ConfigButton->sizeHint().height());
     sb16ConfigButton->setEnabled(false);
 
-    auto* audioRow = new QHBoxLayout();
+    auto *audioRow = new QHBoxLayout();
     audioRow->addWidget(audioCombo);
     audioRow->addWidget(sb16ConfigButton);
     audioRow->addStretch();
@@ -453,7 +463,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
 
     // --- SPICE Options (end of hardware tab) ---
     spiceGroup = new QGroupBox(i18n("SPICE Options"));
-    auto* spiceLayout = new QFormLayout(spiceGroup);
+    auto *spiceLayout = new QFormLayout(spiceGroup);
 
     spiceAgentCheck = new QCheckBox(i18n("Clipboard sharing and resolution sync"));
     spiceAgentCheck->setChecked(true);
@@ -469,7 +479,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     spiceUsbRedirCountSpin->setValue(2);
     spiceUsbRedirCountSpin->setEnabled(false);
     spiceLayout->addRow(i18n("Redirect channels:"), spiceUsbRedirCountSpin);
-    spiceUsbRedirCountLabel = qobject_cast<QLabel*>(spiceLayout->labelForField(spiceUsbRedirCountSpin));
+    spiceUsbRedirCountLabel = qobject_cast<QLabel *>(spiceLayout->labelForField(spiceUsbRedirCountSpin));
     spiceUsbRedirCountLabel->setEnabled(false);
 
     connect(spiceUsbRedirCheck, &QCheckBox::toggled, spiceUsbRedirCountSpin, &QSpinBox::setEnabled);
@@ -481,10 +491,10 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     tabs->addTab(hwTab, QIcon::fromTheme(u"preferences-desktop-peripherals"_s), i18n("Hardware"));
 
     // --- Network Tab ---
-    auto* netTab = new QWidget();
-    auto* netMainLayout = new QVBoxLayout(netTab);
+    auto *netTab = new QWidget();
+    auto *netMainLayout = new QVBoxLayout(netTab);
 
-    auto* netFormLayout = new QFormLayout();
+    auto *netFormLayout = new QFormLayout();
     netFormLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     netCombo = new QComboBox();
@@ -502,12 +512,12 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     networkModeCombo->addItem(VMConfig::toUIString(VMSpecs::NetworkMode::VirtualNetwork), static_cast<int>(VMSpecs::NetworkMode::VirtualNetwork));
     netFormLayout->addRow(i18n("Network Mode:"), networkModeCombo);
 
-    auto* macLayout = new QHBoxLayout();
+    auto *macLayout = new QHBoxLayout();
     macEdit = new QLineEdit();
     macEdit->setPlaceholderText(u"52:54:00:xx:xx:xx"_s);
     macEdit->setClearButtonEnabled(false);
 
-    regenerateMacButton = new QPushButton(QIcon::fromTheme(u"view-refresh"_s), { });
+    regenerateMacButton = new QPushButton(QIcon::fromTheme(u"view-refresh"_s), {});
     regenerateMacButton->setToolTip(i18n("Generate a new random MAC address"));
     regenerateMacButton->setFixedWidth(regenerateMacButton->sizeHint().height());
 
@@ -520,16 +530,16 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     macWarningLabel->setStyleSheet(u"QLabel { color: %1; font-size: 11px; }"_s.arg(scheme.foreground(KColorScheme::NegativeText).color().name()));
     macWarningLabel->setWordWrap(false);
     macWarningLabel->setFixedHeight(macWarningLabel->fontMetrics().height() + 2);
-    netFormLayout->addRow({ }, macWarningLabel);
+    netFormLayout->addRow({}, macWarningLabel);
 
     netMainLayout->addLayout(netFormLayout);
 
     // --- Passt Section (Port Forwarding) ---
     passtGroup = new QGroupBox(i18n("Port Forwarding (Host → Guest)"));
-    auto* pfLayout = new QVBoxLayout(passtGroup);
+    auto *pfLayout = new QVBoxLayout(passtGroup);
 
     portForwardTable = new QTableWidget(0, 3);
-    portForwardTable->setHorizontalHeaderLabels({ i18n("Protocol"), i18n("Host Port"), i18n("Guest Port") });
+    portForwardTable->setHorizontalHeaderLabels({i18n("Protocol"), i18n("Host Port"), i18n("Guest Port")});
     portForwardTable->horizontalHeader()->setStretchLastSection(true);
     portForwardTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     portForwardTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
@@ -539,7 +549,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     portForwardTable->setSelectionMode(QAbstractItemView::SingleSelection);
     pfLayout->addWidget(portForwardTable);
 
-    auto* pfButtonLayout = new QHBoxLayout();
+    auto *pfButtonLayout = new QHBoxLayout();
     addPortFwdButton = new QPushButton(QIcon::fromTheme(u"list-add"_s), i18n("Add Rule"));
     removePortFwdButton = new QPushButton(QIcon::fromTheme(u"list-remove"_s), i18n("Remove"));
     removePortFwdButton->setEnabled(false);
@@ -552,7 +562,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
 
     // --- Virtual Network Section ---
     vdeGroup = new QGroupBox(i18n("Virtual Network"));
-    auto* vdeLayout = new QFormLayout(vdeGroup);
+    auto *vdeLayout = new QFormLayout(vdeGroup);
     vdeLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     virtualNetworkCombo = new QComboBox();
     vdeLayout->addRow(i18n("Network:"), virtualNetworkCombo);
@@ -566,8 +576,8 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     tabs->addTab(netTab, QIcon::fromTheme(u"network-wired"_s), i18n("Network"));
 
     // --- Advanced Tab ---
-    auto* advTab = new QWidget();
-    auto* advLayout = new QFormLayout(advTab);
+    auto *advTab = new QWidget();
+    auto *advLayout = new QFormLayout(advTab);
     advLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     extraArgsEdit = new QLineEdit();
@@ -598,21 +608,22 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     });
     connect(automatedDeployCheck, &QCheckBox::toggled, this, &CreateVmDialog::onAutomatedDeployToggled);
     connect(versionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CreateVmDialog::onVersionChanged);
-    connect(cloudImageCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-        this, [this]() {
-            updateCloudImageStatus();
-            updateAutomatedDeployWidgets();
-        });
-    connect(adIsoPathRequester, &KUrlRequester::textChanged, this, [this]() { validateForm(); });
+    connect(cloudImageCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
+        updateCloudImageStatus();
+        updateAutomatedDeployWidgets();
+    });
+    connect(adIsoPathRequester, &KUrlRequester::textChanged, this, [this]() {
+        validateForm();
+    });
     connect(cloudInitButton, &QPushButton::clicked, this, &CreateVmDialog::openCloudConfigDialog);
-    connect(isoPathRequester, &KUrlRequester::textChanged, this, [this](const QString& text) {
-        bool hasIso = !text.trimmed().isEmpty();
+    connect(isoPathRequester, &KUrlRequester::textChanged, this, [this](const QString &text) {
+        const bool hasIso = !text.trimmed().isEmpty();
         bootFromIsoCheck->setEnabled(hasIso);
         bootFromIsoCheck->setChecked(hasIso);
     });
 
     connect(floppyPathRequester, &KUrlRequester::textChanged, this, [this]() {
-        bool hasFloppy = !floppyPathRequester->text().trimmed().isEmpty();
+        const bool hasFloppy = !floppyPathRequester->text().trimmed().isEmpty();
         bootFromFloppyCheck->setEnabled(hasFloppy);
         if (!hasFloppy)
             bootFromFloppyCheck->setChecked(false);
@@ -631,7 +642,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     });
 
     connect(btnBrowseShare, &QPushButton::clicked, this, &CreateVmDialog::browseSharedDir);
-    connect(sharedPathEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
+    connect(sharedPathEdit, &QLineEdit::textChanged, this, [this](const QString &text) {
         sharedNameEdit->setEnabled(!text.isEmpty());
         if (!text.isEmpty() && sharedNameEdit->text().isEmpty()) {
             QString folderName = QFileInfo(text).fileName();
@@ -642,20 +653,21 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
         }
         validateForm();
     });
-    connect(sharedNameEdit, &QLineEdit::textChanged, this, [this] { validateForm(); });
+    connect(sharedNameEdit, &QLineEdit::textChanged, this, [this] {
+        validateForm();
+    });
 
     connect(kvmCheck, &QCheckBox::toggled, this, [this](bool enabled) {
-        auto* model = qobject_cast<QStandardItemModel*>(cpuCombo->model());
+        auto *model = qobject_cast<QStandardItemModel *>(cpuCombo->model());
         if (!model)
             return;
 
-        int hostIdx = cpuCombo->findData(static_cast<int>(VMSpecs::CpuModel::Host));
+        const int hostIdx = cpuCombo->findData(static_cast<int>(VMSpecs::CpuModel::Host));
         if (hostIdx >= 0) {
-            QStandardItem* item = model->item(hostIdx);
+            QStandardItem *item = model->item(hostIdx);
             item->setEnabled(enabled);
             if (!enabled && cpuCombo->currentIndex() == hostIdx) {
-                int fallback = cpuCombo->findData(
-                    static_cast<int>(VMSpecs::CpuModel::Qemu64));
+                const int fallback = cpuCombo->findData(static_cast<int>(VMSpecs::CpuModel::Qemu64));
                 if (fallback >= 0)
                     cpuCombo->setCurrentIndex(fallback);
             }
@@ -668,7 +680,8 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
 
         const auto currentMachine = static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt());
 
-        // Only switch the chipset automatically if the new CPU is incompatible with the currently selected chipset.
+        // Only switch the chipset automatically if the new CPU is incompatible with
+        // the currently selected chipset.
         if (!VMConfig::isCpuCompatible(selectedCpu, currentMachine)) {
             const auto recommendedMachine = VMConfig::recommendedMachineType(selectedCpu);
             const int idx = machineCombo->findData(static_cast<int>(recommendedMachine));
@@ -689,7 +702,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
         int minDiff = std::numeric_limits<int>::max();
 
         for (int i = 0; i < ramSteps.size(); ++i) {
-            int diff = std::abs(ramSteps[i] - mb);
+            const int diff = std::abs(ramSteps[i] - mb);
             if (diff < minDiff) {
                 minDiff = diff;
                 bestIndex = i;
@@ -705,30 +718,27 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CreateVmDialog::updateDiskInterfaceHint);
     connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CreateVmDialog::onMachineTypeChanged);
 
-    connect(usbCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-        this, [this]() {
-            const bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
-            usbTabletCheck->setEnabled(hasUsb);
-            usbKeyboardCheck->setEnabled(hasUsb);
-            if (!hasUsb) {
-                usbTabletCheck->setChecked(false);
-                usbKeyboardCheck->setChecked(false);
-            }
+    connect(usbCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
+        const bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
+        usbTabletCheck->setEnabled(hasUsb);
+        usbKeyboardCheck->setEnabled(hasUsb);
+        if (!hasUsb) {
+            usbTabletCheck->setChecked(false);
+            usbKeyboardCheck->setChecked(false);
+        }
 
-            // SPICE USB redirection requires an USB controller
-            spiceUsbRedirCheck->setEnabled(hasUsb);
-            if (!hasUsb)
-                spiceUsbRedirCheck->setChecked(false);
+        // SPICE USB redirection requires an USB controller
+        spiceUsbRedirCheck->setEnabled(hasUsb);
+        if (!hasUsb)
+            spiceUsbRedirCheck->setChecked(false);
 
-            const QString tip = hasUsb
-                ? QString()
-                : i18n("Requires a USB controller.");
-            spiceUsbRedirCheck->setToolTip(tip);
-        });
+        const QString tip = hasUsb ? QString() : i18n("Requires a USB controller.");
+        spiceUsbRedirCheck->setToolTip(tip);
+    });
 
     auto updateSecureBootState = [this]() {
-        bool uefiOn = uefiCheck->isChecked();
-        bool q35 = (machineCombo->currentData().toInt() == static_cast<int>(VMSpecs::MachineType::Q35));
+        const bool uefiOn = uefiCheck->isChecked();
+        const bool q35 = (machineCombo->currentData().toInt() == static_cast<int>(VMSpecs::MachineType::Q35));
         secureBootCheck->setEnabled(uefiOn && q35);
         if (!uefiOn || !q35) {
             secureBootCheck->setChecked(false);
@@ -739,42 +749,40 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     connect(gpuCombo, &QComboBox::currentIndexChanged, this, &CreateVmDialog::onGpuDisplayChanged);
     connect(displayCombo, &QComboBox::currentIndexChanged, this, &CreateVmDialog::onGpuDisplayChanged);
     connect(accel3dCheck, &QCheckBox::toggled, this, &CreateVmDialog::onGpuDisplayChanged);
-    connect(audioCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-        this, [this]() {
-            sb16ConfigButton->setEnabled(static_cast<VMSpecs::AudioDevice>(audioCombo->currentData().toInt()) == VMSpecs::AudioDevice::Sb16);
-        });
+    connect(audioCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
+        sb16ConfigButton->setEnabled(static_cast<VMSpecs::AudioDevice>(audioCombo->currentData().toInt()) == VMSpecs::AudioDevice::Sb16);
+    });
     connect(sb16ConfigButton, &QPushButton::clicked, this, [this]() {
         QDialog dlg(this);
         dlg.setWindowTitle(i18n("Sound Blaster 16 Configuration"));
 
-        auto* form = new QFormLayout(&dlg);
+        auto *form = new QFormLayout(&dlg);
 
-        auto* irqCombo = new QComboBox;
-        for (int v : { 2, 3, 5, 7, 9, 10, 11 })
+        auto *irqCombo = new QComboBox;
+        for (const int v : {2, 3, 5, 7, 9, 10, 11})
             irqCombo->addItem(QString::number(v), v);
         irqCombo->setCurrentIndex(irqCombo->findData(m_sb16Config.irq));
         form->addRow(i18n("IRQ:"), irqCombo);
 
-        auto* dmaCombo = new QComboBox;
-        for (int v : { 0, 1, 3 })
+        auto *dmaCombo = new QComboBox;
+        for (const int v : {0, 1, 3})
             dmaCombo->addItem(QString::number(v), v);
         dmaCombo->setCurrentIndex(dmaCombo->findData(m_sb16Config.dma));
         form->addRow(i18n("DMA (8-bit):"), dmaCombo);
 
-        auto* dma16Combo = new QComboBox;
-        for (int v : { 5, 6, 7 })
+        auto *dma16Combo = new QComboBox;
+        for (const int v : {5, 6, 7})
             dma16Combo->addItem(QString::number(v), v);
         dma16Combo->setCurrentIndex(dma16Combo->findData(m_sb16Config.dma16));
         form->addRow(i18n("DMA (16-bit):"), dma16Combo);
 
-        auto* iobaseCombo = new QComboBox;
-        for (int v : { 0x220, 0x240, 0x260, 0x280 })
+        auto *iobaseCombo = new QComboBox;
+        for (const int v : {0x220, 0x240, 0x260, 0x280})
             iobaseCombo->addItem(u"0x%1"_s.arg(v, 0, 16), v);
         iobaseCombo->setCurrentIndex(iobaseCombo->findData(m_sb16Config.iobase));
         form->addRow(i18n("I/O Base:"), iobaseCombo);
 
-        auto* buttons = new QDialogButtonBox(
-            QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
         form->addRow(buttons);
         connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
         connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
@@ -791,16 +799,14 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
     connect(portForwardTable, &QTableWidget::itemSelectionChanged, this, [this]() {
         removePortFwdButton->setEnabled(portForwardTable->currentRow() >= 0);
     });
-    connect(networkModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-        this, [this]() {
-            auto mode = static_cast<VMSpecs::NetworkMode>(
-                networkModeCombo->currentData().toInt());
-            passtGroup->setVisible(mode == VMSpecs::NetworkMode::Passt);
-            vdeGroup->setVisible(mode == VMSpecs::NetworkMode::VirtualNetwork);
-        });
+    connect(networkModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
+        auto mode = static_cast<VMSpecs::NetworkMode>(networkModeCombo->currentData().toInt());
+        passtGroup->setVisible(mode == VMSpecs::NetworkMode::Passt);
+        vdeGroup->setVisible(mode == VMSpecs::NetworkMode::VirtualNetwork);
+    });
 
     connect(netCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
-        bool hasNetwork = static_cast<VMSpecs::NetworkCard>(netCombo->currentData().toInt()) != VMSpecs::NetworkCard::None;
+        const bool hasNetwork = static_cast<VMSpecs::NetworkCard>(netCombo->currentData().toInt()) != VMSpecs::NetworkCard::None;
         networkModeCombo->setEnabled(hasNetwork);
         macEdit->setEnabled(hasNetwork);
         passtGroup->setEnabled(hasNetwork);
@@ -808,7 +814,7 @@ CreateVmDialog::CreateVmDialog(QWidget* parent)
         portForwardTable->setEnabled(hasNetwork);
         addPortFwdButton->setEnabled(hasNetwork);
         auto card = static_cast<VMSpecs::NetworkCard>(netCombo->currentData().toInt());
-        bool hasNet = (card != VMSpecs::NetworkCard::None);
+        const bool hasNet = (card != VMSpecs::NetworkCard::None);
         regenerateMacButton->setEnabled(hasNet);
         if (hasNet && macEdit->text().isEmpty())
             macEdit->setText(Utils::generateRandomMac(usedMacAddresses()));
@@ -864,7 +870,7 @@ void CreateVmDialog::chooseFromIconSet()
     const QDir baseDir(VMConfig::osIconDir());
     selectedIconSetFilename = baseDir.relativeFilePath(path);
 
-    customIcon = { };
+    customIcon = {};
     selectedIconName.clear();
     iconManuallySet = true;
     updateIconDisplay();
@@ -878,24 +884,21 @@ void CreateVmDialog::chooseThemeIcon()
 
     selectedIconName = icon;
     selectedIconSetFilename.clear();
-    customIcon = { };
+    customIcon = {};
     iconManuallySet = true;
     updateIconDisplay();
 }
 
 void CreateVmDialog::browseCustomIcon()
 {
-    const QString path = QFileDialog::getOpenFileName(
-        this,
-        i18n("Select Icon Image"),
-        QDir::homePath(),
-        i18n("Images (*.png *.svg *.svgz *.xpm *.ico *.jpg *.jpeg *.bmp)"));
+    const QString path =
+        QFileDialog::getOpenFileName(this, i18n("Select Icon Image"), QDir::homePath(), i18n("Images (*.png *.svg *.svgz *.xpm *.ico *.jpg *.jpeg *.bmp)"));
 
     if (path.isEmpty())
         return;
 
     // Load as QIcon directly - handles all formats including SVG
-    QIcon icon(path);
+    const QIcon icon(path);
     if (icon.isNull()) {
         KMessageBox::error(this, i18n("Failed to load icon from: %1", path));
         return;
@@ -912,13 +915,13 @@ void CreateVmDialog::clearIcon()
 {
     selectedIconName.clear();
     selectedIconSetFilename.clear();
-    customIcon = { };
+    customIcon = {};
     iconManuallySet = false;
 
     updateIconDisplay();
 }
 
-void CreateVmDialog::showIconContextMenu(const QPoint& pos)
+void CreateVmDialog::showIconContextMenu(const QPoint &pos)
 {
     QMenu menu(this);
     menu.addAction(QIcon::fromTheme(u"preferences-desktop-icons"_s), i18n("Choose Icon..."), this, &CreateVmDialog::chooseFromIconSet);
@@ -940,7 +943,7 @@ void CreateVmDialog::openCloudConfigDialog()
         // Set templateId based on selected distro (not managed by the dialog)
         if (m_imageDatabase) {
             const QString tplId = osNameCombo->currentData().toString();
-            if (auto* d = m_imageDatabase->findById(tplId)) {
+            if (auto *d = m_imageDatabase->findById(tplId)) {
                 m_cloudConfig.templateId = d->cloudInitTemplate;
                 m_cloudConfig.networkTemplateId = d->networkTemplate;
             }
@@ -950,9 +953,7 @@ void CreateVmDialog::openCloudConfigDialog()
 
 void CreateVmDialog::browseQdIso()
 {
-    QString path = QFileDialog::getOpenFileName(
-        this, i18n("Select ISO Image"), QDir::homePath(),
-        i18n("ISO Files (*.iso);;All Files (*)"));
+    const QString path = QFileDialog::getOpenFileName(this, i18n("Select ISO Image"), QDir::homePath(), i18n("ISO Files (*.iso);;All Files (*)"));
     if (!path.isEmpty())
         adIsoPathRequester->setText(path);
     validateForm();
@@ -972,7 +973,7 @@ void CreateVmDialog::updateIconDisplay()
     if (!selectedIconSetFilename.isEmpty()) {
         QString dir = VMConfig::osIconDir();
         if (!dir.isEmpty()) {
-            QString fullPath = dir + u"/"_s + selectedIconSetFilename;
+            const QString fullPath = dir + u"/"_s + selectedIconSetFilename;
             if (QFile::exists(fullPath)) {
                 // Handle SVG icons from icon set
                 if (fullPath.endsWith(u".svg", Qt::CaseInsensitive)) {
@@ -997,7 +998,7 @@ void CreateVmDialog::updateIconDisplay()
         // Get themed icon at appropriate size
         const QIcon themedIcon = QIcon::fromTheme(selectedIconName);
         if (!themedIcon.isNull()) {
-            QPixmap scaled = themedIcon.pixmap(targetSize);
+            const QPixmap scaled = themedIcon.pixmap(targetSize);
             if (!scaled.isNull()) {
                 iconDisplayButton->setIcon(QIcon(scaled));
             } else {
@@ -1032,7 +1033,7 @@ void CreateVmDialog::onRamSpinChanged(int mb)
 
 void CreateVmDialog::browseSharedDir()
 {
-    QString dir = QFileDialog::getExistingDirectory(this, i18n("Select shared folder"), QDir::homePath());
+    const QString dir = QFileDialog::getExistingDirectory(this, i18n("Select shared folder"), QDir::homePath());
     if (!dir.isEmpty())
         sharedPathEdit->setText(dir);
 }
@@ -1044,7 +1045,7 @@ void CreateVmDialog::onOsTypeChanged(int /*index*/)
     if (typeVal == -1) {
         // Placeholder
         osNameCombo->clear();
-        osNameCombo->addItem(i18n("-- Please select --"), { });
+        osNameCombo->addItem(i18n("-- Please select --"), {});
         osNameCombo->setCurrentIndex(0);
         osNameCombo->setEnabled(false);
         osNameLabel->setEnabled(false);
@@ -1080,12 +1081,12 @@ void CreateVmDialog::onOsNameChanged(int /*index*/)
     bool quickDeployAllowed = true;
 
     if (m_imageDatabase && !distroId.isEmpty() && distroId != u"other"_s) {
-        const auto* d = m_imageDatabase->findById(distroId);
+        const auto *d = m_imageDatabase->findById(distroId);
         hasReleases = d && !d->releases.isEmpty();
 
         if (d) {
             quickDeployAllowed = false;
-            for (const auto& r : d->releases) {
+            for (const auto &r : d->releases) {
                 if (r.quickDeploy) {
                     quickDeployAllowed = true;
                     break;
@@ -1104,7 +1105,7 @@ void CreateVmDialog::onOsNameChanged(int /*index*/)
         cloudImageStatusLabel->clear();
         int minDiskGb = KEMUConst::DefaultMinDiskSizeGB;
         if (m_imageDatabase) {
-            int templateMin = m_imageDatabase->minDiskGbFor(distroId, { });
+            const int templateMin = m_imageDatabase->minDiskGbFor(distroId, {});
             minDiskGb = qMin(minDiskGb, templateMin);
         }
         diskSpin->setMinimum(minDiskGb);
@@ -1135,7 +1136,7 @@ void CreateVmDialog::onGpuDisplayChanged()
     if (gpu == VMSpecs::GpuType::CirrusGD5430 || gpu == VMSpecs::GpuType::CirrusGD5446) {
         gpuMemSpin->setSingleStep(4);
         // Snap to nearest valid value
-        int val = gpuMemSpin->value();
+        const int val = gpuMemSpin->value();
         if (val <= 4)
             gpuMemSpin->setValue(4);
         else if (val <= 8)
@@ -1159,16 +1160,16 @@ void CreateVmDialog::onGpuDisplayChanged()
     // Hints (mutually exclusive, priority order)
     if (isSpice && !isQxl) {
         gpuHintLabel->setText(u"<i>"_s
-            + i18n("Tip: QXL is optimized for SPICE and offers better 2D performance.")
-            + u"</i>"_s);
+                              + i18n("Tip: QXL is optimized for SPICE and offers "
+                                     "better 2D performance.")
+                              + u"</i>"_s);
     } else if (isQxl && !isSpice) {
-        gpuHintLabel->setText(u"<i>"_s
-            + i18n("Tip: QXL works best with the SPICE display.")
-            + u"</i>"_s);
+        gpuHintLabel->setText(u"<i>"_s + i18n("Tip: QXL works best with the SPICE display.") + u"</i>"_s);
     } else if (can3d && isWindows && accel3dCheck->isChecked()) {
         gpuHintLabel->setText(u"<i>"_s
-            + i18n("Note: VirtIO 3D acceleration is not supported on Windows guests.")
-            + u"</i>"_s);
+                              + i18n("Note: VirtIO 3D acceleration is not supported "
+                                     "on Windows guests.")
+                              + u"</i>"_s);
     } else {
         gpuHintLabel->clear();
     }
@@ -1192,7 +1193,7 @@ void CreateVmDialog::onVersionChanged(int /*index*/)
         return;
     }
 
-    bool qdEnabled = m_imageDatabase->isQuickDeployEnabled(tplId, version);
+    const bool qdEnabled = m_imageDatabase->isQuickDeployEnabled(tplId, version);
 
     if (!qdEnabled) {
         automatedDeployCheck->setChecked(false);
@@ -1204,13 +1205,13 @@ void CreateVmDialog::onVersionChanged(int /*index*/)
     }
 
     auto images = m_imageDatabase->cloudImagesFor(tplId, version, SettingsDialog::showAllArchitectures());
-    for (const auto& img : images) {
-        QString label = u"%1 (%2)"_s.arg(img.arch, img.format);
+    for (const auto &img : images) {
+        const QString label = u"%1 (%2)"_s.arg(img.arch, img.format);
         cloudImageCombo->addItem(label);
     }
 
     if (m_imageDatabase && automatedDeployCheck->isChecked()) {
-        int minGb = m_imageDatabase->minDiskGbFor(tplId, version);
+        const int minGb = m_imageDatabase->minDiskGbFor(tplId, version);
         diskSpin->setMinimum(minGb);
         if (diskSpin->value() < minGb)
             diskSpin->setValue(minGb);
@@ -1238,16 +1239,16 @@ void CreateVmDialog::onAutomatedDeployToggled(bool checked)
     validateForm();
 }
 
-void CreateVmDialog::onNameChanged(const QString& text)
+void CreateVmDialog::onNameChanged(const QString &text)
 {
     // OS guessing
     bool found;
     auto [type, variantId] = VMConfig::guessOSFromText(text, &found);
     if (found) {
-        int typeIndex = osTypeCombo->findData(static_cast<int>(type));
+        const int typeIndex = osTypeCombo->findData(static_cast<int>(type));
         if (typeIndex >= 0 && osTypeCombo->currentIndex() != typeIndex)
             osTypeCombo->setCurrentIndex(typeIndex);
-        int variantIndex = osNameCombo->findData(variantId);
+        const int variantIndex = osNameCombo->findData(variantId);
         if (variantIndex >= 0 && osNameCombo->currentIndex() != variantIndex)
             osNameCombo->setCurrentIndex(variantIndex);
         autoSetIconFromOS();
@@ -1258,21 +1259,21 @@ void CreateVmDialog::onNameChanged(const QString& text)
 
 void CreateVmDialog::addPortForwardRow()
 {
-    int row = portForwardTable->rowCount();
+    const int row = portForwardTable->rowCount();
     portForwardTable->insertRow(row);
 
-    auto* protocolCombo = new QComboBox();
+    auto *protocolCombo = new QComboBox();
     protocolCombo->addItem(u"TCP"_s, static_cast<int>(PortForwardRule::Protocol::Tcp));
     protocolCombo->addItem(u"UDP"_s, static_cast<int>(PortForwardRule::Protocol::Udp));
     portForwardTable->setCellWidget(row, 0, protocolCombo);
 
-    auto* hostPortSpin = new QSpinBox();
+    auto *hostPortSpin = new QSpinBox();
     hostPortSpin->setRange(1, 65535);
     hostPortSpin->setValue(8080);
     hostPortSpin->setFrame(false);
     portForwardTable->setCellWidget(row, 1, hostPortSpin);
 
-    auto* guestPortSpin = new QSpinBox();
+    auto *guestPortSpin = new QSpinBox();
     guestPortSpin->setRange(1, 65535);
     guestPortSpin->setValue(8080);
     guestPortSpin->setFrame(false);
@@ -1284,7 +1285,7 @@ void CreateVmDialog::addPortForwardRow()
 
 void CreateVmDialog::removePortForwardRow()
 {
-    int row = portForwardTable->currentRow();
+    const int row = portForwardTable->currentRow();
     if (row >= 0)
         portForwardTable->removeRow(row);
     removePortFwdButton->setEnabled(portForwardTable->rowCount() > 0);
@@ -1304,11 +1305,11 @@ void CreateVmDialog::filterOsVariants(VMSpecs::OsType osType)
     }
 
     if (m_imageDatabase) {
-        for (const auto& d : m_imageDatabase->templatesForType(osType))
+        for (const auto &d : m_imageDatabase->templatesForType(osType))
             osNameCombo->addItem(d.displayName, d.id);
     }
 
-    if (auto* comp = osNameCombo->completer())
+    if (auto *comp = osNameCombo->completer())
         comp->setCompletionMode(QCompleter::PopupCompletion);
 
     if (osNameCombo->count() > 0)
@@ -1331,7 +1332,7 @@ void CreateVmDialog::autoSetIconFromOS()
 
     selectedIconName.clear();
     selectedIconSetFilename.clear();
-    customIcon = { };
+    customIcon = {};
 
     if (!path.isEmpty() && QFile::exists(path)) {
         const QDir baseDir(VMConfig::osIconDir());
@@ -1354,7 +1355,7 @@ void CreateVmDialog::populateVersions()
         return;
     }
 
-    for (const auto& r : m_imageDatabase->releasesFor(distroId)) {
+    for (const auto &r : m_imageDatabase->releasesFor(distroId)) {
         QString label = r.displayString();
         if (r.lts)
             label += u" (LTS)"_s;
@@ -1371,13 +1372,13 @@ void CreateVmDialog::populateVersions()
 
     versionCombo->setCurrentIndex(0);
 
-    bool active = automatedDeployCheck->isChecked();
+    const bool active = automatedDeployCheck->isChecked();
     versionCombo->setEnabled(active);
     versionLabel->setEnabled(active);
     cloudImageLabel->setEnabled(active);
 }
 
-void CreateVmDialog::setupForEdit(const VMConfig& config)
+void CreateVmDialog::setupForEdit(const VMConfig &config)
 {
     isEditMode = true;
     setWindowTitle(i18n("Edit VM: %1", config.name()));
@@ -1393,8 +1394,8 @@ void CreateVmDialog::setupForEdit(const VMConfig& config)
 
     commentEdit->setPlainText(config.comment());
 
-    auto setCombo = [](QComboBox* combo, auto enumValue) {
-        int idx = combo->findData(static_cast<int>(enumValue));
+    auto setCombo = [](QComboBox *combo, auto enumValue) {
+        const int idx = combo->findData(static_cast<int>(enumValue));
         if (idx >= 0)
             combo->setCurrentIndex(idx);
     };
@@ -1422,18 +1423,18 @@ void CreateVmDialog::setupForEdit(const VMConfig& config)
     case VMConfig::IconSource::IconSet:
         selectedIconSetFilename = config.iconIdentifier();
         selectedIconName.clear();
-        customIcon = { };
+        customIcon = {};
         break;
     case VMConfig::IconSource::SystemTheme:
         selectedIconName = config.iconIdentifier();
         selectedIconSetFilename.clear();
-        customIcon = { };
+        customIcon = {};
         break;
     case VMConfig::IconSource::None:
     default:
         selectedIconName.clear();
         selectedIconSetFilename.clear();
-        customIcon = { };
+        customIcon = {};
         break;
     }
 
@@ -1453,16 +1454,16 @@ void CreateVmDialog::setupForEdit(const VMConfig& config)
     floppyPathRequester->setText(config.floppyPath());
     bootFromFloppyCheck->setChecked(config.bootFromFloppy());
     macEdit->setText(config.macAddress());
-    for (const auto& rule : config.portForwards()) {
+    for (const auto &rule : config.portForwards()) {
         addPortForwardRow();
         const int row = portForwardTable->rowCount() - 1;
 
-        auto* protocolCombo = qobject_cast<QComboBox*>(portForwardTable->cellWidget(row, 0));
-        auto* hostPortSpin = qobject_cast<QSpinBox*>(portForwardTable->cellWidget(row, 1));
-        auto* guestPortSpin = qobject_cast<QSpinBox*>(portForwardTable->cellWidget(row, 2));
+        auto *protocolCombo = qobject_cast<QComboBox *>(portForwardTable->cellWidget(row, 0));
+        auto *hostPortSpin = qobject_cast<QSpinBox *>(portForwardTable->cellWidget(row, 1));
+        auto *guestPortSpin = qobject_cast<QSpinBox *>(portForwardTable->cellWidget(row, 2));
 
         if (protocolCombo) {
-            int idx = protocolCombo->findData(static_cast<int>(rule.protocol));
+            const int idx = protocolCombo->findData(static_cast<int>(rule.protocol));
             if (idx >= 0)
                 protocolCombo->setCurrentIndex(idx);
         }
@@ -1483,11 +1484,11 @@ void CreateVmDialog::setupForEdit(const VMConfig& config)
         const auto configuredType = config.displayType();
         const auto fallbackType = VMSpecs::DisplayType::Gtk;
         KMessageBox::information(this,
-            i18n("The configured display type '%1' is currently not available.\n"
-                 "KEMU will set to '%2' instead.\n\n",
-                VMConfig::toUIString(configuredType),
-                VMConfig::toUIString(fallbackType)),
-            i18n("Display Type Unavailable"));
+                                 i18n("The configured display type '%1' is currently not available.\n"
+                                      "KEMU will set to '%2' instead.\n\n",
+                                      VMConfig::toUIString(configuredType),
+                                      VMConfig::toUIString(fallbackType)),
+                                 i18n("Display Type Unavailable"));
     }
 
     setCombo(displayCombo, config.displayType());
@@ -1502,7 +1503,7 @@ void CreateVmDialog::setupForEdit(const VMConfig& config)
     setCombo(netCombo, config.networkCard());
     setCombo(networkModeCombo, config.networkMode());
     if (virtualNetworkCombo->count() > 0) {
-        int vnIdx = virtualNetworkCombo->findData(config.virtualNetworkName());
+        const int vnIdx = virtualNetworkCombo->findData(config.virtualNetworkName());
         if (vnIdx >= 0)
             virtualNetworkCombo->setCurrentIndex(vnIdx);
     }
@@ -1528,18 +1529,18 @@ void CreateVmDialog::setupForEdit(const VMConfig& config)
     adContainer->setVisible(false);
 }
 
-void CreateVmDialog::setExistingVmNames(const QStringList& names)
+void CreateVmDialog::setExistingVmNames(const QStringList &names)
 {
     existingVmNames = names;
     onNameChanged(nameEdit->text());
 }
 
-void CreateVmDialog::setMacUsageInfo(const QList<MacUsageInfo>& info)
+void CreateVmDialog::setMacUsageInfo(const QList<MacUsageInfo> &info)
 {
     m_macUsageInfo = info;
 }
 
-void CreateVmDialog::setImageDatabase(ImageDatabase* db)
+void CreateVmDialog::setImageDatabase(ImageDatabase *db)
 {
     m_imageDatabase = db;
 
@@ -1548,22 +1549,21 @@ void CreateVmDialog::setImageDatabase(ImageDatabase* db)
         filterOsVariants(static_cast<VMSpecs::OsType>(typeVal));
 }
 
-void CreateVmDialog::setNetworkManager(VirtualNetworkManager* mgr)
+void CreateVmDialog::setNetworkManager(VirtualNetworkManager *mgr)
 {
     m_networkManager = mgr;
     virtualNetworkCombo->clear();
     if (!mgr)
         return;
-    for (const auto& net : mgr->networks())
+    for (const auto &net : mgr->networks())
         virtualNetworkCombo->addItem(net.name, net.name);
 
     if (mgr->networks().isEmpty()) {
-        auto* model = qobject_cast<QStandardItemModel*>(networkModeCombo->model());
+        auto *model = qobject_cast<QStandardItemModel *>(networkModeCombo->model());
         if (model) {
-            int idx = networkModeCombo->findData(
-                static_cast<int>(VMSpecs::NetworkMode::VirtualNetwork));
+            const int idx = networkModeCombo->findData(static_cast<int>(VMSpecs::NetworkMode::VirtualNetwork));
             if (idx >= 0) {
-                QStandardItem* item = model->item(idx);
+                QStandardItem *item = model->item(idx);
                 item->setEnabled(false);
                 item->setToolTip(i18n("Create a virtual network first in Settings"));
             }
@@ -1584,16 +1584,16 @@ CloudImageInfo CreateVmDialog::selectedCloudImage() const
     const QString distroId = osNameCombo->currentData().toString();
     const QString version = versionCombo->currentData().toString();
     const auto images = m_imageDatabase->cloudImagesFor(distroId, version, SettingsDialog::showAllArchitectures());
-    int idx = cloudImageCombo->currentIndex();
+    const int idx = cloudImageCombo->currentIndex();
     if (idx >= 0 && idx < images.size())
         return images[idx];
-    return { };
+    return {};
 }
 
 VMConfig CreateVmDialog::selectedDefaults() const
 {
     if (!m_imageDatabase)
-        return { };
+        return {};
     return m_imageDatabase->defaultsFor(osNameCombo->currentData().toString());
 }
 
@@ -1631,7 +1631,7 @@ VMConfig CreateVmDialog::getResult() const
         c.setIconIdentifier(selectedIconName);
     } else {
         c.setIconSource(VMConfig::IconSource::None);
-        c.setIconIdentifier({ });
+        c.setIconIdentifier({});
     }
 
     c.setCpuModel(static_cast<VMSpecs::CpuModel>(cpuCombo->currentData().toInt()));
@@ -1670,9 +1670,9 @@ VMConfig CreateVmDialog::getResult() const
     c.setVirtualNetworkName(virtualNetworkCombo->currentData().toString());
     QList<PortForwardRule> rules;
     for (int row = 0; row < portForwardTable->rowCount(); ++row) {
-        auto* protocolCombo = qobject_cast<QComboBox*>(portForwardTable->cellWidget(row, 0));
-        auto* hostPortSpin = qobject_cast<QSpinBox*>(portForwardTable->cellWidget(row, 1));
-        auto* guestPortSpin = qobject_cast<QSpinBox*>(portForwardTable->cellWidget(row, 2));
+        auto *protocolCombo = qobject_cast<QComboBox *>(portForwardTable->cellWidget(row, 0));
+        auto *hostPortSpin = qobject_cast<QSpinBox *>(portForwardTable->cellWidget(row, 1));
+        auto *guestPortSpin = qobject_cast<QSpinBox *>(portForwardTable->cellWidget(row, 2));
         if (!protocolCombo || !hostPortSpin || !guestPortSpin)
             continue;
         PortForwardRule rule;
@@ -1690,10 +1690,10 @@ VMConfig CreateVmDialog::getResult() const
     return c;
 }
 
-void CreateVmDialog::applyReleaseDefaults(const VMConfig& defaults)
+void CreateVmDialog::applyReleaseDefaults(const VMConfig &defaults)
 {
-    const auto setCombo = [](QComboBox* combo, auto enumValue) {
-        int idx = combo->findData(static_cast<int>(enumValue));
+    const auto setCombo = [](QComboBox *combo, auto enumValue) {
+        const int idx = combo->findData(static_cast<int>(enumValue));
         if (idx >= 0)
             combo->setCurrentIndex(idx);
     };
@@ -1786,11 +1786,11 @@ void CreateVmDialog::updateCloudImageStatus()
     const bool showAll = SettingsDialog::showAllArchitectures();
     const auto images = m_imageDatabase->cloudImagesFor(distroId, version, showAll);
 
-    int idx = cloudImageCombo->currentIndex();
+    const int idx = cloudImageCombo->currentIndex();
     if (idx < 0 || idx >= images.size())
         return;
 
-    const auto& img = images[idx];
+    const auto &img = images[idx];
 
     if (!ImageDatabase::isArchCompatible(img.arch)) {
         cloudImageStatusLabel->setText(i18n("! Foreign architecture -- emulation not yet supported"));
@@ -1810,25 +1810,20 @@ void CreateVmDialog::updateDiskInterfaceHint()
     const auto os = static_cast<VMSpecs::OsType>(osTypeCombo->currentData().toInt());
     if (disk == VMSpecs::DiskInterface::SataIde) {
         if (machine == VMSpecs::MachineType::Q35) {
-            diskHintLabel->setText(u"<i>"_s
-                + i18n("Q35 chipset: disk attached via AHCI (SATA).")
-                + u"</i>"_s);
+            diskHintLabel->setText(u"<i>"_s + i18n("Q35 chipset: disk attached via AHCI (SATA).") + u"</i>"_s);
         } else if (machine == VMSpecs::MachineType::PcISA) {
             // Explicitly handle the ISA-only machine type
-            diskHintLabel->setText(u"<i>"_s
-                + i18n("ISA-only PC: disk attached via legacy ISA IDE.")
-                + u"</i>"_s);
+            diskHintLabel->setText(u"<i>"_s + i18n("ISA-only PC: disk attached via legacy ISA IDE.") + u"</i>"_s);
         } else {
-            diskHintLabel->setText(u"<i>"_s
-                + i18n("PC (i440FX) chipset: disk attached via PIIX3 (IDE).")
-                + u"</i>"_s);
+            diskHintLabel->setText(u"<i>"_s + i18n("PC (i440FX) chipset: disk attached via PIIX3 (IDE).") + u"</i>"_s);
         }
         return;
     }
     if (disk == VMSpecs::DiskInterface::Virtio && os == VMSpecs::OsType::Windows) {
         diskHintLabel->setText(u"<i>"_s
-            + i18n("Note: Windows requires the VirtIO driver ISO during installation.")
-            + u"</i>"_s);
+                               + i18n("Note: Windows requires the VirtIO driver ISO "
+                                      "during installation.")
+                               + u"</i>"_s);
         return;
     }
     diskHintLabel->clear();
@@ -1844,9 +1839,10 @@ void CreateVmDialog::updateDeviceAvailability()
     const QString isaReqMsg = i18n("Requires an ISA bus (e.g., Legacy PC or ISA-only).");
     const QString pciReqMsg = i18n("Requires a PCI/PCIe bus (e.g., Q35 or Legacy PC).");
 
-    // Helper lambda to process ISA/PCI dependent combo boxes (Enable/Disable, Tooltips, Fallback)
-    auto updateCombo = [&](QComboBox* combo, auto isIsaChecker, int noneValue = -1) {
-        auto* model = qobject_cast<QStandardItemModel*>(combo->model());
+    // Helper lambda to process ISA/PCI dependent combo boxes (Enable/Disable,
+    // Tooltips, Fallback)
+    auto updateCombo = [&](QComboBox *combo, auto isIsaChecker, int noneValue = -1) {
+        auto *model = qobject_cast<QStandardItemModel *>(combo->model());
         if (!model)
             return;
 
@@ -1890,7 +1886,7 @@ void CreateVmDialog::updateDeviceAvailability()
     };
 
     // --- Update CPU Availability ---
-    if (auto* cpuModelItem = qobject_cast<QStandardItemModel*>(cpuCombo->model())) {
+    if (auto *cpuModelItem = qobject_cast<QStandardItemModel *>(cpuCombo->model())) {
         bool currentCpuValid = false;
         int firstValidCpuIdx = -1;
 
@@ -1934,14 +1930,19 @@ void CreateVmDialog::updateDeviceAvailability()
         return VMConfig::isIsaDevice(static_cast<VMSpecs::AudioDevice>(val));
     });
 
-    updateCombo(netCombo, [](int val) { return VMConfig::isIsaDevice(static_cast<VMSpecs::NetworkCard>(val)); }, static_cast<int>(VMSpecs::NetworkCard::None));
+    updateCombo(
+        netCombo,
+        [](int val) {
+            return VMConfig::isIsaDevice(static_cast<VMSpecs::NetworkCard>(val));
+        },
+        static_cast<int>(VMSpecs::NetworkCard::None));
 
     // --- Audio Extras ---
     const auto currentAudio = static_cast<VMSpecs::AudioDevice>(audioCombo->currentData().toInt());
     sb16ConfigButton->setEnabled(currentAudio == VMSpecs::AudioDevice::Sb16 && supportsIsa);
 
     // --- USB (PCI only) ---
-    if (auto* usbModel = qobject_cast<QStandardItemModel*>(usbCombo->model())) {
+    if (auto *usbModel = qobject_cast<QStandardItemModel *>(usbCombo->model())) {
         for (int i = 0; i < usbCombo->count(); ++i) {
             auto usbCtrl = static_cast<VMSpecs::UsbController>(usbCombo->itemData(i).toInt());
             if (usbCtrl != VMSpecs::UsbController::None) {
@@ -1950,7 +1951,7 @@ void CreateVmDialog::updateDeviceAvailability()
             }
         }
         if (!supportsPci) {
-            int noneIdx = usbCombo->findData(static_cast<int>(VMSpecs::UsbController::None));
+            const int noneIdx = usbCombo->findData(static_cast<int>(VMSpecs::UsbController::None));
             if (noneIdx != -1)
                 usbCombo->setCurrentIndex(noneIdx);
             usbCombo->setEnabled(false);
@@ -1962,21 +1963,21 @@ void CreateVmDialog::updateDeviceAvailability()
         } else {
             usbCombo->setEnabled(true);
             usbControllerLabel->setEnabled(true);
-            bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
+            const bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
             usbTabletCheck->setEnabled(hasUsb);
             usbKeyboardCheck->setEnabled(hasUsb);
         }
     }
 
     // --- Disk Interface ---
-    if (auto* diskModel = qobject_cast<QStandardItemModel*>(diskInterfaceCombo->model())) {
+    if (auto *diskModel = qobject_cast<QStandardItemModel *>(diskInterfaceCombo->model())) {
         bool currentDiskValid = false;
         int firstValidDiskIdx = -1;
 
         for (int i = 0; i < diskInterfaceCombo->count(); ++i) {
             auto diskIf = static_cast<VMSpecs::DiskInterface>(diskInterfaceCombo->itemData(i).toInt());
             // Assume SataIde is always available, others require PCI
-            bool shouldShow = (diskIf == VMSpecs::DiskInterface::SataIde) || supportsPci;
+            const bool shouldShow = (diskIf == VMSpecs::DiskInterface::SataIde) || supportsPci;
 
             diskModel->item(i)->setEnabled(shouldShow);
             diskInterfaceCombo->setItemData(i, shouldShow ? QString() : pciReqMsg, Qt::ToolTipRole);
@@ -2099,22 +2100,19 @@ void CreateVmDialog::validateForm()
         macWarningText = i18n("Invalid MAC address format.");
         valid = false;
     } else if (!mac.isEmpty()) {
-        const auto mode = static_cast<VMSpecs::NetworkMode>(
-            networkModeCombo->currentData().toInt());
+        const auto mode = static_cast<VMSpecs::NetworkMode>(networkModeCombo->currentData().toInt());
         const QString netName = virtualNetworkCombo->currentData().toString();
 
-        for (const auto& info : m_macUsageInfo) {
+        for (const auto &info : m_macUsageInfo) {
             if (isEditMode && info.vmName == originalName)
                 continue;
 
             if (info.mac.compare(mac, Qt::CaseInsensitive) != 0)
                 continue;
 
-            if (mode == VMSpecs::NetworkMode::VirtualNetwork
-                && info.networkMode == VMSpecs::NetworkMode::VirtualNetwork
+            if (mode == VMSpecs::NetworkMode::VirtualNetwork && info.networkMode == VMSpecs::NetworkMode::VirtualNetwork
                 && info.virtualNetworkName == netName) {
-                macWarningText = i18n("MAC conflict with '%1' on network '%2'.",
-                    info.vmName, netName);
+                macWarningText = i18n("MAC conflict with '%1' on network '%2'.", info.vmName, netName);
                 valid = false;
             }
             break;
@@ -2134,19 +2132,19 @@ void CreateVmDialog::validateForm()
 
 void CreateVmDialog::resetToFactoryDefaults()
 {
-    const auto result = KMessageBox::questionTwoActions(
-        this,
-        i18n("Are you sure you want to reset all settings to their default values?"),
-        i18n("Reset to Defaults"),
-        KGuiItem(i18n("Reset"), QStringLiteral("edit-undo")),
-        KStandardGuiItem::cancel());
+    const auto result = KMessageBox::questionTwoActions(this,
+                                                        i18n("Are you sure you want to reset all settings to their default "
+                                                             "values?"),
+                                                        i18n("Reset to Defaults"),
+                                                        KGuiItem(i18n("Reset"), QStringLiteral("edit-undo")),
+                                                        KStandardGuiItem::cancel());
 
     if (result != KMessageBox::PrimaryAction) {
         return;
     }
 
-    const auto setCombo = [](QComboBox* combo, auto enumValue) {
-        int idx = combo->findData(static_cast<int>(enumValue));
+    const auto setCombo = [](QComboBox *combo, auto enumValue) {
+        const int idx = combo->findData(static_cast<int>(enumValue));
         if (idx >= 0)
             combo->setCurrentIndex(idx);
     };
@@ -2199,7 +2197,7 @@ void CreateVmDialog::resetToFactoryDefaults()
 QStringList CreateVmDialog::usedMacAddresses() const
 {
     QStringList macs;
-    for (const auto& info : m_macUsageInfo)
+    for (const auto &info : m_macUsageInfo)
         macs << info.mac;
     return macs;
 }

@@ -23,15 +23,12 @@
 
 using namespace Qt::StringLiterals;
 
-class SnapshotDialog : public QDialog {
-
+class SnapshotDialog : public QDialog
+{
     Q_OBJECT
 
 public:
-    explicit SnapshotDialog(const QString& vmName,
-        const QString& diskPath,
-        QMPClient* qmp,
-        QWidget* parent = nullptr);
+    explicit SnapshotDialog(const QString &vmName, const QString &diskPath, QMPClient *qmp, QWidget *parent = nullptr);
 
 private Q_SLOTS:
     void onTakeSnapshot();
@@ -46,13 +43,13 @@ private:
 
     QString m_vmName;
     QString m_diskPath;
-    QMPClient* m_qmp = nullptr;
+    QMPClient *m_qmp = nullptr;
     SnapshotManager m_manager;
 
-    QTreeWidget* m_tree = nullptr;
-    QTextBrowser* m_detailsBrowser = nullptr;
-    QPushButton* m_takeBtn = nullptr;
-    QPushButton* m_revertBtn = nullptr;
-    QPushButton* m_deleteBtn = nullptr;
-    QProgressBar* m_progressBar = nullptr;
+    QTreeWidget *m_tree = nullptr;
+    QTextBrowser *m_detailsBrowser = nullptr;
+    QPushButton *m_takeBtn = nullptr;
+    QPushButton *m_revertBtn = nullptr;
+    QPushButton *m_deleteBtn = nullptr;
+    QProgressBar *m_progressBar = nullptr;
 };

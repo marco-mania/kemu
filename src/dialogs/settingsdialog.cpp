@@ -8,7 +8,7 @@
 
 #include "const.h"
 
-SettingsDialog::SettingsDialog(QWidget* parent)
+SettingsDialog::SettingsDialog(QWidget *parent)
     : KPageDialog(parent)
 {
     setWindowTitle(i18n("Settings"));
@@ -37,21 +37,21 @@ void SettingsDialog::setPage(Page page)
 
 void SettingsDialog::setupGeneralPage()
 {
-    auto* page = new QWidget;
-    auto* layout = new QVBoxLayout(page);
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
 
     layout->addWidget(new QLabel(i18n("Storage location for virtual machines:")));
 
-    auto* row = new QHBoxLayout;
+    auto *row = new QHBoxLayout;
     pathEdit = new QLineEdit;
     pathEdit->setText(getVmBasePath());
-    auto* btn = new QPushButton(QIcon::fromTheme(u"document-open"_s), { });
+    auto *btn = new QPushButton(QIcon::fromTheme(u"document-open"_s), {});
     connect(btn, &QPushButton::clicked, this, &SettingsDialog::browseVmDir);
     row->addWidget(pathEdit);
     row->addWidget(btn);
     layout->addLayout(row);
 
-    auto* line = new QFrame(this);
+    auto *line = new QFrame(this);
     line->setFrameShape(QFrame::HLine);
     line->setFrameShadow(QFrame::Sunken);
 
@@ -59,14 +59,14 @@ void SettingsDialog::setupGeneralPage()
 
     cloneRegenerateMacCheck = new QCheckBox(i18n("Regenerate MAC address when cloning a VM"));
     cloneRegenerateMacCheck->setToolTip(
-        i18n("When <b>enabled</b>, a cloned VM always receives a new random MAC address. "
+        i18n("When <b>enabled</b>, a cloned VM always receives a new random MAC "
+             "address. "
              "If the source VM has an explicit MAC, a dialog lets you choose a "
              "replacement. When <b>disabled</b>, the MAC is copied as-is."));
     cloneRegenerateMacCheck->setChecked(cloneRegenerateMac());
     layout->addWidget(cloneRegenerateMacCheck);
 
-    importRegenerateMacCheck = new QCheckBox(
-        i18n("Regenerate MAC address when importing a VM"));
+    importRegenerateMacCheck = new QCheckBox(i18n("Regenerate MAC address when importing a VM"));
     importRegenerateMacCheck->setToolTip(
         i18n("When <b>enabled</b>, imported VMs always receive a new MAC address. "
              "This prevents address conflicts when running the original and "
@@ -78,22 +78,22 @@ void SettingsDialog::setupGeneralPage()
 
     layout->addStretch();
 
-    auto* item = addPage(page, i18n("Virtual Machines"));
+    auto *item = addPage(page, i18n("Virtual Machines"));
     item->setIcon(QIcon::fromTheme(u"computer"_s));
     m_pages[General] = item;
 }
 
 void SettingsDialog::setupFirmwarePage()
 {
-    auto* page = new QWidget;
-    auto* layout = new QVBoxLayout(page);
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
 
     layout->addWidget(new QLabel(i18n("Custom firmware directory (leave empty for auto-detect):")));
 
-    auto* row = new QHBoxLayout;
+    auto *row = new QHBoxLayout;
     ovmfEdit = new QLineEdit;
     ovmfEdit->setText(getOvmfPath());
-    auto* btn = new QPushButton(QIcon::fromTheme(u"document-open"_s), { });
+    auto *btn = new QPushButton(QIcon::fromTheme(u"document-open"_s), {});
     connect(btn, &QPushButton::clicked, this, &SettingsDialog::browseOvmfDir);
     row->addWidget(ovmfEdit);
     row->addWidget(btn);
@@ -101,63 +101,61 @@ void SettingsDialog::setupFirmwarePage()
 
     layout->addStretch();
 
-    auto* item = addPage(page, i18n("UEFI Firmware"));
+    auto *item = addPage(page, i18n("UEFI Firmware"));
     item->setIcon(QIcon::fromTheme(u"hwinfo"_s));
     m_pages[Firmware] = item;
 }
 
 void SettingsDialog::setupExecutablesPage()
 {
-    auto* page = new QWidget;
-    auto* scrollArea = new QScrollArea;
+    auto *page = new QWidget;
+    auto *scrollArea = new QScrollArea;
     scrollArea->setWidgetResizable(true);
     scrollArea->setFrameShape(QFrame::NoFrame);
 
-    auto* layout = new QVBoxLayout(page);
+    auto *layout = new QVBoxLayout(page);
     layout->setSpacing(4);
 
-    auto* refreshLayout = new QHBoxLayout;
-    auto* refreshBtn = new QPushButton(QIcon::fromTheme(u"view-refresh"_s), i18n("Re-detect All"));
+    auto *refreshLayout = new QHBoxLayout;
+    auto *refreshBtn = new QPushButton(QIcon::fromTheme(u"view-refresh"_s), i18n("Re-detect All"));
     connect(refreshBtn, &QPushButton::clicked, this, [this]() {
         ExternalTools::instance().refresh();
         for (int i = 0; i < m_toolWidgets.size(); ++i) {
-            m_toolWidgets[i].pathEdit->setText(
-                ExternalTools::instance().path(m_toolWidgets[i].tool));
+            m_toolWidgets[i].pathEdit->setText(ExternalTools::instance().path(m_toolWidgets[i].tool));
         }
     });
     refreshLayout->addWidget(refreshBtn);
     refreshLayout->addStretch();
     layout->addLayout(refreshLayout);
 
-    const auto& tools = ExternalTools::instance();
+    const auto &tools = ExternalTools::instance();
 
-    for (ExternalTools::Tool tool : ExternalTools::allTools()) {
-
+    for (const ExternalTools::Tool tool : ExternalTools::allTools()) {
         const QString binary = tools.defaultBinary(tool);
         const QString description = ExternalTools::displayName(tool);
         const QString currentPath = tools.path(tool);
 
-        auto* headerLayout = new QHBoxLayout;
+        auto *headerLayout = new QHBoxLayout;
         headerLayout->setContentsMargins(0, 8, 0, 0);
-        auto* binaryLabel = new QLabel(u"<b>%1</b>"_s.arg(binary));
+        auto *binaryLabel = new QLabel(u"<b>%1</b>"_s.arg(binary));
         binaryLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
         headerLayout->addWidget(binaryLabel);
         const QString midColor = palette().color(QPalette::Mid).name();
-        auto* descLabel = new QLabel(u"<font color='%1'> (%2)</font>"_s.arg(midColor, description));
+        auto *descLabel = new QLabel(u"<font color='%1'> (%2)</font>"_s.arg(midColor, description));
         headerLayout->addWidget(descLabel);
         headerLayout->addStretch();
         layout->addLayout(headerLayout);
 
-        auto* pathRow = new QHBoxLayout;
-        auto* pathEdit = new QLineEdit;
+        auto *pathRow = new QHBoxLayout;
+        auto *pathEdit = new QLineEdit;
         pathEdit->setText(currentPath);
         pathEdit->setPlaceholderText(i18n("Auto-detected if empty"));
         pathRow->addWidget(pathEdit);
-        auto* browseBtn = new QPushButton(QIcon::fromTheme(u"document-open"_s), { });
+        auto *browseBtn = new QPushButton(QIcon::fromTheme(u"document-open"_s), {});
         pathRow->addWidget(browseBtn);
         layout->addLayout(pathRow);
 
-        auto* statusLabel = new QLabel;
+        auto *statusLabel = new QLabel;
         layout->addWidget(statusLabel);
 
         ToolWidgets tw;
@@ -166,11 +164,11 @@ void SettingsDialog::setupExecutablesPage()
         tw.statusLabel = statusLabel;
         m_toolWidgets.append(tw);
 
-        int idx = m_toolWidgets.size() - 1;
+        const int idx = m_toolWidgets.size() - 1;
 
         connect(browseBtn, &QPushButton::clicked, this, [this, idx]() {
-            const auto& tw = m_toolWidgets[idx];
-            QString file = QFileDialog::getOpenFileName(this, i18n("Select Executable"), tw.pathEdit->text());
+            const auto &tw = m_toolWidgets[idx];
+            const QString file = QFileDialog::getOpenFileName(this, i18n("Select Executable"), tw.pathEdit->text());
             if (!file.isEmpty())
                 tw.pathEdit->setText(file);
         });
@@ -181,15 +179,15 @@ void SettingsDialog::setupExecutablesPage()
     }
 
     // Suppressed-warnings section
-    auto* suppressedBox = new QGroupBox(i18n("Suppressed Startup Warnings"));
-    auto* suppressedLayout = new QVBoxLayout(suppressedBox);
+    auto *suppressedBox = new QGroupBox(i18n("Suppressed Startup Warnings"));
+    auto *suppressedLayout = new QVBoxLayout(suppressedBox);
 
-    auto* suppressedLabel = new QLabel;
+    auto *suppressedLabel = new QLabel;
     suppressedLabel->setWordWrap(true);
     suppressedLayout->addWidget(suppressedLabel);
 
-    auto* resetBtn = new QPushButton(QIcon::fromTheme(u"edit-undo"_s), i18n("Reset All Suppressed Warnings"));
-    auto* btnRow = new QHBoxLayout;
+    auto *resetBtn = new QPushButton(QIcon::fromTheme(u"edit-undo"_s), i18n("Reset All Suppressed Warnings"));
+    auto *btnRow = new QHBoxLayout;
     btnRow->addWidget(resetBtn);
     btnRow->addStretch();
     suppressedLayout->addLayout(btnRow);
@@ -201,7 +199,7 @@ void SettingsDialog::setupExecutablesPage()
             resetBtn->setEnabled(false);
         } else {
             QStringList names;
-            for (const auto& g : ExternalTools::featureGroups()) {
+            for (const auto &g : ExternalTools::featureGroups()) {
                 if (ids.contains(g.id))
                     names << g.name;
             }
@@ -221,12 +219,12 @@ void SettingsDialog::setupExecutablesPage()
     layout->addStretch();
     scrollArea->setWidget(page);
 
-    auto* wrapperWidget = new QWidget;
-    auto* wrapperLayout = new QVBoxLayout(wrapperWidget);
+    auto *wrapperWidget = new QWidget;
+    auto *wrapperLayout = new QVBoxLayout(wrapperWidget);
     wrapperLayout->setContentsMargins(0, 0, 0, 0);
     wrapperLayout->addWidget(scrollArea);
 
-    auto* item = addPage(wrapperWidget, i18n("Executables"));
+    auto *item = addPage(wrapperWidget, i18n("Executables"));
     item->setIcon(QIcon::fromTheme(u"application-x-executable"_s));
     m_pages[Executables] = item;
 
@@ -236,8 +234,8 @@ void SettingsDialog::setupExecutablesPage()
 
 void SettingsDialog::setupMonitoringPage()
 {
-    auto* page = new QWidget;
-    auto* layout = new QVBoxLayout(page);
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
 
     perfMonitorCheck = new QCheckBox(i18n("Show performance monitor (CPU, RAM, I/O)"));
     perfMonitorCheck->setChecked(isPerformanceMonitorEnabled());
@@ -245,15 +243,15 @@ void SettingsDialog::setupMonitoringPage()
 
     layout->addStretch();
 
-    auto* item = addPage(page, i18n("Monitoring"));
+    auto *item = addPage(page, i18n("Monitoring"));
     item->setIcon(QIcon::fromTheme(u"utilities-system-monitor"_s));
     m_pages[Monitoring] = item;
 }
 
 void SettingsDialog::setupDisplayPage()
 {
-    auto* page = new QWidget;
-    auto* layout = new QFormLayout(page);
+    auto *page = new QWidget;
+    auto *layout = new QFormLayout(page);
 
     resolutionCombo = new QComboBox;
     resolutionCombo->addItem(u"1280 × 800"_s, QSize(1280, 800));
@@ -265,7 +263,7 @@ void SettingsDialog::setupDisplayPage()
     resolutionCombo->addItem(u"2560 × 1440 (QHD)"_s, QSize(2560, 1440));
     resolutionCombo->addItem(u"3840 × 2160 (4K)"_s, QSize(3840, 2160));
 
-    QSize currentRes = getDefaultResolution();
+    const QSize currentRes = getDefaultResolution();
     for (int i = 0; i < resolutionCombo->count(); ++i) {
         if (resolutionCombo->itemData(i).toSize() == currentRes) {
             resolutionCombo->setCurrentIndex(i);
@@ -282,58 +280,61 @@ void SettingsDialog::setupDisplayPage()
     layout->addRow(i18n("When SPICE viewer is closed:"), spiceCloseActionCombo);
 
     dbusDisplayCheck = new QCheckBox(i18n("Enable D-Bus display support (experimental)"));
-    dbusDisplayCheck->setToolTip(i18n("Allows VMs to use D-Bus as display backend. "
-                                      "Requires dbus-daemon and enables an embedded viewer window."));
+    dbusDisplayCheck->setToolTip(
+        i18n("Allows VMs to use D-Bus as display backend. "
+             "Requires dbus-daemon and enables an embedded viewer window."));
     dbusDisplayCheck->setChecked(enableDbusDisplay());
     layout->addRow(dbusDisplayCheck);
 
-    auto* item = addPage(page, i18n("Display"));
+    auto *item = addPage(page, i18n("Display"));
     item->setIcon(QIcon::fromTheme(u"preferences-desktop-display"_s));
     m_pages[Display] = item;
 }
 
 void SettingsDialog::setupAutomatedDeployPage()
 {
-    auto* page = new QWidget;
-    auto* layout = new QFormLayout(page);
+    auto *page = new QWidget;
+    auto *layout = new QFormLayout(page);
 
-    auto* archInfoLabel = new QLabel(
-        i18n("Detected host architecture: <b>%1</b>", QSysInfo::currentCpuArchitecture()));
+    auto *archInfoLabel = new QLabel(i18n("Detected host architecture: <b>%1</b>", QSysInfo::currentCpuArchitecture()));
     layout->addRow(archInfoLabel);
 
     allArchCheck = new QCheckBox(i18n("Show all CPU architectures in edition list"));
-    allArchCheck->setToolTip(i18n("By default only editions matching your host architecture are shown. "
-                                  "Enable this to see all architectures (note: non-native architectures "
-                                  "use slow TCG emulation instead of KVM)."));
+    allArchCheck->setToolTip(
+        i18n("By default only editions matching your host architecture are shown. "
+             "Enable this to see all architectures (note: non-native architectures "
+             "use slow TCG emulation instead of KVM)."));
     allArchCheck->setChecked(showAllArchitectures());
     layout->addRow(allArchCheck);
 
     deployHeadlessCheck = new QCheckBox(i18n("Run deployment in background (headless)"));
-    deployHeadlessCheck->setToolTip(i18n("When disabled, the QEMU window is visible during deployment, "
-                                         "which can be useful for diagnosing installation issues."));
+    deployHeadlessCheck->setToolTip(
+        i18n("When disabled, the QEMU window is visible during deployment, "
+             "which can be useful for diagnosing installation issues."));
     deployHeadlessCheck->setChecked(deployHeadless());
     layout->addRow(deployHeadlessCheck);
 
     deploySerialLogCheck = new QCheckBox(i18n("Write serial console log during deployment"));
-    deploySerialLogCheck->setToolTip(i18n("Writes kernel and installer output to 'deploy-serial.log' "
-                                          "in the VM directory. Useful for diagnosing failed installations.\n"
-                                          "Note: some installers (e.g. Debian) redirect their UI to the "
-                                          "serial console when enabled, making the QEMU window appear blank."));
+    deploySerialLogCheck->setToolTip(
+        i18n("Writes kernel and installer output to 'deploy-serial.log' "
+             "in the VM directory. Useful for diagnosing failed installations.\n"
+             "Note: some installers (e.g. Debian) redirect their UI to the "
+             "serial console when enabled, making the QEMU window appear blank."));
     deploySerialLogCheck->setChecked(deploySerialLog());
     layout->addRow(deploySerialLogCheck);
 
-    auto* item = addPage(page, i18n("Automated Deploy"));
+    auto *item = addPage(page, i18n("Automated Deploy"));
     item->setIcon(QIcon::fromTheme(u"system-run"_s));
     m_pages[AutomatedDeploy] = item;
 }
 
 void SettingsDialog::setupVirtualNetworksPage()
 {
-    auto* page = new QWidget;
-    auto* layout = new QVBoxLayout(page);
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
 
     networkTable = new QTableWidget(0, 5);
-    networkTable->setHorizontalHeaderLabels({ i18n("Name"), i18n("Gateway"), i18n("DHCP"), i18n("NAT"), i18n("Status") });
+    networkTable->setHorizontalHeaderLabels({i18n("Name"), i18n("Gateway"), i18n("DHCP"), i18n("NAT"), i18n("Status")});
     networkTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     networkTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     networkTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
@@ -345,7 +346,7 @@ void SettingsDialog::setupVirtualNetworksPage()
     networkTable->verticalHeader()->setVisible(false);
     layout->addWidget(networkTable);
 
-    auto* buttonLayout = new QHBoxLayout();
+    auto *buttonLayout = new QHBoxLayout();
     netAddButton = new QPushButton(QIcon::fromTheme(u"list-add"_s), i18n("Add..."));
     netEditButton = new QPushButton(QIcon::fromTheme(u"document-edit"_s), i18n("Edit..."));
     netRemoveButton = new QPushButton(QIcon::fromTheme(u"list-remove"_s), i18n("Remove"));
@@ -363,21 +364,21 @@ void SettingsDialog::setupVirtualNetworksPage()
     connect(networkTable, &QTableWidget::itemSelectionChanged, this, &SettingsDialog::onNetworkSelectionChanged);
     connect(networkTable, &QTableWidget::cellDoubleClicked, this, &SettingsDialog::editNetwork);
 
-    auto* item = addPage(page, i18n("Virtual Networks"));
+    auto *item = addPage(page, i18n("Virtual Networks"));
     item->setIcon(QIcon::fromTheme(u"network-workgroup"_s));
     m_pages[VirtualNetworks] = item;
 }
 
 void SettingsDialog::browseVmDir()
 {
-    QString dir = QFileDialog::getExistingDirectory(this, i18n("Select VM storage location"), pathEdit->text());
+    const QString dir = QFileDialog::getExistingDirectory(this, i18n("Select VM storage location"), pathEdit->text());
     if (!dir.isEmpty())
         pathEdit->setText(dir);
 }
 
 void SettingsDialog::browseOvmfDir()
 {
-    QString dir = QFileDialog::getExistingDirectory(this, i18n("Select OVMF firmware directory"), ovmfEdit->text());
+    const QString dir = QFileDialog::getExistingDirectory(this, i18n("Select OVMF firmware directory"), ovmfEdit->text());
     if (!dir.isEmpty())
         ovmfEdit->setText(dir);
 }
@@ -388,7 +389,7 @@ void SettingsDialog::saveSettings()
     KConfigGroup general = config.group(u"General"_s);
     general.writeEntry("VmBasePath", pathEdit->text());
     general.writeEntry("OvmfPath", ovmfEdit->text());
-    for (const auto& tw : m_toolWidgets) {
+    for (const auto &tw : m_toolWidgets) {
         const QString key = ExternalTools::instance().configKey(tw.tool);
         general.writeEntry(key, tw.pathEdit->text());
     }
@@ -411,120 +412,120 @@ void SettingsDialog::saveSettings()
 QString SettingsDialog::getVmBasePath()
 {
     KConfig config(u"kemurc"_s);
-    KConfigGroup general = config.group(u"General"_s);
-    QString defaultPath = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + u"/kemu/vms"_s;
+    const KConfigGroup general = config.group(u"General"_s);
+    const QString defaultPath = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + u"/kemu/vms"_s;
     return general.readEntry("VmBasePath", defaultPath);
 }
 
 QString SettingsDialog::getOvmfPath()
 {
     KConfig config(u"kemurc"_s);
-    KConfigGroup general = config.group(u"General"_s);
-    return general.readEntry("OvmfPath", { });
+    const KConfigGroup general = config.group(u"General"_s);
+    return general.readEntry("OvmfPath", {});
 }
 
 bool SettingsDialog::isPerformanceMonitorEnabled()
 {
     KConfig config(u"kemurc"_s);
-    KConfigGroup general = config.group(u"General"_s);
+    const KConfigGroup general = config.group(u"General"_s);
     return general.readEntry("PerformanceMonitorEnabled", true);
 }
 
 QSize SettingsDialog::getDefaultResolution()
 {
     KConfig config(u"kemurc"_s);
-    KConfigGroup general = config.group(u"General"_s);
-    int w = general.readEntry("DisplayWidth", KEMUConst::DefaultDisplaySize.width());
-    int h = general.readEntry("DisplayHeight", KEMUConst::DefaultDisplaySize.height());
+    const KConfigGroup general = config.group(u"General"_s);
+    const int w = general.readEntry("DisplayWidth", KEMUConst::DefaultDisplaySize.width());
+    const int h = general.readEntry("DisplayHeight", KEMUConst::DefaultDisplaySize.height());
     return QSize(w, h);
 }
 
 bool SettingsDialog::enableDbusDisplay()
 {
     KConfig config(u"kemurc"_s);
-    KConfigGroup general = config.group(u"General"_s);
+    const KConfigGroup general = config.group(u"General"_s);
     return general.readEntry("EnableDBusDisplay", false);
 }
 
 bool SettingsDialog::showAllArchitectures()
 {
     KConfig config(u"kemurc"_s);
-    KConfigGroup general = config.group(u"General"_s);
+    const KConfigGroup general = config.group(u"General"_s);
     return general.readEntry("ShowAllArchitectures", false);
 }
 
 bool SettingsDialog::cloneRegenerateMac()
 {
     KConfig config(u"kemurc"_s);
-    KConfigGroup general = config.group(u"General"_s);
+    const KConfigGroup general = config.group(u"General"_s);
     return general.readEntry("CloneRegenerateMac", true);
 }
 
 bool SettingsDialog::importRegenerateMac()
 {
     KConfig config(u"kemurc"_s);
-    KConfigGroup general = config.group(u"General"_s);
+    const KConfigGroup general = config.group(u"General"_s);
     return general.readEntry("ImportRegenerateMac", false);
 }
 
 bool SettingsDialog::deployHeadless()
 {
     KConfig config(u"kemurc"_s);
-    KConfigGroup general = config.group(u"General"_s);
+    const KConfigGroup general = config.group(u"General"_s);
     return general.readEntry("DeployHeadless", true);
 }
 
 bool SettingsDialog::deploySerialLog()
 {
     KConfig config(u"kemurc"_s);
-    KConfigGroup general = config.group(u"General"_s);
+    const KConfigGroup general = config.group(u"General"_s);
     return general.readEntry("DeploySerialLog", false);
 }
 
 SettingsDialog::SpiceViewerCloseAction SettingsDialog::spiceViewerCloseAction()
 {
     KConfig config(u"kemurc"_s);
-    KConfigGroup general = config.group(u"General"_s);
-    int val = general.readEntry("SpiceViewerCloseAction", static_cast<int>(SwitchToHeadless));
+    const KConfigGroup general = config.group(u"General"_s);
+    const int val = general.readEntry("SpiceViewerCloseAction", static_cast<int>(SwitchToHeadless));
     if (val == ShutdownVm)
         return ShutdownVm;
     return SwitchToHeadless;
 }
 
-void SettingsDialog::setNetworkManager(VirtualNetworkManager* mgr)
+void SettingsDialog::setNetworkManager(VirtualNetworkManager *mgr)
 {
     m_networkManager = mgr;
     refreshNetworkTable();
 }
 
-static bool showNetworkForm(QWidget* parent, VirtualNetwork& net, const QString& title, bool isNew)
+static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString &title, bool isNew)
 {
     QDialog dlg(parent);
     dlg.setWindowTitle(title);
 
-    auto* form = new QFormLayout(&dlg);
+    auto *form = new QFormLayout(&dlg);
     form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     // --- Name ---
-    auto* nameEdit = new QLineEdit(net.name);
+    auto *nameEdit = new QLineEdit(net.name);
     nameEdit->setPlaceholderText(u"lab-net"_s);
     if (!isNew)
         nameEdit->setReadOnly(true);
     form->addRow(i18n("Name:"), nameEdit);
 
     // --- Gateway / Subnet ---
-    auto* gatewayEdit = new QLineEdit(net.gateway);
+    auto *gatewayEdit = new QLineEdit(net.gateway);
     gatewayEdit->setPlaceholderText(u"192.168.100.1"_s);
     gatewayEdit->setToolTip(i18n("Bridge gateway address inside the network namespace."));
     form->addRow(i18n("Gateway:"), gatewayEdit);
 
-    auto* prefixSpin = new QSpinBox;
+    auto *prefixSpin = new QSpinBox;
     prefixSpin->setRange(8, 30);
     prefixSpin->setValue(net.prefixLength);
     prefixSpin->setSuffix(u" (CIDR)"_s);
     form->addRow(i18n("Prefix length:"), prefixSpin);
 
-    auto* subnetInfoLabel = new QLabel;
+    auto *subnetInfoLabel = new QLabel;
     subnetInfoLabel->setStyleSheet(u"color: palette(mid);"_s);
     form->addRow(u""_s, subnetInfoLabel);
 
@@ -547,18 +548,18 @@ static bool showNetworkForm(QWidget* parent, VirtualNetwork& net, const QString&
     QObject::connect(prefixSpin, &QSpinBox::valueChanged, &dlg, updateSubnetLabel);
 
     // --- DHCP ---
-    auto* dhcpCheck = new QCheckBox(i18n("Enable DHCP (via dnsmasq)"));
+    auto *dhcpCheck = new QCheckBox(i18n("Enable DHCP (via dnsmasq)"));
     dhcpCheck->setChecked(net.enableDhcp);
     form->addRow(dhcpCheck);
 
-    auto* dhcpStartEdit = new QLineEdit(net.dhcpRangeStart);
+    auto *dhcpStartEdit = new QLineEdit(net.dhcpRangeStart);
     dhcpStartEdit->setPlaceholderText(u"192.168.100.100"_s);
-    auto* dhcpStartLabel = new QLabel(i18n("DHCP range start:"));
+    auto *dhcpStartLabel = new QLabel(i18n("DHCP range start:"));
     form->addRow(dhcpStartLabel, dhcpStartEdit);
 
-    auto* dhcpEndEdit = new QLineEdit(net.dhcpRangeEnd);
+    auto *dhcpEndEdit = new QLineEdit(net.dhcpRangeEnd);
     dhcpEndEdit->setPlaceholderText(u"192.168.100.200"_s);
-    auto* dhcpEndLabel = new QLabel(i18n("DHCP range end:"));
+    auto *dhcpEndLabel = new QLabel(i18n("DHCP range end:"));
     form->addRow(dhcpEndLabel, dhcpEndEdit);
 
     auto updateDhcpWidgets = [=](bool checked) {
@@ -571,23 +572,25 @@ static bool showNetworkForm(QWidget* parent, VirtualNetwork& net, const QString&
     QObject::connect(dhcpCheck, &QCheckBox::toggled, updateDhcpWidgets);
 
     // --- NAT ---
-    auto* natCheck = new QCheckBox(i18n("Enable NAT (Internet access via pasta)"));
+    auto *natCheck = new QCheckBox(i18n("Enable NAT (Internet access via pasta)"));
     natCheck->setChecked(net.enableNat);
-    natCheck->setToolTip(i18n("When disabled, the virtual network is completely isolated "
-                              "from the host network (air-gapped)."));
+    natCheck->setToolTip(
+        i18n("When disabled, the virtual network is completely isolated "
+             "from the host network (air-gapped)."));
     form->addRow(natCheck);
 
     // --- Port Forwards ---
-    auto* portFwdCheck = new QCheckBox(i18n("Enable Port Forwarding"));
+    auto *portFwdCheck = new QCheckBox(i18n("Enable Port Forwarding"));
     // Checked if there are existing forwards
     portFwdCheck->setChecked(!net.portForwards.isEmpty());
     form->addRow(portFwdCheck);
 
-    auto* portFwdEdit = new QLineEdit(net.portForwards.join(u", "_s));
+    auto *portFwdEdit = new QLineEdit(net.portForwards.join(u", "_s));
     portFwdEdit->setPlaceholderText(u"tcp/8080:80, tcp/2222:22"_s);
-    portFwdEdit->setToolTip(i18n("Comma-separated list of port forwards from host to namespace.\n"
-                                 "Format: protocol/hostPort:guestPort"));
-    auto* portFwdLabel = new QLabel(i18n("Port forwards:"));
+    portFwdEdit->setToolTip(
+        i18n("Comma-separated list of port forwards from host to namespace.\n"
+             "Format: protocol/hostPort:guestPort"));
+    auto *portFwdLabel = new QLabel(i18n("Port forwards:"));
     form->addRow(portFwdLabel, portFwdEdit);
 
     auto updatePortFwdWidgets = [=]() {
@@ -604,7 +607,7 @@ static bool showNetworkForm(QWidget* parent, VirtualNetwork& net, const QString&
     QObject::connect(portFwdCheck, &QCheckBox::toggled, updatePortFwdWidgets);
 
     // --- Buttons ---
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     form->addRow(buttons);
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
@@ -626,7 +629,7 @@ static bool showNetworkForm(QWidget* parent, VirtualNetwork& net, const QString&
         const QString rawForwards = portFwdEdit->text().trimmed();
         if (!rawForwards.isEmpty()) {
             const QStringList parts = rawForwards.split(u',', Qt::SkipEmptyParts);
-            for (const QString& p : parts)
+            for (const QString &p : parts)
                 net.portForwards << p.trimmed();
         }
     }
@@ -683,10 +686,10 @@ void SettingsDialog::removeNetwork()
     }
 
     auto result = KMessageBox::questionTwoActions(this,
-        i18n("Delete virtual network '%1'?", name),
-        i18n("Confirm Deletion"),
-        KGuiItem(i18n("Delete"), u"edit-delete"_s),
-        KStandardGuiItem::cancel());
+                                                  i18n("Delete virtual network '%1'?", name),
+                                                  i18n("Confirm Deletion"),
+                                                  KGuiItem(i18n("Delete"), u"edit-delete"_s),
+                                                  KStandardGuiItem::cancel());
 
     if (result != KMessageBox::PrimaryAction)
         return;
@@ -710,15 +713,13 @@ void SettingsDialog::refreshNetworkTable()
         return;
 
     networkTable->setRowCount(0);
-    for (const auto& net : m_networkManager->networks()) {
-        int row = networkTable->rowCount();
+    for (const auto &net : m_networkManager->networks()) {
+        const int row = networkTable->rowCount();
         networkTable->insertRow(row);
 
         networkTable->setItem(row, 0, new QTableWidgetItem(net.name));
 
-        const QString gwText = net.gateway.isEmpty()
-            ? i18n("(not set)")
-            : u"%1/%2"_s.arg(net.gateway).arg(net.prefixLength);
+        const QString gwText = net.gateway.isEmpty() ? i18n("(not set)") : u"%1/%2"_s.arg(net.gateway).arg(net.prefixLength);
         networkTable->setItem(row, 1, new QTableWidgetItem(gwText));
 
         QString dhcpText;
@@ -734,7 +735,7 @@ void SettingsDialog::refreshNetworkTable()
 
         QString statusText;
         if (m_networkManager->isRunning(net.name)) {
-            int count = m_networkManager->connectedVmCount(net.name);
+            const int count = m_networkManager->connectedVmCount(net.name);
             statusText = i18np("Running (%1 VM)", "Running (%1 VMs)", count);
         } else {
             statusText = i18n("Stopped");
@@ -748,15 +749,15 @@ void SettingsDialog::updateToolVersion(int index)
     if (index < 0 || index >= m_toolWidgets.size())
         return;
 
-    const auto& tw = m_toolWidgets[index];
+    const auto &tw = m_toolWidgets[index];
     if (!tw.pathEdit || !tw.statusLabel)
         return;
 
     const QString path = tw.pathEdit->text();
-    KColorScheme scheme(QPalette::Active, KColorScheme::View);
+    const KColorScheme scheme(QPalette::Active, KColorScheme::View);
 
     if (path.isEmpty() || !QFileInfo::exists(path)) {
-        QString col = scheme.foreground(KColorScheme::NegativeText).color().name();
+        const QString col = scheme.foreground(KColorScheme::NegativeText).color().name();
         tw.statusLabel->setText(i18n("<font color='%1'><b>Executable not found.</b></font>", col));
         return;
     }
@@ -764,15 +765,15 @@ void SettingsDialog::updateToolVersion(int index)
     const QString version = ExternalTools::probeVersionString(tw.tool, path);
 
     if (!version.isEmpty()) {
-        QString col = scheme.foreground(KColorScheme::PositiveText).color().name();
+        const QString col = scheme.foreground(KColorScheme::PositiveText).color().name();
         tw.statusLabel->setText(i18n("<font color='%1'>%2</font>", col, version));
     } else {
-        QFileInfo fi(path);
+        const QFileInfo fi(path);
         if (fi.isExecutable()) {
-            QString col = scheme.foreground(KColorScheme::PositiveText).color().name();
+            const QString col = scheme.foreground(KColorScheme::PositiveText).color().name();
             tw.statusLabel->setText(i18n("<font color='%1'>Found (no version info)</font>", col));
         } else {
-            QString col = scheme.foreground(KColorScheme::NeutralText).color().name();
+            const QString col = scheme.foreground(KColorScheme::NeutralText).color().name();
             tw.statusLabel->setText(i18n("<font color='%1'><b>File exists but is not executable.</b></font>", col));
         }
     }

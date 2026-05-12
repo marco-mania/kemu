@@ -6,10 +6,7 @@
 
 #include "clonejob.h"
 
-CloneJob::CloneJob(const QString& vmName,
-    const QString& srcPath,
-    const QString& dstPath,
-    QObject* parent)
+CloneJob::CloneJob(const QString &vmName, const QString &srcPath, const QString &dstPath, QObject *parent)
     : KJob(parent)
     , m_vmName(vmName)
     , m_srcPath(srcPath)
@@ -22,7 +19,7 @@ CloneJob::CloneJob(const QString& vmName,
 
 void CloneJob::start()
 {
-    const auto& tools = ExternalTools::instance();
+    const auto &tools = ExternalTools::instance();
 
     if (!tools.isAvailable(ExternalTools::QemuImg)) {
         setError(1);
@@ -32,9 +29,9 @@ void CloneJob::start()
     }
 
     Q_EMIT description(this,
-        i18n("Cloning virtual machine"),
-        QPair<QString, QString>(i18n("Source"), m_vmName),
-        QPair<QString, QString>(i18n("Clone"), m_cloneName));
+                       i18n("Cloning virtual machine"),
+                       QPair<QString, QString>(i18n("Source"), m_vmName),
+                       QPair<QString, QString>(i18n("Clone"), m_cloneName));
 
     QDir().mkpath(m_dstPath);
 
@@ -60,16 +57,10 @@ void CloneJob::start()
     m_process = new KProcess(this);
     m_process->setOutputChannelMode(KProcess::SeparateChannels);
     m_process->setProgram(tools.path(ExternalTools::QemuImg));
-    m_process->setArguments({ u"convert"_s,
-        u"-p"_s,
-        u"-O"_s, u"qcow2"_s,
-        srcDisk,
-        dstDisk });
+    m_process->setArguments({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, srcDisk, dstDisk});
 
-    connect(m_process, &KProcess::readyReadStandardOutput,
-        this, &CloneJob::onReadyReadStdout);
-    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&KProcess::finished),
-        this, &CloneJob::onProcessFinished);
+    connect(m_process, &KProcess::readyReadStandardOutput, this, &CloneJob::onReadyReadStdout);
+    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&KProcess::finished), this, &CloneJob::onProcessFinished);
 
     m_process->start();
 
@@ -84,18 +75,16 @@ void CloneJob::start()
 
 bool CloneJob::copyMetadataFiles()
 {
-    QDir srcDir(m_srcPath);
+    const QDir srcDir(m_srcPath);
     const QStringList entries = srcDir.entryList(QDir::Files);
 
-    for (const QString& file : entries) {
+    for (const QString &file : entries) {
         if (file == u"disk.qcow2"_s)
             continue;
-        if (file.endsWith(u".sock"_s) || file.endsWith(u".pid"_s)
-            || file == u"deploy-serial.log"_s)
+        if (file.endsWith(u".sock"_s) || file.endsWith(u".pid"_s) || file == u"deploy-serial.log"_s)
             continue;
 
-        if (!QFile::copy(m_srcPath + u"/"_s + file,
-                m_dstPath + u"/"_s + file))
+        if (!QFile::copy(m_srcPath + u"/"_s + file, m_dstPath + u"/"_s + file))
             return false;
     }
     return true;
@@ -107,7 +96,7 @@ void CloneJob::onReadyReadStdout()
 
     int lastBreakIndex = -1;
     for (int i = m_outputBuffer.size() - 1; i >= 0; --i) {
-        char c = m_outputBuffer.at(i);
+        const char c = m_outputBuffer.at(i);
         if (c == '\r' || c == '\n') {
             lastBreakIndex = i;
             break;
@@ -123,8 +112,8 @@ void CloneJob::onReadyReadStdout()
     const QByteArray completeData = m_outputBuffer.left(lastBreakIndex);
     m_outputBuffer.remove(0, lastBreakIndex + 1);
 
-    QString output = QString::fromLocal8Bit(completeData);
-    QStringView view(output);
+    const QString output = QString::fromLocal8Bit(completeData);
+    const QStringView view(output);
 
     const QStringView suffix(u"/100%)");
     const QChar prefix(u'(');
@@ -133,11 +122,11 @@ void CloneJob::onReadyReadStdout()
     int endIndex = view.lastIndexOf(suffix);
 
     while (endIndex != -1) {
-        int startIndex = view.lastIndexOf(prefix, endIndex);
+        const int startIndex = view.lastIndexOf(prefix, endIndex);
         if (startIndex != -1) {
-            QStringView numberView = view.mid(startIndex + 1, endIndex - startIndex - 1);
+            const QStringView numberView = view.mid(startIndex + 1, endIndex - startIndex - 1);
             bool ok;
-            double percent = numberView.toDouble(&ok);
+            const double percent = numberView.toDouble(&ok);
             if (ok) {
                 lastPercent = percent;
                 break;

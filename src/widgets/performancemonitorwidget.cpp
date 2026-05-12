@@ -6,7 +6,7 @@
 
 #include "performancemonitorwidget.h"
 
-PerformanceMonitorWidget::PerformanceMonitorWidget(QWidget* parent)
+PerformanceMonitorWidget::PerformanceMonitorWidget(QWidget *parent)
     : QWidget(parent)
 {
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -16,12 +16,12 @@ PerformanceMonitorWidget::PerformanceMonitorWidget(QWidget* parent)
     updateThemeColors();
 
     for (int i = 0; i < ChannelCount; ++i) {
-        auto* anim = new QVariantAnimation(this);
+        auto *anim = new QVariantAnimation(this);
         anim->setDuration(250);
         anim->setEasingCurve(QEasingCurve::OutCubic);
         m_channels[i].anim = anim;
 
-        connect(anim, &QVariantAnimation::valueChanged, this, [this, i](const QVariant& value) {
+        connect(anim, &QVariantAnimation::valueChanged, this, [this, i](const QVariant &value) {
             m_channels[i].visualOffset = value.toDouble();
             update();
         });
@@ -33,7 +33,7 @@ void PerformanceMonitorWidget::addSample(Channel ch, double percent)
     if (ch < 0 || ch >= ChannelCount)
         return;
 
-    auto& d = m_channels[ch];
+    auto &d = m_channels[ch];
     d.samples[d.head] = qBound(0.0, percent, 100.0);
     d.head = (d.head + 1) % HistorySize;
     if (d.count < HistorySize)
@@ -56,7 +56,7 @@ void PerformanceMonitorWidget::clearHistory(Channel ch)
     if (ch < 0 || ch >= ChannelCount)
         return;
 
-    auto& d = m_channels[ch];
+    auto &d = m_channels[ch];
     d.samples.fill(0.0);
     d.head = 0;
     d.count = 0;
@@ -68,10 +68,10 @@ double PerformanceMonitorWidget::currentUsage(Channel ch) const
     if (ch < 0 || ch >= ChannelCount)
         return 0.0;
 
-    const auto& d = m_channels[ch];
+    const auto &d = m_channels[ch];
     if (d.count == 0)
         return 0.0;
-    int last = (d.head - 1 + HistorySize) % HistorySize;
+    const int last = (d.head - 1 + HistorySize) % HistorySize;
     return d.samples.at(last);
 }
 
@@ -81,20 +81,20 @@ QVector<double> PerformanceMonitorWidget::getHistory(Channel ch) const
     if (ch < 0 || ch >= ChannelCount)
         return result;
 
-    const auto& d = m_channels[ch];
+    const auto &d = m_channels[ch];
     result.reserve(d.count);
     for (int i = 0; i < d.count; ++i)
         result.append(sampleAt(ch, i));
     return result;
 }
 
-void PerformanceMonitorWidget::setHistory(Channel ch, const QVector<double>& history)
+void PerformanceMonitorWidget::setHistory(Channel ch, const QVector<double> &history)
 {
     if (ch < 0 || ch >= ChannelCount)
         return;
 
     clearHistory(ch);
-    for (double v : history)
+    for (const double v : history)
         addSample(ch, v);
 }
 
@@ -113,12 +113,12 @@ bool PerformanceMonitorWidget::isActive() const
 
 double PerformanceMonitorWidget::sampleAt(Channel ch, int visualIndex) const
 {
-    const auto& d = m_channels[ch];
+    const auto &d = m_channels[ch];
     if (visualIndex < 0 || visualIndex >= d.count)
         return 0.0;
 
-    int oldest = (d.head - d.count + HistorySize) % HistorySize;
-    int bufIdx = (oldest + visualIndex) % HistorySize;
+    const int oldest = (d.head - d.count + HistorySize) % HistorySize;
+    const int bufIdx = (oldest + visualIndex) % HistorySize;
     return d.samples.at(bufIdx);
 }
 
@@ -127,7 +127,7 @@ double PerformanceMonitorWidget::sampleAt(Channel ch, int visualIndex) const
 void PerformanceMonitorWidget::updateThemeColors()
 {
     const QPalette pal = palette();
-    KColorScheme viewScheme(QPalette::Active, KColorScheme::View);
+    const KColorScheme viewScheme(QPalette::Active, KColorScheme::View);
 
     m_colors.bg = viewScheme.shade(KColorScheme::MidShade);
     m_colors.grid = viewScheme.shade(KColorScheme::MidlightShade);
@@ -139,21 +139,21 @@ void PerformanceMonitorWidget::updateThemeColors()
     m_colors.warnColor = viewScheme.foreground(KColorScheme::NeutralText).color();
     m_colors.critColor = viewScheme.foreground(KColorScheme::NegativeText).color();
 
-    QColor accent = pal.color(QPalette::Active, QPalette::Highlight);
+    const QColor accent = pal.color(QPalette::Active, QPalette::Highlight);
     m_colors.cpu.line = accent;
     m_colors.cpu.fillTop = accent;
     m_colors.cpu.fillTop.setAlpha(70);
     m_colors.cpu.fillBottom = accent;
     m_colors.cpu.fillBottom.setAlpha(12);
 
-    QColor positive = viewScheme.foreground(KColorScheme::PositiveText).color();
+    const QColor positive = viewScheme.foreground(KColorScheme::PositiveText).color();
     m_colors.ram.line = positive;
     m_colors.ram.fillTop = positive;
     m_colors.ram.fillTop.setAlpha(60);
     m_colors.ram.fillBottom = positive;
     m_colors.ram.fillBottom.setAlpha(10);
 
-    QColor neutral = viewScheme.foreground(KColorScheme::NeutralText).color();
+    const QColor neutral = viewScheme.foreground(KColorScheme::NeutralText).color();
     m_colors.io.line = neutral;
     m_colors.io.fillTop = neutral;
     m_colors.io.fillTop.setAlpha(50);
@@ -161,13 +161,11 @@ void PerformanceMonitorWidget::updateThemeColors()
     m_colors.io.fillBottom.setAlpha(8);
 }
 
-void PerformanceMonitorWidget::changeEvent(QEvent* event)
+void PerformanceMonitorWidget::changeEvent(QEvent *event)
 {
     QWidget::changeEvent(event);
 
-    if (event->type() == QEvent::PaletteChange
-        || event->type() == QEvent::StyleChange
-        || event->type() == QEvent::ApplicationPaletteChange) {
+    if (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange || event->type() == QEvent::ApplicationPaletteChange) {
         updateThemeColors();
         update();
     }
@@ -175,30 +173,28 @@ void PerformanceMonitorWidget::changeEvent(QEvent* event)
 
 // -----------------------------------------------------------------------
 
-void PerformanceMonitorWidget::drawCurve(QPainter& p, Channel ch,
-    const ThemeColors::CurveColors& colors,
-    int graphX, int graphY, int graphW, int graphH) const
+void PerformanceMonitorWidget::drawCurve(QPainter &p, Channel ch, const ThemeColors::CurveColors &colors, int graphX, int graphY, int graphW, int graphH) const
 {
-    const auto& d = m_channels[ch];
+    const auto &d = m_channels[ch];
     if (d.count < 2)
         return;
 
-    double xStep = static_cast<double>(graphW) / (HistorySize - 1);
-    double xOffset = (HistorySize - d.count) + d.visualOffset;
+    const double xStep = static_cast<double>(graphW) / (HistorySize - 1);
+    const double xOffset = (HistorySize - d.count) + d.visualOffset;
 
     QPainterPath path;
-    double firstX = graphX + xOffset * xStep;
-    double firstY = graphY + graphH - (graphH * sampleAt(ch, 0) / 100.0);
+    const double firstX = graphX + xOffset * xStep;
+    const double firstY = graphY + graphH - (graphH * sampleAt(ch, 0) / 100.0);
     path.moveTo(firstX, firstY);
 
     for (int i = 1; i < d.count; ++i) {
-        double x = graphX + (xOffset + i) * xStep;
-        double y = graphY + graphH - (graphH * sampleAt(ch, i) / 100.0);
+        const double x = graphX + (xOffset + i) * xStep;
+        const double y = graphY + graphH - (graphH * sampleAt(ch, i) / 100.0);
         path.lineTo(x, y);
     }
 
     QPainterPath fillPath = path;
-    double lastX = graphX + (xOffset + d.count - 1) * xStep;
+    const double lastX = graphX + (xOffset + d.count - 1) * xStep;
     fillPath.lineTo(lastX, graphY + graphH);
     fillPath.lineTo(firstX, graphY + graphH);
     fillPath.closeSubpath();
@@ -217,7 +213,7 @@ void PerformanceMonitorWidget::drawCurve(QPainter& p, Channel ch,
     p.drawPath(path);
 }
 
-void PerformanceMonitorWidget::paintEvent(QPaintEvent*)
+void PerformanceMonitorWidget::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
@@ -257,30 +253,29 @@ void PerformanceMonitorWidget::paintEvent(QPaintEvent*)
             QColor color;
         };
 
-        LegendEntry entries[] = {
-            { i18n("CPU"), currentUsage(Cpu), m_colors.cpu.line },
-            { i18n("RAM"), currentUsage(Ram), m_colors.ram.line },
-            { i18n("I/O"), currentUsage(Io), m_colors.io.line },
+        const LegendEntry entries[] = {
+            {i18n("CPU"), currentUsage(Cpu), m_colors.cpu.line},
+            {i18n("RAM"), currentUsage(Ram), m_colors.ram.line},
+            {i18n("I/O"), currentUsage(Io), m_colors.io.line},
         };
 
-        QFontMetrics fm(labelFont);
+        const QFontMetrics fm(labelFont);
         int x = marginLeft;
         const int headerY = 4;
         const int headerH = 16;
         const int dotSize = 6;
         const int spacing = 12;
 
-        for (const auto& e : entries) {
+        for (const auto &e : entries) {
             p.setPen(Qt::NoPen);
             p.setBrush(e.color);
-            int dotY = headerY + (headerH - dotSize) / 2;
+            const int dotY = headerY + (headerH - dotSize) / 2;
             p.drawEllipse(x, dotY, dotSize, dotSize);
             x += dotSize + 3;
 
-            QString text = u"%1 %2%"_s.arg(e.label, QString::number(e.value, 'f', 1));
+            const QString text = u"%1 %2%"_s.arg(e.label, QString::number(e.value, 'f', 1));
             p.setPen(m_colors.label);
-            p.drawText(QRect(x, headerY, fm.horizontalAdvance(text) + 4, headerH),
-                Qt::AlignLeft | Qt::AlignVCenter, text);
+            p.drawText(QRect(x, headerY, fm.horizontalAdvance(text) + 4, headerH), Qt::AlignLeft | Qt::AlignVCenter, text);
             x += fm.horizontalAdvance(text) + spacing;
         }
     } else {
@@ -290,9 +285,7 @@ void PerformanceMonitorWidget::paintEvent(QPaintEvent*)
         labelFont.setBold(true);
         p.setFont(labelFont);
         p.setPen(m_colors.idleText);
-        p.drawText(QRect(marginLeft, 4, graphW, 16),
-            Qt::AlignLeft | Qt::AlignVCenter,
-            i18n("Performance Monitor"));
+        p.drawText(QRect(marginLeft, 4, graphW, 16), Qt::AlignLeft | Qt::AlignVCenter, i18n("Performance Monitor"));
     }
 
     // Clip graph area
@@ -301,10 +294,10 @@ void PerformanceMonitorWidget::paintEvent(QPaintEvent*)
 
     // Grid lines (25%, 50%, 75%)
     {
-        QPen gridPen(m_colors.grid, 1.0, Qt::DotLine);
+        const QPen gridPen(m_colors.grid, 1.0, Qt::DotLine);
         p.setPen(gridPen);
-        for (int pct : { 25, 50, 75 }) {
-            int y = graphY + graphH - static_cast<int>(graphH * pct / 100.0);
+        for (const int pct : {25, 50, 75}) {
+            const int y = graphY + graphH - static_cast<int>(graphH * pct / 100.0);
             p.drawLine(graphX, y, graphX + graphW, y);
         }
     }
@@ -318,7 +311,7 @@ void PerformanceMonitorWidget::paintEvent(QPaintEvent*)
     p.restore();
 
     // Frame
-    QPen framePen(m_colors.frame, 1.0);
+    const QPen framePen(m_colors.frame, 1.0);
     p.setPen(framePen);
     p.setBrush(Qt::NoBrush);
     p.drawRect(graphX, graphY, graphW, graphH);

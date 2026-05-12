@@ -42,51 +42,49 @@ enum class ClipboardDirection {
 
 class QemuClipboardManager;
 
-class ClipboardDBusHandler : public QDBusVirtualObject {
-
+class ClipboardDBusHandler : public QDBusVirtualObject
+{
     Q_OBJECT
 
 public:
-    ClipboardDBusHandler(QemuClipboardManager* manager, QObject* parent = nullptr);
+    ClipboardDBusHandler(QemuClipboardManager *manager, QObject *parent = nullptr);
 
-    QString introspect(const QString& path) const override;
-    bool handleMessage(const QDBusMessage& message, const QDBusConnection& connection) override;
+    QString introspect(const QString &path) const override;
+    bool handleMessage(const QDBusMessage &message, const QDBusConnection &connection) override;
 
 private:
-    QemuClipboardManager* m_manager;
+    QemuClipboardManager *m_manager;
 };
 
 // =============================================================================
 // QemuClipboardManager
 // =============================================================================
 
-class QemuClipboardManager : public QObject {
-
+class QemuClipboardManager : public QObject
+{
     Q_OBJECT
 
 public:
-    QemuClipboardManager(QDBusConnection& bus,
-        ClipboardDirection direction,
-        QObject* parent = nullptr);
+    QemuClipboardManager(QDBusConnection &bus, ClipboardDirection direction, QObject *parent = nullptr);
     ~QemuClipboardManager() override;
 
     bool setup();
 
     // Called by ClipboardDBusHandler:
-    void handleGrab(uint selection, uint serial, const QStringList& mimes);
+    void handleGrab(uint selection, uint serial, const QStringList &mimes);
     void handleRelease(uint selection);
-    QByteArray handleRequest(uint selection, const QStringList& mimes);
+    QByteArray handleRequest(uint selection, const QStringList &mimes);
 
 private Q_SLOTS:
     void onHostClipboardChanged();
     void doRegister();
-    void onRequestFinished(QDBusPendingCallWatcher* watcher);
+    void onRequestFinished(QDBusPendingCallWatcher *watcher);
 
 private:
     QDBusConnection m_bus;
-    QDBusInterface* m_qemuClipboard = nullptr;
-    ClipboardDBusHandler* m_handler = nullptr;
-    QClipboard* m_hostClipboard;
+    QDBusInterface *m_qemuClipboard = nullptr;
+    ClipboardDBusHandler *m_handler = nullptr;
+    QClipboard *m_hostClipboard;
     ClipboardDirection m_direction;
 
     uint m_serial = 0;

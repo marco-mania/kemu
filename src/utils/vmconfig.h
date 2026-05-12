@@ -28,24 +28,29 @@
 
 using namespace Qt::StringLiterals;
 
-namespace VMSpecs {
+namespace VMSpecs
+{
 
 Q_NAMESPACE
 
-enum class DisplayType { Gtk,
+enum class DisplayType {
+    Gtk,
     Sdl,
     Spice,
     Dbus
 };
 
-enum class GpuType { Vga, // PCI
+enum class GpuType {
+    Vga, // PCI
     VgaISA, // ISA
     CirrusGD5446, // PCI
     CirrusGD5430, // ISA
     Virtio,
-    Qxl };
+    Qxl
+};
 
-enum class AudioDevice { None,
+enum class AudioDevice {
+    None,
     Hda, // PCI
     Ac97, // PCI
     Es1370, // PCI
@@ -54,15 +59,18 @@ enum class AudioDevice { None,
     PcSpkr
 };
 
-enum class DiskInterface { Virtio,
+enum class DiskInterface {
+    Virtio,
     Nvme,
     SataIde // SATA (AHCI) for Q35, IDE for PC
 };
 
-enum class UsbController { None,
+enum class UsbController {
+    None,
     Xhci,
     Ehci,
-    Default };
+    Default
+};
 
 enum class CpuModel {
     Host,
@@ -83,12 +91,14 @@ enum class CpuModel {
     Epyc
 };
 
-enum class MachineType { Q35,
+enum class MachineType {
+    Q35,
     Pc,
     PcISA // ISA-only PC
 };
 
-enum class NetworkCard { None,
+enum class NetworkCard {
+    None,
     Virtio, // PCI
     E1000, // PCI
     Rtl8139, // PCI
@@ -100,14 +110,18 @@ enum class NetworkCard { None,
     I82559er // PCI (Intel PRO/100)
 };
 
-enum class NetworkMode { Passt,
-    VirtualNetwork };
+enum class NetworkMode {
+    Passt,
+    VirtualNetwork
+};
 
-enum class OsType { Linux,
+enum class OsType {
+    Linux,
     Windows,
     DOS,
     BSD,
-    Other };
+    Other
+};
 
 Q_ENUM_NS(DisplayType)
 Q_ENUM_NS(GpuType)
@@ -153,22 +167,22 @@ struct Defaults {
     int spiceUsbRedirCount = 2;
 };
 
-}
+} // namespace VMSpecs
 
 inline const VMSpecs::Defaults GlobalDefaults;
 
 struct PortForwardRule {
-    enum class Protocol { Tcp,
-        Udp };
+    enum class Protocol {
+        Tcp,
+        Udp
+    };
     Protocol protocol = Protocol::Tcp;
     quint16 hostPort = 0;
     quint16 guestPort = 0;
 
-    bool operator==(const PortForwardRule& other) const
+    bool operator==(const PortForwardRule &other) const
     {
-        return protocol == other.protocol
-            && hostPort == other.hostPort
-            && guestPort == other.guestPort;
+        return protocol == other.protocol && hostPort == other.hostPort && guestPort == other.guestPort;
     }
 };
 
@@ -205,158 +219,479 @@ struct MacUsageInfo {
     QString virtualNetworkName;
 };
 
-class VMConfig {
-
+class VMConfig
+{
     Q_GADGET
 
 public:
     VMConfig() = default;
 
-    enum class ImageType { CloudImage,
+    enum class ImageType {
+        CloudImage,
         InstallerIso,
-        Manual };
-    enum class DeployState { None,
+        Manual
+    };
+    enum class DeployState {
+        None,
         Deploying,
         Cloning,
         FirstBoot,
-        Complete };
-    enum class IconSource { None,
+        Complete
+    };
+    enum class IconSource {
+        None,
         SystemTheme,
         IconSet,
-        Custom };
+        Custom
+    };
 
     // --- Getter ---
-    [[nodiscard]] QString name() const { return m_name; }
-    [[nodiscard]] QString comment() const { return m_comment; }
-    [[nodiscard]] VMSpecs::OsType osType() const { return m_osType; }
-    [[nodiscard]] QString distroId() const { return m_distroId; }
+    [[nodiscard]] QString name() const
+    {
+        return m_name;
+    }
+    [[nodiscard]] QString comment() const
+    {
+        return m_comment;
+    }
+    [[nodiscard]] VMSpecs::OsType osType() const
+    {
+        return m_osType;
+    }
+    [[nodiscard]] QString distroId() const
+    {
+        return m_distroId;
+    }
 
-    [[nodiscard]] IconSource iconSource() const { return m_iconSource; }
-    [[nodiscard]] QString iconIdentifier() const { return m_iconIdentifier; }
-    [[nodiscard]] QIcon customIcon() const { return m_customIcon; }
+    [[nodiscard]] IconSource iconSource() const
+    {
+        return m_iconSource;
+    }
+    [[nodiscard]] QString iconIdentifier() const
+    {
+        return m_iconIdentifier;
+    }
+    [[nodiscard]] QIcon customIcon() const
+    {
+        return m_customIcon;
+    }
 
-    [[nodiscard]] VMSpecs::CpuModel cpuModel() const { return m_cpuModel; }
+    [[nodiscard]] VMSpecs::CpuModel cpuModel() const
+    {
+        return m_cpuModel;
+    }
 
-    [[nodiscard]] bool useKvm() const { return m_useKvm; }
-    [[nodiscard]] int ramMb() const { return m_ramMb; }
-    [[nodiscard]] int cpuCoreCount() const { return m_cpuCoreCount; }
-    [[nodiscard]] int diskSizeGb() const { return m_diskSizeGb; }
-    [[nodiscard]] QString isoPath() const { return m_isoPath; }
-    [[nodiscard]] bool bootFromIso() const { return m_bootFromIso; }
-    [[nodiscard]] QString floppyPath() const { return m_floppyPath; }
-    [[nodiscard]] bool bootFromFloppy() const { return m_bootFromFloppy; }
-    [[nodiscard]] QString extraArgs() const { return m_extraArgs; }
-    [[nodiscard]] QString diskPath() const { return m_diskPath; }
+    [[nodiscard]] bool useKvm() const
+    {
+        return m_useKvm;
+    }
+    [[nodiscard]] int ramMb() const
+    {
+        return m_ramMb;
+    }
+    [[nodiscard]] int cpuCoreCount() const
+    {
+        return m_cpuCoreCount;
+    }
+    [[nodiscard]] int diskSizeGb() const
+    {
+        return m_diskSizeGb;
+    }
+    [[nodiscard]] QString isoPath() const
+    {
+        return m_isoPath;
+    }
+    [[nodiscard]] bool bootFromIso() const
+    {
+        return m_bootFromIso;
+    }
+    [[nodiscard]] QString floppyPath() const
+    {
+        return m_floppyPath;
+    }
+    [[nodiscard]] bool bootFromFloppy() const
+    {
+        return m_bootFromFloppy;
+    }
+    [[nodiscard]] QString extraArgs() const
+    {
+        return m_extraArgs;
+    }
+    [[nodiscard]] QString diskPath() const
+    {
+        return m_diskPath;
+    }
 
-    [[nodiscard]] VMSpecs::DisplayType displayType() const { return m_displayType; }
-    [[nodiscard]] VMSpecs::GpuType gpuType() const { return m_gpuType; }
-    [[nodiscard]] bool gpu3dAcceleration() const { return m_gpu3dAcceleration; }
-    [[nodiscard]] int gpuMemMb() const { return m_gpuMemMb; }
-    [[nodiscard]] QSize displayResolution() const { return m_displayResolution; }
-    [[nodiscard]] VMSpecs::AudioDevice audioDevice() const { return m_audioDevice; }
-    [[nodiscard]] Sb16Config sb16Config() const { return m_sb16Config; }
-    [[nodiscard]] VMSpecs::DiskInterface diskInterface() const { return m_diskInterface; }
-    [[nodiscard]] VMSpecs::UsbController usbController() const { return m_usbController; }
-    [[nodiscard]] bool useUsbTablet() const { return m_useUsbTablet; }
-    [[nodiscard]] bool useUsbKeyboard() const { return m_useUsbKeyboard; }
-    [[nodiscard]] bool spiceAgent() const { return m_spiceAgent; }
-    [[nodiscard]] bool spiceUsbRedir() const { return m_spiceUsbRedir; }
-    [[nodiscard]] int spiceUsbRedirCount() const { return m_spiceUsbRedirCount; }
+    [[nodiscard]] VMSpecs::DisplayType displayType() const
+    {
+        return m_displayType;
+    }
+    [[nodiscard]] VMSpecs::GpuType gpuType() const
+    {
+        return m_gpuType;
+    }
+    [[nodiscard]] bool gpu3dAcceleration() const
+    {
+        return m_gpu3dAcceleration;
+    }
+    [[nodiscard]] int gpuMemMb() const
+    {
+        return m_gpuMemMb;
+    }
+    [[nodiscard]] QSize displayResolution() const
+    {
+        return m_displayResolution;
+    }
+    [[nodiscard]] VMSpecs::AudioDevice audioDevice() const
+    {
+        return m_audioDevice;
+    }
+    [[nodiscard]] Sb16Config sb16Config() const
+    {
+        return m_sb16Config;
+    }
+    [[nodiscard]] VMSpecs::DiskInterface diskInterface() const
+    {
+        return m_diskInterface;
+    }
+    [[nodiscard]] VMSpecs::UsbController usbController() const
+    {
+        return m_usbController;
+    }
+    [[nodiscard]] bool useUsbTablet() const
+    {
+        return m_useUsbTablet;
+    }
+    [[nodiscard]] bool useUsbKeyboard() const
+    {
+        return m_useUsbKeyboard;
+    }
+    [[nodiscard]] bool spiceAgent() const
+    {
+        return m_spiceAgent;
+    }
+    [[nodiscard]] bool spiceUsbRedir() const
+    {
+        return m_spiceUsbRedir;
+    }
+    [[nodiscard]] int spiceUsbRedirCount() const
+    {
+        return m_spiceUsbRedirCount;
+    }
 
-    [[nodiscard]] VMSpecs::MachineType machineType() const { return m_machineType; }
-    [[nodiscard]] bool useUefi() const { return m_useUefi; }
-    [[nodiscard]] bool useMemoryBallooning() const { return m_useMemoryBallooning; }
-    [[nodiscard]] bool preallocMemory() const { return m_preallocMemory; }
-    [[nodiscard]] bool useLocalTime() const { return m_useLocalTime; }
-    [[nodiscard]] bool useTpm() const { return m_useTpm; }
-    [[nodiscard]] bool useSecureBoot() const { return m_useSecureBoot; }
-    [[nodiscard]] bool useAcpi() const { return m_useAcpi; }
-    [[nodiscard]] QString sharedPath() const { return m_sharedPath; }
-    [[nodiscard]] QString sharedName() const { return m_sharedName; }
+    [[nodiscard]] VMSpecs::MachineType machineType() const
+    {
+        return m_machineType;
+    }
+    [[nodiscard]] bool useUefi() const
+    {
+        return m_useUefi;
+    }
+    [[nodiscard]] bool useMemoryBallooning() const
+    {
+        return m_useMemoryBallooning;
+    }
+    [[nodiscard]] bool preallocMemory() const
+    {
+        return m_preallocMemory;
+    }
+    [[nodiscard]] bool useLocalTime() const
+    {
+        return m_useLocalTime;
+    }
+    [[nodiscard]] bool useTpm() const
+    {
+        return m_useTpm;
+    }
+    [[nodiscard]] bool useSecureBoot() const
+    {
+        return m_useSecureBoot;
+    }
+    [[nodiscard]] bool useAcpi() const
+    {
+        return m_useAcpi;
+    }
+    [[nodiscard]] QString sharedPath() const
+    {
+        return m_sharedPath;
+    }
+    [[nodiscard]] QString sharedName() const
+    {
+        return m_sharedName;
+    }
 
-    [[nodiscard]] VMSpecs::NetworkCard networkCard() const { return m_networkCard; }
-    [[nodiscard]] QString macAddress() const { return m_macAddress; }
+    [[nodiscard]] VMSpecs::NetworkCard networkCard() const
+    {
+        return m_networkCard;
+    }
+    [[nodiscard]] QString macAddress() const
+    {
+        return m_macAddress;
+    }
 
-    [[nodiscard]] VMSpecs::NetworkMode networkMode() const { return m_networkMode; }
-    [[nodiscard]] QString virtualNetworkName() const { return m_virtualNetworkName; }
+    [[nodiscard]] VMSpecs::NetworkMode networkMode() const
+    {
+        return m_networkMode;
+    }
+    [[nodiscard]] QString virtualNetworkName() const
+    {
+        return m_virtualNetworkName;
+    }
 
-    [[nodiscard]] QList<PortForwardRule> portForwards() const { return m_portForwards; }
+    [[nodiscard]] QList<PortForwardRule> portForwards() const
+    {
+        return m_portForwards;
+    }
 
-    [[nodiscard]] ImageType imageType() const { return m_imageType; }
-    [[nodiscard]] DeployState deployState() const { return m_deployState; }
+    [[nodiscard]] ImageType imageType() const
+    {
+        return m_imageType;
+    }
+    [[nodiscard]] DeployState deployState() const
+    {
+        return m_deployState;
+    }
 
     static VMSpecs::MachineType recommendedMachineType(VMSpecs::CpuModel type);
     static int maxCoresForModel(VMSpecs::CpuModel type);
-    static int vgaMemMbLowerLimit(const VMSpecs::GpuType& type);
-    static int vgaMemMbUpperLimit(const VMSpecs::GpuType& type);
+    static int vgaMemMbLowerLimit(const VMSpecs::GpuType &type);
+    static int vgaMemMbUpperLimit(const VMSpecs::GpuType &type);
 
     // --- Setter ---
-    void setName(const QString& name) { m_name = name; }
-    void setComment(const QString& comment) { m_comment = comment; }
-    void setOsType(const VMSpecs::OsType type) { m_osType = type; }
-    void setDistroId(const QString& id) { m_distroId = id; }
+    void setName(const QString &name)
+    {
+        m_name = name;
+    }
+    void setComment(const QString &comment)
+    {
+        m_comment = comment;
+    }
+    void setOsType(const VMSpecs::OsType type)
+    {
+        m_osType = type;
+    }
+    void setDistroId(const QString &id)
+    {
+        m_distroId = id;
+    }
 
-    void setIconSource(const IconSource iconsrc) { m_iconSource = iconsrc; }
-    void setIconIdentifier(const QString& iconId) { m_iconIdentifier = iconId; }
-    void setCustomIcon(const QIcon& icon) { m_customIcon = icon; }
+    void setIconSource(const IconSource iconsrc)
+    {
+        m_iconSource = iconsrc;
+    }
+    void setIconIdentifier(const QString &iconId)
+    {
+        m_iconIdentifier = iconId;
+    }
+    void setCustomIcon(const QIcon &icon)
+    {
+        m_customIcon = icon;
+    }
 
-    void setCpuModel(VMSpecs::CpuModel model) { m_cpuModel = model; }
+    void setCpuModel(VMSpecs::CpuModel model)
+    {
+        m_cpuModel = model;
+    }
 
-    void setUseKvm(const bool kvm) { m_useKvm = kvm; }
-    void setRamMb(const int mb) { m_ramMb = mb; }
-    void setMemoryBalloning(const bool ballooning) { m_useMemoryBallooning = ballooning; }
-    void setPreallocMemory(const bool prealloc) { m_preallocMemory = prealloc; }
-    void setCpuCoreCount(const int count) { m_cpuCoreCount = count; }
-    void setDiskSizeGb(const int gb) { m_diskSizeGb = gb; }
-    void setISOPath(const QString& path) { m_isoPath = path; }
-    void setBootFromIso(const bool bfi) { m_bootFromIso = bfi; }
-    void clearISOPath() { m_isoPath.clear(); }
-    void setFloppyPath(const QString& path) { m_floppyPath = path; }
-    void setBootFromFloppy(const bool bff) { m_bootFromFloppy = bff; }
-    void clearFloppyPath() { m_floppyPath.clear(); }
-    void setExtraArgs(const QString& args) { m_extraArgs = args; }
-    void setDiskPath(const QString& path) { m_diskPath = path; }
+    void setUseKvm(const bool kvm)
+    {
+        m_useKvm = kvm;
+    }
+    void setRamMb(const int mb)
+    {
+        m_ramMb = mb;
+    }
+    void setMemoryBalloning(const bool ballooning)
+    {
+        m_useMemoryBallooning = ballooning;
+    }
+    void setPreallocMemory(const bool prealloc)
+    {
+        m_preallocMemory = prealloc;
+    }
+    void setCpuCoreCount(const int count)
+    {
+        m_cpuCoreCount = count;
+    }
+    void setDiskSizeGb(const int gb)
+    {
+        m_diskSizeGb = gb;
+    }
+    void setISOPath(const QString &path)
+    {
+        m_isoPath = path;
+    }
+    void setBootFromIso(const bool bfi)
+    {
+        m_bootFromIso = bfi;
+    }
+    void clearISOPath()
+    {
+        m_isoPath.clear();
+    }
+    void setFloppyPath(const QString &path)
+    {
+        m_floppyPath = path;
+    }
+    void setBootFromFloppy(const bool bff)
+    {
+        m_bootFromFloppy = bff;
+    }
+    void clearFloppyPath()
+    {
+        m_floppyPath.clear();
+    }
+    void setExtraArgs(const QString &args)
+    {
+        m_extraArgs = args;
+    }
+    void setDiskPath(const QString &path)
+    {
+        m_diskPath = path;
+    }
 
-    void setDisplayType(const VMSpecs::DisplayType type) { m_displayType = type; }
-    void setGpuType(const VMSpecs::GpuType type) { m_gpuType = type; }
-    void setGpu3dAcceleration(bool enabled) { m_gpu3dAcceleration = enabled; }
-    void setGpuMemMb(const int mb) { m_gpuMemMb = mb; }
-    void setDisplayResolution(const QSize& res) { m_displayResolution = res; }
-    void setAudioDevice(const VMSpecs::AudioDevice device) { m_audioDevice = device; }
-    void setSb16Config(const Sb16Config& cfg) { m_sb16Config = cfg; }
-    void setDiskInterface(const VMSpecs::DiskInterface interface) { m_diskInterface = interface; }
-    void setUsbController(const VMSpecs::UsbController controller) { m_usbController = controller; }
-    void setUseUsbTablet(const bool tablet) { m_useUsbTablet = tablet; }
-    void setUseUsbKeyboard(const bool keyboard) { m_useUsbKeyboard = keyboard; }
-    void setSpiceAgent(bool enabled) { m_spiceAgent = enabled; }
-    void setSpiceUsbRedir(bool enabled) { m_spiceUsbRedir = enabled; }
-    void setSpiceUsbRedirCount(int count) { m_spiceUsbRedirCount = count; }
+    void setDisplayType(const VMSpecs::DisplayType type)
+    {
+        m_displayType = type;
+    }
+    void setGpuType(const VMSpecs::GpuType type)
+    {
+        m_gpuType = type;
+    }
+    void setGpu3dAcceleration(bool enabled)
+    {
+        m_gpu3dAcceleration = enabled;
+    }
+    void setGpuMemMb(const int mb)
+    {
+        m_gpuMemMb = mb;
+    }
+    void setDisplayResolution(const QSize &res)
+    {
+        m_displayResolution = res;
+    }
+    void setAudioDevice(const VMSpecs::AudioDevice device)
+    {
+        m_audioDevice = device;
+    }
+    void setSb16Config(const Sb16Config &cfg)
+    {
+        m_sb16Config = cfg;
+    }
+    void setDiskInterface(const VMSpecs::DiskInterface interface)
+    {
+        m_diskInterface = interface;
+    }
+    void setUsbController(const VMSpecs::UsbController controller)
+    {
+        m_usbController = controller;
+    }
+    void setUseUsbTablet(const bool tablet)
+    {
+        m_useUsbTablet = tablet;
+    }
+    void setUseUsbKeyboard(const bool keyboard)
+    {
+        m_useUsbKeyboard = keyboard;
+    }
+    void setSpiceAgent(bool enabled)
+    {
+        m_spiceAgent = enabled;
+    }
+    void setSpiceUsbRedir(bool enabled)
+    {
+        m_spiceUsbRedir = enabled;
+    }
+    void setSpiceUsbRedirCount(int count)
+    {
+        m_spiceUsbRedirCount = count;
+    }
 
-    void setMachineType(VMSpecs::MachineType type) { m_machineType = type; }
-    void setUseUefi(const bool uefi) { m_useUefi = uefi; }
-    void setUseBalloon(const bool balloon) { m_useMemoryBallooning = balloon; }
-    void setUsePrealloc(const bool prealloc) { m_preallocMemory = prealloc; }
-    void setUseLocalTime(const bool localTime) { m_useLocalTime = localTime; }
-    void setUseTpm(const bool tpm) { m_useTpm = tpm; }
-    void setUseSecureBoot(const bool sb) { m_useSecureBoot = sb; }
-    void setUseAcpi(const bool acpi) { m_useAcpi = acpi; }
-    void setSharedPath(const QString& path) { m_sharedPath = path; }
-    void setSharedName(const QString& name) { m_sharedName = name; }
+    void setMachineType(VMSpecs::MachineType type)
+    {
+        m_machineType = type;
+    }
+    void setUseUefi(const bool uefi)
+    {
+        m_useUefi = uefi;
+    }
+    void setUseBalloon(const bool balloon)
+    {
+        m_useMemoryBallooning = balloon;
+    }
+    void setUsePrealloc(const bool prealloc)
+    {
+        m_preallocMemory = prealloc;
+    }
+    void setUseLocalTime(const bool localTime)
+    {
+        m_useLocalTime = localTime;
+    }
+    void setUseTpm(const bool tpm)
+    {
+        m_useTpm = tpm;
+    }
+    void setUseSecureBoot(const bool sb)
+    {
+        m_useSecureBoot = sb;
+    }
+    void setUseAcpi(const bool acpi)
+    {
+        m_useAcpi = acpi;
+    }
+    void setSharedPath(const QString &path)
+    {
+        m_sharedPath = path;
+    }
+    void setSharedName(const QString &name)
+    {
+        m_sharedName = name;
+    }
 
-    void setNetworkCard(const VMSpecs::NetworkCard card) { m_networkCard = card; }
-    void setMacAddress(const QString& mac) { m_macAddress = mac; }
-    void ensureMacAddress(const QStringList& usedMacs);
+    void setNetworkCard(const VMSpecs::NetworkCard card)
+    {
+        m_networkCard = card;
+    }
+    void setMacAddress(const QString &mac)
+    {
+        m_macAddress = mac;
+    }
+    void ensureMacAddress(const QStringList &usedMacs);
 
-    void setNetworkMode(VMSpecs::NetworkMode mode) { m_networkMode = mode; }
-    void setVirtualNetworkName(const QString& name) { m_virtualNetworkName = name; }
+    void setNetworkMode(VMSpecs::NetworkMode mode)
+    {
+        m_networkMode = mode;
+    }
+    void setVirtualNetworkName(const QString &name)
+    {
+        m_virtualNetworkName = name;
+    }
 
-    void setPortForwards(const QList<PortForwardRule>& rules) { m_portForwards = rules; }
-    void addPortForward(const PortForwardRule& rule) { m_portForwards.append(rule); }
-    void removePortForward(int index) { m_portForwards.removeAt(index); }
-    void clearPortForwards() { m_portForwards.clear(); }
+    void setPortForwards(const QList<PortForwardRule> &rules)
+    {
+        m_portForwards = rules;
+    }
+    void addPortForward(const PortForwardRule &rule)
+    {
+        m_portForwards.append(rule);
+    }
+    void removePortForward(int index)
+    {
+        m_portForwards.removeAt(index);
+    }
+    void clearPortForwards()
+    {
+        m_portForwards.clear();
+    }
 
-    void setImageType(ImageType type) { m_imageType = type; }
-    void setDeployState(DeployState state) { m_deployState = state; }
+    void setImageType(ImageType type)
+    {
+        m_imageType = type;
+    }
+    void setDeployState(DeployState state)
+    {
+        m_deployState = state;
+    }
 
     // --- Bus Type Helpers ---
     [[nodiscard]] static bool isIsaDevice(VMSpecs::GpuType type);
@@ -369,16 +704,15 @@ public:
     // --- Icon Helpers ---
     [[nodiscard]] QIcon icon(int size) const;
     [[nodiscard]] QString iconSetPath() const; // Get the filesystem path for IconSet icons
-    bool saveCustomIcon(const QDir& dir) const;
-    bool loadCustomIcon(const QDir& dir);
-    bool removeCustomIcon(const QDir& dir);
+    bool saveCustomIcon(const QDir &dir) const;
+    bool loadCustomIcon(const QDir &dir);
+    bool removeCustomIcon(const QDir &dir);
 
     // --- Static Icon Helper ---
-    [[nodiscard]] static QIcon styledVmIcon(const QIcon& baseIcon, bool isRunning,
-        bool isHeadless, int size = KEMUConst::ListViewIconSize);
+    [[nodiscard]] static QIcon styledVmIcon(const QIcon &baseIcon, bool isRunning, bool isHeadless, int size = KEMUConst::ListViewIconSize);
     [[nodiscard]] static QString osIconDir();
     [[nodiscard]] static QString defaultIconForType(VMSpecs::OsType type);
-    [[nodiscard]] static QString defaultIconFor(VMSpecs::OsType type, const QString& variant);
+    [[nodiscard]] static QString defaultIconFor(VMSpecs::OsType type, const QString &variant);
 
     // --- QEMU Strings ---
     [[nodiscard]] static QString toQemuString(VMSpecs::CpuModel model);
@@ -417,28 +751,28 @@ public:
     [[nodiscard]] static QString toString(IconSource src);
 
     // --- Parse Strings ---
-    [[nodiscard]] static VMSpecs::CpuModel parseCpuModel(const QString& str);
-    [[nodiscard]] static VMSpecs::DisplayType parseDisplayType(const QString& str);
-    [[nodiscard]] static VMSpecs::MachineType parseMachineType(const QString& str);
-    [[nodiscard]] static VMSpecs::GpuType parseGpuType(const QString& str);
-    [[nodiscard]] static VMSpecs::AudioDevice parseAudioDevice(const QString& str);
-    [[nodiscard]] static VMSpecs::NetworkCard parseNetworkCard(const QString& str);
-    [[nodiscard]] static VMSpecs::DiskInterface parseDiskInterface(const QString& str);
-    [[nodiscard]] static VMSpecs::UsbController parseUSBController(const QString& str);
-    [[nodiscard]] static PortForwardRule::Protocol parseProtocol(const QString& str);
-    [[nodiscard]] static VMSpecs::OsType parseOsType(const QString& str);
-    [[nodiscard]] static VMSpecs::NetworkMode parseNetworkMode(const QString& str);
-    [[nodiscard]] static ImageType parseImageType(const QString& str);
-    [[nodiscard]] static DeployState parseDeployState(const QString& str);
-    [[nodiscard]] static IconSource parseIconSource(const QString& str);
+    [[nodiscard]] static VMSpecs::CpuModel parseCpuModel(const QString &str);
+    [[nodiscard]] static VMSpecs::DisplayType parseDisplayType(const QString &str);
+    [[nodiscard]] static VMSpecs::MachineType parseMachineType(const QString &str);
+    [[nodiscard]] static VMSpecs::GpuType parseGpuType(const QString &str);
+    [[nodiscard]] static VMSpecs::AudioDevice parseAudioDevice(const QString &str);
+    [[nodiscard]] static VMSpecs::NetworkCard parseNetworkCard(const QString &str);
+    [[nodiscard]] static VMSpecs::DiskInterface parseDiskInterface(const QString &str);
+    [[nodiscard]] static VMSpecs::UsbController parseUSBController(const QString &str);
+    [[nodiscard]] static PortForwardRule::Protocol parseProtocol(const QString &str);
+    [[nodiscard]] static VMSpecs::OsType parseOsType(const QString &str);
+    [[nodiscard]] static VMSpecs::NetworkMode parseNetworkMode(const QString &str);
+    [[nodiscard]] static ImageType parseImageType(const QString &str);
+    [[nodiscard]] static DeployState parseDeployState(const QString &str);
+    [[nodiscard]] static IconSource parseIconSource(const QString &str);
 
-    static QPair<VMSpecs::OsType, QString> guessOSFromText(const QString& string, bool* found = nullptr);
+    static QPair<VMSpecs::OsType, QString> guessOSFromText(const QString &string, bool *found = nullptr);
 
     // --- JSON Serialization ---
     [[nodiscard]] QJsonObject toJson() const;
-    static VMConfig fromJson(const QJsonObject& json);
+    static VMConfig fromJson(const QJsonObject &json);
 
-    void normalizePaths(const QDir& baseDir);
+    void normalizePaths(const QDir &baseDir);
 
 private:
     QString m_name;
@@ -448,7 +782,7 @@ private:
 
     IconSource m_iconSource = IconSource::None;
     QString m_iconIdentifier;
-    QIcon m_customIcon = { };
+    QIcon m_customIcon = {};
 
     VMSpecs::CpuModel m_cpuModel = GlobalDefaults.cpuModel;
     bool m_useKvm = true;

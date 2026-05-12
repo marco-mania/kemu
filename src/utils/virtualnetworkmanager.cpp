@@ -21,7 +21,7 @@ using namespace Qt::StringLiterals;
 // Construction / Destruction
 // ============================================================================
 
-VirtualNetworkManager::VirtualNetworkManager(QObject* parent)
+VirtualNetworkManager::VirtualNetworkManager(QObject *parent)
     : QObject(parent)
 {
 }
@@ -40,7 +40,7 @@ VirtualNetworkManager::~VirtualNetworkManager()
 // KConfig Persistence
 // ============================================================================
 
-QString VirtualNetworkManager::configGroupName(const QString& networkName)
+QString VirtualNetworkManager::configGroupName(const QString &networkName)
 {
     return u"VirtualNetwork-%1"_s.arg(networkName);
 }
@@ -49,18 +49,18 @@ void VirtualNetworkManager::load()
 {
     m_networks.clear();
     KConfig config(u"kemurc"_s);
-    KConfigGroup root = config.group(u"VirtualNetworks"_s);
+    const KConfigGroup root = config.group(u"VirtualNetworks"_s);
     const QStringList names = root.readEntry(u"Names"_s, QStringList());
 
-    for (const QString& name : names) {
-        KConfigGroup grp = config.group(configGroupName(name));
+    for (const QString &name : names) {
+        const KConfigGroup grp = config.group(configGroupName(name));
         VirtualNetwork net;
         net.name = name;
-        net.gateway = grp.readEntry(u"Gateway"_s, { });
+        net.gateway = grp.readEntry(u"Gateway"_s, {});
         net.prefixLength = grp.readEntry(u"PrefixLength"_s, 24);
         net.enableDhcp = grp.readEntry(u"EnableDhcp"_s, true);
-        net.dhcpRangeStart = grp.readEntry(u"DhcpRangeStart"_s, { });
-        net.dhcpRangeEnd = grp.readEntry(u"DhcpRangeEnd"_s, { });
+        net.dhcpRangeStart = grp.readEntry(u"DhcpRangeStart"_s, {});
+        net.dhcpRangeEnd = grp.readEntry(u"DhcpRangeEnd"_s, {});
         net.enableNat = grp.readEntry(u"EnableNat"_s, true);
         net.portForwards = grp.readEntry(u"PortForwards"_s, QStringList());
         if (net.isValid())
@@ -73,20 +73,20 @@ void VirtualNetworkManager::save() const
     KConfig config(u"kemurc"_s);
 
     QStringList names;
-    for (const auto& net : m_networks)
+    for (const auto &net : m_networks)
         names << net.name;
 
     // Remove config groups for networks that no longer exist.
     KConfigGroup root = config.group(u"VirtualNetworks"_s);
     const QStringList oldNames = root.readEntry(u"Names"_s, QStringList());
-    for (const QString& old : oldNames) {
+    for (const QString &old : oldNames) {
         if (!names.contains(old))
             config.deleteGroup(configGroupName(old));
     }
 
     root.writeEntry(u"Names"_s, names);
 
-    for (const auto& net : m_networks) {
+    for (const auto &net : m_networks) {
         KConfigGroup grp = config.group(configGroupName(net.name));
         grp.writeEntry(u"Gateway"_s, net.gateway);
         grp.writeEntry(u"PrefixLength"_s, net.prefixLength);
@@ -109,19 +109,19 @@ QList<VirtualNetwork> VirtualNetworkManager::networks() const
     return m_networks;
 }
 
-VirtualNetwork VirtualNetworkManager::network(const QString& name) const
+VirtualNetwork VirtualNetworkManager::network(const QString &name) const
 {
-    for (const auto& n : m_networks)
+    for (const auto &n : m_networks)
         if (n.name == name)
             return n;
-    return { };
+    return {};
 }
 
 QStringList VirtualNetworkManager::networkNames() const
 {
     QStringList names;
     names.reserve(m_networks.size());
-    for (const auto& n : m_networks)
+    for (const auto &n : m_networks)
         names << n.name;
     return names;
 }
@@ -130,9 +130,9 @@ QStringList VirtualNetworkManager::networkNames() const
 // CRUD
 // ============================================================================
 
-bool VirtualNetworkManager::addNetwork(const VirtualNetwork& net)
+bool VirtualNetworkManager::addNetwork(const VirtualNetwork &net)
 {
-    for (const auto& n : m_networks)
+    for (const auto &n : m_networks)
         if (n.name == net.name)
             return false;
     m_networks.append(net);
@@ -141,13 +141,14 @@ bool VirtualNetworkManager::addNetwork(const VirtualNetwork& net)
     return true;
 }
 
-bool VirtualNetworkManager::removeNetwork(const QString& name)
+bool VirtualNetworkManager::removeNetwork(const QString &name)
 {
     if (isRunning(name))
         stopNetwork(name);
 
-    auto it = std::find_if(m_networks.begin(), m_networks.end(),
-        [&](const VirtualNetwork& n) { return n.name == name; });
+    auto it = std::find_if(m_networks.begin(), m_networks.end(), [&](const VirtualNetwork &n) {
+        return n.name == name;
+    });
     if (it == m_networks.end())
         return false;
 
@@ -157,9 +158,9 @@ bool VirtualNetworkManager::removeNetwork(const QString& name)
     return true;
 }
 
-bool VirtualNetworkManager::updateNetwork(const VirtualNetwork& net)
+bool VirtualNetworkManager::updateNetwork(const VirtualNetwork &net)
 {
-    for (auto& n : m_networks) {
+    for (auto &n : m_networks) {
         if (n.name == net.name) {
             n = net;
             save();
@@ -174,7 +175,7 @@ bool VirtualNetworkManager::updateNetwork(const VirtualNetwork& net)
 // Runtime Control
 // ============================================================================
 
-bool VirtualNetworkManager::startNetwork(const QString& name)
+bool VirtualNetworkManager::startNetwork(const QString &name)
 {
     m_lastError.clear();
 
@@ -187,7 +188,7 @@ bool VirtualNetworkManager::startNetwork(const QString& name)
         return false;
     }
 
-    QDir dir(runtimeDir(name));
+    const QDir dir(runtimeDir(name));
     dir.mkpath(u"."_s);
 
     if (!createNamespace(name)) {
@@ -229,7 +230,7 @@ bool VirtualNetworkManager::startNetwork(const QString& name)
     return true;
 }
 
-void VirtualNetworkManager::stopNetwork(const QString& name)
+void VirtualNetworkManager::stopNetwork(const QString &name)
 {
     auto it = m_runtime.find(name);
     if (it == m_runtime.end())
@@ -237,7 +238,7 @@ void VirtualNetworkManager::stopNetwork(const QString& name)
 
     // Notify all attached VMs that they are being detached.
     const QStringList vmNames = it->attachedVms.keys();
-    for (const QString& vm : vmNames)
+    for (const QString &vm : vmNames)
         Q_EMIT vmDetached(name, vm);
 
     terminateAll(it.value());
@@ -247,7 +248,7 @@ void VirtualNetworkManager::stopNetwork(const QString& name)
     Q_EMIT networkStopped(name);
 }
 
-bool VirtualNetworkManager::isRunning(const QString& name) const
+bool VirtualNetworkManager::isRunning(const QString &name) const
 {
     auto it = m_runtime.find(name);
     if (it == m_runtime.end() || it->nsPid <= 0)
@@ -259,13 +260,13 @@ bool VirtualNetworkManager::isRunning(const QString& name) const
 // Per-VM Integration
 // ============================================================================
 
-QString VirtualNetworkManager::attachVm(const QString& networkName, const QString& vmName)
+QString VirtualNetworkManager::attachVm(const QString &networkName, const QString &vmName)
 {
     resetError();
 
     if (!isRunning(networkName)) {
         setError(networkName, i18n("Cannot attach VM '%1': network is not running.", vmName));
-        return { };
+        return {};
     }
 
     auto it = m_runtime.find(networkName);
@@ -277,7 +278,7 @@ QString VirtualNetworkManager::attachVm(const QString& networkName, const QStrin
     const QString tapName = createTapDevice(networkName, vmName);
     if (tapName.isEmpty()) {
         setError(networkName, i18n("Failed to create tap device for VM '%1'.", vmName));
-        return { };
+        return {};
     }
 
     it->attachedVms.insert(vmName, tapName);
@@ -287,7 +288,7 @@ QString VirtualNetworkManager::attachVm(const QString& networkName, const QStrin
     return tapName;
 }
 
-void VirtualNetworkManager::detachVm(const QString& networkName, const QString& vmName)
+void VirtualNetworkManager::detachVm(const QString &networkName, const QString &vmName)
 {
     auto it = m_runtime.find(networkName);
     if (it == m_runtime.end())
@@ -310,23 +311,23 @@ void VirtualNetworkManager::detachVm(const QString& networkName, const QString& 
         stopNetwork(networkName);
 }
 
-int VirtualNetworkManager::connectedVmCount(const QString& name) const
+int VirtualNetworkManager::connectedVmCount(const QString &name) const
 {
     auto it = m_runtime.find(name);
     return (it != m_runtime.end()) ? it->vmRefCount : 0;
 }
 
-qint64 VirtualNetworkManager::namespacePid(const QString& name) const
+qint64 VirtualNetworkManager::namespacePid(const QString &name) const
 {
     auto it = m_runtime.find(name);
     return (it != m_runtime.end()) ? it->nsPid : 0;
 }
 
-QString VirtualNetworkManager::tapDeviceName(const QString& networkName, const QString& vmName) const
+QString VirtualNetworkManager::tapDeviceName(const QString &networkName, const QString &vmName) const
 {
     auto it = m_runtime.find(networkName);
     if (it == m_runtime.end())
-        return { };
+        return {};
     return it->attachedVms.value(vmName);
 }
 
@@ -348,14 +349,13 @@ QString VirtualNetworkManager::lastError() const
 // Internal: Runtime Directory
 // ============================================================================
 
-QString VirtualNetworkManager::runtimeDir(const QString& name) const
+QString VirtualNetworkManager::runtimeDir(const QString &name) const
 {
-    const QString base = QStandardPaths::writableLocation(
-        QStandardPaths::RuntimeLocation);
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
     return base + u"/kemu/net-%1"_s.arg(name);
 }
 
-void VirtualNetworkManager::cleanupRuntimeDir(const QString& name)
+void VirtualNetworkManager::cleanupRuntimeDir(const QString &name)
 {
     QDir dir(runtimeDir(name));
     if (dir.exists())
@@ -366,16 +366,16 @@ void VirtualNetworkManager::cleanupRuntimeDir(const QString& name)
 // Internal: Namespace Creation (Step 1)
 // ============================================================================
 
-bool VirtualNetworkManager::createNamespace(const QString& name)
+bool VirtualNetworkManager::createNamespace(const QString &name)
 {
     QString error;
-    qint64 pid = NamespaceHelper::createNamespace(&error);
+    const qint64 pid = NamespaceHelper::createNamespace(&error);
     if (pid < 0) {
         setError(name, i18n("Failed to create namespace: %1", error));
         return false;
     }
 
-    RuntimeState& state = m_runtime[name];
+    RuntimeState &state = m_runtime[name];
     state.nsPid = pid;
 
     if (!NamespaceHelper::setInterfaceUp(pid, u"lo"_s, &error)) {
@@ -389,7 +389,7 @@ bool VirtualNetworkManager::createNamespace(const QString& name)
     return true;
 }
 
-bool VirtualNetworkManager::setupNat(const QString& name)
+bool VirtualNetworkManager::setupNat(const QString &name)
 {
     const qint64 pid = m_runtime.value(name).nsPid;
     if (pid <= 0)
@@ -416,7 +416,7 @@ bool VirtualNetworkManager::setupNat(const QString& name)
 // Internal: Bridge Configuration
 // ============================================================================
 
-bool VirtualNetworkManager::configureBridge(const QString& name, const VirtualNetwork& net)
+bool VirtualNetworkManager::configureBridge(const QString &name, const VirtualNetwork &net)
 {
     const qint64 pid = m_runtime.value(name).nsPid;
     if (pid <= 0)
@@ -448,9 +448,9 @@ bool VirtualNetworkManager::configureBridge(const QString& name, const VirtualNe
 // Internal: dnsmasq for DHCP
 // ============================================================================
 
-bool VirtualNetworkManager::startDnsmasq(const QString& name, const VirtualNetwork& net)
+bool VirtualNetworkManager::startDnsmasq(const QString &name, const VirtualNetwork &net)
 {
-    const auto& tools = ExternalTools::instance();
+    const auto &tools = ExternalTools::instance();
     if (!tools.isAvailable(ExternalTools::Dnsmasq)) {
         setError(name, i18n("'dnsmasq' not found. Install dnsmasq to enable DHCP."));
         return false;
@@ -484,21 +484,21 @@ bool VirtualNetworkManager::startDnsmasq(const QString& name, const VirtualNetwo
     const QString pidFile = runDir + u"/dnsmasq.pid"_s;
     const QString leaseFile = runDir + u"/dnsmasq.leases"_s;
 
-    auto* process = new KProcess(this);
+    auto *process = new KProcess(this);
     NamespaceHelper::prepareProcessForNamespace(process, pid);
     process->setProgram(tools.path(ExternalTools::Dnsmasq));
-    process->setArguments({ u"--interface=br0"_s,
-        u"--bind-interfaces"_s,
-        u"--except-interface=lo"_s,
-        u"--dhcp-range=%1,%2,12h"_s.arg(rangeStart, rangeEnd),
-        u"--no-daemon"_s,
-        u"--pid-file=%1"_s.arg(pidFile),
-        u"--dhcp-leasefile=%1"_s.arg(leaseFile),
-        u"--no-resolv"_s,
-        u"--server=1.1.1.1"_s,
-        u"--server=1.0.0.1"_s,
-        u"--listen-address=%1"_s.arg(net.gateway),
-        u"--log-dhcp"_s });
+    process->setArguments({u"--interface=br0"_s,
+                           u"--bind-interfaces"_s,
+                           u"--except-interface=lo"_s,
+                           u"--dhcp-range=%1,%2,12h"_s.arg(rangeStart, rangeEnd),
+                           u"--no-daemon"_s,
+                           u"--pid-file=%1"_s.arg(pidFile),
+                           u"--dhcp-leasefile=%1"_s.arg(leaseFile),
+                           u"--no-resolv"_s,
+                           u"--server=1.1.1.1"_s,
+                           u"--server=1.0.0.1"_s,
+                           u"--listen-address=%1"_s.arg(net.gateway),
+                           u"--log-dhcp"_s});
     process->setOutputChannelMode(KProcess::MergedChannels);
     process->start();
 
@@ -527,9 +527,9 @@ bool VirtualNetworkManager::startDnsmasq(const QString& name, const VirtualNetwo
 // Internal: pasta for NAT (Step 4)
 // ============================================================================
 
-bool VirtualNetworkManager::startPasta(const QString& name, const VirtualNetwork& net)
+bool VirtualNetworkManager::startPasta(const QString &name, const VirtualNetwork &net)
 {
-    const auto& tools = ExternalTools::instance();
+    const auto &tools = ExternalTools::instance();
     if (!tools.isAvailable(ExternalTools::Pasta)) {
         setError(name, i18n("'pasta' not found. Install passt to enable NAT."));
         return false;
@@ -539,21 +539,16 @@ bool VirtualNetworkManager::startPasta(const QString& name, const VirtualNetwork
     if (pid <= 0)
         return false;
 
-    QStringList args = {
-        u"--userns"_s, u"/proc/%1/ns/user"_s.arg(pid),
-        u"--netns"_s, u"/proc/%1/ns/net"_s.arg(pid),
-        u"--config-net"_s,
-        u"-f"_s
-    };
+    QStringList args = {u"--userns"_s, u"/proc/%1/ns/user"_s.arg(pid), u"--netns"_s, u"/proc/%1/ns/net"_s.arg(pid), u"--config-net"_s, u"-f"_s};
 
-    for (const QString& fwd : net.portForwards) {
+    for (const QString &fwd : net.portForwards) {
         if (fwd.startsWith(u"tcp/"_s))
             args << u"-t"_s << fwd.mid(4);
         else if (fwd.startsWith(u"udp/"_s))
             args << u"-u"_s << fwd.mid(4);
     }
 
-    auto* process = new KProcess(this);
+    auto *process = new KProcess(this);
     process->setProgram(tools.path(ExternalTools::Pasta));
     process->setArguments(args);
     process->setOutputChannelMode(KProcess::MergedChannels);
@@ -573,32 +568,32 @@ bool VirtualNetworkManager::startPasta(const QString& name, const VirtualNetwork
 // Internal: Tap Device Management
 // ============================================================================
 
-QString VirtualNetworkManager::createTapDevice(const QString& networkName, const QString& vmName)
+QString VirtualNetworkManager::createTapDevice(const QString &networkName, const QString &vmName)
 {
     const qint64 pid = m_runtime.value(networkName).nsPid;
     if (pid <= 0)
-        return { };
+        return {};
 
     const QString tapName = makeTapName(vmName);
     QString error;
 
     if (!NamespaceHelper::createTapDevice(pid, tapName, &error))
-        return { };
+        return {};
 
     if (!NamespaceHelper::addInterfaceToBridge(pid, tapName, u"br0"_s, &error)) {
         NamespaceHelper::removeInterface(pid, tapName);
-        return { };
+        return {};
     }
 
     if (!NamespaceHelper::setInterfaceUp(pid, tapName, &error)) {
         NamespaceHelper::removeInterface(pid, tapName);
-        return { };
+        return {};
     }
 
     return tapName;
 }
 
-void VirtualNetworkManager::destroyTapDevice(const QString& networkName, const QString& tapName)
+void VirtualNetworkManager::destroyTapDevice(const QString &networkName, const QString &tapName)
 {
     const qint64 pid = m_runtime.value(networkName).nsPid;
     if (pid <= 0)
@@ -610,9 +605,9 @@ void VirtualNetworkManager::destroyTapDevice(const QString& networkName, const Q
 // Internal: Process Termination
 // ============================================================================
 
-void VirtualNetworkManager::terminateAll(RuntimeState& state)
+void VirtualNetworkManager::terminateAll(RuntimeState &state)
 {
-    auto terminateKProcess = [](QPointer<KProcess>& p) {
+    auto terminateKProcess = [](QPointer<KProcess> &p) {
         if (!p)
             return;
         p->terminate();
@@ -640,7 +635,7 @@ void VirtualNetworkManager::terminateAll(RuntimeState& state)
 // Internal: Tap Device Naming
 // ============================================================================
 
-QString VirtualNetworkManager::makeTapName(const QString& vmName)
+QString VirtualNetworkManager::makeTapName(const QString &vmName)
 {
     // Linux IFNAMSIZ is 16 bytes (15 chars + NUL terminator).
     // Prefix "tap-" uses 4 characters, leaving 11 for the VM name.
@@ -656,7 +651,7 @@ QString VirtualNetworkManager::makeTapName(const QString& vmName)
     return u"tap-%1"_s.arg(sanitized.left(11));
 }
 
-void VirtualNetworkManager::setError(const QString& networkName, const QString& message)
+void VirtualNetworkManager::setError(const QString &networkName, const QString &message)
 {
     Q_EMIT errorOccurred(networkName, message);
     m_lastError = message;

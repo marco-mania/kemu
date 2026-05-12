@@ -38,7 +38,8 @@ struct CloudDeployConfig {
     QString networkTemplateId;
 };
 
-class CloudImageDeployer {
+class CloudImageDeployer
+{
 public:
     struct Result {
         bool success = false;
@@ -47,33 +48,22 @@ public:
         QString noCloudIsoPath;
     };
 
-    static Result deploy(const QString& sourceImage,
-        const QDir& vmDir,
-        int diskSizeGb,
-        const CloudDeployConfig& config);
+    static Result deploy(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, const CloudDeployConfig &config);
 
-    static void removeNoCloudIso(const QDir& vmDir);
-    static bool hasNoCloudIso(const QDir& vmDir);
-    static QString noCloudIsoPath(const QDir& vmDir);
+    static void removeNoCloudIso(const QDir &vmDir);
+    static bool hasNoCloudIso(const QDir &vmDir);
+    static QString noCloudIsoPath(const QDir &vmDir);
 
 private:
     CloudImageDeployer() = delete;
 
-    static bool prepareImage(const QString& sourceImage,
-        const QDir& vmDir,
-        int diskSizeGb,
-        QString& diskPathOut,
-        QString& errorOut);
+    static bool prepareImage(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, QString &diskPathOut, QString &errorOut);
 
-    static QByteArray generateUserData(const CloudDeployConfig& config, QString& errorOut);
-    static QByteArray generateMetaData(const CloudDeployConfig& config);
-    static QByteArray generateNetworkConfig(const CloudDeployConfig& config, QString& errorOut);
+    static QByteArray generateUserData(const CloudDeployConfig &config, QString &errorOut);
+    static QByteArray generateMetaData(const CloudDeployConfig &config);
+    static QByteArray generateNetworkConfig(const CloudDeployConfig &config, QString &errorOut);
 
-    static bool createNoCloudIso(const QDir& vmDir,
-        const QByteArray& userData,
-        const QByteArray& metaData,
-        const QByteArray& networkConfig,
-        QString& errorOut);
+    static bool createNoCloudIso(const QDir &vmDir, const QByteArray &userData, const QByteArray &metaData, const QByteArray &networkConfig, QString &errorOut);
 
     static QString findIsoTool();
 };

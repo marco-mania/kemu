@@ -8,9 +8,7 @@
 
 #include "utils/externaltools.h"
 
-ShrinkJob::ShrinkJob(const QString& vmName,
-    const QString& diskPath,
-    QObject* parent)
+ShrinkJob::ShrinkJob(const QString &vmName, const QString &diskPath, QObject *parent)
     : KJob(parent)
     , m_vmName(vmName)
     , m_diskPath(diskPath)
@@ -21,7 +19,7 @@ ShrinkJob::ShrinkJob(const QString& vmName,
 
 void ShrinkJob::start()
 {
-    const auto& tools = ExternalTools::instance();
+    const auto &tools = ExternalTools::instance();
 
     if (!tools.isAvailable(ExternalTools::QemuImg)) {
         setError(1);
@@ -35,18 +33,19 @@ void ShrinkJob::start()
     QFile::remove(m_tmpPath);
 
     Q_EMIT description(this,
-        i18n("Compacting disk image"),
-        QPair<QString, QString>(i18n("VM"), m_vmName),
-        QPair<QString, QString>(i18n("Disk"), QFileInfo(m_diskPath).fileName()));
+                       i18n("Compacting disk image"),
+                       QPair<QString, QString>(i18n("VM"), m_vmName),
+                       QPair<QString, QString>(i18n("Disk"), QFileInfo(m_diskPath).fileName()));
 
     m_process = new KProcess(this);
     m_process->setOutputChannelMode(KProcess::SeparateChannels);
     m_process->setProgram(tools.path(ExternalTools::QemuImg));
-    m_process->setArguments({ u"convert"_s,
-        u"-p"_s, // progress on stdout "(12.34/100%)"
-        u"-O"_s, u"qcow2"_s,
-        m_diskPath,
-        m_tmpPath });
+    m_process->setArguments({u"convert"_s,
+                             u"-p"_s, // progress on stdout "(12.34/100%)"
+                             u"-O"_s,
+                             u"qcow2"_s,
+                             m_diskPath,
+                             m_tmpPath});
 
     connect(m_process, &KProcess::readyReadStandardOutput, this, &ShrinkJob::onReadyReadStdout);
     connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&KProcess::finished), this, &ShrinkJob::onProcessFinished);
@@ -67,7 +66,7 @@ void ShrinkJob::onReadyReadStdout()
 
     int lastBreakIndex = -1;
     for (int i = m_outputBuffer.size() - 1; i >= 0; --i) {
-        char c = m_outputBuffer.at(i);
+        const char c = m_outputBuffer.at(i);
         if (c == '\r' || c == '\n') {
             lastBreakIndex = i;
             break;
@@ -85,8 +84,8 @@ void ShrinkJob::onReadyReadStdout()
 
     m_outputBuffer.remove(0, lastBreakIndex + 1);
 
-    QString output = QString::fromLocal8Bit(completeData);
-    QStringView view(output);
+    const QString output = QString::fromLocal8Bit(completeData);
+    const QStringView view(output);
 
     const QStringView suffix(u"/100%)");
     const QChar prefix(u'(');
@@ -96,13 +95,13 @@ void ShrinkJob::onReadyReadStdout()
     int endIndex = view.lastIndexOf(suffix);
 
     while (endIndex != -1) {
-        int startIndex = view.lastIndexOf(prefix, endIndex);
+        const int startIndex = view.lastIndexOf(prefix, endIndex);
 
         if (startIndex != -1) {
-            QStringView numberView = view.mid(startIndex + 1, endIndex - startIndex - 1);
+            const QStringView numberView = view.mid(startIndex + 1, endIndex - startIndex - 1);
 
             bool ok;
-            double percent = numberView.toDouble(&ok);
+            const double percent = numberView.toDouble(&ok);
             if (ok) {
                 lastPercent = percent;
                 break;
@@ -127,7 +126,7 @@ void ShrinkJob::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
         return;
     }
 
-    QString backupPath = m_diskPath + u".old"_s;
+    const QString backupPath = m_diskPath + u".old"_s;
     QFile::remove(backupPath);
 
     if (!QFile::rename(m_diskPath, backupPath)) {

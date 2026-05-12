@@ -21,14 +21,17 @@
 
 using namespace Qt::StringLiterals;
 
-class MissingToolsDialog : public QDialog {
-
+class MissingToolsDialog : public QDialog
+{
     Q_OBJECT
 
 public:
-    explicit MissingToolsDialog(const QList<ExternalTools::FeatureGroup>& missing, QWidget* parent = nullptr);
+    explicit MissingToolsDialog(const QList<ExternalTools::FeatureGroup> &missing, QWidget *parent = nullptr);
 
-    [[nodiscard]] bool openSettingsRequested() const { return m_openSettings; }
+    [[nodiscard]] bool openSettingsRequested() const
+    {
+        return m_openSettings;
+    }
 
 private:
     bool m_openSettings = false;

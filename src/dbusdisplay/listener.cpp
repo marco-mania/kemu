@@ -17,8 +17,7 @@
 // =============================================================================
 // Pixman format constants
 // =============================================================================
-#define PIXMAN_FORMAT(bpp, type, a, r, g, b) \
-    (((bpp) << 24) | ((type) << 16) | ((a) << 12) | ((r) << 8) | ((g) << 4) | ((b)))
+#define PIXMAN_FORMAT(bpp, type, a, r, g, b) (((bpp) << 24) | ((type) << 16) | ((a) << 12) | ((r) << 8) | ((g) << 4) | ((b)))
 
 #define PIXMAN_TYPE_A 1
 #define PIXMAN_TYPE_ARGB 2
@@ -112,16 +111,13 @@ static const gchar listenerUnixIntrospectionXml[] =
 </node>
 )XML";
 
-static const GDBusInterfaceVTable listenerVTable = {
-    QemuDisplayListener::onMethodCall,
-    nullptr, nullptr, { }
-};
+static const GDBusInterfaceVTable listenerVTable = {QemuDisplayListener::onMethodCall, nullptr, nullptr, {}};
 
 // =============================================================================
 // Constructor / Destructor
 // =============================================================================
 
-QemuDisplayListener::QemuDisplayListener(QObject* parent)
+QemuDisplayListener::QemuDisplayListener(QObject *parent)
     : QObject(parent)
 {
 }
@@ -155,23 +151,23 @@ QemuDisplayListener::~QemuDisplayListener()
 
 QImage QemuDisplayListener::currentImage() const
 {
-    QMutexLocker l(&m_mutex);
+    const QMutexLocker l(&m_mutex);
     return m_image;
 }
 bool QemuDisplayListener::isDmaBuf() const
 {
-    QMutexLocker l(&m_mutex);
+    const QMutexLocker l(&m_mutex);
     return m_isDmaBuf;
 }
 CursorInfo QemuDisplayListener::cursorInfo() const
 {
-    QMutexLocker l(&m_mutex);
+    const QMutexLocker l(&m_mutex);
     return m_cursor;
 }
 
-bool QemuDisplayListener::takeDmaBufScanout(DmaBufScanout& out)
+bool QemuDisplayListener::takeDmaBufScanout(DmaBufScanout &out)
 {
-    QMutexLocker l(&m_mutex);
+    const QMutexLocker l(&m_mutex);
     if (!m_isDmaBuf || m_dmaBuf.fd < 0)
         return false;
     out = m_dmaBuf;
@@ -199,27 +195,24 @@ bool QemuDisplayListener::connectListener()
 {
     if (m_ourFd < 0)
         return false;
-    int ourFd = m_ourFd;
+    const int ourFd = m_ourFd;
     m_ourFd = -1;
     m_socketFd = ourFd; // Remember FD number for QSocketNotifier
 
-    GError* error = nullptr;
-    GSocket* gsock = g_socket_new_from_fd(ourFd, &error);
+    GError *error = nullptr;
+    GSocket *gsock = g_socket_new_from_fd(ourFd, &error);
     if (!gsock) {
         qCritical() << "g_socket_new_from_fd:" << error->message;
         g_error_free(error);
         close(ourFd);
         return false;
     }
-    GSocketConnection* sockConn = g_socket_connection_factory_create_connection(gsock);
+    GSocketConnection *sockConn = g_socket_connection_factory_create_connection(gsock);
     g_object_unref(gsock);
     if (!sockConn)
         return false;
 
-    m_listenerConn = g_dbus_connection_new_sync(
-        G_IO_STREAM(sockConn), nullptr,
-        G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT,
-        nullptr, nullptr, &error);
+    m_listenerConn = g_dbus_connection_new_sync(G_IO_STREAM(sockConn), nullptr, G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT, nullptr, nullptr, &error);
     g_object_unref(sockConn);
     if (!m_listenerConn) {
         qCritical() << "D-Bus Auth:" << error->message;
@@ -228,18 +221,21 @@ bool QemuDisplayListener::connectListener()
     }
 
     g_dbus_connection_set_exit_on_close(m_listenerConn, FALSE);
-    g_signal_connect(m_listenerConn, "closed",
-        G_CALLBACK(QemuDisplayListener::onConnectionClosed), this);
+    g_signal_connect(m_listenerConn, "closed", G_CALLBACK(QemuDisplayListener::onConnectionClosed), this);
 
-    GDBusNodeInfo* nodeInfo = g_dbus_node_info_new_for_xml(listenerIntrospectionXml, &error);
+    GDBusNodeInfo *nodeInfo = g_dbus_node_info_new_for_xml(listenerIntrospectionXml, &error);
     if (!nodeInfo) {
         qCritical() << error->message;
         g_error_free(error);
         return false;
     }
-    m_registrationId = g_dbus_connection_register_object(
-        m_listenerConn, KemuDbusDisplayConst::ListenerPath.constData(),
-        nodeInfo->interfaces[0], &listenerVTable, this, nullptr, &error);
+    m_registrationId = g_dbus_connection_register_object(m_listenerConn,
+                                                         KemuDbusDisplayConst::ListenerPath.constData(),
+                                                         nodeInfo->interfaces[0],
+                                                         &listenerVTable,
+                                                         this,
+                                                         nullptr,
+                                                         &error);
     g_dbus_node_info_unref(nodeInfo);
     if (!m_registrationId) {
         qCritical() << error->message;
@@ -247,12 +243,15 @@ bool QemuDisplayListener::connectListener()
         return false;
     }
 
-    GDBusNodeInfo* unixNode = g_dbus_node_info_new_for_xml(listenerUnixIntrospectionXml, &error);
+    GDBusNodeInfo *unixNode = g_dbus_node_info_new_for_xml(listenerUnixIntrospectionXml, &error);
     if (unixNode) {
-        m_registrationIdUnix = g_dbus_connection_register_object(
-            m_listenerConn, KemuDbusDisplayConst::ListenerPath.constData(),
-            unixNode->interfaces[0],
-            &listenerVTable, this, nullptr, &error);
+        m_registrationIdUnix = g_dbus_connection_register_object(m_listenerConn,
+                                                                 KemuDbusDisplayConst::ListenerPath.constData(),
+                                                                 unixNode->interfaces[0],
+                                                                 &listenerVTable,
+                                                                 this,
+                                                                 nullptr,
+                                                                 &error);
         g_dbus_node_info_unref(unixNode);
         if (!m_registrationIdUnix) {
             qWarning() << error->message;
@@ -267,15 +266,11 @@ bool QemuDisplayListener::connectListener()
 // =============================================================================
 // Connection-Closed Handler
 // =============================================================================
-void QemuDisplayListener::onConnectionClosed(
-    GDBusConnection*, gboolean remote_peer_vanished,
-    GError* error, gpointer user_data)
+void QemuDisplayListener::onConnectionClosed(GDBusConnection *, gboolean remote_peer_vanished, GError *error, gpointer user_data)
 {
-    auto* self = static_cast<QemuDisplayListener*>(user_data);
+    auto *self = static_cast<QemuDisplayListener *>(user_data);
     self->m_closed = true;
-    qDebug() << "Display: Connection closed"
-             << (remote_peer_vanished ? "(QEMU terminated)" : "(local)")
-             << (error ? error->message : "");
+    qDebug() << "Display: Connection closed" << (remote_peer_vanished ? "(QEMU terminated)" : "(local)") << (error ? error->message : "");
     Q_EMIT self->connectionLost();
 }
 
@@ -283,20 +278,23 @@ void QemuDisplayListener::onConnectionClosed(
 // Dispatcher
 // =============================================================================
 
-void QemuDisplayListener::onMethodCall(
-    GDBusConnection*, const gchar*, const gchar*,
-    const gchar* interface_name, const gchar* method_name,
-    GVariant* parameters, GDBusMethodInvocation* invocation,
-    gpointer user_data)
+void QemuDisplayListener::onMethodCall(GDBusConnection *,
+                                       const gchar *,
+                                       const gchar *,
+                                       const gchar *interface_name,
+                                       const gchar *method_name,
+                                       GVariant *parameters,
+                                       GDBusMethodInvocation *invocation,
+                                       gpointer user_data)
 {
-    auto* self = static_cast<QemuDisplayListener*>(user_data);
+    auto *self = static_cast<QemuDisplayListener *>(user_data);
     if (self->m_closed) {
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_DISCONNECTED, "Connection closed");
         return;
     }
 
-    QString iface = QString::fromUtf8(interface_name);
-    QString method = QString::fromUtf8(method_name);
+    const QString iface = QString::fromUtf8(interface_name);
+    const QString method = QString::fromUtf8(method_name);
 
     if (iface == KemuDbusDisplayConst::ListenerIface) {
         if (method == u"Scanout"_s)
@@ -328,22 +326,21 @@ void QemuDisplayListener::onMethodCall(
 // =============================================================================
 // ScanoutDMABUF
 // =============================================================================
-void QemuDisplayListener::handleScanoutDMABUF(
-    GVariant* parameters, GDBusMethodInvocation* invocation)
+void QemuDisplayListener::handleScanoutDMABUF(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint32 fdIndex, width, height, stride, fourcc;
     guint64 modifier;
     gboolean y0_top;
     g_variant_get(parameters, "(huuuutb)", &fdIndex, &width, &height, &stride, &fourcc, &modifier, &y0_top);
 
-    GDBusMessage* msg = g_dbus_method_invocation_get_message(invocation);
-    GUnixFDList* fdList = g_dbus_message_get_unix_fd_list(msg);
+    GDBusMessage *msg = g_dbus_method_invocation_get_message(invocation);
+    GUnixFDList *fdList = g_dbus_message_get_unix_fd_list(msg);
     if (!fdList) {
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "No FD list");
         return;
     }
-    GError* error = nullptr;
-    int dmabufFd = g_unix_fd_list_get(fdList, fdIndex, &error);
+    GError *error = nullptr;
+    const int dmabufFd = g_unix_fd_list_get(fdList, fdIndex, &error);
     if (dmabufFd < 0) {
         g_error_free(error);
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "FD error");
@@ -355,20 +352,19 @@ void QemuDisplayListener::handleScanoutDMABUF(
     //          << "y0_top:" << y0_top << "FD:" << dmabufFd;
 
     {
-        QMutexLocker l(&m_mutex);
+        const QMutexLocker l(&m_mutex);
         unmapMemory();
         m_imageData.clear();
         m_image = QImage();
         closeDmaBuf();
-        m_dmaBuf = { dmabufFd, width, height, stride, fourcc, modifier, bool(y0_top) };
+        m_dmaBuf = {dmabufFd, width, height, stride, fourcc, modifier, bool(y0_top)};
         m_isDmaBuf = true;
     }
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT dmaBufScanout(width, height);
 }
 
-void QemuDisplayListener::handleUpdateDMABUF(
-    GVariant* parameters, GDBusMethodInvocation* invocation)
+void QemuDisplayListener::handleUpdateDMABUF(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     gint32 x, y, w, h;
     g_variant_get(parameters, "(iiii)", &x, &y, &w, &h);
@@ -379,72 +375,68 @@ void QemuDisplayListener::handleUpdateDMABUF(
 // =============================================================================
 // Scanout / ScanoutMap / Update
 // =============================================================================
-void QemuDisplayListener::handleScanout(
-    GVariant* parameters, GDBusMethodInvocation* invocation)
+void QemuDisplayListener::handleScanout(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint32 width, height, stride, pixman_format;
-    GVariant* dataVariant = nullptr;
-    g_variant_get(parameters, "(uuuu@ay)", &width, &height, &stride,
-        &pixman_format, &dataVariant);
+    GVariant *dataVariant = nullptr;
+    g_variant_get(parameters, "(uuuu@ay)", &width, &height, &stride, &pixman_format, &dataVariant);
     gsize dataLen = 0;
-    const guint8* data = static_cast<const guint8*>(g_variant_get_fixed_array(dataVariant, &dataLen, sizeof(guint8)));
-    QImage::Format qtFormat = pixmanFormatToQt(pixman_format);
+    const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant, &dataLen, sizeof(guint8)));
+    const QImage::Format qtFormat = pixmanFormatToQt(pixman_format);
     {
-        QMutexLocker l(&m_mutex);
+        const QMutexLocker l(&m_mutex);
         closeDmaBuf();
         unmapMemory();
         m_isDmaBuf = false;
-        m_imageData = QByteArray(reinterpret_cast<const char*>(data), dataLen);
-        m_image = QImage(reinterpret_cast<const uchar*>(m_imageData.constData()), width, height, stride, qtFormat);
+        m_imageData = QByteArray(reinterpret_cast<const char *>(data), dataLen);
+        m_image = QImage(reinterpret_cast<const uchar *>(m_imageData.constData()), width, height, stride, qtFormat);
     }
     g_variant_unref(dataVariant);
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT scanoutChanged(width, height);
 }
 
-void QemuDisplayListener::handleScanoutMap(
-    GVariant* parameters, GDBusMethodInvocation* invocation)
+void QemuDisplayListener::handleScanoutMap(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint32 fdIndex, offset, width, height, stride, pixman_format;
     g_variant_get(parameters, "(huuuuu)", &fdIndex, &offset, &width, &height, &stride, &pixman_format);
-    GDBusMessage* msg = g_dbus_method_invocation_get_message(invocation);
-    GUnixFDList* fdList = g_dbus_message_get_unix_fd_list(msg);
+    GDBusMessage *msg = g_dbus_method_invocation_get_message(invocation);
+    GUnixFDList *fdList = g_dbus_message_get_unix_fd_list(msg);
     if (!fdList) {
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "No FD list");
         return;
     }
-    GError* error = nullptr;
-    int memFd = g_unix_fd_list_get(fdList, fdIndex, &error);
+    GError *error = nullptr;
+    const int memFd = g_unix_fd_list_get(fdList, fdIndex, &error);
     if (memFd < 0) {
         g_error_free(error);
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "FD error");
         return;
     }
-    QImage::Format qtFormat = pixmanFormatToQt(pixman_format);
-    size_t mapSize = static_cast<size_t>(height) * stride + offset;
-    void* mapped = mmap(nullptr, mapSize, PROT_READ, MAP_SHARED, memFd, 0);
+    const QImage::Format qtFormat = pixmanFormatToQt(pixman_format);
+    const size_t mapSize = static_cast<size_t>(height) * stride + offset;
+    void *mapped = mmap(nullptr, mapSize, PROT_READ, MAP_SHARED, memFd, 0);
     close(memFd);
     if (mapped == MAP_FAILED) {
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "mmap failed");
         return;
     }
     {
-        QMutexLocker l(&m_mutex);
+        const QMutexLocker l(&m_mutex);
         closeDmaBuf();
         unmapMemory();
         m_isDmaBuf = false;
         m_imageData.clear();
         m_mappedMemory = mapped;
         m_mappedSize = mapSize;
-        const uchar* pixels = static_cast<const uchar*>(mapped) + offset;
+        const uchar *pixels = static_cast<const uchar *>(mapped) + offset;
         m_image = QImage(pixels, width, height, stride, qtFormat);
     }
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT scanoutChanged(width, height);
 }
 
-void QemuDisplayListener::handleUpdate(
-    GVariant* parameters, GDBusMethodInvocation* invocation)
+void QemuDisplayListener::handleUpdate(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     gint32 x, y, w, h;
     g_variant_get(parameters, "(iiii)", &x, &y, &w, &h);
@@ -452,8 +444,7 @@ void QemuDisplayListener::handleUpdate(
     Q_EMIT regionUpdated(QRect(x, y, w, h));
 }
 
-void QemuDisplayListener::handleUpdateMap(
-    GVariant* parameters, GDBusMethodInvocation* invocation)
+void QemuDisplayListener::handleUpdateMap(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     handleUpdate(parameters, invocation);
 }
@@ -461,10 +452,10 @@ void QemuDisplayListener::handleUpdateMap(
 // =============================================================================
 // Disable
 // =============================================================================
-void QemuDisplayListener::handleDisable(GDBusMethodInvocation* invocation)
+void QemuDisplayListener::handleDisable(GDBusMethodInvocation *invocation)
 {
     {
-        QMutexLocker l(&m_mutex);
+        const QMutexLocker l(&m_mutex);
         closeDmaBuf();
         unmapMemory();
         m_imageData.clear();
@@ -482,28 +473,24 @@ void QemuDisplayListener::handleDisable(GDBusMethodInvocation* invocation)
 // With DMA-BUF, the cursor is NOT included in the framebuffer – it is a
 // separate hardware cursor plane. We must render it ourselves.
 
-void QemuDisplayListener::handleCursorDefine(
-    GVariant* parameters, GDBusMethodInvocation* invocation)
+void QemuDisplayListener::handleCursorDefine(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     gint32 width, height, hot_x, hot_y;
-    GVariant* dataVariant = nullptr;
+    GVariant *dataVariant = nullptr;
     g_variant_get(parameters, "(iiii@ay)", &width, &height, &hot_x, &hot_y, &dataVariant);
 
     gsize dataLen = 0;
-    const guint8* data = static_cast<const guint8*>(
-        g_variant_get_fixed_array(dataVariant, &dataLen, sizeof(guint8)));
+    const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant, &dataLen, sizeof(guint8)));
 
     // qDebug() << "CursorDefine:" << width << "x" << height
     //          << "hot:" << hot_x << "," << hot_y
     //          << "Data:" << dataLen << "bytes";
 
     {
-        QMutexLocker l(&m_mutex);
+        const QMutexLocker l(&m_mutex);
         if (data && dataLen >= static_cast<gsize>(width * height * 4)) {
             // QEMU sends ARGB32 data
-            m_cursor.image = QImage(data, width, height,
-                width * 4, QImage::Format_ARGB32)
-                                 .copy();
+            m_cursor.image = QImage(data, width, height, width * 4, QImage::Format_ARGB32).copy();
             m_cursor.hot_x = hot_x;
             m_cursor.hot_y = hot_y;
         }
@@ -517,14 +504,13 @@ void QemuDisplayListener::handleCursorDefine(
 // =============================================================================
 // MouseSet – Cursor position and visibility from guest
 // =============================================================================
-void QemuDisplayListener::handleMouseSet(
-    GVariant* parameters, GDBusMethodInvocation* invocation)
+void QemuDisplayListener::handleMouseSet(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     gint32 x, y, on;
     g_variant_get(parameters, "(iii)", &x, &y, &on);
 
     {
-        QMutexLocker l(&m_mutex);
+        const QMutexLocker l(&m_mutex);
         m_cursor.pos_x = x;
         m_cursor.pos_y = y;
         m_cursor.visible = (on != 0);

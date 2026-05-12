@@ -11,10 +11,7 @@
 static constexpr int SnapshotInfoRole = Qt::UserRole;
 static constexpr int IsCurrentStateRole = Qt::UserRole + 1;
 
-SnapshotDialog::SnapshotDialog(const QString& vmName,
-    const QString& diskPath,
-    QMPClient* qmp,
-    QWidget* parent)
+SnapshotDialog::SnapshotDialog(const QString &vmName, const QString &diskPath, QMPClient *qmp, QWidget *parent)
     : QDialog(parent)
     , m_vmName(vmName)
     , m_diskPath(diskPath)
@@ -23,17 +20,17 @@ SnapshotDialog::SnapshotDialog(const QString& vmName,
     setWindowTitle(i18n("Snapshot Manager – %1", vmName));
     resize(820, 520);
 
-    auto* mainLayout = new QVBoxLayout(this);
-    auto* splitter = new QSplitter(Qt::Horizontal, this);
+    auto *mainLayout = new QVBoxLayout(this);
+    auto *splitter = new QSplitter(Qt::Horizontal, this);
 
     // Left side: Snapshot tree
-    auto* leftWidget = new QWidget;
-    auto* leftLayout = new QVBoxLayout(leftWidget);
+    auto *leftWidget = new QWidget;
+    auto *leftLayout = new QVBoxLayout(leftWidget);
     leftLayout->setContentsMargins(0, 0, 0, 0);
     leftLayout->addWidget(new QLabel(i18n("<b>Snapshots</b>")));
 
     m_tree = new QTreeWidget;
-    m_tree->setHeaderLabels({ i18n("Name"), i18n("Date"), i18n("Size") });
+    m_tree->setHeaderLabels({i18n("Name"), i18n("Date"), i18n("Size")});
     m_tree->setColumnWidth(0, 210);
     m_tree->setColumnWidth(1, 150);
     m_tree->setAlternatingRowColors(true);
@@ -42,8 +39,8 @@ SnapshotDialog::SnapshotDialog(const QString& vmName,
     leftLayout->addWidget(m_tree);
 
     // Right side: Details
-    auto* rightWidget = new QWidget;
-    auto* rightLayout = new QVBoxLayout(rightWidget);
+    auto *rightWidget = new QWidget;
+    auto *rightLayout = new QVBoxLayout(rightWidget);
     rightLayout->setContentsMargins(0, 0, 0, 0);
     rightLayout->addWidget(new QLabel(i18n("<b>Details</b>")));
 
@@ -57,12 +54,12 @@ SnapshotDialog::SnapshotDialog(const QString& vmName,
     mainLayout->addWidget(splitter);
 
     // Buttons
-    auto* btnLayout = new QHBoxLayout;
+    auto *btnLayout = new QHBoxLayout;
 
     m_takeBtn = new QPushButton(QIcon::fromTheme(u"camera-photo"_s), i18n("Take Snapshot..."));
     m_revertBtn = new QPushButton(QIcon::fromTheme(u"edit-undo"_s), i18n("Revert To..."));
     m_deleteBtn = new QPushButton(QIcon::fromTheme(u"edit-delete"_s), i18n("Delete"));
-    auto* closeBtn = new QPushButton(i18n("Close"));
+    auto *closeBtn = new QPushButton(i18n("Close"));
     closeBtn->setDefault(true);
 
     m_progressBar = new QProgressBar;
@@ -99,10 +96,10 @@ void SnapshotDialog::loadSnapshots()
 
     const QList<SnapshotInfo> snaps = m_manager.listSnapshots(m_diskPath);
 
-    QTreeWidgetItem* lastItem = nullptr;
+    QTreeWidgetItem *lastItem = nullptr;
 
-    for (const SnapshotInfo& snap : snaps) {
-        auto* item = new QTreeWidgetItem;
+    for (const SnapshotInfo &snap : snaps) {
+        auto *item = new QTreeWidgetItem;
         item->setText(0, snap.name);
         item->setText(1, snap.dateTime.toString(u"dd.MM.yyyy  HH:mm"_s));
         item->setText(2, snap.vmStateSizeBytes > 0 ? formatSize(snap.vmStateSizeBytes) : i18n("--"));
@@ -113,8 +110,9 @@ void SnapshotDialog::loadSnapshots()
         lastItem = item;
     }
 
-    // "Current State" entry (VMware style): always as a child of the last snapshot
-    auto* currentItem = new QTreeWidgetItem;
+    // "Current State" entry (VMware style): always as a child of the last
+    // snapshot
+    auto *currentItem = new QTreeWidgetItem;
     currentItem->setText(0, i18n("Current State"));
     currentItem->setText(1, QDateTime::currentDateTime().toString(u"dd.MM.yyyy  HH:mm"_s));
     currentItem->setIcon(0, QIcon::fromTheme(u"system-run"_s));
@@ -137,35 +135,33 @@ void SnapshotDialog::onSelectionChanged()
 {
     updateButtonStates();
 
-    QTreeWidgetItem* item = m_tree->currentItem();
+    const QTreeWidgetItem *item = m_tree->currentItem();
     if (!item) {
         m_detailsBrowser->clear();
         return;
     }
 
     if (item->data(0, IsCurrentStateRole).toBool()) {
-        m_detailsBrowser->setHtml(
-            u"<h3>%1</h3><p>%2</p>"_s.arg(
-                i18n("Current State"),
-                i18n("This represents the current running state of the VM. "
-                     "Take a snapshot to preserve it.")));
+        m_detailsBrowser->setHtml(u"<h3>%1</h3><p>%2</p>"_s.arg(i18n("Current State"),
+                                                                i18n("This represents the current running state of the VM. "
+                                                                     "Take a snapshot to preserve it.")));
         return;
     }
 
     const auto snap = item->data(0, SnapshotInfoRole).value<SnapshotInfo>();
 
-    QString html = u"<h3>%1</h3><table cellspacing='4'>"
-                   u"<tr><td><b>%2</b></td><td>%3</td></tr>"
-                   u"<tr><td><b>%4</b></td><td>%5</td></tr>"
-                   u"<tr><td><b>%6</b></td><td>%7</td></tr>"
-                   u"</table>"_s
-                       .arg(snap.name.toHtmlEscaped(),
-                           i18n("Name:"), snap.name.toHtmlEscaped(),
-                           i18n("Created:"), snap.dateTime.toString(u"dd.MM.yyyy HH:mm:ss"_s),
-                           i18n("VM State:"),
-                           snap.vmStateSizeBytes > 0
-                               ? formatSize(snap.vmStateSizeBytes)
-                               : i18n("Offline snapshot (no RAM state)"));
+    QString html =
+        u"<h3>%1</h3><table cellspacing='4'>"
+        u"<tr><td><b>%2</b></td><td>%3</td></tr>"
+        u"<tr><td><b>%4</b></td><td>%5</td></tr>"
+        u"<tr><td><b>%6</b></td><td>%7</td></tr>"
+        u"</table>"_s.arg(snap.name.toHtmlEscaped(),
+                          i18n("Name:"),
+                          snap.name.toHtmlEscaped(),
+                          i18n("Created:"),
+                          snap.dateTime.toString(u"dd.MM.yyyy HH:mm:ss"_s),
+                          i18n("VM State:"),
+                          snap.vmStateSizeBytes > 0 ? formatSize(snap.vmStateSizeBytes) : i18n("Offline snapshot (no RAM state)"));
 
     if (!snap.description.isEmpty())
         html += u"<p><i>%1</i></p>"_s.arg(snap.description.toHtmlEscaped());
@@ -189,26 +185,25 @@ void SnapshotDialog::onTakeSnapshot()
     m_progressBar->show();
     setEnabled(false);
 
-    m_manager.createSnapshot(m_diskPath, name, m_qmp,
-        [this, name, desc](bool ok, QString err) {
-            m_progressBar->hide();
-            setEnabled(true);
+    m_manager.createSnapshot(m_diskPath, name, m_qmp, [this, name, desc](bool ok, QString err) {
+        m_progressBar->hide();
+        setEnabled(true);
 
-            if (ok && !desc.isEmpty())
-                m_manager.saveDescription(m_diskPath, name, desc);
+        if (ok && !desc.isEmpty())
+            m_manager.saveDescription(m_diskPath, name, desc);
 
-            if (!ok)
-                KMessageBox::error(this, i18n("Could not create snapshot \"%1\":\n%2", name, err), i18n("Snapshot Error"));
+        if (!ok)
+            KMessageBox::error(this, i18n("Could not create snapshot \"%1\":\n%2", name, err), i18n("Snapshot Error"));
 
-            loadSnapshots();
-        });
+        loadSnapshots();
+    });
 }
 
 // Reverting to a snapshot
 
 void SnapshotDialog::onRevertSnapshot()
 {
-    QTreeWidgetItem* item = m_tree->currentItem();
+    const QTreeWidgetItem *item = m_tree->currentItem();
     if (!item)
         return;
 
@@ -219,43 +214,42 @@ void SnapshotDialog::onRevertSnapshot()
     // Warning: Online revert is possible for running VMs;
     // for stopped VMs, the disk must not be open.
     const bool isLive = m_qmp && m_qmp->isConnected();
-    const QString warning = isLive
-        ? i18n("Revert <b>%1</b> to snapshot <b>%2</b>?<br/><br/>"
-               "The VM will continue from the snapshot state.",
-              m_vmName, snap.name)
-        : i18n("Revert <b>%1</b> to snapshot <b>%2</b>?<br/><br/>"
-               "All changes since this snapshot will be lost.",
-              m_vmName, snap.name);
+    const QString warning = isLive ? i18n(
+                                         "Revert <b>%1</b> to snapshot <b>%2</b>?<br/><br/>"
+                                         "The VM will continue from the snapshot state.",
+                                         m_vmName,
+                                         snap.name)
+                                   : i18n(
+                                         "Revert <b>%1</b> to snapshot <b>%2</b>?<br/><br/>"
+                                         "All changes since this snapshot will be lost.",
+                                         m_vmName,
+                                         snap.name);
 
-    if (KMessageBox::questionTwoActions(
-            this, warning, i18n("Revert Snapshot"),
-            KGuiItem(i18n("Revert"), u"edit-undo"_s),
-            KStandardGuiItem::cancel())
+    if (KMessageBox::questionTwoActions(this, warning, i18n("Revert Snapshot"), KGuiItem(i18n("Revert"), u"edit-undo"_s), KStandardGuiItem::cancel())
         != KMessageBox::PrimaryAction)
         return;
 
     m_progressBar->show();
     setEnabled(false);
 
-    m_manager.revertSnapshot(m_diskPath, snap.name, m_qmp,
-        [this, snap](bool ok, QString err) {
-            m_progressBar->hide();
-            setEnabled(true);
+    m_manager.revertSnapshot(m_diskPath, snap.name, m_qmp, [this, snap](bool ok, QString err) {
+        m_progressBar->hide();
+        setEnabled(true);
 
-            if (!ok)
-                KMessageBox::error(this, i18n("Could not revert to \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
-            else
-                KMessageBox::information(this, i18n("Successfully reverted to snapshot \"%1\".", snap.name), i18n("Snapshot Restored"));
+        if (!ok)
+            KMessageBox::error(this, i18n("Could not revert to \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
+        else
+            KMessageBox::information(this, i18n("Successfully reverted to snapshot \"%1\".", snap.name), i18n("Snapshot Restored"));
 
-            loadSnapshots();
-        });
+        loadSnapshots();
+    });
 }
 
 // Deleting a snapshot
 
 void SnapshotDialog::onDeleteSnapshot()
 {
-    QTreeWidgetItem* item = m_tree->currentItem();
+    const QTreeWidgetItem *item = m_tree->currentItem();
     if (!item)
         return;
 
@@ -263,39 +257,38 @@ void SnapshotDialog::onDeleteSnapshot()
     if (!snap.isValid())
         return;
 
-    if (KMessageBox::questionTwoActions(
-            this,
-            i18n("Permanently delete snapshot <b>%1</b>?<br/>This cannot be undone.",
-                snap.name),
-            i18n("Delete Snapshot"),
-            KGuiItem(i18n("Delete"), u"edit-delete"_s),
-            KStandardGuiItem::cancel())
+    if (KMessageBox::questionTwoActions(this,
+                                        i18n("Permanently delete snapshot <b>%1</b>?<br/>This cannot be "
+                                             "undone.",
+                                             snap.name),
+                                        i18n("Delete Snapshot"),
+                                        KGuiItem(i18n("Delete"), u"edit-delete"_s),
+                                        KStandardGuiItem::cancel())
         != KMessageBox::PrimaryAction)
         return;
 
     m_progressBar->show();
     setEnabled(false);
 
-    m_manager.deleteSnapshot(m_diskPath, snap.name, m_qmp,
-        [this, snap](bool ok, QString err) {
-            m_progressBar->hide();
-            setEnabled(true);
+    m_manager.deleteSnapshot(m_diskPath, snap.name, m_qmp, [this, snap](bool ok, QString err) {
+        m_progressBar->hide();
+        setEnabled(true);
 
-            if (!ok)
-                KMessageBox::error(this, i18n("Could not delete snapshot \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
-            else
-                // Also remove sidecar entry
-                m_manager.saveDescription(m_diskPath, snap.name, { });
+        if (!ok)
+            KMessageBox::error(this, i18n("Could not delete snapshot \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
+        else
+            // Also remove sidecar entry
+            m_manager.saveDescription(m_diskPath, snap.name, {});
 
-            loadSnapshots();
-        });
+        loadSnapshots();
+    });
 }
 
 // Helper methods
 
 void SnapshotDialog::updateButtonStates()
 {
-    QTreeWidgetItem* item = m_tree->currentItem();
+    const QTreeWidgetItem *item = m_tree->currentItem();
     const bool isCurrent = item && item->data(0, IsCurrentStateRole).toBool();
     const bool isSnap = item && !isCurrent;
 

@@ -21,7 +21,7 @@
 // Shaders
 // =============================================================================
 
-static const char* vertexShaderSource = R"(
+static const char *vertexShaderSource = R"(
     attribute vec2 aPos;
     attribute vec2 aTexCoord;
     varying vec2 vTexCoord;
@@ -35,7 +35,7 @@ static const char* vertexShaderSource = R"(
     }
 )";
 
-static const char* fragmentShaderSource = R"(
+static const char *fragmentShaderSource = R"(
     #ifdef GL_ES
     precision mediump float;
     #endif
@@ -70,14 +70,10 @@ static const float quadVertices[] = {
 // Constructor / Destructor
 // =============================================================================
 
-QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener* listener,
-    QDBusConnection& conn,
-    const QString& consolePath,
-    QWidget* parent)
+QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QDBusConnection &conn, const QString &consolePath, QWidget *parent)
     : QOpenGLWidget(parent)
     , m_listener(listener)
 {
-
     setMinimumSize(320, 240);
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
@@ -133,9 +129,8 @@ void QemuDisplayWidget::watchGLibFd(int fd)
     if (fd < 0)
         return;
 
-    auto* notifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
-    connect(notifier, &QSocketNotifier::activated,
-        this, &QemuDisplayWidget::dispatchGLib);
+    auto *notifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
+    connect(notifier, &QSocketNotifier::activated, this, &QemuDisplayWidget::dispatchGLib);
     m_glibNotifiers.append(notifier);
 
     qDebug() << "Monitoring GLib socket: FD" << fd;
@@ -146,7 +141,7 @@ void QemuDisplayWidget::stopAllGLibWatching()
     // ONLY deactivate, DO NOT delete! We might be inside an activated()
     // handler here. The notifiers are automatically cleaned up as children
     // of the widget during the widget destructor.
-    for (auto* n : m_glibNotifiers) {
+    for (auto *n : m_glibNotifiers) {
         n->setEnabled(false);
     }
     m_glibNotifiers.clear();
@@ -161,8 +156,8 @@ void QemuDisplayWidget::dispatchGLib()
     // Safety check: If a socket was closed (POLLHUP),
     // g_main_context_iteration() MUST NOT be called -
     // GLib can crash on the dead connection.
-    for (auto* n : m_glibNotifiers) {
-        struct pollfd pfd = { };
+    for (auto *n : m_glibNotifiers) {
+        struct pollfd pfd = {};
         pfd.fd = n->socket();
         pfd.events = POLLIN;
         if (poll(&pfd, 1, 0) >= 0 && (pfd.revents & (POLLHUP | POLLERR | POLLNVAL))) {
@@ -196,15 +191,15 @@ void QemuDisplayWidget::onFrameTick()
 
 void QemuDisplayWidget::updateCursor()
 {
-    CursorInfo ci = m_listener->cursorInfo();
+    const CursorInfo ci = m_listener->cursorInfo();
     if (ci.image.isNull() || !ci.visible) {
         setCursor(Qt::BlankCursor);
         return;
     }
-    // Qt seems to ceil the devicePixelRatio internally, resulting in non-smooth cursor
-    // size changes. Let's first do the scaling by ourselves and submit an integer scale
-    // to Qt.
-    float submit_scale = qCeil(devicePixelRatio());
+    // Qt seems to ceil the devicePixelRatio internally, resulting in non-smooth
+    // cursor size changes. Let's first do the scaling by ourselves and submit an
+    // integer scale to Qt.
+    const float submit_scale = qCeil(devicePixelRatio());
     QPixmap pm = QPixmap::fromImage(ci.image);
     pm = pm.scaled(pm.size() * m_lastScale * submit_scale / devicePixelRatio(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
     pm.setDevicePixelRatio(submit_scale);
@@ -248,19 +243,22 @@ void QemuDisplayWidget::initializeGL()
     //
     // With GL_BGRA_EXT, glTexImage2D can take the BGRA data directly.
     // The extension is available on practically all desktop GPUs.
-    const char* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
-    m_hasBGRA = extensions && (strstr(extensions, "GL_EXT_texture_format_BGRA8888") || strstr(extensions, "GL_APPLE_texture_format_BGRA8888") || strstr(extensions, "GL_EXT_bgra"));
+    const char *extensions = reinterpret_cast<const char *>(glGetString(GL_EXTENSIONS));
+    m_hasBGRA = extensions
+        && (strstr(extensions, "GL_EXT_texture_format_BGRA8888") || strstr(extensions, "GL_APPLE_texture_format_BGRA8888")
+            || strstr(extensions, "GL_EXT_bgra"));
 
     // On Desktop GL (not GLES), GL_BGRA is always available
     if (!m_hasBGRA) {
-        QOpenGLContext* ctx = QOpenGLContext::currentContext();
+        const QOpenGLContext *ctx = QOpenGLContext::currentContext();
         if (ctx && !ctx->isOpenGLES()) {
             m_hasBGRA = true;
         }
     }
 
     // qDebug() << "GL_BGRA:" << (m_hasBGRA ? "available (no format convert)"
-    //                                       : "not available (fallback: RGBA convert)");
+    //                                       : "not available (fallback: RGBA
+    //                                       convert)");
 
     m_eglAvailable = initEglFunctions();
     // qDebug() << (m_eglAvailable
@@ -281,17 +279,14 @@ bool QemuDisplayWidget::initEglFunctions()
     if (m_eglDisplay == EGL_NO_DISPLAY)
         return false;
 
-    m_eglCreateImageKHR = reinterpret_cast<PFNEGLCREATEIMAGEKHRPROC>(
-        eglGetProcAddress("eglCreateImageKHR"));
-    m_eglDestroyImageKHR = reinterpret_cast<PFNEGLDESTROYIMAGEKHRPROC>(
-        eglGetProcAddress("eglDestroyImageKHR"));
-    m_glEGLImageTargetTexture2DOES = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(
-        eglGetProcAddress("glEGLImageTargetTexture2DOES"));
+    m_eglCreateImageKHR = reinterpret_cast<PFNEGLCREATEIMAGEKHRPROC>(eglGetProcAddress("eglCreateImageKHR"));
+    m_eglDestroyImageKHR = reinterpret_cast<PFNEGLDESTROYIMAGEKHRPROC>(eglGetProcAddress("eglDestroyImageKHR"));
+    m_glEGLImageTargetTexture2DOES = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(eglGetProcAddress("glEGLImageTargetTexture2DOES"));
 
     if (!m_eglCreateImageKHR || !m_eglDestroyImageKHR || !m_glEGLImageTargetTexture2DOES)
         return false;
 
-    const char* ext = eglQueryString(m_eglDisplay, EGL_EXTENSIONS);
+    const char *ext = eglQueryString(m_eglDisplay, EGL_EXTENSIONS);
     return ext && strstr(ext, "EGL_EXT_image_dma_buf_import");
 }
 
@@ -331,9 +326,7 @@ bool QemuDisplayWidget::importDmaBuf()
     }
     attribs[i++] = EGL_NONE;
 
-    m_eglImage = m_eglCreateImageKHR(
-        m_eglDisplay, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT,
-        nullptr, attribs);
+    m_eglImage = m_eglCreateImageKHR(m_eglDisplay, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
     ::close(buf.fd);
 
     if (m_eglImage == EGL_NO_IMAGE_KHR) {
@@ -375,7 +368,7 @@ void QemuDisplayWidget::destroyEglImage()
 
 void QemuDisplayWidget::uploadSoftwareFrame()
 {
-    QImage source = m_listener->currentImage();
+    const QImage source = m_listener->currentImage();
     if (source.isNull()) {
         m_textureReady = false;
         return;
@@ -387,27 +380,19 @@ void QemuDisplayWidget::uploadSoftwareFrame()
         // ---- Fast path: upload BGRA directly ----
         // QImage::Format_RGB32 = 0xffRRGGBB in Memory = BGRA bytes (little-endian)
         if (m_fbSize != source.size()) {
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                source.width(), source.height(), 0,
-                GL_BGRA_EXT, GL_UNSIGNED_BYTE, source.constBits());
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, source.width(), source.height(), 0, GL_BGRA_EXT, GL_UNSIGNED_BYTE, source.constBits());
             m_fbSize = source.size();
         } else {
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
-                source.width(), source.height(),
-                GL_BGRA_EXT, GL_UNSIGNED_BYTE, source.constBits());
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, source.width(), source.height(), GL_BGRA_EXT, GL_UNSIGNED_BYTE, source.constBits());
         }
     } else {
         // ---- Fallback: RGBA conversion ----
-        QImage rgba = source.convertToFormat(QImage::Format_RGBA8888);
+        const QImage rgba = source.convertToFormat(QImage::Format_RGBA8888);
         if (m_fbSize != rgba.size()) {
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                rgba.width(), rgba.height(), 0,
-                GL_RGBA, GL_UNSIGNED_BYTE, rgba.constBits());
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rgba.width(), rgba.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.constBits());
             m_fbSize = rgba.size();
         } else {
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
-                rgba.width(), rgba.height(),
-                GL_RGBA, GL_UNSIGNED_BYTE, rgba.constBits());
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rgba.width(), rgba.height(), GL_RGBA, GL_UNSIGNED_BYTE, rgba.constBits());
         }
     }
 
@@ -443,12 +428,12 @@ void QemuDisplayWidget::renderQuad()
     m_shader->bind();
 
     if (!m_fbSize.isEmpty()) {
-        qreal dpr = devicePixelRatio();
-        int vpW = width() * dpr;
-        int vpH = height() * dpr;
+        const qreal dpr = devicePixelRatio();
+        const int vpW = width() * dpr;
+        const int vpH = height() * dpr;
 
-        float scaleX = static_cast<float>(vpW) / m_fbSize.width();
-        float scaleY = static_cast<float>(vpH) / m_fbSize.height();
+        const float scaleX = static_cast<float>(vpW) / m_fbSize.width();
+        const float scaleY = static_cast<float>(vpH) / m_fbSize.height();
         float scale = qMin(scaleX, scaleY);
         if (scale <= 0.0f)
             scale = 1.0f; // Avoid division by zero and negative scaling
@@ -457,10 +442,10 @@ void QemuDisplayWidget::renderQuad()
             updateCursor(); // Rescale cursor if needed
         }
 
-        int drawW = static_cast<int>(m_fbSize.width() * scale);
-        int drawH = static_cast<int>(m_fbSize.height() * scale);
-        int offX = (vpW - drawW) / 2;
-        int offY = (vpH - drawH) / 2;
+        const int drawW = static_cast<int>(m_fbSize.width() * scale);
+        const int drawH = static_cast<int>(m_fbSize.height() * scale);
+        const int offX = (vpW - drawW) / 2;
+        const int offY = (vpH - drawH) / 2;
 
         glViewport(offX, offY, drawW, drawH);
     }
@@ -472,13 +457,12 @@ void QemuDisplayWidget::renderQuad()
     m_shader->setUniformValue("uFlipY", m_flipY ? 1.0f : 0.0f);
 
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    int posLoc = m_shader->attributeLocation("aPos");
-    int texLoc = m_shader->attributeLocation("aTexCoord");
+    const int posLoc = m_shader->attributeLocation("aPos");
+    const int texLoc = m_shader->attributeLocation("aTexCoord");
     glEnableVertexAttribArray(posLoc);
     glEnableVertexAttribArray(texLoc);
     glVertexAttribPointer(posLoc, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), nullptr);
-    glVertexAttribPointer(texLoc, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
-        reinterpret_cast<void*>(2 * sizeof(float)));
+    glVertexAttribPointer(texLoc, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), reinterpret_cast<void *>(2 * sizeof(float)));
 
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
@@ -487,7 +471,9 @@ void QemuDisplayWidget::renderQuad()
     m_shader->release();
 }
 
-void QemuDisplayWidget::resizeGL(int, int) { }
+void QemuDisplayWidget::resizeGL(int, int)
+{
+}
 
 // =============================================================================
 // Slots
@@ -507,7 +493,7 @@ void QemuDisplayWidget::onDmaBufScanout(int /*w*/, int /*h*/)
     m_needsRepaint = true; // Coalesced
 }
 
-void QemuDisplayWidget::onRegionUpdated(const QRect&)
+void QemuDisplayWidget::onRegionUpdated(const QRect &)
 {
     // Optimization 1: Only set flag instead of immediate update().
     // In fast scenes, 10-20 Update() calls occur per frame.
@@ -519,7 +505,7 @@ void QemuDisplayWidget::onRegionUpdated(const QRect&)
 // Keyboard
 // =============================================================================
 
-void QemuDisplayWidget::keyPressEvent(QKeyEvent* event)
+void QemuDisplayWidget::keyPressEvent(QKeyEvent *event)
 {
     // Reclaim F11 from the guest while fullscreen, so the user
     // always has a way out. In windowed mode F11 keeps reaching
@@ -537,7 +523,7 @@ void QemuDisplayWidget::keyPressEvent(QKeyEvent* event)
     m_keyboard->asyncCall(u"Press"_s, evdevToQnum(evdev));
 }
 
-void QemuDisplayWidget::keyReleaseEvent(QKeyEvent* event)
+void QemuDisplayWidget::keyReleaseEvent(QKeyEvent *event)
 {
     if (window()->isFullScreen() && event->key() == Qt::Key_F11 && event->modifiers() == Qt::NoModifier) {
         event->accept();
@@ -555,68 +541,66 @@ void QemuDisplayWidget::keyReleaseEvent(QKeyEvent* event)
 // Mouse
 // =============================================================================
 
-QPointF QemuDisplayWidget::mapToFramebuffer(const QPointF& widgetPos) const
+QPointF QemuDisplayWidget::mapToFramebuffer(const QPointF &widgetPos) const
 {
     if (m_fbSize.isEmpty())
-        return { };
+        return {};
 
-    qreal dpr = devicePixelRatio();
-    float vpW = width() * dpr;
-    float vpH = height() * dpr;
+    const qreal dpr = devicePixelRatio();
+    const float vpW = width() * dpr;
+    const float vpH = height() * dpr;
 
-    float scaleX = vpW / m_fbSize.width();
-    float scaleY = vpH / m_fbSize.height();
-    float scale = qMin(scaleX, scaleY);
+    const float scaleX = vpW / m_fbSize.width();
+    const float scaleY = vpH / m_fbSize.height();
+    const float scale = qMin(scaleX, scaleY);
 
-    float drawW = m_fbSize.width() * scale;
-    float drawH = m_fbSize.height() * scale;
-    float offX = (vpW - drawW) / 2.0f;
-    float offY = (vpH - drawH) / 2.0f;
+    const float drawW = m_fbSize.width() * scale;
+    const float drawH = m_fbSize.height() * scale;
+    const float offX = (vpW - drawW) / 2.0f;
+    const float offY = (vpH - drawH) / 2.0f;
 
-    float physX = widgetPos.x() * dpr;
-    float physY = widgetPos.y() * dpr;
+    const float physX = widgetPos.x() * dpr;
+    const float physY = widgetPos.y() * dpr;
 
     float fbX = (physX - offX) / scale;
     float fbY = (physY - offY) / scale;
 
     fbX = qBound(0.0f, fbX, m_fbSize.width() - 1.0f);
     fbY = qBound(0.0f, fbY, m_fbSize.height() - 1.0f);
-    return { fbX, fbY };
+    return {fbX, fbY};
 }
 
-void QemuDisplayWidget::mouseMoveEvent(QMouseEvent* event)
+void QemuDisplayWidget::mouseMoveEvent(QMouseEvent *event)
 {
     auto fb = mapToFramebuffer(event->position());
-    m_mouse->asyncCall(u"SetAbsPosition"_s,
-        static_cast<uint>(fb.x()),
-        static_cast<uint>(fb.y()));
+    m_mouse->asyncCall(u"SetAbsPosition"_s, static_cast<uint>(fb.x()), static_cast<uint>(fb.y()));
 }
 
-void QemuDisplayWidget::mousePressEvent(QMouseEvent* event)
+void QemuDisplayWidget::mousePressEvent(QMouseEvent *event)
 {
     mouseMoveEvent(event);
-    int btn = qtButtonToQemu(event->button());
+    const int btn = qtButtonToQemu(event->button());
     if (btn >= 0)
         m_mouse->asyncCall(u"Press"_s, static_cast<uint>(btn));
 }
 
-void QemuDisplayWidget::mouseReleaseEvent(QMouseEvent* event)
+void QemuDisplayWidget::mouseReleaseEvent(QMouseEvent *event)
 {
-    int btn = qtButtonToQemu(event->button());
+    const int btn = qtButtonToQemu(event->button());
     if (btn >= 0)
         m_mouse->asyncCall(u"Release"_s, static_cast<uint>(btn));
 }
 
-void QemuDisplayWidget::wheelEvent(QWheelEvent* event)
+void QemuDisplayWidget::wheelEvent(QWheelEvent *event)
 {
-    QPoint delta = event->angleDelta();
+    const QPoint delta = event->angleDelta();
     if (delta.y() != 0) {
-        uint btn = (delta.y() > 0) ? 3u : 4u;
+        const uint btn = (delta.y() > 0) ? 3u : 4u;
         m_mouse->asyncCall(u"Press"_s, btn);
         m_mouse->asyncCall(u"Release"_s, btn);
     }
     if (delta.x() != 0) {
-        uint btn = (delta.x() > 0) ? 5u : 6u;
+        const uint btn = (delta.x() > 0) ? 5u : 6u;
         m_mouse->asyncCall(u"Press"_s, btn);
         m_mouse->asyncCall(u"Release"_s, btn);
     }
@@ -632,26 +616,26 @@ uint32_t QemuDisplayWidget::evdevToQnum(uint32_t evdev)
     if (evdev <= 88)
         return evdev;
     static const uint32_t map[][2] = {
-        { 96, 0x9C },
-        { 97, 0x9D },
-        { 98, 0xB5 },
-        { 100, 0xB8 },
-        { 102, 0xC7 },
-        { 103, 0xC8 },
-        { 104, 0xC9 },
-        { 105, 0xCB },
-        { 106, 0xCD },
-        { 107, 0xCF },
-        { 108, 0xD0 },
-        { 109, 0xD1 },
-        { 110, 0xD2 },
-        { 111, 0xD3 },
-        { 119, 0xC6 },
-        { 125, 0xDB },
-        { 126, 0xDC },
-        { 127, 0xDD },
+        {96, 0x9C},
+        {97, 0x9D},
+        {98, 0xB5},
+        {100, 0xB8},
+        {102, 0xC7},
+        {103, 0xC8},
+        {104, 0xC9},
+        {105, 0xCB},
+        {106, 0xCD},
+        {107, 0xCF},
+        {108, 0xD0},
+        {109, 0xD1},
+        {110, 0xD2},
+        {111, 0xD3},
+        {119, 0xC6},
+        {125, 0xDB},
+        {126, 0xDC},
+        {127, 0xDD},
     };
-    for (const auto& e : map)
+    for (const auto &e : map)
         if (e[0] == evdev)
             return e[1];
     return evdev;

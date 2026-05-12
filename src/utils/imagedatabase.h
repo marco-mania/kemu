@@ -59,37 +59,38 @@ struct TemplateInfo {
     VMConfig defaults;
 };
 
-class ImageDatabase {
+class ImageDatabase
+{
 public:
     ImageDatabase();
 
-    void loadFromFile(const QString& jsonPath);
+    void loadFromFile(const QString &jsonPath);
 
     [[nodiscard]] QList<TemplateInfo> templates() const;
     [[nodiscard]] QList<TemplateInfo> templatesForType(VMSpecs::OsType type) const;
-    [[nodiscard]] const TemplateInfo* findById(const QString& id) const;
-    [[nodiscard]] QString displayName(const QString& id) const;
+    [[nodiscard]] const TemplateInfo *findById(const QString &id) const;
+    [[nodiscard]] QString displayName(const QString &id) const;
 
-    [[nodiscard]] QList<ReleaseInfo> releasesFor(const QString& tplId) const;
-    [[nodiscard]] QList<CloudImageInfo> cloudImagesFor(const QString& tplId, const QString& version, bool allArchitectures = false) const;
+    [[nodiscard]] QList<ReleaseInfo> releasesFor(const QString &tplId) const;
+    [[nodiscard]] QList<CloudImageInfo> cloudImagesFor(const QString &tplId, const QString &version, bool allArchitectures = false) const;
 
-    [[nodiscard]] VMConfig defaultsFor(const QString& tplId) const;
-    [[nodiscard]] bool hasCloudImages(const QString& tplId) const;
-    [[nodiscard]] int minDiskGbFor(const QString& tplId, const QString& version) const;
+    [[nodiscard]] VMConfig defaultsFor(const QString &tplId) const;
+    [[nodiscard]] bool hasCloudImages(const QString &tplId) const;
+    [[nodiscard]] int minDiskGbFor(const QString &tplId, const QString &version) const;
 
     [[nodiscard]] static QString hostArch();
     [[nodiscard]] static QString imageCacheDir();
-    [[nodiscard]] static QString localImagePath(const QString& url);
-    [[nodiscard]] static bool isImageCached(const QString& url);
-    [[nodiscard]] static bool isArchCompatible(const QString& imageArch);
-    [[nodiscard]] bool isQuickDeployEnabled(const QString& tplId, const QString& version) const;
+    [[nodiscard]] static QString localImagePath(const QString &url);
+    [[nodiscard]] static bool isImageCached(const QString &url);
+    [[nodiscard]] static bool isArchCompatible(const QString &imageArch);
+    [[nodiscard]] bool isQuickDeployEnabled(const QString &tplId, const QString &version) const;
 
 private:
-    TemplateInfo parseTemplate(const QJsonObject& obj, const VMConfig& globalDefaults) const;
-    ReleaseInfo parseRelease(const QJsonObject& obj) const;
-    CloudImageInfo parseCloudImage(const QJsonObject& obj) const;
+    TemplateInfo parseTemplate(const QJsonObject &obj, const VMConfig &globalDefaults) const;
+    ReleaseInfo parseRelease(const QJsonObject &obj) const;
+    CloudImageInfo parseCloudImage(const QJsonObject &obj) const;
 
-    static VMConfig overlayConfig(const VMConfig& base, const QJsonObject& overrides);
+    static VMConfig overlayConfig(const VMConfig &base, const QJsonObject &overrides);
 
     QList<TemplateInfo> m_templates;
 };

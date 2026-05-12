@@ -46,16 +46,13 @@ static const gchar audioOutListenerXml[] =
     </node>
     )XML";
 
-static const GDBusInterfaceVTable audioVTable = {
-    QemuAudioListener::onMethodCall,
-    nullptr, nullptr, { }
-};
+static const GDBusInterfaceVTable audioVTable = {QemuAudioListener::onMethodCall, nullptr, nullptr, {}};
 
 // =============================================================================
 // Constructor / Destructor
 // =============================================================================
 
-QemuAudioListener::QemuAudioListener(QObject* parent)
+QemuAudioListener::QemuAudioListener(QObject *parent)
     : QObject(parent)
 {
 }
@@ -75,7 +72,7 @@ QemuAudioListener::~QemuAudioListener()
     }
     while (g_main_context_iteration(nullptr, FALSE)) { }
 
-    for (auto* stream : m_streams) {
+    for (auto *stream : m_streams) {
         if (stream->sink) {
             stream->sink->stop();
             delete stream->sink;
@@ -114,12 +111,12 @@ bool QemuAudioListener::connectListener()
     if (m_ourFd < 0)
         return false;
 
-    int ourFd = m_ourFd;
+    const int ourFd = m_ourFd;
     m_ourFd = -1;
     m_socketFd = ourFd;
 
-    GError* error = nullptr;
-    GSocket* gsock = g_socket_new_from_fd(ourFd, &error);
+    GError *error = nullptr;
+    GSocket *gsock = g_socket_new_from_fd(ourFd, &error);
     if (!gsock) {
         qCritical() << "Audio: g_socket_new_from_fd:" << error->message;
         g_error_free(error);
@@ -127,17 +124,14 @@ bool QemuAudioListener::connectListener()
         return false;
     }
 
-    GSocketConnection* sockConn = g_socket_connection_factory_create_connection(gsock);
+    GSocketConnection *sockConn = g_socket_connection_factory_create_connection(gsock);
     g_object_unref(gsock);
     if (!sockConn) {
         qCritical() << "Audio: Socket connection failed";
         return false;
     }
 
-    m_conn = g_dbus_connection_new_sync(
-        G_IO_STREAM(sockConn), nullptr,
-        G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT,
-        nullptr, nullptr, &error);
+    m_conn = g_dbus_connection_new_sync(G_IO_STREAM(sockConn), nullptr, G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT, nullptr, nullptr, &error);
     g_object_unref(sockConn);
 
     if (!m_conn) {
@@ -147,22 +141,22 @@ bool QemuAudioListener::connectListener()
     }
 
     g_dbus_connection_set_exit_on_close(m_conn, FALSE);
-    g_signal_connect(m_conn, "closed",
-        G_CALLBACK(QemuAudioListener::onConnectionClosed), this);
+    g_signal_connect(m_conn, "closed", G_CALLBACK(QemuAudioListener::onConnectionClosed), this);
 
-    GDBusNodeInfo* nodeInfo = g_dbus_node_info_new_for_xml(audioOutListenerXml, &error);
+    GDBusNodeInfo *nodeInfo = g_dbus_node_info_new_for_xml(audioOutListenerXml, &error);
     if (!nodeInfo) {
         qCritical() << "Audio: XML error:" << error->message;
         g_error_free(error);
         return false;
     }
 
-    m_registrationId = g_dbus_connection_register_object(
-        m_conn,
-        KemuDbusDisplayConst::AudioOutListenerPath.constData(), //"/org/qemu/Display1/AudioOutListener",
-        nodeInfo->interfaces[0],
-        &audioVTable,
-        this, nullptr, &error);
+    m_registrationId = g_dbus_connection_register_object(m_conn,
+                                                         KemuDbusDisplayConst::AudioOutListenerPath.constData(), //"/org/qemu/Display1/AudioOutListener",
+                                                         nodeInfo->interfaces[0],
+                                                         &audioVTable,
+                                                         this,
+                                                         nullptr,
+                                                         &error);
     g_dbus_node_info_unref(nodeInfo);
 
     if (!m_registrationId) {
@@ -178,36 +172,33 @@ bool QemuAudioListener::connectListener()
 // =============================================================================
 // Connection-Closed Handler
 // =============================================================================
-void QemuAudioListener::onConnectionClosed(
-    GDBusConnection*, gboolean remote_peer_vanished,
-    GError* error, gpointer user_data)
+void QemuAudioListener::onConnectionClosed(GDBusConnection *, gboolean remote_peer_vanished, GError *error, gpointer user_data)
 {
-    auto* self = static_cast<QemuAudioListener*>(user_data);
+    auto *self = static_cast<QemuAudioListener *>(user_data);
     self->m_closed = true;
-    qDebug() << "Audio: Connection closed"
-             << (remote_peer_vanished ? "(QEMU terminated)" : "(local)")
-             << (error ? error->message : "");
+    qDebug() << "Audio: Connection closed" << (remote_peer_vanished ? "(QEMU terminated)" : "(local)") << (error ? error->message : "");
     Q_EMIT self->connectionLost();
 }
 
 // =============================================================================
 // GDBus method_call Dispatcher
 // =============================================================================
-void QemuAudioListener::onMethodCall(
-    GDBusConnection*, const gchar*, const gchar*,
-    const gchar*, const gchar* method_name,
-    GVariant* parameters, GDBusMethodInvocation* invocation,
-    gpointer user_data)
+void QemuAudioListener::onMethodCall(GDBusConnection *,
+                                     const gchar *,
+                                     const gchar *,
+                                     const gchar *,
+                                     const gchar *method_name,
+                                     GVariant *parameters,
+                                     GDBusMethodInvocation *invocation,
+                                     gpointer user_data)
 {
-    auto* self = static_cast<QemuAudioListener*>(user_data);
+    auto *self = static_cast<QemuAudioListener *>(user_data);
     if (self->m_closed) {
-        g_dbus_method_invocation_return_error(
-            invocation, G_DBUS_ERROR, G_DBUS_ERROR_DISCONNECTED,
-            "Connection closed");
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_DISCONNECTED, "Connection closed");
         return;
     }
 
-    QString method = QString::fromUtf8(method_name);
+    const QString method = QString::fromUtf8(method_name);
 
     if (method == u"Init"_s)
         self->handleInit(parameters, invocation);
@@ -226,25 +217,21 @@ void QemuAudioListener::onMethodCall(
 // =============================================================================
 // Init – Initialize PCM stream
 // =============================================================================
-void QemuAudioListener::handleInit(GVariant* parameters, GDBusMethodInvocation* invocation)
+void QemuAudioListener::handleInit(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint64 id;
     guint8 bits, nchannels;
     gboolean is_signed, is_float, be;
     guint32 freq, bytes_per_frame, bytes_per_second;
 
-    g_variant_get(parameters, "(tybbuyuub)",
-        &id, &bits, &is_signed, &is_float, &freq,
-        &nchannels, &bytes_per_frame, &bytes_per_second, &be);
+    g_variant_get(parameters, "(tybbuyuub)", &id, &bits, &is_signed, &is_float, &freq, &nchannels, &bytes_per_frame, &bytes_per_second, &be);
 
-    qDebug() << "Audio Init: id=" << id
-             << "bits=" << bits << "signed=" << is_signed
-             << "float=" << is_float << "freq=" << freq
-             << "channels=" << nchannels << "be=" << be;
+    qDebug() << "Audio Init: id=" << id << "bits=" << bits << "signed=" << is_signed << "float=" << is_float << "freq=" << freq << "channels=" << nchannels
+             << "be=" << be;
 
     // Clean up existing stream if present
     if (m_streams.contains(id)) {
-        auto* old = m_streams.take(id);
+        auto *old = m_streams.take(id);
         if (old->sink) {
             old->sink->stop();
             delete old->sink;
@@ -262,8 +249,7 @@ void QemuAudioListener::handleInit(GVariant* parameters, GDBusMethodInvocation* 
     } else {
         switch (bits) {
         case 8:
-            format.setSampleFormat(is_signed ? QAudioFormat::Unknown
-                                             : QAudioFormat::UInt8);
+            format.setSampleFormat(is_signed ? QAudioFormat::Unknown : QAudioFormat::UInt8);
             break;
         case 16:
             format.setSampleFormat(QAudioFormat::Int16);
@@ -278,12 +264,12 @@ void QemuAudioListener::handleInit(GVariant* parameters, GDBusMethodInvocation* 
     }
 
     // Create stream object
-    auto* stream = new AudioStream;
+    auto *stream = new AudioStream;
     stream->format = format;
     stream->enabled = false;
 
     // Create QAudioSink
-    QAudioDevice defaultDevice = QMediaDevices::defaultAudioOutput();
+    const QAudioDevice defaultDevice = QMediaDevices::defaultAudioOutput();
     if (defaultDevice.isNull()) {
         qWarning() << "Audio: No audio output device found!";
     } else if (!defaultDevice.isFormatSupported(format)) {
@@ -306,14 +292,14 @@ void QemuAudioListener::handleInit(GVariant* parameters, GDBusMethodInvocation* 
 // =============================================================================
 // Fini – Terminate stream
 // =============================================================================
-void QemuAudioListener::handleFini(GVariant* parameters, GDBusMethodInvocation* invocation)
+void QemuAudioListener::handleFini(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint64 id;
     g_variant_get(parameters, "(t)", &id);
 
     qDebug() << "Audio Fini: id=" << id;
 
-    if (auto* stream = m_streams.take(id)) {
+    if (auto *stream = m_streams.take(id)) {
         if (stream->sink) {
             stream->sink->stop();
             delete stream->sink;
@@ -327,22 +313,19 @@ void QemuAudioListener::handleFini(GVariant* parameters, GDBusMethodInvocation* 
 // =============================================================================
 // Write – Receive and play PCM data
 // =============================================================================
-void QemuAudioListener::handleWrite(GVariant* parameters, GDBusMethodInvocation* invocation)
+void QemuAudioListener::handleWrite(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint64 id;
-    GVariant* dataVariant = nullptr;
+    GVariant *dataVariant = nullptr;
     g_variant_get(parameters, "(t@ay)", &id, &dataVariant);
 
-    auto* stream = m_streams.value(id, nullptr);
+    auto *stream = m_streams.value(id, nullptr);
     if (stream && stream->ioDevice && stream->enabled && !m_muted) {
         gsize dataLen = 0;
-        const guint8* data = static_cast<const guint8*>(
-            g_variant_get_fixed_array(dataVariant, &dataLen, sizeof(guint8)));
+        const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant, &dataLen, sizeof(guint8)));
 
         if (data && dataLen > 0) {
-            stream->ioDevice->write(
-                reinterpret_cast<const char*>(data),
-                static_cast<qint64>(dataLen));
+            stream->ioDevice->write(reinterpret_cast<const char *>(data), static_cast<qint64>(dataLen));
         }
     }
 
@@ -353,7 +336,7 @@ void QemuAudioListener::handleWrite(GVariant* parameters, GDBusMethodInvocation*
 // =============================================================================
 // SetEnabled – Play / Pause
 // =============================================================================
-void QemuAudioListener::handleSetEnabled(GVariant* parameters, GDBusMethodInvocation* invocation)
+void QemuAudioListener::handleSetEnabled(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint64 id;
     gboolean enabled;
@@ -361,7 +344,7 @@ void QemuAudioListener::handleSetEnabled(GVariant* parameters, GDBusMethodInvoca
 
     qDebug() << "Audio SetEnabled: id=" << id << "enabled=" << enabled;
 
-    auto* stream = m_streams.value(id, nullptr);
+    auto *stream = m_streams.value(id, nullptr);
     if (stream && stream->sink) {
         stream->enabled = enabled;
         if (enabled) {
@@ -369,8 +352,7 @@ void QemuAudioListener::handleSetEnabled(GVariant* parameters, GDBusMethodInvoca
             if (!stream->ioDevice) {
                 stream->ioDevice = stream->sink->start();
                 if (!stream->ioDevice) {
-                    qWarning() << "Audio: QAudioSink::start() failed:"
-                               << stream->sink->error();
+                    qWarning() << "Audio: QAudioSink::start() failed:" << stream->sink->error();
                 }
             } else if (stream->sink->state() == QAudio::SuspendedState) {
                 stream->sink->resume();
@@ -388,28 +370,27 @@ void QemuAudioListener::handleSetEnabled(GVariant* parameters, GDBusMethodInvoca
 // =============================================================================
 // SetVolume – Volume control
 // =============================================================================
-void QemuAudioListener::handleSetVolume(GVariant* parameters, GDBusMethodInvocation* invocation)
+void QemuAudioListener::handleSetVolume(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint64 id;
     gboolean mute;
-    GVariant* volumeVariant = nullptr;
+    GVariant *volumeVariant = nullptr;
     g_variant_get(parameters, "(tb@ay)", &id, &mute, &volumeVariant);
 
-    auto* stream = m_streams.value(id, nullptr);
+    auto *stream = m_streams.value(id, nullptr);
     if (stream && stream->sink) {
         if (mute) {
             stream->sink->setVolume(0.0);
         } else {
             // QEMU sends a byte value 0-255 per channel
             gsize nVols = 0;
-            const guint8* vols = static_cast<const guint8*>(
-                g_variant_get_fixed_array(volumeVariant, &nVols, sizeof(guint8)));
+            const guint8 *vols = static_cast<const guint8 *>(g_variant_get_fixed_array(volumeVariant, &nVols, sizeof(guint8)));
             if (nVols > 0) {
                 // Average of all channels -> 0.0..1.0
                 double sum = 0;
                 for (gsize i = 0; i < nVols; i++)
                     sum += vols[i];
-                double vol = sum / (nVols * 255.0);
+                const double vol = sum / (nVols * 255.0);
                 stream->sink->setVolume(vol);
             }
         }

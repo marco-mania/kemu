@@ -41,22 +41,25 @@ using namespace Qt::StringLiterals;
 //   - Toggles for audio output, audio input, and clipboard
 // =============================================================================
 
-class DbusViewerWindow : public QMainWindow {
-
+class DbusViewerWindow : public QMainWindow
+{
     Q_OBJECT
 
 public:
-    DbusViewerWindow(QemuDisplayListener* listener,
-        QDBusConnection& bus,
-        const QString& consolePath,
-        QemuAudioListener* audioOut,
-        QemuAudioInListener* audioIn,
-        bool audioOutConnected,
-        bool audioInConnected,
-        QWidget* parent = nullptr);
+    DbusViewerWindow(QemuDisplayListener *listener,
+                     QDBusConnection &bus,
+                     const QString &consolePath,
+                     QemuAudioListener *audioOut,
+                     QemuAudioInListener *audioIn,
+                     bool audioOutConnected,
+                     bool audioInConnected,
+                     QWidget *parent = nullptr);
     ~DbusViewerWindow() override;
 
-    QemuDisplayWidget* displayWidget() const { return m_display; }
+    QemuDisplayWidget *displayWidget() const
+    {
+        return m_display;
+    }
 
     // Set clipboard mode (for initial CLI configuration).
     // Must be called after show(), also sets the corresponding menu action.
@@ -70,8 +73,8 @@ Q_SIGNALS:
     void viewerClosed();
 
 protected:
-    void closeEvent(QCloseEvent* event) override;
-    void changeEvent(QEvent* event) override;
+    void closeEvent(QCloseEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private Q_SLOTS:
     void onToggleFullscreen(bool checked);
@@ -98,32 +101,32 @@ private:
     QString m_consolePath;
 
     // Core components
-    QemuDisplayWidget* m_display = nullptr;
-    QemuDisplayListener* m_listener = nullptr;
-    QemuAudioListener* m_audioOut = nullptr;
-    QemuAudioInListener* m_audioIn = nullptr;
-    QemuClipboardManager* m_clipboard = nullptr;
+    QemuDisplayWidget *m_display = nullptr;
+    QemuDisplayListener *m_listener = nullptr;
+    QemuAudioListener *m_audioOut = nullptr;
+    QemuAudioInListener *m_audioIn = nullptr;
+    QemuClipboardManager *m_clipboard = nullptr;
 
     bool m_audioOutConnected = false;
     bool m_audioInConnected = false;
 
     // Menu actions
-    QAction* m_actQuit = nullptr;
-    QAction* m_actFullscreen = nullptr;
-    QAction* m_actNativeSize = nullptr;
-    QAction* m_actAudioOut = nullptr;
-    QAction* m_actAudioIn = nullptr;
-    QAction* m_actClipOff = nullptr;
-    QAction* m_actClipToHost = nullptr;
-    QAction* m_actClipToGuest = nullptr;
-    QAction* m_actClipBoth = nullptr;
-    QAction* m_actAbout = nullptr;
+    QAction *m_actQuit = nullptr;
+    QAction *m_actFullscreen = nullptr;
+    QAction *m_actNativeSize = nullptr;
+    QAction *m_actAudioOut = nullptr;
+    QAction *m_actAudioIn = nullptr;
+    QAction *m_actClipOff = nullptr;
+    QAction *m_actClipToHost = nullptr;
+    QAction *m_actClipToGuest = nullptr;
+    QAction *m_actClipBoth = nullptr;
+    QAction *m_actAbout = nullptr;
 
     // Status bar labels
-    QLabel* m_lblResolution = nullptr;
-    QLabel* m_lblAudioOut = nullptr;
-    QLabel* m_lblAudioIn = nullptr;
-    QLabel* m_lblClipboard = nullptr;
+    QLabel *m_lblResolution = nullptr;
+    QLabel *m_lblAudioOut = nullptr;
+    QLabel *m_lblAudioIn = nullptr;
+    QLabel *m_lblClipboard = nullptr;
 
     ClipboardDirection m_clipDirection;
 

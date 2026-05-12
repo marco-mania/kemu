@@ -33,26 +33,24 @@ extern "C" {
 
 using namespace Qt::StringLiterals;
 
-static const QStringList DEFAULT_FILES_TO_EXPORT = {
-    KEMUConst::VMConfigFileName, // must be first file in archive!
-    KEMUConst::VMDiskFileName,
-    u"OVMF_VARS.fd"_s,
-    u"tpm2-00.permall"_s
-};
+static const QStringList DEFAULT_FILES_TO_EXPORT = {KEMUConst::VMConfigFileName, // must be first file in archive!
+                                                    KEMUConst::VMDiskFileName,
+                                                    u"OVMF_VARS.fd"_s,
+                                                    u"tpm2-00.permall"_s};
 
-class ExportJob : public KJob {
-
+class ExportJob : public KJob
+{
     Q_OBJECT
 
 public:
-    explicit ExportJob(const QString& vmName,
-        const QString& vmPath,
-        const QString& outputFilePath,
-        QObject* parent = nullptr);
+    explicit ExportJob(const QString &vmName, const QString &vmPath, const QString &outputFilePath, QObject *parent = nullptr);
 
     void start() override;
 
-    [[nodiscard]] QString vmName() const { return m_vmName; }
+    [[nodiscard]] QString vmName() const
+    {
+        return m_vmName;
+    }
 
 protected:
     bool doKill() override;
@@ -76,8 +74,8 @@ private:
     QStringList m_filesToPack;
     qint64 m_totalBytesToPack = 0;
 
-    QFutureWatcher<bool>* m_watcher = nullptr;
-    std::atomic<bool> m_cancelExport { false };
+    QFutureWatcher<bool> *m_watcher = nullptr;
+    std::atomic<bool> m_cancelExport{false};
 
     // Backup/restore original config.json
     QByteArray m_originalConfigData;

@@ -10,7 +10,8 @@
 
 using namespace Qt::StringLiterals;
 
-namespace KemuDbusDisplayConst {
+namespace KemuDbusDisplayConst
+{
 
 inline const QString ServiceName = u"org.qemu"_s;
 
@@ -37,4 +38,4 @@ inline constexpr auto AudioInListenerPath = "/org/qemu/Display1/AudioInListener"
 // Socket filename inside each VM directory
 inline constexpr auto SocketFileName = "dbus-display.sock"_L1;
 
-}
+} // namespace KemuDbusDisplayConst

@@ -32,72 +32,55 @@ struct SnapshotInfo {
     QDateTime dateTime; // Snapshot creation time
     quint64 vmStateSizeBytes = 0; // Saved RAM state size (0 if offline snap)
 
-    bool isValid() const { return !name.isEmpty(); }
+    bool isValid() const
+    {
+        return !name.isEmpty();
+    }
 };
 
 Q_DECLARE_METATYPE(SnapshotInfo)
 
 // SnapshotManager
-class SnapshotManager : public QObject {
+class SnapshotManager : public QObject
+{
     Q_OBJECT
 
 public:
-    explicit SnapshotManager(QObject* parent = nullptr);
+    explicit SnapshotManager(QObject *parent = nullptr);
 
     // Synchronous Operations (Offline / qemu-img)
 
-    QList<SnapshotInfo> listSnapshots(const QString& diskPath) const;
+    QList<SnapshotInfo> listSnapshots(const QString &diskPath) const;
 
-    bool createOfflineSnapshot(const QString& diskPath,
-        const QString& name,
-        QString* errorOut = nullptr);
+    bool createOfflineSnapshot(const QString &diskPath, const QString &name, QString *errorOut = nullptr);
 
-    bool revertOfflineSnapshot(const QString& diskPath,
-        const QString& name,
-        QString* errorOut = nullptr);
+    bool revertOfflineSnapshot(const QString &diskPath, const QString &name, QString *errorOut = nullptr);
 
-    bool deleteOfflineSnapshot(const QString& diskPath,
-        const QString& name,
-        QString* errorOut = nullptr);
+    bool deleteOfflineSnapshot(const QString &diskPath, const QString &name, QString *errorOut = nullptr);
 
     // Asynchronous Operations (Online / QMP)
 
-    void createLiveSnapshot(QMPClient* qmp,
-        const QString& name,
-        std::function<void(bool, QString)> callback);
+    void createLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback);
 
-    void revertLiveSnapshot(QMPClient* qmp,
-        const QString& name,
-        std::function<void(bool, QString)> callback);
+    void revertLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback);
 
-    void deleteLiveSnapshot(QMPClient* qmp,
-        const QString& name,
-        std::function<void(bool, QString)> callback);
+    void deleteLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback);
 
     // Combined Helper Methods (auto-detect online/offline)
 
-    void createSnapshot(const QString& diskPath,
-        const QString& name,
-        QMPClient* qmp, // can be nullptr
-        std::function<void(bool, QString)> callback);
+    void createSnapshot(const QString &diskPath,
+                        const QString &name,
+                        QMPClient *qmp, // can be nullptr
+                        std::function<void(bool, QString)> callback);
 
-    void revertSnapshot(const QString& diskPath,
-        const QString& name,
-        QMPClient* qmp,
-        std::function<void(bool, QString)> callback);
+    void revertSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, std::function<void(bool, QString)> callback);
 
-    void deleteSnapshot(const QString& diskPath,
-        const QString& name,
-        QMPClient* qmp,
-        std::function<void(bool, QString)> callback);
+    void deleteSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, std::function<void(bool, QString)> callback);
 
     // Sidecar JSON next to .qcow2
-    void saveDescription(const QString& diskPath,
-        const QString& snapshotName,
-        const QString& description) const;
+    void saveDescription(const QString &diskPath, const QString &snapshotName, const QString &description) const;
 
-    QString loadDescription(const QString& diskPath,
-        const QString& snapshotName) const;
+    QString loadDescription(const QString &diskPath, const QString &snapshotName) const;
 
 private:
     struct ProcResult {
@@ -105,12 +88,12 @@ private:
         QString out;
         QString err;
     };
-    ProcResult runQemuImg(const QStringList& args) const;
+    ProcResult runQemuImg(const QStringList &args) const;
 
-    QList<SnapshotInfo> parseSnapshotListJson(const QString& output) const;
-    QList<SnapshotInfo> parseSnapshotListText(const QString& output) const;
+    QList<SnapshotInfo> parseSnapshotListJson(const QString &output) const;
+    QList<SnapshotInfo> parseSnapshotListText(const QString &output) const;
 
-    QJsonObject hmc(const QString& cmd) const;
+    QJsonObject hmc(const QString &cmd) const;
 
-    QString sidecarPath(const QString& diskPath) const;
+    QString sidecarPath(const QString &diskPath) const;
 };

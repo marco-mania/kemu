@@ -86,29 +86,26 @@ struct VmBlockStats {
     bool isValid = false;
 };
 
-class QMPClient : public QObject {
+class QMPClient : public QObject
+{
     Q_OBJECT
 
 public:
-    explicit QMPClient(QObject* parent = nullptr);
+    explicit QMPClient(QObject *parent = nullptr);
     ~QMPClient();
 
-    void connectToVm(const QString& socketPath);
+    void connectToVm(const QString &socketPath);
     void disconnectFromVm();
     bool isConnected() const;
 
-    void sendCommand(const QString& command,
-        const QJsonObject& args = QJsonObject(),
-        std::function<void(QMPResult)> callback = nullptr);
-    QMPResult sendCommandSync(const QString& command,
-        const QJsonObject& args = QJsonObject(),
-        int timeoutMs = 2000);
+    void sendCommand(const QString &command, const QJsonObject &args = QJsonObject(), std::function<void(QMPResult)> callback = nullptr);
+    QMPResult sendCommandSync(const QString &command, const QJsonObject &args = QJsonObject(), int timeoutMs = 2000);
 
     // Screenshot
-    void startScreenshotTimer(const QString& dumpPath, int intervalMs = 20000);
+    void startScreenshotTimer(const QString &dumpPath, int intervalMs = 20000);
     void stopScreenshotTimer();
     bool isScreenshotTimerActive() const;
-    void requestScreenshot(const QString& dumpPath);
+    void requestScreenshot(const QString &dumpPath);
 
     // CPU usage (via /proc/<tid>/stat)
     void requestCpuUsage(std::function<void(VmCpuUsage)> callback);
@@ -133,21 +130,21 @@ public:
     bool isPerformanceTimerActive() const;
 
     // USB passthrough
-    QMPResult attachUsbDevice(int busNum, int devAddr, const QString& id);
-    QMPResult detachUsbDevice(const QString& id);
+    QMPResult attachUsbDevice(int busNum, int devAddr, const QString &id);
+    QMPResult detachUsbDevice(const QString &id);
 
 Q_SIGNALS:
     void connected();
     void disconnected();
-    void errorOccurred(const QString& errorMsg);
+    void errorOccurred(const QString &errorMsg);
 
-    void eventReceived(const QString& eventName, const QJsonObject& eventData);
+    void eventReceived(const QString &eventName, const QJsonObject &eventData);
 
-    void screenshotCaptured(const QImage& image);
+    void screenshotCaptured(const QImage &image);
 
-    void cpuUsageUpdated(const VmCpuUsage& usage);
-    void memoryUsageUpdated(const VmMemoryUsage& usage);
-    void blockStatsUpdated(const VmBlockStats& stats);
+    void cpuUsageUpdated(const VmCpuUsage &usage);
+    void memoryUsageUpdated(const VmMemoryUsage &usage);
+    void blockStatsUpdated(const VmBlockStats &stats);
 
 private Q_SLOTS:
     void onReadyRead();
@@ -162,7 +159,7 @@ private:
 
     QMap<QString, std::function<void(QMPResult)>> m_pendingRequests;
 
-    void processLine(const QByteArray& line);
+    void processLine(const QByteArray &line);
 
     // Screenshot
     QTimer m_screenshotTimer;
@@ -184,10 +181,12 @@ private:
     static ProcCpuSample readProcStat(qint64 tid);
 
     // RAM usage
-    enum class MemorySampleState { Idle,
+    enum class MemorySampleState {
+        Idle,
         Discovering,
         Enabling,
-        Reading };
+        Reading
+    };
     MemorySampleState m_memorySampleState = MemorySampleState::Idle;
     qint64 m_maxMemoryBytes = 0; // cached from first balloon query
     // bool m_memoryInFlight = false;

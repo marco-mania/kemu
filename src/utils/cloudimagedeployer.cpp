@@ -12,11 +12,7 @@
 
 using namespace Qt::StringLiterals;
 
-CloudImageDeployer::Result CloudImageDeployer::deploy(
-    const QString& sourceImage,
-    const QDir& vmDir,
-    int diskSizeGb,
-    const CloudDeployConfig& config)
+CloudImageDeployer::Result CloudImageDeployer::deploy(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, const CloudDeployConfig &config)
 {
     Result result;
 
@@ -24,13 +20,13 @@ CloudImageDeployer::Result CloudImageDeployer::deploy(
         return result;
     }
 
-    QByteArray userData = generateUserData(config, result.errorMessage);
+    const QByteArray userData = generateUserData(config, result.errorMessage);
     if (userData.isEmpty())
         return result;
 
-    QByteArray metaData = generateMetaData(config);
+    const QByteArray metaData = generateMetaData(config);
 
-    QByteArray networkCfg = generateNetworkConfig(config, result.errorMessage);
+    const QByteArray networkCfg = generateNetworkConfig(config, result.errorMessage);
 
     if (!result.errorMessage.isEmpty() && networkCfg.isEmpty()) {
         return result;
@@ -45,26 +41,22 @@ CloudImageDeployer::Result CloudImageDeployer::deploy(
     return result;
 }
 
-void CloudImageDeployer::removeNoCloudIso(const QDir& vmDir)
+void CloudImageDeployer::removeNoCloudIso(const QDir &vmDir)
 {
     QFile::remove(noCloudIsoPath(vmDir));
 }
 
-bool CloudImageDeployer::hasNoCloudIso(const QDir& vmDir)
+bool CloudImageDeployer::hasNoCloudIso(const QDir &vmDir)
 {
     return QFile::exists(noCloudIsoPath(vmDir));
 }
 
-QString CloudImageDeployer::noCloudIsoPath(const QDir& vmDir)
+QString CloudImageDeployer::noCloudIsoPath(const QDir &vmDir)
 {
     return vmDir.absoluteFilePath(u"cidata.iso"_s);
 }
 
-bool CloudImageDeployer::prepareImage(const QString& sourceImage,
-    const QDir& vmDir,
-    int diskSizeGb,
-    QString& diskPathOut,
-    QString& errorOut)
+bool CloudImageDeployer::prepareImage(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, QString &diskPathOut, QString &errorOut)
 {
     diskPathOut = vmDir.absoluteFilePath(u"disk.qcow2"_s);
 
@@ -77,13 +69,13 @@ bool CloudImageDeployer::prepareImage(const QString& sourceImage,
     }
 
     // Detect source format
-    proc.start(qemuImg, { u"info"_s, u"--output=json"_s, sourceImage });
+    proc.start(qemuImg, {u"info"_s, u"--output=json"_s, sourceImage});
     if (!proc.waitForFinished(10000)) {
         errorOut = u"qemu-img info timed out."_s;
         return false;
     }
 
-    QJsonDocument info = QJsonDocument::fromJson(proc.readAllStandardOutput());
+    const QJsonDocument info = QJsonDocument::fromJson(proc.readAllStandardOutput());
     QString srcFormat = info.object()[u"format"_s].toString();
     if (srcFormat.isEmpty())
         srcFormat = u"qcow2"_s;
@@ -94,10 +86,9 @@ bool CloudImageDeployer::prepareImage(const QString& sourceImage,
             return false;
         }
         // Ensure writable
-        QFile::setPermissions(diskPathOut,
-            QFile::ReadOwner | QFile::WriteOwner | QFile::ReadGroup);
+        QFile::setPermissions(diskPathOut, QFile::ReadOwner | QFile::WriteOwner | QFile::ReadGroup);
     } else {
-        proc.start(qemuImg, { u"convert"_s, u"-f"_s, srcFormat, u"-O"_s, u"qcow2"_s, sourceImage, diskPathOut });
+        proc.start(qemuImg, {u"convert"_s, u"-f"_s, srcFormat, u"-O"_s, u"qcow2"_s, sourceImage, diskPathOut});
         if (!proc.waitForFinished(120000) || proc.exitCode() != 0) {
             errorOut = u"qemu-img convert failed: %1"_s.arg(QString::fromUtf8(proc.readAllStandardError()).trimmed());
             return false;
@@ -105,7 +96,7 @@ bool CloudImageDeployer::prepareImage(const QString& sourceImage,
     }
 
     // Resize to target size
-    proc.start(qemuImg, { u"resize"_s, diskPathOut, u"%1G"_s.arg(diskSizeGb) });
+    proc.start(qemuImg, {u"resize"_s, diskPathOut, u"%1G"_s.arg(diskSizeGb)});
     if (!proc.waitForFinished(30000) || proc.exitCode() != 0) {
         errorOut = u"qemu-img resize failed: %1"_s.arg(QString::fromUtf8(proc.readAllStandardError()).trimmed());
         return false;
@@ -114,14 +105,14 @@ bool CloudImageDeployer::prepareImage(const QString& sourceImage,
     return true;
 }
 
-QByteArray CloudImageDeployer::generateUserData(const CloudDeployConfig& config, QString& errorOut)
+QByteArray CloudImageDeployer::generateUserData(const CloudDeployConfig &config, QString &errorOut)
 {
-    QString templateId = config.templateId.isEmpty() ? u"default"_s : config.templateId;
-    QString tpl = CloudInitTemplates::loadTemplate(templateId);
+    const QString templateId = config.templateId.isEmpty() ? u"default"_s : config.templateId;
+    const QString tpl = CloudInitTemplates::loadTemplate(templateId);
 
     if (tpl.isEmpty()) {
         errorOut = u"Cloud-Init template '%1' not found. Please check your installation."_s.arg(templateId);
-        return { };
+        return {};
     }
 
     QVariantHash vars;
@@ -145,21 +136,21 @@ QByteArray CloudImageDeployer::generateUserData(const CloudDeployConfig& config,
     if (!config.password.isEmpty()) {
         vars[u"PASSWORD_HASH"_s] = Utils::generateCloudInitPasswordHash(config.password);
     } else {
-        vars[u"PASSWORD_HASH"_s] = { };
+        vars[u"PASSWORD_HASH"_s] = {};
     }
     vars[u"SSH_KEYS"_s] = config.sshKeys;
 
     vars[u"PACKAGES"_s] = config.extraPackages;
 
-    KTextTemplate::Engine engine;
-    KTextTemplate::Template t = engine.newTemplate(tpl, u"cloud-init"_s);
+    const KTextTemplate::Engine engine;
+    const KTextTemplate::Template t = engine.newTemplate(tpl, u"cloud-init"_s);
 
     KTextTemplate::Context context(vars);
 
     return t->render(&context).toUtf8();
 }
 
-QByteArray CloudImageDeployer::generateMetaData(const CloudDeployConfig& config)
+QByteArray CloudImageDeployer::generateMetaData(const CloudDeployConfig &config)
 {
     QString yaml;
     QTextStream s(&yaml);
@@ -170,32 +161,32 @@ QByteArray CloudImageDeployer::generateMetaData(const CloudDeployConfig& config)
     return yaml.toUtf8();
 }
 
-QByteArray CloudImageDeployer::generateNetworkConfig(const CloudDeployConfig& config, QString& errorOut)
+QByteArray CloudImageDeployer::generateNetworkConfig(const CloudDeployConfig &config, QString &errorOut)
 {
-    QString templateId = config.networkTemplateId.isEmpty() ? u"network-v2"_s : config.networkTemplateId;
+    const QString templateId = config.networkTemplateId.isEmpty() ? u"network-v2"_s : config.networkTemplateId;
 
-    QString tpl = CloudInitTemplates::loadTemplate(templateId);
+    const QString tpl = CloudInitTemplates::loadTemplate(templateId);
 
     if (tpl.isEmpty()) {
         errorOut = u"Network template '%1' not found. Please check your installation."_s.arg(templateId);
-        return { };
+        return {};
     }
 
-    QVariantHash vars;
+    const QVariantHash vars;
 
-    KTextTemplate::Engine engine;
-    KTextTemplate::Template t = engine.newTemplate(tpl, u"network-config"_s);
+    const KTextTemplate::Engine engine;
+    const KTextTemplate::Template t = engine.newTemplate(tpl, u"network-config"_s);
 
     KTextTemplate::Context context(vars);
 
     return t->render(&context).toUtf8();
 }
 
-bool CloudImageDeployer::createNoCloudIso(const QDir& vmDir,
-    const QByteArray& userData,
-    const QByteArray& metaData,
-    const QByteArray& networkConfig,
-    QString& errorOut)
+bool CloudImageDeployer::createNoCloudIso(const QDir &vmDir,
+                                          const QByteArray &userData,
+                                          const QByteArray &metaData,
+                                          const QByteArray &networkConfig,
+                                          QString &errorOut)
 {
     QTemporaryDir tmpDir;
     if (!tmpDir.isValid()) {
@@ -203,7 +194,7 @@ bool CloudImageDeployer::createNoCloudIso(const QDir& vmDir,
         return false;
     }
 
-    auto writeFile = [&](const QString& name, const QByteArray& content) -> bool {
+    auto writeFile = [&](const QString &name, const QByteArray &content) -> bool {
         QFile f(tmpDir.filePath(name));
         if (!f.open(QIODevice::WriteOnly)) {
             errorOut = u"Failed to write %1."_s.arg(name);
@@ -231,10 +222,7 @@ bool CloudImageDeployer::createNoCloudIso(const QDir& vmDir,
     QStringList args;
     if (tool.endsWith(u"xorriso"_s))
         args << u"-as"_s << u"genisoimage"_s;
-    args << u"-output"_s << outputIso
-         << u"-volid"_s << u"cidata"_s
-         << u"-joliet"_s << u"-rock"_s
-         << tmpDir.path();
+    args << u"-output"_s << outputIso << u"-volid"_s << u"cidata"_s << u"-joliet"_s << u"-rock"_s << tmpDir.path();
 
     QProcess proc;
     proc.setProgram(tool);
@@ -256,7 +244,7 @@ bool CloudImageDeployer::createNoCloudIso(const QDir& vmDir,
 
 QString CloudImageDeployer::findIsoTool()
 {
-    const auto& tools = ExternalTools::instance();
+    const auto &tools = ExternalTools::instance();
     if (tools.isAvailable(ExternalTools::GenIsoImage))
         return tools.path(ExternalTools::GenIsoImage);
 
