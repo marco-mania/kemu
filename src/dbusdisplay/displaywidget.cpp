@@ -493,18 +493,14 @@ void QemuDisplayWidget::resizeGL(int, int) { }
 // Slots
 // =============================================================================
 
-void QemuDisplayWidget::onScanoutChanged(int w, int h)
+void QemuDisplayWidget::onScanoutChanged(int /*w*/, int /*h*/)
 {
-    Q_UNUSED(w);
-    Q_UNUSED(h);
     m_usingDmaBuf = false;
     m_needsRepaint = true; // Coalesced -> next frame tick
 }
 
-void QemuDisplayWidget::onDmaBufScanout(int w, int h)
+void QemuDisplayWidget::onDmaBufScanout(int /*w*/, int /*h*/)
 {
-    Q_UNUSED(w);
-    Q_UNUSED(h);
     if (m_eglAvailable) {
         m_dmaBufPending = true;
     }

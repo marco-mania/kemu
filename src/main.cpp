@@ -66,9 +66,7 @@ int main(int argc, char* argv[])
     mainwindow->show();
 
     QObject::connect(&service, &KDBusService::activateRequested,
-        mainwindow, [mainwindow](const QStringList& args, const QString& workingDir) {
-            Q_UNUSED(args);
-            Q_UNUSED(workingDir);
+        mainwindow, [mainwindow](const QStringList& /*args*/, const QString& /*workingDir*/) {
             mainwindow->show();
             mainwindow->raise();
             mainwindow->activateWindow();

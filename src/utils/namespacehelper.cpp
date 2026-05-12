@@ -313,9 +313,8 @@ bool NamespaceHelper::prepareProcessForNamespace(KProcess* process, qint64 nsPid
 // Netlink Helpers
 // ============================================================================
 
-int NamespaceHelper::netlinkGetIfindex(int nlFd, const char* ifname)
+int NamespaceHelper::netlinkGetIfindex(int /*nlFd*/, const char* ifname)
 {
-    Q_UNUSED(nlFd);
     // Use if_nametoindex which works on the current namespace
     unsigned int idx = if_nametoindex(ifname);
     return static_cast<int>(idx);

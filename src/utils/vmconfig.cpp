@@ -169,10 +169,8 @@ bool VMConfig::isCpuCompatible(VMSpecs::CpuModel cpu, VMSpecs::MachineType machi
 
 // --- Icon Helpers ---
 
-QIcon VMConfig::icon(int size) const
+QIcon VMConfig::icon(int /*size*/) const
 {
-    Q_UNUSED(size)
-
     if (m_iconSource == IconSource::Custom && !m_customIcon.isNull())
         return m_customIcon;
 

@@ -69,10 +69,8 @@ protected:
         return val * multiplier;
     }
 
-    QValidator::State validate(QString& input, int& pos) const override
+    QValidator::State validate(QString& /*input*/, int& /*pos*/) const override
     {
-        Q_UNUSED(input);
-        Q_UNUSED(pos);
         return QValidator::Acceptable;
     }
 };

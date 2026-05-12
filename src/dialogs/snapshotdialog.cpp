@@ -85,8 +85,7 @@ SnapshotDialog::SnapshotDialog(const QString& vmName,
     connect(m_revertBtn, &QPushButton::clicked, this, &SnapshotDialog::onRevertSnapshot);
     connect(m_deleteBtn, &QPushButton::clicked, this, &SnapshotDialog::onDeleteSnapshot);
     connect(closeBtn, &QPushButton::clicked, this, &QDialog::accept);
-    connect(m_tree, &QTreeWidget::currentItemChanged,
-        this, &SnapshotDialog::onSelectionChanged);
+    connect(m_tree, &QTreeWidget::currentItemChanged, this, &SnapshotDialog::onSelectionChanged);
 
     loadSnapshots();
 }

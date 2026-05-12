@@ -190,10 +190,8 @@ QList<ExternalTools::Tool> ExternalTools::dbusDisplayTools()
     return { DbusDaemon };
 }
 
-QString ExternalTools::probeVersionString(Tool tool, const QString& path)
+QString ExternalTools::probeVersionString(Tool /*tool*/, const QString& path)
 {
-    Q_UNUSED(tool);
-
     if (path.isEmpty() || !QFileInfo::exists(path))
         return { };
 

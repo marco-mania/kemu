@@ -995,7 +995,7 @@ void CreateVmDialog::updateIconDisplay()
     // System Theme Icon
     if (!selectedIconName.isEmpty()) {
         // Get themed icon at appropriate size
-        QIcon themedIcon = QIcon::fromTheme(selectedIconName);
+        const QIcon themedIcon = QIcon::fromTheme(selectedIconName);
         if (!themedIcon.isNull()) {
             QPixmap scaled = themedIcon.pixmap(targetSize);
             if (!scaled.isNull()) {
@@ -1013,9 +1013,8 @@ void CreateVmDialog::updateIconDisplay()
     iconDisplayButton->setIcon(QIcon::fromTheme(KEMUConst::VMDefaultIcon));
 }
 
-void CreateVmDialog::onMachineTypeChanged(int index)
+void CreateVmDialog::onMachineTypeChanged(int /*index*/)
 {
-    Q_UNUSED(index);
     updateDeviceAvailability();
 }
 
@@ -1033,16 +1032,14 @@ void CreateVmDialog::onRamSpinChanged(int mb)
 
 void CreateVmDialog::browseSharedDir()
 {
-    QString dir = QFileDialog::getExistingDirectory(
-        this, i18n("Select shared folder"), QDir::homePath());
+    QString dir = QFileDialog::getExistingDirectory(this, i18n("Select shared folder"), QDir::homePath());
     if (!dir.isEmpty())
         sharedPathEdit->setText(dir);
 }
 
-void CreateVmDialog::onOsTypeChanged(int index)
+void CreateVmDialog::onOsTypeChanged(int /*index*/)
 {
-    Q_UNUSED(index);
-    int typeVal = osTypeCombo->currentData().toInt();
+    const int typeVal = osTypeCombo->currentData().toInt();
 
     if (typeVal == -1) {
         // Placeholder
@@ -1074,10 +1071,8 @@ void CreateVmDialog::onOsTypeChanged(int index)
     updateDiskInterfaceHint();
 }
 
-void CreateVmDialog::onOsNameChanged(int index)
+void CreateVmDialog::onOsNameChanged(int /*index*/)
 {
-    Q_UNUSED(index);
-
     autoSetIconFromOS();
 
     const QString distroId = osNameCombo->currentData().toString();
@@ -1182,10 +1177,8 @@ void CreateVmDialog::onGpuDisplayChanged()
         spiceGroup->setEnabled(isSpice);
 }
 
-void CreateVmDialog::onVersionChanged(int index)
+void CreateVmDialog::onVersionChanged(int /*index*/)
 {
-    Q_UNUSED(index);
-
     cloudImageCombo->clear();
     cloudImageStatusLabel->clear();
 
@@ -1407,7 +1400,7 @@ void CreateVmDialog::setupForEdit(const VMConfig& config)
     };
 
     setCombo(osTypeCombo, config.osType());
-    int variantIdx = osNameCombo->findData(config.distroId());
+    const int variantIdx = osNameCombo->findData(config.distroId());
     if (variantIdx >= 0)
         osNameCombo->setCurrentIndex(variantIdx);
     else if (!config.distroId().isEmpty())
@@ -1462,7 +1455,7 @@ void CreateVmDialog::setupForEdit(const VMConfig& config)
     macEdit->setText(config.macAddress());
     for (const auto& rule : config.portForwards()) {
         addPortForwardRow();
-        int row = portForwardTable->rowCount() - 1;
+        const int row = portForwardTable->rowCount() - 1;
 
         auto* protocolCombo = qobject_cast<QComboBox*>(portForwardTable->cellWidget(row, 0));
         auto* hostPortSpin = qobject_cast<QSpinBox*>(portForwardTable->cellWidget(row, 1));
@@ -1550,7 +1543,7 @@ void CreateVmDialog::setImageDatabase(ImageDatabase* db)
 {
     m_imageDatabase = db;
 
-    int typeVal = osTypeCombo->currentData().toInt();
+    const int typeVal = osTypeCombo->currentData().toInt();
     if (typeVal >= 0 && static_cast<VMSpecs::OsType>(typeVal) != VMSpecs::OsType::Other)
         filterOsVariants(static_cast<VMSpecs::OsType>(typeVal));
 }
@@ -1590,7 +1583,7 @@ CloudImageInfo CreateVmDialog::selectedCloudImage() const
 {
     const QString distroId = osNameCombo->currentData().toString();
     const QString version = versionCombo->currentData().toString();
-    auto images = m_imageDatabase->cloudImagesFor(distroId, version, SettingsDialog::showAllArchitectures());
+    const auto images = m_imageDatabase->cloudImagesFor(distroId, version, SettingsDialog::showAllArchitectures());
     int idx = cloudImageCombo->currentIndex();
     if (idx >= 0 && idx < images.size())
         return images[idx];
@@ -1699,7 +1692,7 @@ VMConfig CreateVmDialog::getResult() const
 
 void CreateVmDialog::applyReleaseDefaults(const VMConfig& defaults)
 {
-    auto setCombo = [](QComboBox* combo, auto enumValue) {
+    const auto setCombo = [](QComboBox* combo, auto enumValue) {
         int idx = combo->findData(static_cast<int>(enumValue));
         if (idx >= 0)
             combo->setCurrentIndex(idx);
@@ -1751,8 +1744,8 @@ void CreateVmDialog::applyReleaseDefaults(const VMConfig& defaults)
 void CreateVmDialog::updateAutomatedDeployWidgets()
 {
     const QString distroId = osNameCombo->currentData().toString();
-    bool hasCloud = m_imageDatabase && m_imageDatabase->hasCloudImages(distroId);
-    bool qdActive = automatedDeployCheck->isEnabled() && automatedDeployCheck->isChecked();
+    const bool hasCloud = m_imageDatabase && m_imageDatabase->hasCloudImages(distroId);
+    const bool qdActive = automatedDeployCheck->isEnabled() && automatedDeployCheck->isChecked();
 
     versionCombo->setEnabled(qdActive);
     versionLabel->setEnabled(qdActive);
@@ -1790,8 +1783,8 @@ void CreateVmDialog::updateCloudImageStatus()
     if (distroId.isEmpty() || version.isEmpty() || !m_imageDatabase)
         return;
 
-    bool showAll = SettingsDialog::showAllArchitectures();
-    auto images = m_imageDatabase->cloudImagesFor(distroId, version, showAll);
+    const bool showAll = SettingsDialog::showAllArchitectures();
+    const auto images = m_imageDatabase->cloudImagesFor(distroId, version, showAll);
 
     int idx = cloudImageCombo->currentIndex();
     if (idx < 0 || idx >= images.size())
@@ -1944,7 +1937,7 @@ void CreateVmDialog::updateDeviceAvailability()
     updateCombo(netCombo, [](int val) { return VMConfig::isIsaDevice(static_cast<VMSpecs::NetworkCard>(val)); }, static_cast<int>(VMSpecs::NetworkCard::None));
 
     // --- Audio Extras ---
-    auto currentAudio = static_cast<VMSpecs::AudioDevice>(audioCombo->currentData().toInt());
+    const auto currentAudio = static_cast<VMSpecs::AudioDevice>(audioCombo->currentData().toInt());
     sb16ConfigButton->setEnabled(currentAudio == VMSpecs::AudioDevice::Sb16 && supportsIsa);
 
     // --- USB (PCI only) ---
@@ -2054,7 +2047,7 @@ void CreateVmDialog::validateForm()
     QString warning;
     bool valid = true;
 
-    QString trimmed = nameEdit->text().trimmed();
+    const QString trimmed = nameEdit->text().trimmed();
     if (trimmed.isEmpty()) {
         warning = i18n("A name is required.");
         valid = false;
@@ -2152,7 +2145,7 @@ void CreateVmDialog::resetToFactoryDefaults()
         return;
     }
 
-    auto setCombo = [](QComboBox* combo, auto enumValue) {
+    const auto setCombo = [](QComboBox* combo, auto enumValue) {
         int idx = combo->findData(static_cast<int>(enumValue));
         if (idx >= 0)
             combo->setCurrentIndex(idx);

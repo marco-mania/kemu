@@ -38,7 +38,7 @@ CloudConfigDialog::CloudConfigDialog(QWidget* parent)
     passwordConfirmEdit->setEchoMode(QLineEdit::Password);
     form->addRow(i18n("Confirm Password:"), passwordConfirmEdit);
 
-    KColorScheme scheme(QPalette::Active, KColorScheme::View);
+    const KColorScheme scheme(QPalette::Active, KColorScheme::View);
     passwordMismatchLabel = new QLabel();
     passwordMismatchLabel->setStyleSheet(u"color: %1; font-size: 11px;"_s.arg(scheme.foreground(KColorScheme::NegativeText).color().name()));
     passwordMismatchLabel->setFixedHeight(passwordMismatchLabel->fontMetrics().height() + 2);
@@ -63,7 +63,7 @@ CloudConfigDialog::CloudConfigDialog(QWidget* parent)
     for (const auto& loc : locales)
         localeCombo->addItem(u"%1"_s.arg(loc.displayName), loc.code);
 
-    QString sysLocaleCode = QLocale::system().name() + u".UTF-8"_s;
+    const QString sysLocaleCode = QLocale::system().name() + u".UTF-8"_s;
     int locIdx = localeCombo->findData(sysLocaleCode);
     if (locIdx >= 0)
         localeCombo->setCurrentIndex(locIdx);
@@ -89,7 +89,7 @@ CloudConfigDialog::CloudConfigDialog(QWidget* parent)
     }
 
     // Pre-select host keyboard layout
-    QString hostLayout = Utils::detectHostKeyboardLayout();
+    const QString hostLayout = Utils::detectHostKeyboardLayout();
     for (int i = 0; i < keyboards.size(); ++i) {
         if (keyboards[i].layout == hostLayout) {
             kbLayoutCombo->setCurrentIndex(
@@ -183,12 +183,12 @@ CloudDeployConfig CloudConfigDialog::getResult() const
     cfg.timezone = timezoneCombo->currentText();
 
     // Locale
-    QVariant localeData = localeCombo->currentData();
+    const QVariant localeData = localeCombo->currentData();
     cfg.locale = localeData.isValid() ? localeData.toString()
                                       : localeCombo->currentText().trimmed();
 
     // Keyboard (independent from locale)
-    int kbIdx = kbLayoutCombo->currentData().toInt();
+    const int kbIdx = kbLayoutCombo->currentData().toInt();
     const auto keyboards = availableKeyboards();
     if (kbIdx >= 0 && kbIdx < keyboards.size()) {
         cfg.kbLayout = keyboards[kbIdx].layout;
@@ -216,14 +216,14 @@ CloudDeployConfig CloudConfigDialog::getResult() const
 
 void CloudConfigDialog::onAddSshKey()
 {
-    QString path = QFileDialog::getOpenFileName(this, i18n("Select SSH Public Key"),
+    const QString path = QFileDialog::getOpenFileName(this, i18n("Select SSH Public Key"),
         QDir::homePath() + u"/.ssh"_s, i18n("Public Keys (*.pub);;All Files (*)"));
     if (path.isEmpty())
         return;
 
     QFile f(path);
     if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QString key = QString::fromUtf8(f.readAll()).trimmed();
+        const QString key = QString::fromUtf8(f.readAll()).trimmed();
         if (!key.isEmpty()) {
             if (!sshKeysEdit->toPlainText().isEmpty())
                 sshKeysEdit->appendPlainText(u""_s);
@@ -234,7 +234,7 @@ void CloudConfigDialog::onAddSshKey()
 
 void CloudConfigDialog::validate()
 {
-    bool pwMatch = passwordEdit->text() == passwordConfirmEdit->text();
+    const bool pwMatch = passwordEdit->text() == passwordConfirmEdit->text();
     if (!pwMatch && !passwordConfirmEdit->text().isEmpty())
         passwordMismatchLabel->setText(i18n("Passwords do not match."));
     else

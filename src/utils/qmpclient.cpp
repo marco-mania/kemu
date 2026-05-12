@@ -890,8 +890,7 @@ void QMPClient::processLine(const QByteArray& line)
     }
 }
 
-void QMPClient::onSocketError(QLocalSocket::LocalSocketError socketError)
+void QMPClient::onSocketError(QLocalSocket::LocalSocketError /*socketError*/)
 {
-    Q_UNUSED(socketError);
     Q_EMIT errorOccurred(m_socket.errorString());
 }

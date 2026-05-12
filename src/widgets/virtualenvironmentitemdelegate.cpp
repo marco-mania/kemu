@@ -22,25 +22,24 @@ void VirtualEnvironmentItemDelegate::paint(QPainter* painter, const QStyleOption
     const int iconSize = opt.decorationSize.height();
 
     // --- Icon ---
-    QRect iconRect(opt.rect.left() + margin,
+    const QRect iconRect(opt.rect.left() + margin,
         opt.rect.top() + (opt.rect.height() - iconSize) / 2,
         iconSize, iconSize);
     icon.paint(painter, iconRect);
 
-    int textLeft = iconRect.right() + margin + 2;
+    const int textLeft = iconRect.right() + margin + 2;
     int mediaReserved = 0;
     if (itemType == VirtualEnvironmentModel::Vm) {
-        bool hasCd = index.data(VirtualEnvironmentModel::MediaCdRole).toBool();
-        bool hasFloppy = index.data(VirtualEnvironmentModel::MediaFloppyRole).toBool();
-        int iconCount = (hasCd ? 1 : 0) + (hasFloppy ? 1 : 0);
+        const bool hasCd = index.data(VirtualEnvironmentModel::MediaCdRole).toBool();
+        const bool hasFloppy = index.data(VirtualEnvironmentModel::MediaFloppyRole).toBool();
+        const int iconCount = (hasCd ? 1 : 0) + (hasFloppy ? 1 : 0);
         mediaReserved = iconCount * (MediaIconSize + MediaIconMargin) + MediaIconMargin;
     }
-    int textWidth = opt.rect.right() - textLeft - margin - mediaReserved;
+    const int textWidth = opt.rect.right() - textLeft - margin - mediaReserved;
 
     painter->save();
 
-    QPen textPen = opt.palette.color(
-        (opt.state & QStyle::State_Selected) ? QPalette::HighlightedText : QPalette::Text);
+    const QPen textPen = opt.palette.color((opt.state & QStyle::State_Selected) ? QPalette::HighlightedText : QPalette::Text);
 
     if (itemType == VirtualEnvironmentModel::Folder) {
         // --- Folder: single-line, bold---
@@ -65,9 +64,9 @@ void VirtualEnvironmentItemDelegate::paint(QPainter* painter, const QStyleOption
         // --- VM: two-line (title + subtitle) ---
         const QString subtitle = index.data(VirtualEnvironmentModel::SubtitleRole).toString();
 
-        QFont titleFont = opt.font;
-        QFontMetrics titleFm(titleFont);
-        int titleY = opt.rect.top() + margin + titleFm.ascent();
+        const QFont titleFont = opt.font;
+        const QFontMetrics titleFm(titleFont);
+        const int titleY = opt.rect.top() + margin + titleFm.ascent();
 
         painter->setFont(titleFont);
         painter->setPen(textPen);
@@ -76,7 +75,7 @@ void VirtualEnvironmentItemDelegate::paint(QPainter* painter, const QStyleOption
         if (!subtitle.isEmpty()) {
             QFont subFont = titleFont;
             subFont.setPointSizeF(titleFont.pointSizeF() * 0.85);
-            QFontMetrics subFm(subFont);
+            const QFontMetrics subFm(subFont);
             int subY = titleY + titleFm.descent() + 2 + subFm.ascent();
 
             painter->setFont(subFont);
@@ -89,11 +88,11 @@ void VirtualEnvironmentItemDelegate::paint(QPainter* painter, const QStyleOption
         const bool hasFloppy = index.data(VirtualEnvironmentModel::MediaFloppyRole).toBool();
 
         if (hasFloppy) {
-            QRect r = mediaIconRect(opt, MediaType::Floppy, false);
+            const QRect r = mediaIconRect(opt, MediaType::Floppy, false);
             QIcon::fromTheme(u"media-floppy"_s).paint(painter, r);
         }
         if (hasCd) {
-            QRect r = mediaIconRect(opt, MediaType::Cd, hasFloppy);
+            const QRect r = mediaIconRect(opt, MediaType::Cd, hasFloppy);
             QIcon::fromTheme(u"media-optical"_s).paint(painter, r);
         }
     }
@@ -117,10 +116,10 @@ QSize VirtualEnvironmentItemDelegate::sizeHint(const QStyleOptionViewItem& optio
     }
 
     // VM: title/subtitle
-    QFontMetrics titleFm(opt.font);
+    const QFontMetrics titleFm(opt.font);
     QFont subFont = opt.font;
     subFont.setPointSizeF(opt.font.pointSizeF() * 0.85);
-    QFontMetrics subFm(subFont);
+    const QFontMetrics subFm(subFont);
 
     int textHeight = titleFm.height() + 2 + subFm.height();
     int h = qMax(textHeight, opt.decorationSize.height()) + 8;
@@ -136,6 +135,6 @@ QRect VirtualEnvironmentItemDelegate::mediaIconRect(const QStyleOptionViewItem& 
         return { rightEdge - MediaIconSize, y, MediaIconSize, MediaIconSize };
 
     // CD: rightmost if no floppy, otherwise left of floppy
-    int offset = hasOther ? (MediaIconSize + MediaIconMargin) : 0;
+    const int offset = hasOther ? (MediaIconSize + MediaIconMargin) : 0;
     return { rightEdge - MediaIconSize - offset, y, MediaIconSize, MediaIconSize };
 }

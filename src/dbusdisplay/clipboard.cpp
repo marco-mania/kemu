@@ -16,9 +16,8 @@ ClipboardDBusHandler::ClipboardDBusHandler(QemuClipboardManager* manager, QObjec
 {
 }
 
-QString ClipboardDBusHandler::introspect(const QString& path) const
+QString ClipboardDBusHandler::introspect(const QString& /*path*/) const
 {
-    Q_UNUSED(path);
     return u"  <interface name=\""_s + KemuDbusDisplayConst::ClipboardIface + u"\">\n"_s
         + u"    <method name=\"Register\"/>\n"_s
         + u"    <method name=\"UnRegister\"/>\n"_s
@@ -285,10 +284,8 @@ void QemuClipboardManager::doRegister()
 // Guest -> Host
 // =============================================================================
 
-void QemuClipboardManager::handleGrab(uint selection, uint serial,
-    const QStringList& mimes)
+void QemuClipboardManager::handleGrab(uint selection, uint /*serial*/, const QStringList& mimes)
 {
-    Q_UNUSED(serial);
     if (selection != 0)
         return;
 

@@ -51,11 +51,11 @@ protected:
                         opt.decorationSize = iconSize();
                         opt.font = font();
 
-                        QString vmName = index.data(VirtualEnvironmentModel::VmNameRole).toString();
+                        const QString vmName = index.data(VirtualEnvironmentModel::VmNameRole).toString();
 
-                        auto checkIcon = [&](VirtualEnvironmentItemDelegate::MediaType type) {
-                            bool hasOther = (type == VirtualEnvironmentItemDelegate::MediaType::Cd) ? hasFloppy : false;
-                            QRect r = VirtualEnvironmentItemDelegate::mediaIconRect(opt, type, hasOther);
+                        const auto checkIcon = [&](VirtualEnvironmentItemDelegate::MediaType type) {
+                            const bool hasOther = (type == VirtualEnvironmentItemDelegate::MediaType::Cd) ? hasFloppy : false;
+                            const QRect r = VirtualEnvironmentItemDelegate::mediaIconRect(opt, type, hasOther);
                             if (r.contains(event->pos())) {
                                 Q_EMIT mediaIconClicked(vmName, type,
                                     event->globalPosition().toPoint());
