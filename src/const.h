@@ -39,4 +39,15 @@ inline const QStringList FallbackPaths = {u"/usr/libexec"_s, // Fedora, RHEL, op
                                           u"/usr/local/libexec"_s, // Custom builds
                                           u"/usr/sbin"_s};
 
+inline constexpr auto DBUSSocketFileName = "dbus-bus.sock"_L1;
+inline constexpr auto DBUSConfigFileName = "dbus-bus.conf"_L1;
+inline constexpr auto PasstSocketFileName = "passt.sock"_L1;
+inline constexpr auto SwtpmSocketFileName = "swtpm.sock"_L1;
+inline constexpr auto VirtiofsdSocketFileName = "virtiofsd.sock"_L1;
+inline constexpr auto VirtiofsdPidFileName = "virtiofsd.sock.pid"_L1;
+inline constexpr auto SpiceSocketFileName = "spice.sock"_L1;
+inline constexpr auto SpiceVVFileName = "spice.vv"_L1;
+inline constexpr auto QemuMonitorSocketFileName = "qemu-monitor.sock"_L1;
+inline constexpr auto DeploySerialLogFileName = "deploy-serial.log"_L1;
+
 } // namespace KEMUConst

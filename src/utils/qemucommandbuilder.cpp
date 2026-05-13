@@ -6,6 +6,7 @@
 
 #include "qemucommandbuilder.h"
 
+#include "const.h"
 #include "utils/externaltools.h"
 #include "utils/utils.h"
 
@@ -126,7 +127,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
 
     // --- TPM ---
     if (config.useTpm()) {
-        const QString sockPath = vmDir.absoluteFilePath(u"swtpm.sock"_s);
+        const QString sockPath = vmDir.absoluteFilePath(KEMUConst::SwtpmSocketFileName);
         args << u"-chardev"_s << u"socket,id=chrtpm,path=%1"_s.arg(relativePaths ? QFileInfo(sockPath).fileName() : sockPath);
         args << u"-tpmdev"_s << u"emulator,id=tpm0,chardev=chrtpm"_s;
         // CRB preferred for Q35 / Windows 11; TIS as fallback.
@@ -208,7 +209,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             // -- virtio-fs (for Windows guests) --
             // virtiofsd must be started BEFORE QEMU (see MainWindow::startVirtiofsd).
             // QEMU connects via a vhost-user socket.
-            const QString virtiofsSock = vmDir.absoluteFilePath(u"virtiofsd.sock"_s);
+            const QString virtiofsSock = vmDir.absoluteFilePath(KEMUConst::VirtiofsdSocketFileName);
 
             args << u"-chardev"_s << u"socket,id=char_virtiofs,path=%1"_s.arg(relativePaths ? QFileInfo(virtiofsSock).fileName() : virtiofsSock);
             args << u"-device"_s << u"vhost-user-fs-pci,queue-size=1024,chardev=char_virtiofs,tag=%1"_s.arg(mountTag);
@@ -262,7 +263,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
 
     // --- Display Frontend ---
     if (config.displayType() == VMSpecs::DisplayType::Spice) {
-        const QString spiceSock = vmDir.absoluteFilePath(u"spice.sock"_s);
+        const QString spiceSock = vmDir.absoluteFilePath(KEMUConst::SpiceSocketFileName);
         args << u"-spice"_s << u"unix=on,addr=%1,disable-ticketing=on"_s.arg(relativePaths ? QFileInfo(spiceSock).fileName() : spiceSock);
         args << u"-display"_s << u"none"_s;
 
@@ -284,10 +285,12 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         if (headless) {
             args << u"-display"_s << u"none"_s;
         } else {
-            const QString busSock = vmDir.absoluteFilePath(u"dbus-bus.sock"_s);
-            const QString sockArg = relativePaths ? u"dbus-bus.sock"_s : busSock;
+            const QString sockArg = relativePaths ? KEMUConst::DBUSSocketFileName : vmDir.absoluteFilePath(KEMUConst::DBUSSocketFileName);
 
-            QString displayOpt = u"dbus,addr=unix:path=%1"_s.arg(QString::fromLatin1(sockArg.toUtf8().toPercentEncoding()));
+            QString escapedSock = sockArg;
+            escapedSock.replace(u","_s, u",,"_s);
+            QString displayOpt = u"dbus,addr=unix:path=%1"_s.arg(escapedSock);
+
             if (effective3d)
                 displayOpt += u",gl=on"_s;
             if (config.audioDevice() != VMSpecs::AudioDevice::None) {
@@ -341,7 +344,8 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             args << u"-netdev"_s << u"tap,id=nic0,ifname=%1,script=no,downscript=no"_s.arg(networkContext.tapDevice);
         } else {
             // Passt: user-mode networking via unix stream socket.
-            const QString passtSock = networkContext.passtSocketPath.isEmpty() ? vmDir.absoluteFilePath(u"passt.sock"_s) : networkContext.passtSocketPath;
+            const QString passtSock =
+                networkContext.passtSocketPath.isEmpty() ? vmDir.absoluteFilePath(KEMUConst::PasstSocketFileName) : networkContext.passtSocketPath;
             args << u"-netdev"_s << u"stream,id=nic0,server=off,addr.type=unix,addr.path=%1"_s.arg(relativePaths ? QFileInfo(passtSock).fileName() : passtSock);
         }
     }
@@ -403,7 +407,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     // --- swtpm ---
     if (config.useTpm()) {
         const QString swtpmPath = relativePaths ? u"swtpm"_s : ExternalTools::instance().path(ExternalTools::Swtpm);
-        const QString sockArg = relativePaths ? u"swtpm.sock"_s : vmDir.absoluteFilePath(u"swtpm.sock"_s);
+        const QString sockArg = relativePaths ? KEMUConst::SwtpmSocketFileName : vmDir.absoluteFilePath(KEMUConst::SwtpmSocketFileName);
         const QString stateArg = relativePaths ? u"."_s : vmDir.absolutePath();
 
         script += u"# Start software TPM emulator\n"_s;
@@ -416,7 +420,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     // --- virtiofsd (Windows shared folders) ---
     if (!config.sharedPath().isEmpty() && config.osType() == VMSpecs::OsType::Windows) {
         const QString virtiofsdPath = relativePaths ? u"virtiofsd"_s : ExternalTools::instance().path(ExternalTools::Virtiofsd);
-        const QString sockArg = relativePaths ? u"virtiofsd.sock"_s : vmDir.absoluteFilePath(u"virtiofsd.sock"_s);
+        const QString sockArg = relativePaths ? KEMUConst::VirtiofsdSocketFileName : vmDir.absoluteFilePath(KEMUConst::VirtiofsdSocketFileName);
 
         script += u"# Start virtiofsd for shared folder\n"_s;
         script += u"%1 \\\n"_s.arg(virtiofsdPath) + u"  --socket-path=%1 \\\n"_s.arg(sockArg) + u"  --shared-dir=%1 \\\n"_s.arg(config.sharedPath())
@@ -481,7 +485,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
 
         } else {
             const QString passtPath = relativePaths ? u"passt"_s : ExternalTools::instance().path(ExternalTools::Passt);
-            const QString sockArg = relativePaths ? u"passt.sock"_s : vmDir.absoluteFilePath(u"passt.sock"_s);
+            const QString sockArg = relativePaths ? KEMUConst::PasstSocketFileName : vmDir.absoluteFilePath(KEMUConst::PasstSocketFileName);
 
             script += u"# Start passt for user-mode networking\n"_s + u"%1 \\\n"_s.arg(passtPath) + u"  --socket %1 \\\n"_s.arg(sockArg) + u"  -f -q"_s;
 
@@ -509,8 +513,8 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     const QString qemuPath = relativePaths ? u"qemu-system-x86_64"_s : ExternalTools::instance().path(ExternalTools::QemuSystem);
 
     if (config.displayType() == VMSpecs::DisplayType::Spice) {
-        const QString spiceSock = relativePaths ? u"spice.sock"_s : vmDir.absoluteFilePath(u"spice.sock"_s);
-        const QString vvFile = relativePaths ? u"spice.vv"_s : vmDir.absoluteFilePath(u"spice.vv"_s);
+        const QString spiceSock = relativePaths ? KEMUConst::SpiceSocketFileName : vmDir.absoluteFilePath(KEMUConst::SpiceSocketFileName);
+        const QString vvFile = relativePaths ? KEMUConst::SpiceVVFileName : vmDir.absoluteFilePath(KEMUConst::SpiceVVFileName);
         const QString viewerPath = relativePaths ? u"remote-viewer"_s : ExternalTools::instance().path(ExternalTools::RemoteViewer);
 
         script += u"# Write SPICE connection file\n"_s + u"cat > %1 << EOF\n"_s.arg(vvFile) + u"[virt-viewer]\n"_s + u"type=spice\n"_s
@@ -518,7 +522,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
 
         script += u"# Start SPICE viewer (will connect once QEMU is ready)\n"_s + u"( sleep 2 && %1 %2 ) &\n\n"_s.arg(viewerPath, vvFile);
     } else if (config.displayType() == VMSpecs::DisplayType::Dbus) {
-        const QString sockArg = relativePaths ? u"dbus-display.sock"_s : vmDir.absoluteFilePath(u"dbus-display.sock"_s);
+        const QString sockArg = relativePaths ? KEMUConst::DBUSSocketFileName : vmDir.absoluteFilePath(KEMUConst::DBUSSocketFileName);
         script += u"# D-Bus display: QEMU listens on a private Unix socket.\n"_s;
         script += u"# Inside KEMU, the integrated viewer connects automatically.\n"_s;
         script += u"# For standalone use, connect with a D-Bus display viewer:\n"_s;

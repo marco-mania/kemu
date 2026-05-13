@@ -216,7 +216,7 @@ QDir MainWindow::getVmDir(const QString &vmName) const
 
 QString MainWindow::monitorSocketPath(const QString &vmName) const
 {
-    return getVmDir(vmName).absoluteFilePath(u"qemu-monitor.sock"_s);
+    return getVmDir(vmName).absoluteFilePath(KEMUConst::QemuMonitorSocketFileName);
 }
 
 void MainWindow::setupUi()
@@ -346,7 +346,7 @@ bool MainWindow::startSwtpm(const QString &vmName)
         return false;
 
     const QString vmPath = getVmDir(vmName).absolutePath();
-    const QString sockPath = vmPath + u"/swtpm.sock"_s;
+    const QString sockPath = vmPath + u'/' + KEMUConst::SwtpmSocketFileName;
 
     QFile::remove(sockPath);
 
@@ -378,7 +378,7 @@ bool MainWindow::startSwtpm(const QString &vmName)
     process->waitForFinished(2000);
     delete process;
 
-    QFile::remove(getVmBaseDir().filePath(vmName) + u"/swtpm.sock"_s);
+    QFile::remove(getVmBaseDir().filePath(vmName) + u'/' + KEMUConst::SwtpmSocketFileName);
 
     return false;
 }
@@ -388,7 +388,7 @@ bool MainWindow::startVirtiofsd(const QString &vmName)
     if (!requireTool(ExternalTools::Virtiofsd))
         return false;
 
-    const QString sockPath = getVmDir(vmName).absolutePath() + u"/virtiofsd.sock"_s;
+    const QString sockPath = getVmDir(vmName).absolutePath() + u'/' + KEMUConst::VirtiofsdSocketFileName;
     const QString sharedPath = currentConfig.sharedPath();
 
     QFile::remove(sockPath);
@@ -417,8 +417,8 @@ bool MainWindow::startVirtiofsd(const QString &vmName)
     process->waitForFinished(2000);
     delete process;
 
-    QFile::remove(getVmBaseDir().filePath(vmName) + u"/virtiofsd.sock"_s);
-    QFile::remove(getVmBaseDir().filePath(vmName) + u"/virtiofsd.sock.pid"_s);
+    QFile::remove(getVmBaseDir().filePath(vmName) + u'/' + KEMUConst::VirtiofsdSocketFileName);
+    QFile::remove(getVmBaseDir().filePath(vmName) + u'/' + KEMUConst::VirtiofsdPidFileName);
 
     return false;
 }
@@ -428,7 +428,7 @@ bool MainWindow::startPasst(const QString &vmName, const QList<PortForwardRule> 
     if (!requireTool(ExternalTools::Passt))
         return false;
 
-    const QString sockPath = getVmDir(vmName).absolutePath() + u"/passt.sock"_s;
+    const QString sockPath = getVmDir(vmName).absolutePath() + u'/' + KEMUConst::PasstSocketFileName;
 
     QFile::remove(sockPath);
 
@@ -485,7 +485,7 @@ bool MainWindow::startSpiceViewer(const QString &vmName)
         return false;
 
     const QString vmPath = getVmDir(vmName).absolutePath();
-    const QString spiceSockPath = vmPath + u"/spice.sock"_s;
+    const QString spiceSockPath = vmPath + u'/' + KEMUConst::SpiceSocketFileName;
 
     if (!Utils::waitForSocket(spiceSockPath, 3000)) {
         KMessageBox::error(this, i18n("SPICE socket was not created in time."), i18n("Viewer Error"));
@@ -493,7 +493,7 @@ bool MainWindow::startSpiceViewer(const QString &vmName)
     }
 
     // Write a .vv connection file, avoids all URI encoding issues
-    const QString vvFile = vmPath + u"/spice.vv"_s;
+    const QString vvFile = vmPath + u'/' + KEMUConst::SpiceVVFileName;
     QFile f(vvFile);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         KMessageBox::error(this, i18n("Failed to write SPICE connection file."), i18n("Viewer Error"));
@@ -560,7 +560,7 @@ bool MainWindow::startDbusDaemon(const QString &vmName)
     if (!entry)
         return false;
 
-    const QString sockPath = getVmDir(vmName).absoluteFilePath(u"dbus-bus.sock"_s);
+    const QString sockPath = getVmDir(vmName).absoluteFilePath(KEMUConst::DBUSSocketFileName);
     qDebug() << "D-Bus raw sockPath:" << sockPath;
     qDebug() << "D-Bus escaped:" << QString::fromLatin1(sockPath.toUtf8().toPercentEncoding());
 
@@ -569,7 +569,7 @@ bool MainWindow::startDbusDaemon(const QString &vmName)
 
     // Per-VM dbus-daemon config: minimal session bus, no fork.
     // Written into the VM directory so it lives alongside other state.
-    const QString configPath = getVmDir(vmName).absoluteFilePath(u"dbus-bus.conf"_s);
+    const QString configPath = getVmDir(vmName).absoluteFilePath(KEMUConst::DBUSConfigFileName);
 
     QFile cfg(configPath);
     if (!cfg.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -626,7 +626,7 @@ bool MainWindow::startDbusDaemon(const QString &vmName)
 
 QString MainWindow::dbusBusAddress(const QString &vmName) const
 {
-    const QString sockPath = getVmDir(vmName).absoluteFilePath(u"dbus-bus.sock"_s);
+    const QString sockPath = getVmDir(vmName).absoluteFilePath(KEMUConst::DBUSSocketFileName);
     return u"unix:path=%1"_s.arg(QString::fromLatin1(sockPath.toUtf8().toPercentEncoding()));
 }
 
@@ -834,7 +834,9 @@ void MainWindow::stopDbusViewer(const QString &vmName)
 
 void MainWindow::cleanupDbusSocket(const QString &vmName)
 {
-    QFile::remove(getVmDir(vmName).absoluteFilePath(u"dbus-display.sock"_s));
+    const QDir vmDir = getVmDir(vmName);
+    QFile::remove(vmDir.absoluteFilePath(KEMUConst::DBUSSocketFileName));
+    QFile::remove(vmDir.absoluteFilePath(KEMUConst::DBUSConfigFileName));
 }
 
 bool MainWindow::requireTool(const ExternalTools::Tool tool)
@@ -1546,7 +1548,7 @@ void MainWindow::saveVmConfig(const QString &vmPath, const VMConfig &config)
 
 void MainWindow::generateShellScript(const QString &vmPath, const VMConfig &config)
 {
-    const QString sockPath = vmPath + u"/qemu-monitor.sock"_s;
+    const QString sockPath = vmPath + u'/' + KEMUConst::QemuMonitorSocketFileName;
 
     NetworkContext netCtx;
     if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
@@ -1732,11 +1734,9 @@ void MainWindow::tearDownVmRuntime(const QString &vmName)
     stopHelper(entry->dbusDaemonProcess, 2000);
 
     const QDir vmDir = getVmDir(vmName);
-    QFile::remove(vmDir.filePath(u"swtpm.sock"_s));
-    QFile::remove(vmDir.filePath(u"virtiofsd.sock.pid"_s));
-    QFile::remove(vmDir.filePath(u"passt.sock"_s));
-    QFile::remove(vmDir.filePath(u"dbus-bus.sock"_s));
-    QFile::remove(vmDir.filePath(u"dbus-bus.conf"_s));
+    QFile::remove(vmDir.filePath(KEMUConst::SwtpmSocketFileName));
+    QFile::remove(vmDir.filePath(KEMUConst::VirtiofsdPidFileName));
+    QFile::remove(vmDir.filePath(KEMUConst::PasstSocketFileName));
     QFile::remove(monitorSocketPath(vmName));
 
     releaseNetwork(entry->config);
@@ -2389,7 +2389,7 @@ void MainWindow::showCommand()
         ? m_networkManager->network(currentConfig.virtualNetworkName())
         : VirtualNetwork{};
 
-    const QString sockPath = getVmBaseDir().absolutePath() + u"/qemu-monitor.sock"_s;
+    const QString sockPath = getVmBaseDir().absolutePath() + u'/' + KEMUConst::QemuMonitorSocketFileName;
     const QString cmd = QemuCommandBuilder::buildShellScript(currentConfig, getVmDir(currentConfig.name()), sockPath, netCtx, net);
 
     QDialog d(this);
@@ -2541,7 +2541,7 @@ void MainWindow::startVM(bool headless)
         }
     }
 
-    const QString sockPath = getVmDir(currentConfig.name()).absolutePath() + u"/qemu-monitor.sock"_s;
+    const QString sockPath = getVmDir(currentConfig.name()).absolutePath() + u'/' + KEMUConst::QemuMonitorSocketFileName;
 
     NetworkContext netCtx;
     if (!tapDevice.isEmpty())
@@ -3620,7 +3620,7 @@ void MainWindow::startDeployment(const QString &vmName, const bool disable_headl
     QFile::remove(monitorSocketPath(vmName));
 
     const bool headless = disable_headless ? false : SettingsDialog::deployHeadless();
-    const QString sockPath = vmPath + u"/qemu-monitor.sock"_s;
+    const QString sockPath = vmPath + u'/' + KEMUConst::QemuMonitorSocketFileName;
     NetworkContext netCtx;
     if (!tapDevice.isEmpty())
         netCtx.tapDevice = tapDevice;
@@ -3629,7 +3629,7 @@ void MainWindow::startDeployment(const QString &vmName, const bool disable_headl
 
     const bool serialLog = SettingsDialog::deploySerialLog();
     if (serialLog) {
-        const QString logFile = vmPath + u"/deploy-serial.log"_s;
+        const QString logFile = vmPath + u'/' + KEMUConst::DeploySerialLogFileName;
         args << u"-serial"_s << u"file:%1"_s.arg(logFile);
     }
 
@@ -3741,7 +3741,7 @@ void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
         if (!entry->swtpmProcess->waitForFinished(3000))
             entry->swtpmProcess->kill();
         delete entry->swtpmProcess;
-        QFile::remove(getVmBaseDir().filePath(vmName) + u"/swtpm.sock"_s);
+        QFile::remove(getVmBaseDir().filePath(vmName) + u'/' + KEMUConst::SwtpmSocketFileName);
     }
 
     if (entry->virtiofsdProcess) {
@@ -3749,7 +3749,7 @@ void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
         if (!entry->virtiofsdProcess->waitForFinished(3000))
             entry->virtiofsdProcess->kill();
         delete entry->virtiofsdProcess;
-        QFile::remove(getVmBaseDir().filePath(vmName) + u"/virtiofsd.sock.pid"_s);
+        QFile::remove(getVmBaseDir().filePath(vmName) + u'/' + KEMUConst::VirtiofsdPidFileName);
     }
 
     if (entry->passtProcess) {
@@ -3757,7 +3757,7 @@ void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
         if (!entry->passtProcess->waitForFinished(3000))
             entry->passtProcess->kill();
         delete entry->passtProcess;
-        QFile::remove(getVmBaseDir().filePath(vmName) + u"/passt.sock"_s);
+        QFile::remove(getVmBaseDir().filePath(vmName) + u'/' + KEMUConst::PasstSocketFileName);
     }
 
     if (entry->spiceViewerProcess) {

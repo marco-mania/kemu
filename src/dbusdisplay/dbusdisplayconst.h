@@ -35,7 +35,4 @@ inline constexpr auto ListenerPath = "/org/qemu/Display1/Listener"_L1;
 inline constexpr auto AudioOutListenerPath = "/org/qemu/Display1/AudioOutListener"_L1;
 inline constexpr auto AudioInListenerPath = "/org/qemu/Display1/AudioInListener"_L1;
 
-// Socket filename inside each VM directory
-inline constexpr auto SocketFileName = "dbus-display.sock"_L1;
-
 } // namespace KemuDbusDisplayConst

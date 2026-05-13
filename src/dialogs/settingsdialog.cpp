@@ -316,10 +316,11 @@ void SettingsDialog::setupAutomatedDeployPage()
 
     deploySerialLogCheck = new QCheckBox(i18n("Write serial console log during deployment"));
     deploySerialLogCheck->setToolTip(
-        i18n("Writes kernel and installer output to 'deploy-serial.log' "
+        i18n("Writes kernel and installer output to '%1' "
              "in the VM directory. Useful for diagnosing failed installations.\n"
              "Note: some installers (e.g. Debian) redirect their UI to the "
-             "serial console when enabled, making the QEMU window appear blank."));
+             "serial console when enabled, making the QEMU window appear blank.",
+             KEMUConst::DeploySerialLogFileName));
     deploySerialLogCheck->setChecked(deploySerialLog());
     layout->addRow(deploySerialLogCheck);
 

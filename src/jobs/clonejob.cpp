@@ -5,6 +5,7 @@
  */
 
 #include "clonejob.h"
+#include "const.h"
 
 CloneJob::CloneJob(const QString &vmName, const QString &srcPath, const QString &dstPath, QObject *parent)
     : KJob(parent)
@@ -81,7 +82,7 @@ bool CloneJob::copyMetadataFiles()
     for (const QString &file : entries) {
         if (file == u"disk.qcow2"_s)
             continue;
-        if (file.endsWith(u".sock"_s) || file.endsWith(u".pid"_s) || file == u"deploy-serial.log"_s)
+        if (file.endsWith(u".sock"_s) || file.endsWith(u".pid"_s) || file == KEMUConst::DeploySerialLogFileName)
             continue;
 
         if (!QFile::copy(m_srcPath + u"/"_s + file, m_dstPath + u"/"_s + file))
