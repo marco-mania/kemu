@@ -251,9 +251,23 @@ void QemuClipboardManager::doRegister()
 {
     if (!m_qemuClipboard)
         return;
-    m_qemuClipboard->asyncCall(u"Register"_s);
-    m_registered = true;
-    qDebug() << "Clipboard: Register() sent";
+
+    const QDBusPendingCall pending = m_qemuClipboard->asyncCall(u"Register"_s);
+    auto *watcher = new QDBusPendingCallWatcher(pending, this);
+
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
+        w->deleteLater();
+
+        const QDBusPendingReply<> reply = *w;
+        if (reply.isError()) {
+            qWarning() << "Clipboard: Register() failed:" << reply.error().name() << reply.error().message();
+            m_registered = false;
+            return;
+        }
+
+        m_registered = true;
+        qDebug() << "Clipboard: Register() acknowledged by QEMU";
+    });
 }
 
 // =============================================================================
