@@ -76,6 +76,8 @@ private:
     void renderQuad();
     void updateCursor();
 
+    void scheduleRepaint();
+
     static uint32_t evdevToQnum(uint32_t evdev);
     static int qtButtonToQemu(Qt::MouseButton button);
     QPointF mapToFramebuffer(const QPointF &widgetPos) const;

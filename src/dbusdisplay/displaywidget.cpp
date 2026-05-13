@@ -100,7 +100,6 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QDBusConnect
     m_frameTimer->setTimerType(Qt::PreciseTimer);
     m_frameTimer->setInterval(16); // ~60 FPS
     connect(m_frameTimer, &QTimer::timeout, this, &QemuDisplayWidget::onFrameTick);
-    m_frameTimer->start();
 }
 
 QemuDisplayWidget::~QemuDisplayWidget()
@@ -181,7 +180,7 @@ void QemuDisplayWidget::onFrameTick()
 {
     if (m_needsRepaint) {
         m_needsRepaint = false;
-        update(); // Triggers paintGL()
+        update(); // triggers paintGL()
     }
 }
 
@@ -209,6 +208,15 @@ void QemuDisplayWidget::updateCursor()
 void QemuDisplayWidget::onCursorChanged()
 {
     updateCursor();
+}
+
+void QemuDisplayWidget::scheduleRepaint()
+{
+    m_needsRepaint = true;
+    // Single-shot timer: start only if not already armed. Subsequent calls
+    // within the 16 ms window are coalesced into a single update().
+    if (!m_frameTimer->isActive())
+        m_frameTimer->start();
 }
 
 // =============================================================================
@@ -479,26 +487,22 @@ void QemuDisplayWidget::resizeGL(int, int)
 // Slots
 // =============================================================================
 
-void QemuDisplayWidget::onScanoutChanged(int /*w*/, int /*h*/)
+void QemuDisplayWidget::onScanoutChanged(int, int)
 {
     m_usingDmaBuf = false;
-    m_needsRepaint = true; // Coalesced -> next frame tick
+    scheduleRepaint();
 }
 
-void QemuDisplayWidget::onDmaBufScanout(int /*w*/, int /*h*/)
+void QemuDisplayWidget::onDmaBufScanout(int, int)
 {
-    if (m_eglAvailable) {
+    if (m_eglAvailable)
         m_dmaBufPending = true;
-    }
-    m_needsRepaint = true; // Coalesced
+    scheduleRepaint();
 }
 
 void QemuDisplayWidget::onRegionUpdated(const QRect &)
 {
-    // Optimization 1: Only set flag instead of immediate update().
-    // In fast scenes, 10-20 Update() calls occur per frame.
-    // The frame timer (16ms) consolidates them into a single repaint.
-    m_needsRepaint = true;
+    scheduleRepaint();
 }
 
 // =============================================================================
