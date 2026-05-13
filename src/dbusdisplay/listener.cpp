@@ -354,7 +354,6 @@ void QemuDisplayListener::handleScanoutDMABUF(GVariant *parameters, GDBusMethodI
     {
         const QMutexLocker l(&m_mutex);
         unmapMemory();
-        m_imageData.clear();
         m_image = QImage();
         closeDmaBuf();
         m_dmaBuf = {dmabufFd, width, height, stride, fourcc, modifier, bool(y0_top)};
@@ -388,8 +387,18 @@ void QemuDisplayListener::handleScanout(GVariant *parameters, GDBusMethodInvocat
         closeDmaBuf();
         unmapMemory();
         m_isDmaBuf = false;
-        m_imageData = QByteArray(reinterpret_cast<const char *>(data), dataLen);
-        m_image = QImage(reinterpret_cast<const uchar *>(m_imageData.constData()), width, height, stride, qtFormat);
+        {
+            const QMutexLocker l(&m_mutex);
+            closeDmaBuf();
+            unmapMemory();
+            m_isDmaBuf = false;
+
+            // Construct QImage as a view onto the GDBus-owned buffer, then deep-copy
+            // so we own the pixel data. The original `data` pointer becomes invalid
+            // as soon as we return from this method.
+            const QImage view(reinterpret_cast<const uchar *>(data), width, height, stride, qtFormat);
+            m_image = view.copy();
+        }
     }
     g_variant_unref(dataVariant);
     g_dbus_method_invocation_return_value(invocation, nullptr);
@@ -426,11 +435,23 @@ void QemuDisplayListener::handleScanoutMap(GVariant *parameters, GDBusMethodInvo
         closeDmaBuf();
         unmapMemory();
         m_isDmaBuf = false;
-        m_imageData.clear();
-        m_mappedMemory = mapped;
-        m_mappedSize = mapSize;
-        const uchar *pixels = static_cast<const uchar *>(mapped) + offset;
-        m_image = QImage(pixels, width, height, stride, qtFormat);
+        {
+            const QMutexLocker l(&m_mutex);
+            closeDmaBuf();
+            unmapMemory();
+            m_isDmaBuf = false;
+
+            const uchar *pixels = static_cast<const uchar *>(mapped) + offset;
+            const QImage view(pixels, width, height, stride, qtFormat);
+            // Deep-copy so we don't depend on the mmap region staying alive.
+            m_image = view.copy();
+
+            // We can unmap immediately now that the pixels are copied. Keeping
+            // the mapping around would just consume address space.
+            munmap(mapped, mapSize);
+            m_mappedMemory = nullptr;
+            m_mappedSize = 0;
+        }
     }
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT scanoutChanged(width, height);
@@ -458,7 +479,6 @@ void QemuDisplayListener::handleDisable(GDBusMethodInvocation *invocation)
         const QMutexLocker l(&m_mutex);
         closeDmaBuf();
         unmapMemory();
-        m_imageData.clear();
         m_image = QImage();
         m_isDmaBuf = false;
     }

@@ -104,7 +104,6 @@ private:
     mutable QMutex m_mutex;
 
     QImage m_image;
-    QByteArray m_imageData;
     void *m_mappedMemory = nullptr;
     size_t m_mappedSize = 0;
 
