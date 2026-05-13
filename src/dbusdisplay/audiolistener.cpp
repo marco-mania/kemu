@@ -383,21 +383,20 @@ void QemuAudioListener::handleSetVolume(GVariant *parameters, GDBusMethodInvocat
     if (stream && stream->sink) {
         if (mute) {
             stream->sink->setVolume(0.0);
-        } else {
-            // QEMU sends a byte value 0-255 per channel
+        } else if (volumeVariant) {
             gsize nVols = 0;
             const guint8 *vols = static_cast<const guint8 *>(g_variant_get_fixed_array(volumeVariant, &nVols, sizeof(guint8)));
             if (nVols > 0) {
-                // Average of all channels -> 0.0..1.0
                 double sum = 0;
                 for (gsize i = 0; i < nVols; i++)
                     sum += vols[i];
-                const double vol = sum / (nVols * 255.0);
-                stream->sink->setVolume(vol);
+                stream->sink->setVolume(sum / (nVols * 255.0));
             }
         }
     }
 
-    g_variant_unref(volumeVariant);
+    // g_variant_unref tolerates nullptr only from glib 2.36+ - guard explicitly.
+    if (volumeVariant)
+        g_variant_unref(volumeVariant);
     g_dbus_method_invocation_return_value(invocation, nullptr);
 }

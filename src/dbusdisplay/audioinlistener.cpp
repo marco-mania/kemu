@@ -367,7 +367,7 @@ void QemuAudioInListener::handleSetVolume(GVariant *parameters, GDBusMethodInvoc
     if (stream && stream->source) {
         if (mute) {
             stream->source->setVolume(0.0);
-        } else {
+        } else if (volumeVariant) {
             gsize nVols = 0;
             const guint8 *vols = static_cast<const guint8 *>(g_variant_get_fixed_array(volumeVariant, &nVols, sizeof(guint8)));
             if (nVols > 0) {
@@ -379,7 +379,9 @@ void QemuAudioInListener::handleSetVolume(GVariant *parameters, GDBusMethodInvoc
         }
     }
 
-    g_variant_unref(volumeVariant);
+    // g_variant_unref tolerates nullptr only from glib 2.36+ - guard explicitly.
+    if (volumeVariant)
+        g_variant_unref(volumeVariant);
     g_dbus_method_invocation_return_value(invocation, nullptr);
 }
 
@@ -411,10 +413,13 @@ void QemuAudioInListener::handleRead(GVariant *parameters, GDBusMethodInvocation
 
     // If we have less data than requested: fill with silence
     if (static_cast<quint64>(data.size()) < size) {
-        data.append(QByteArray(static_cast<int>(size - data.size()), '\0'));
+        const qint64 missing = static_cast<qint64>(size) - data.size();
+        if (missing > 0) {
+            // Qt6's QByteArray uses qsizetype (64-bit on 64-bit hosts), no int cast.
+            data.append(QByteArray(missing, '\0'));
+        }
     }
 
-    // Return data as GVariant ay
     GVariant *result = g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, data.constData(), data.size(), sizeof(guint8));
 
     g_dbus_method_invocation_return_value(invocation, g_variant_new_tuple(&result, 1));
