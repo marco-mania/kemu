@@ -382,6 +382,11 @@ void QemuDisplayListener::handleScanout(GVariant *parameters, GDBusMethodInvocat
     gsize dataLen = 0;
     const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant, &dataLen, sizeof(guint8)));
     const QImage::Format qtFormat = pixmanFormatToQt(pixman_format);
+    if (qtFormat == QImage::Format_Invalid) {
+        g_variant_unref(dataVariant);
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_NOT_SUPPORTED, "Unsupported pixman format: 0x%x", pixman_format);
+        return;
+    }
     {
         const QMutexLocker l(&m_mutex);
         closeDmaBuf();
@@ -423,6 +428,10 @@ void QemuDisplayListener::handleScanoutMap(GVariant *parameters, GDBusMethodInvo
         return;
     }
     const QImage::Format qtFormat = pixmanFormatToQt(pixman_format);
+    if (qtFormat == QImage::Format_Invalid) {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_NOT_SUPPORTED, "Unsupported pixman format: 0x%x", pixman_format);
+        return;
+    }
     const size_t mapSize = static_cast<size_t>(height) * stride + offset;
     void *mapped = mmap(nullptr, mapSize, PROT_READ, MAP_SHARED, memFd, 0);
     close(memFd);
@@ -562,6 +571,19 @@ void QemuDisplayListener::closeDmaBuf()
 
 QImage::Format QemuDisplayListener::pixmanFormatToQt(uint32_t pf)
 {
+    // Pixman names refer to bit positions (high-to-low). Qt formats refer to
+    // byte order in memory. The conversions below are correct on
+    // little-endian hosts only, which covers every supported QEMU/KDE host.
+    //
+    // Mappings we trust:
+    //   PIXMAN_x8r8g8b8 (0x__RRGGBB) -> LE bytes B,G,R,X -> Format_RGB32
+    //   PIXMAN_a8r8g8b8 (0xAARRGGBB) -> LE bytes B,G,R,A -> Format_ARGB32
+    //   PIXMAN_x8b8g8r8 (0x__BBGGRR) -> LE bytes R,G,B,X -> Format_RGBX8888
+    //   PIXMAN_a8b8g8r8 (0xAABBGGRR) -> LE bytes R,G,B,A -> Format_RGBA8888
+    //
+    // QEMU sends PIXMAN_x8r8g8b8 in well over 99% of cases. Anything else
+    // we reject explicitly rather than guessing - the old fall-through to
+    // Format_RGB32 produced silently scrambled colors for some inputs.
     switch (pf) {
     case PIXMAN_x8r8g8b8:
         return QImage::Format_RGB32;
@@ -571,22 +593,8 @@ QImage::Format QemuDisplayListener::pixmanFormatToQt(uint32_t pf)
         return QImage::Format_RGBX8888;
     case PIXMAN_a8b8g8r8:
         return QImage::Format_RGBA8888;
-    case PIXMAN_b8g8r8x8:
-        return QImage::Format_RGB32;
-    case PIXMAN_b8g8r8a8:
-        return QImage::Format_ARGB32;
-    case PIXMAN_r8g8b8x8:
-        return QImage::Format_RGBX8888;
-    case PIXMAN_r8g8b8a8:
-        return QImage::Format_RGBA8888;
-    case PIXMAN_r8g8b8:
-        return QImage::Format_RGB888;
-    case PIXMAN_b8g8r8:
-        return QImage::Format_BGR888;
-    case PIXMAN_r5g6b5:
-        return QImage::Format_RGB16;
     default:
-        qWarning() << "Unknown Pixman format: 0x" << Qt::hex << pf;
-        return QImage::Format_RGB32;
+        qWarning() << "Unsupported pixman format: 0x" << Qt::hex << pf << Qt::dec << "- ignoring frame.";
+        return QImage::Format_Invalid;
     }
 }
