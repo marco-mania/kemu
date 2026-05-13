@@ -104,6 +104,7 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QDBusConnect
 
 QemuDisplayWidget::~QemuDisplayWidget()
 {
+    stopAllGLibWatching();
     makeCurrent();
     destroyEglImage();
     if (m_textureId)
