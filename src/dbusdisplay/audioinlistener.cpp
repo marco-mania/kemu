@@ -280,18 +280,18 @@ void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation
 
     const QAudioDevice inputDevice = QMediaDevices::defaultAudioInput();
     if (inputDevice.isNull()) {
-        qWarning() << "AudioIn: No microphone found!";
-    } else if (!inputDevice.isFormatSupported(format)) {
-        qWarning() << "AudioIn: Format not directly supported";
+        // No device at all - tell QEMU instead of pretending to accept the stream.
+        delete stream;
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No audio input device available on host");
+        return;
+    }
+
+    if (!inputDevice.isFormatSupported(format)) {
+        qWarning() << "Audio: format not advertised as supported"
+                   << "(rate=" << format.sampleRate() << "ch=" << format.channelCount() << "fmt=" << format.sampleFormat() << ")";
     }
 
     stream->source = new QAudioSource(inputDevice, format);
-
-    // Buffer approx. 100ms → enough for QEMU's Read() polling interval
-    // int bufferSize = bytes_per_second / 10;
-    // if (bufferSize > 0) {
-    //      stream->source->setBufferSize(bufferSize);
-    // }
 
     m_streams.insert(id, stream);
 

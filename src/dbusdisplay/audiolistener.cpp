@@ -268,21 +268,23 @@ void QemuAudioListener::handleInit(GVariant *parameters, GDBusMethodInvocation *
     stream->format = format;
     stream->enabled = false;
 
-    // Create QAudioSink
     const QAudioDevice defaultDevice = QMediaDevices::defaultAudioOutput();
     if (defaultDevice.isNull()) {
-        qWarning() << "Audio: No audio output device found!";
-    } else if (!defaultDevice.isFormatSupported(format)) {
-        qWarning() << "Audio: Format not supported, using next compatible";
+        // No device at all - tell QEMU instead of pretending to accept the stream.
+        delete stream;
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No audio output device available on host");
+        return;
+    }
+
+    if (!defaultDevice.isFormatSupported(format)) {
+        // Qt's QAudioSink can sometimes still play a non-listed format via
+        // the platform plugin's resampler. Log a warning but proceed; if the
+        // sink really cannot open we'll catch it on the start() call later.
+        qWarning() << "Audio: format not advertised as supported"
+                   << "(rate=" << format.sampleRate() << "ch=" << format.channelCount() << "fmt=" << format.sampleFormat() << ")";
     }
 
     stream->sink = new QAudioSink(defaultDevice, format);
-
-    // Set buffer size to ~50ms (low latency)
-    // int bufferSize = bytes_per_second / 20;  // 50ms
-    // if (bufferSize > 0) {
-    //     stream->sink->setBufferSize(bufferSize);
-    // }
 
     m_streams.insert(id, stream);
 
