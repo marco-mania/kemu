@@ -432,19 +432,8 @@ void DbusViewerWindow::onScanoutChanged(int width, int height)
 
 void DbusViewerWindow::onAbout()
 {
-    QMessageBox::about(this,
-                       i18n("About QEMU VM Viewer"),
-                       i18n("<h3>QEMU VM Viewer</h3>"
-                            "<p>A Qt6-based viewer for QEMU VMs "
-                            "via the D-Bus display protocol.</p>"
-                            "<p><b>Features:</b></p>"
-                            "<ul>"
-                            "<li>Framebuffer display (Software + DMA-BUF)</li>"
-                            "<li>Keyboard and mouse forwarding</li>"
-                            "<li>Audio output and input</li>"
-                            "<li>Clipboard synchronization</li>"
-                            "</ul>"
-                            "<p>Requires QEMU with <code>-display dbus</code>.</p>"));
+    KAboutApplicationDialog dialog(KAboutData::applicationData(), this);
+    dialog.exec();
 }
 
 // =============================================================================

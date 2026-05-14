@@ -21,6 +21,8 @@
 #include <QTimer>
 #include <QToolBar>
 
+#include <KAboutApplicationDialog>
+#include <KAboutData>
 #include <KLocalizedString>
 #include <KMessageBox>
 
