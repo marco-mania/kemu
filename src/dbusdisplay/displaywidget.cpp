@@ -153,9 +153,7 @@ void QemuDisplayWidget::dispatchGLib()
     if (m_glibNotifiers.isEmpty())
         return;
 
-    // Safety check: If a socket was closed (POLLHUP),
-    // g_main_context_iteration() MUST NOT be called -
-    // GLib can crash on the dead connection.
+    // POLLHUP-Check unverändert lassen ...
     for (auto *n : m_glibNotifiers) {
         struct pollfd pfd = {};
         pfd.fd = n->socket();
@@ -167,9 +165,18 @@ void QemuDisplayWidget::dispatchGLib()
         }
     }
 
-    while (g_main_context_iteration(nullptr, FALSE)) {
+    // Process a BOUNDED batch of GLib events, then yield back to the Qt
+    // event loop. A fast guest (e.g. Windows during boot) produces display
+    // updates continuously; an unbounded `while (g_main_context_iteration())`
+    // loop would never return, starving the GUI thread and freezing the
+    // window. The QSocketNotifier re-fires immediately if data remains, so
+    // bounding the batch costs nothing but keeps the UI responsive.
+    constexpr int kMaxIterationsPerActivation = 16;
+    for (int i = 0; i < kMaxIterationsPerActivation; ++i) {
         if (m_glibNotifiers.isEmpty())
             return;
+        if (!g_main_context_iteration(nullptr, FALSE))
+            break; // nothing left to do
     }
 }
 
