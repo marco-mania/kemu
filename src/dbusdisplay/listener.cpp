@@ -56,6 +56,9 @@ static const gchar listenerIntrospectionXml[] =
       <arg type="i" name="y" direction="in"/>
       <arg type="i" name="w" direction="in"/>
       <arg type="i" name="h" direction="in"/>
+      <arg type="u" name="stride" direction="in"/>
+      <arg type="u" name="pixman_format" direction="in"/>
+      <arg type="ay" name="data" direction="in"/>
     </method>
     <method name="ScanoutDMABUF">
       <arg type="h" name="dmabuf" direction="in"/>
@@ -65,8 +68,8 @@ static const gchar listenerIntrospectionXml[] =
       <arg type="u" name="fourcc" direction="in"/>
       <arg type="t" name="modifier" direction="in"/>
       <arg type="b" name="y0_top" direction="in"/>
-    </method>
-    <method name="UpdateDMABUF">
+      </method>
+      <method name="UpdateDMABUF">
       <arg type="i" name="x" direction="in"/>
       <arg type="i" name="y" direction="in"/>
       <arg type="i" name="w" direction="in"/>
@@ -460,7 +463,26 @@ void QemuDisplayListener::handleScanoutMap(GVariant *parameters, GDBusMethodInvo
 void QemuDisplayListener::handleUpdate(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     gint32 x, y, w, h;
-    g_variant_get(parameters, "(iiii)", &x, &y, &w, &h);
+    guint32 stride, pixman_format;
+    GVariant *dataVariant = nullptr;
+    g_variant_get(parameters, "(iiiiuu@ay)", &x, &y, &w, &h, &stride, &pixman_format, &dataVariant);
+
+    gsize dataLen = 0;
+    const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant, &dataLen, sizeof(guint8)));
+
+    const QImage::Format qtFormat = pixmanFormatToQt(pixman_format);
+    if (qtFormat != QImage::Format_Invalid && data && w > 0 && h > 0 && dataLen >= static_cast<gsize>(h) * stride) {
+        const QMutexLocker l(&m_mutex);
+        if (!m_image.isNull() && m_image.format() == qtFormat) {
+            // Die Update-Region ist ein eigenständiges, eng gestridetes Teilbild.
+            const QImage tile(data, w, h, stride, qtFormat);
+            QPainter p(&m_image);
+            p.setCompositionMode(QPainter::CompositionMode_Source);
+            p.drawImage(x, y, tile);
+        }
+    }
+
+    g_variant_unref(dataVariant);
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT regionUpdated(QRect(x, y, w, h));
 }

@@ -15,6 +15,7 @@
 #include <QImage>
 #include <QMutex>
 #include <QObject>
+#include <QPainter>
 #include <QPoint>
 #include <QRect>
 
