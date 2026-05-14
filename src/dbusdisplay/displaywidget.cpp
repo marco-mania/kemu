@@ -203,14 +203,19 @@ void QemuDisplayWidget::updateCursor()
         setCursor(Qt::BlankCursor);
         return;
     }
-    // Qt seems to ceil the devicePixelRatio internally, resulting in non-smooth
-    // cursor size changes. Let's first do the scaling by ourselves and submit an
-    // integer scale to Qt.
     const float submit_scale = qCeil(devicePixelRatio());
+    // Effective scaling factor from cursor pixels to Qt logical points.
+    // Must be applied identically to both the pixmap AND the hotspot.
+    const float effectiveScale = m_lastScale * submit_scale / devicePixelRatio();
+
     QPixmap pm = QPixmap::fromImage(ci.image);
-    pm = pm.scaled(pm.size() * m_lastScale * submit_scale / devicePixelRatio(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    pm = pm.scaled(pm.size() * effectiveScale, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     pm.setDevicePixelRatio(submit_scale);
-    setCursor(QCursor(pm, ci.hot_x / submit_scale, ci.hot_y / submit_scale));
+
+    // Hotspot in the same unit as the scaled pixmap (Pixmap-DPR = submit_scale)
+    const int hotX = qRound(ci.hot_x * effectiveScale / submit_scale);
+    const int hotY = qRound(ci.hot_y * effectiveScale / submit_scale);
+    setCursor(QCursor(pm, hotX, hotY));
 }
 
 void QemuDisplayWidget::onCursorChanged()
