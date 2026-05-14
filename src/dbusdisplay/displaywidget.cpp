@@ -617,7 +617,8 @@ void QemuDisplayWidget::wheelEvent(QWheelEvent *event)
         m_mouse->asyncCall(u"Release"_s, btn);
     }
     if (delta.x() != 0) {
-        const uint btn = (delta.x() > 0) ? 5u : 6u;
+        // QEMU InputButton: wheel-left = 7, wheel-right = 8
+        const uint btn = (delta.x() > 0) ? 7u : 8u;
         m_mouse->asyncCall(u"Press"_s, btn);
         m_mouse->asyncCall(u"Release"_s, btn);
     }
