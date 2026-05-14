@@ -441,23 +441,17 @@ void QemuDisplayListener::handleScanoutMap(GVariant *parameters, GDBusMethodInvo
         closeDmaBuf();
         unmapMemory();
         m_isDmaBuf = false;
-        {
-            const QMutexLocker l(&m_mutex);
-            closeDmaBuf();
-            unmapMemory();
-            m_isDmaBuf = false;
 
-            const uchar *pixels = static_cast<const uchar *>(mapped) + offset;
-            const QImage view(pixels, width, height, stride, qtFormat);
-            // Deep-copy so we don't depend on the mmap region staying alive.
-            m_image = view.copy();
+        const uchar *pixels = static_cast<const uchar *>(mapped) + offset;
+        const QImage view(pixels, width, height, stride, qtFormat);
+        // Deep-copy so we don't depend on the mmap region staying alive.
+        m_image = view.copy();
 
-            // We can unmap immediately now that the pixels are copied. Keeping
-            // the mapping around would just consume address space.
-            munmap(mapped, mapSize);
-            m_mappedMemory = nullptr;
-            m_mappedSize = 0;
-        }
+        // We can unmap immediately now that the pixels are copied. Keeping
+        // the mapping around would just consume address space.
+        munmap(mapped, mapSize);
+        m_mappedMemory = nullptr;
+        m_mappedSize = 0;
     }
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT scanoutChanged(width, height);
