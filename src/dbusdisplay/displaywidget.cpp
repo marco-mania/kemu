@@ -460,7 +460,7 @@ void QemuDisplayWidget::renderQuad()
             scale = 1.0f; // Avoid division by zero and negative scaling
         if (scale != m_lastScale) {
             m_lastScale = scale;
-            updateCursor(); // Rescale cursor if needed
+            QTimer::singleShot(0, this, &QemuDisplayWidget::updateCursor);
         }
 
         const int drawW = static_cast<int>(m_fbSize.width() * scale);

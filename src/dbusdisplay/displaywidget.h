@@ -63,6 +63,7 @@ private Q_SLOTS:
     void onScanoutChanged(int width, int height);
     void onDmaBufScanout(int width, int height);
     void onRegionUpdated(const QRect &rect);
+    void updateCursor();
     void onCursorChanged();
     void dispatchGLib();
     void onFrameTick();
@@ -74,7 +75,6 @@ private:
     void uploadSoftwareFrame();
     void setupQuad();
     void renderQuad();
-    void updateCursor();
 
     void scheduleRepaint();
 
