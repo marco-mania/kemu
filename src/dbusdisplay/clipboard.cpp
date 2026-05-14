@@ -72,18 +72,6 @@ bool ClipboardDBusHandler::handleMessage(const QDBusMessage &message, const QDBu
         }
     }
 
-    if (iface == u"org.freedesktop.DBus.Introspectable"_s && method == u"Introspect"_s) {
-        const QString xml =
-            u"<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\"\n"_s
-            u" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n"_s
-            u"<node>\n"_s
-            + introspect({}) + u"</node>\n"_s;
-        auto reply = message.createReply();
-        reply << xml;
-        connection.send(reply);
-        return true;
-    }
-
     if (iface == u"org.freedesktop.DBus.Peer"_s) {
         if (method == u"Ping"_s) {
             connection.send(message.createReply());
@@ -166,21 +154,18 @@ bool ClipboardDBusHandler::handleMessage(const QDBusMessage &message, const QDBu
             }
         }
 
-        // QEMU requires exactly ONE MIME type in the response
-        const QString usedMime = mimes.isEmpty() ? u"text/plain;charset=utf-8"_s : mimes.first();
-        const QByteArray data = m_manager->handleRequest(selection, mimes);
-
-        // If QEMU sent a list, but we could only match the 2nd or 3rd type:
-        // We rely on handleRequest here, which should return the best match.
-        // For simplicity, we reply with the first requested one, unless
-        // handleRequest would populate an out-parameter. In practice, usedMime is
-        // sufficient.
+        const auto result = m_manager->handleRequest(selection, mimes);
+        if (result.empty()) {
+            // Spec: return an error when the request cannot be satisfied.
+            auto err = message.createErrorReply(u"org.qemu.Display1.Clipboard.Empty"_s, u"Host clipboard cannot satisfy the request"_s);
+            connection.send(err);
+            return true;
+        }
 
         QDBusMessage reply = message.createReply();
-        reply << usedMime << QVariant::fromValue(data);
+        reply << result.mime << QVariant::fromValue(result.data);
 
-        qDebug() << "Clipboard D-Bus -> Request reply:" << data.size() << "bytes"
-                 << "mime:" << usedMime;
+        qDebug() << "Clipboard D-Bus -> Request reply:" << result.data.size() << "bytes, mime:" << result.mime;
 
         connection.send(reply);
         return true;
@@ -204,15 +189,6 @@ QemuClipboardManager::QemuClipboardManager(QDBusConnection &bus, ClipboardDirect
     if (m_direction == ClipboardDirection::ToGuest || m_direction == ClipboardDirection::Both) {
         connect(m_hostClipboard, &QClipboard::dataChanged, this, &QemuClipboardManager::onHostClipboardChanged);
     }
-
-    m_ownershipTimer = new QTimer(this);
-    m_ownershipTimer->setSingleShot(true);
-    m_ownershipTimer->setInterval(500);
-    connect(m_ownershipTimer, &QTimer::timeout, this, [this]() {
-        m_hostOwnsClipboard = false;
-        m_lastTextFromGuest.clear();
-        qDebug() << "Clipboard: Host ownership expired, feedback lock lifted";
-    });
 }
 
 QemuClipboardManager::~QemuClipboardManager()
@@ -257,7 +233,6 @@ void QemuClipboardManager::doRegister()
 
     connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
         w->deleteLater();
-
         const QDBusPendingReply<> reply = *w;
         if (reply.isError()) {
             qWarning() << "Clipboard: Register() failed:" << reply.error().name() << reply.error().message();
@@ -265,8 +240,11 @@ void QemuClipboardManager::doRegister()
             return;
         }
 
+        // Spec: serial counter is reset on (re-)registration.
+        m_currentSerial = 0;
+        m_weAreOwner = false;
         m_registered = true;
-        qDebug() << "Clipboard: Register() acknowledged by QEMU";
+        qDebug() << "Clipboard: Register() acknowledged, serial reset to 0";
     });
 }
 
@@ -274,28 +252,38 @@ void QemuClipboardManager::doRegister()
 // Guest -> Host
 // =============================================================================
 
-void QemuClipboardManager::handleGrab(uint selection, uint /*serial*/, const QStringList &mimes)
+void QemuClipboardManager::handleGrab(uint selection, uint serial, const QStringList &mimes)
 {
     if (selection != 0)
         return;
-
+    if (!m_registered) {
+        qDebug() << "Clipboard: Grab received before Register ack - ignoring";
+        return;
+    }
     if (m_direction != ClipboardDirection::ToHost && m_direction != ClipboardDirection::Both) {
         return;
     }
 
-    if (m_hostOwnsClipboard) {
-        qDebug() << "Clipboard: Guest Grab ignored (Host owns clipboard)";
+    // Serial protocol: discard stale grabs; on tie the client (us) wins.
+    if (serial < m_currentSerial) {
+        qDebug() << "Clipboard: stale Grab discarded (serial" << serial << "<" << m_currentSerial << ")";
+        return;
+    }
+    if (serial == m_currentSerial && m_weAreOwner) {
+        qDebug() << "Clipboard: tied Grab rejected (client wins on equal serial)";
         return;
     }
 
-    qDebug() << "Clipboard: Guest copied, MIMEs:" << mimes;
+    m_currentSerial = serial;
+    m_weAreOwner = false;
 
-    if (!m_qemuClipboard)
-        return;
+    qDebug() << "Clipboard: Guest grabbed clipboard, MIMEs:" << mimes;
 
-    // We prefer text, but also accept images if available
-    static const QStringList preferred =
-        {u"text/plain;charset=utf-8"_s, u"text/plain"_s, u"UTF8_STRING"_s, u"image/png"_s, u"image/jpeg"_s, u"image/bmp"_s, u"text/html"_s};
+    static const QStringList preferred = {
+        u"text/plain;charset=utf-8"_s,
+        u"text/plain"_s,
+        u"UTF8_STRING"_s,
+    };
 
     QString selectedMime;
     for (const auto &pref : preferred) {
@@ -304,13 +292,10 @@ void QemuClipboardManager::handleGrab(uint selection, uint /*serial*/, const QSt
             break;
         }
     }
-    if (selectedMime.isEmpty() && !mimes.isEmpty()) {
-        selectedMime = mimes.first(); // Fallback to the first available format
-    }
-    if (selectedMime.isEmpty())
+    if (selectedMime.isEmpty() && !mimes.isEmpty())
+        selectedMime = mimes.first();
+    if (selectedMime.isEmpty() || !m_qemuClipboard)
         return;
-
-    qDebug() << "Clipboard: Requesting from QEMU:" << selectedMime;
 
     const QDBusPendingCall pending = m_qemuClipboard->asyncCall(u"Request"_s, static_cast<uint>(selection), QStringList{selectedMime});
 
@@ -331,31 +316,29 @@ void QemuClipboardManager::onRequestFinished(QDBusPendingCallWatcher *watcher)
     const QString mime = reply.argumentAt<0>();
     const QByteArray data = reply.argumentAt<1>();
 
-    qDebug() << "Clipboard: Guest data received:" << data.size() << "bytes, mime:" << mime;
+    qDebug() << "Clipboard: guest data received:" << data.size() << "bytes, mime:" << mime;
 
     if (data.isEmpty())
         return;
 
-    m_hostOwnsClipboard = false;
-
-    // Create new MimeData object for the host
     auto *newMimeData = new QMimeData();
-
-    // Set up echo prevention (we only check for text echoes for performance
-    // reasons)
-    if (mime.startsWith(u"text/")) {
-        const QString text = QString::fromUtf8(data);
-        m_lastTextFromGuest = text;
-        newMimeData->setText(text);
+    if (mime.startsWith(u"text/"_s) || mime == u"UTF8_STRING"_s) {
+        newMimeData->setText(QString::fromUtf8(data));
     } else {
-        m_lastTextFromGuest.clear();
-        newMimeData->setData(mime, data); // Sets the raw data (e.g., for image/png)
+        newMimeData->setData(mime, data);
     }
 
-    // Sets the data to the clipboard. QClipboard takes ownership of the pointer.
+    // Arm the echo guard, then place the data on the host clipboard.
+    // Wayland in particular fires dataChanged multiple times; the 150 ms
+    // window absorbs the storm without delaying real user actions much.
+    m_settingFromGuest = true;
     m_hostClipboard->setMimeData(newMimeData);
 
-    qDebug() << "Clipboard: Guest -> Host OK";
+    QTimer::singleShot(150, this, [this] {
+        m_settingFromGuest = false;
+    });
+
+    qDebug() << "Clipboard: Guest -> Host transfer complete";
 }
 
 // =============================================================================
@@ -364,19 +347,20 @@ void QemuClipboardManager::onRequestFinished(QDBusPendingCallWatcher *watcher)
 
 void QemuClipboardManager::handleRelease(uint selection)
 {
-    qDebug() << "Clipboard: Release for selection" << selection;
-    if (selection == 0) {
-        m_hostOwnsClipboard = false;
-        m_lastTextFromGuest.clear();
-        m_ownershipTimer->stop();
-    }
+    if (selection != 0)
+        return;
+
+    // QEMU released its grab. We don't touch ownership here - it stays with
+    // whoever has the highest serial. A Release just signals the previous
+    // owner is willing to drop, but until somebody grabs, ownership state
+    // doesn't change.
+    qDebug() << "Clipboard: QEMU released selection" << selection;
 }
 
-QByteArray QemuClipboardManager::handleRequest(uint selection, const QStringList &mimes)
+QemuClipboardManager::ClipboardData QemuClipboardManager::handleRequest(uint selection, const QStringList &mimes)
 {
     if (selection != 0)
         return {};
-
     if (m_direction != ClipboardDirection::ToGuest && m_direction != ClipboardDirection::Both) {
         return {};
     }
@@ -385,20 +369,18 @@ QByteArray QemuClipboardManager::handleRequest(uint selection, const QStringList
     if (!mimeData)
         return {};
 
-    // Iterate through the MIMEs requested by QEMU and return the first match
     for (const QString &mime : mimes) {
         if (mimeData->hasFormat(mime)) {
-            qDebug() << "Clipboard: Host providing data for:" << mime;
-            return mimeData->data(mime);
+            qDebug() << "Clipboard: serving guest with native format:" << mime;
+            return {mime, mimeData->data(mime)};
         }
-        // Fallback for plain text
         if ((mime == u"text/plain"_s || mime == u"text/plain;charset=utf-8"_s || mime == u"UTF8_STRING"_s) && mimeData->hasText()) {
-            qDebug() << "Clipboard: Host providing text as fallback for:" << mime;
-            return mimeData->text().toUtf8();
+            qDebug() << "Clipboard: serving guest with text fallback for:" << mime;
+            return {mime, mimeData->text().toUtf8()};
         }
     }
 
-    qDebug() << "Clipboard: Host could not satisfy request. Requested MIMEs:" << mimes;
+    qDebug() << "Clipboard: host cannot satisfy request, mimes:" << mimes;
     return {};
 }
 
@@ -407,70 +389,44 @@ void QemuClipboardManager::onHostClipboardChanged()
     if (m_direction != ClipboardDirection::ToGuest && m_direction != ClipboardDirection::Both) {
         return;
     }
-
     if (!m_qemuClipboard || !m_qemuClipboard->isValid() || !m_registered)
         return;
 
+    // Suppress self-induced dataChanged: when we mirror guest data onto the
+    // host clipboard, Qt emits dataChanged synchronously (and again later
+    // under Wayland). Without this guard we'd bounce the content back to
+    // the guest as a fresh Grab.
+    if (m_settingFromGuest) {
+        qDebug() << "Clipboard: dataChanged ignored (self-induced echo)";
+        return;
+    }
+
     const QMimeData *mimeData = m_hostClipboard->mimeData();
-    if (!mimeData)
+    if (!mimeData || !mimeData->hasText())
         return;
 
-    // Text echo prevention:
-    if (mimeData->hasText()) {
-        const QString text = mimeData->text();
-        if (!text.isEmpty() && text == m_lastTextFromGuest) {
-            qDebug() << "Clipboard: dataChanged ignored (Echo from guest)";
-            return;
-        }
-    }
+    const QStringList mimesToSend = {
+        u"text/plain;charset=utf-8"_s,
+        u"text/plain"_s,
+        u"UTF8_STRING"_s,
+    };
 
-    // Extract all available formats
-    const QStringList availableMimes = mimeData->formats();
-    if (availableMimes.isEmpty())
-        return;
+    m_currentSerial++;
+    m_weAreOwner = true;
 
-    // Custom formatting / cleaning of the list for QEMU
-    // (e.g. Qt often has application-specific MIMEs, we ensure that common
-    // formats are at the beginning)
-    QStringList mimesToSend;
-    if (mimeData->hasText()) {
-        mimesToSend << u"text/plain;charset=utf-8"_s << u"text/plain"_s << u"UTF8_STRING"_s;
-    }
-    for (const QString &m : availableMimes) {
-        if (!mimesToSend.contains(m))
-            mimesToSend << m;
-    }
+    qDebug() << "Clipboard: Host->Guest Grab (serial:" << m_currentSerial << ")";
 
-    m_serial++;
-    m_hostOwnsClipboard = true;
-    m_ownershipTimer->start();
-    m_lastTextFromGuest.clear();
-
-    qDebug() << "Clipboard: Host -> Grab to QEMU (serial:" << m_serial << ", mimes:" << mimesToSend << ")";
-
-    const QDBusPendingCall grabPending = m_qemuClipboard->asyncCall(u"Grab"_s, static_cast<uint>(0), static_cast<uint>(m_serial), mimesToSend);
+    const QDBusPendingCall grabPending = m_qemuClipboard->asyncCall(u"Grab"_s, 0u, m_currentSerial, mimesToSend);
 
     auto *grabWatcher = new QDBusPendingCallWatcher(grabPending, this);
-    connect(grabWatcher, &QDBusPendingCallWatcher::finished, this, [this, mimesToSend](QDBusPendingCallWatcher *w) {
+    connect(grabWatcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
         w->deleteLater();
-        const QDBusPendingReply<> grabReply = *w;
-        if (grabReply.isError()) {
-            qWarning() << "Clipboard: Grab to QEMU FAILED:" << grabReply.error().message();
-            m_hostOwnsClipboard = false;
-            return;
+        const QDBusPendingReply<> reply = *w;
+        if (reply.isError()) {
+            qWarning() << "Clipboard: Grab to QEMU failed:" << reply.error().message();
+            m_weAreOwner = false;
         }
-
-        // Proactive request to QEMU
-        const QDBusPendingCall requestPending = m_qemuClipboard->asyncCall(u"Request"_s, static_cast<uint>(0), mimesToSend);
-
-        auto *requestWatcher = new QDBusPendingCallWatcher(requestPending, this);
-        connect(requestWatcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w2) {
-            w2->deleteLater();
-            const QDBusPendingReply<QString, QByteArray> reply = *w2;
-            if (reply.isError()) {
-                qWarning() << "Clipboard: Request to QEMU FAILED:" << reply.error().message();
-                m_hostOwnsClipboard = false;
-            }
-        });
+        // Do NOT proactively call Request() from here. QEMU pulls the data
+        // itself when the guest pastes, by invoking our handleRequest().
     });
 }

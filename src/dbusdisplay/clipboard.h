@@ -70,10 +70,19 @@ public:
 
     bool setup();
 
+    struct ClipboardData {
+        QString mime;
+        QByteArray data;
+        bool empty() const
+        {
+            return data.isEmpty();
+        }
+    };
+
     // Called by ClipboardDBusHandler:
     void handleGrab(uint selection, uint serial, const QStringList &mimes);
     void handleRelease(uint selection);
-    QByteArray handleRequest(uint selection, const QStringList &mimes);
+    ClipboardData handleRequest(uint selection, const QStringList &mimes);
 
 private Q_SLOTS:
     void onHostClipboardChanged();
@@ -87,8 +96,14 @@ private:
     QClipboard *m_hostClipboard;
     ClipboardDirection m_direction;
 
-    uint m_serial = 0;
+    uint m_currentSerial = 0;
+    bool m_weAreOwner = false;
     bool m_registered = false;
+
+    // Echo guard: set just before we mirror guest data onto the host clipboard,
+    // cleared a few ms later. Suppresses the self-triggered dataChanged storm
+    // (especially under Wayland, where setMimeData fires multiple signals).
+    bool m_settingFromGuest = false;
 
     // Feedback loop prevention:
     // Under Wayland, setText() triggers MULTIPLE dataChanged signals.
@@ -96,9 +111,4 @@ private:
     // last received from the guest and set on the host.
     // Every dataChanged with identical text is ignored.
     QString m_lastTextFromGuest;
-
-    // Host ownership: true if WE last sent a Grab to QEMU
-    // (Host owns the clipboard). Becomes false when QEMU sends us a Grab.
-    bool m_hostOwnsClipboard = false;
-    QPointer<QTimer> m_ownershipTimer;
 };
