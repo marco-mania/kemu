@@ -260,7 +260,11 @@ void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation
     } else {
         switch (bits) {
         case 8:
-            format.setSampleFormat(is_signed ? QAudioFormat::Unknown : QAudioFormat::UInt8);
+            if (is_signed) {
+                g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_NOT_SUPPORTED, "Signed 8-bit PCM is not supported");
+                return;
+            }
+            format.setSampleFormat(QAudioFormat::UInt8);
             break;
         case 16:
             format.setSampleFormat(QAudioFormat::Int16);

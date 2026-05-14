@@ -80,7 +80,6 @@ private:
         QAudioFormat format;
         QAudioSource *source = nullptr;
         QIODevice *ioDevice = nullptr;
-        QByteArray buffer; // Circular buffer for captured data
         bool enabled = false;
     };
 

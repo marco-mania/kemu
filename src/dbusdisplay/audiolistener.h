@@ -19,7 +19,6 @@
 #include <QHash>
 #include <QIODevice>
 #include <QMediaDevices>
-#include <QMutex>
 #include <QObject>
 
 using namespace Qt::StringLiterals;
