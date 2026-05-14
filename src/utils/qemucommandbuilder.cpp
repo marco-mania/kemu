@@ -287,10 +287,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         } else {
             const QString sockArg = relativePaths ? KEMUConst::DBUSSocketFileName : vmDir.absoluteFilePath(KEMUConst::DBUSSocketFileName);
 
-            QString escapedSock = sockArg;
-            escapedSock.replace(u","_s, u",,"_s);
-            QString displayOpt = u"dbus,addr=unix:path=%1"_s.arg(escapedSock);
-
+            QString displayOpt = u"dbus,addr=unix:path=%1"_s.arg(sockArg);
             if (effective3d)
                 displayOpt += u",gl=on"_s;
             if (config.audioDevice() != VMSpecs::AudioDevice::None) {
@@ -298,6 +295,18 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
                 displayOpt += u",audiodev=%1"_s.arg(audioId);
             }
             args << u"-display"_s << displayOpt;
+
+            // ---- Guest agent for clipboard (and absolute mouse, if used) ----
+            // For -display dbus, the in-guest spice-vdagent talks to QEMU's
+            // qemu-vdagent chardev (NOT spicevmc, which is SPICE-only). QEMU
+            // bridges that to /org/qemu/Display1/Clipboard on its D-Bus bus.
+            // Without this block, the Clipboard D-Bus object exists but has
+            // no peer on the guest side - Grab/Request calls go nowhere.
+            if (config.spiceAgent()) {
+                args << u"-device"_s << u"virtio-serial-pci"_s;
+                args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,name=vdagent,clipboard=on"_s;
+                args << u"-device"_s << u"virtserialport,chardev=vdagent,name=com.redhat.spice.0"_s;
+            }
         }
     } else if (headless) {
         args << u"-display"_s << u"none"_s;
