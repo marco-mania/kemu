@@ -381,30 +381,27 @@ void QemuDisplayListener::handleScanout(GVariant *parameters, GDBusMethodInvocat
     g_variant_get(parameters, "(uuuu@ay)", &width, &height, &stride, &pixman_format, &dataVariant);
     gsize dataLen = 0;
     const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant, &dataLen, sizeof(guint8)));
+
     const QImage::Format qtFormat = pixmanFormatToQt(pixman_format);
     if (qtFormat == QImage::Format_Invalid) {
         g_variant_unref(dataVariant);
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_NOT_SUPPORTED, "Unsupported pixman format: 0x%x", pixman_format);
         return;
     }
+
     {
         const QMutexLocker l(&m_mutex);
         closeDmaBuf();
         unmapMemory();
         m_isDmaBuf = false;
-        {
-            const QMutexLocker l(&m_mutex);
-            closeDmaBuf();
-            unmapMemory();
-            m_isDmaBuf = false;
 
-            // Construct QImage as a view onto the GDBus-owned buffer, then deep-copy
-            // so we own the pixel data. The original `data` pointer becomes invalid
-            // as soon as we return from this method.
-            const QImage view(reinterpret_cast<const uchar *>(data), width, height, stride, qtFormat);
-            m_image = view.copy();
-        }
+        // Construct QImage as a view onto the GDBus-owned buffer, then deep-copy
+        // so we own the pixel data. The original `data` pointer becomes invalid
+        // as soon as we return from this method.
+        const QImage view(reinterpret_cast<const uchar *>(data), width, height, stride, qtFormat);
+        m_image = view.copy();
     }
+
     g_variant_unref(dataVariant);
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT scanoutChanged(width, height);
