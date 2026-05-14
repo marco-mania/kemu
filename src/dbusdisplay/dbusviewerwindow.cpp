@@ -206,7 +206,7 @@ void DbusViewerWindow::createStatusBar()
     statusBar()->addPermanentWidget(m_lblClipboard);
 
     updateStatusBar();
-    statusBar()->showMessage(i18n("Ready – connected to %1").arg(m_consolePath), 5000);
+    statusBar()->showMessage(i18n("Ready – connected to %1", m_consolePath), 5000);
 }
 
 void DbusViewerWindow::updateStatusBar()
