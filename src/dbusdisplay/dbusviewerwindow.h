@@ -81,7 +81,7 @@ Q_SIGNALS:
     void viewerClosed();
     void shutdownRequested();
     void resetRequested();
-    void killRequested();
+    void powerOffRequested();
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -126,7 +126,7 @@ private:
     // Menu actions
     QAction *m_actShutdown = nullptr;
     QAction *m_actReset = nullptr;
-    QAction *m_actKill = nullptr;
+    QAction *m_actPowerOff = nullptr;
     QAction *m_actQuit = nullptr;
     QAction *m_actFullscreen = nullptr;
     QAction *m_actNativeSize = nullptr;

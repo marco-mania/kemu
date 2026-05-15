@@ -815,8 +815,8 @@ bool MainWindow::startDbusViewer(const QString &vmName)
         resetVMByName(vmName);
     });
 
-    connect(state.window, &DbusViewerWindow::killRequested, this, [this, vmName] {
-        killVMByName(vmName);
+    connect(state.window, &DbusViewerWindow::powerOffRequested, this, [this, vmName] {
+        powerOffVMByName(vmName);
     });
 
     // USB submenu population: reuse the existing enumerator path.
@@ -934,10 +934,10 @@ void MainWindow::setupActions()
     actionReset->setText(i18n("Reset"));
     connect(actionReset, &QAction::triggered, this, &MainWindow::resetVM);
 
-    auto *actionKill = ac->addAction(u"vm_kill"_s);
-    actionKill->setIcon(QIcon::fromTheme(u"process-stop"_s));
-    actionKill->setText(i18n("Kill"));
-    connect(actionKill, &QAction::triggered, this, &MainWindow::killVM);
+    auto *actionPowerOff = ac->addAction(u"vm_poweroff"_s);
+    actionPowerOff->setIcon(QIcon::fromTheme(u"process-stop"_s));
+    actionPowerOff->setText(i18n("Power-off"));
+    connect(actionPowerOff, &QAction::triggered, this, &MainWindow::powerOffVM);
 
     auto *actionEdit = ac->addAction(u"vm_edit"_s);
     actionEdit->setIcon(QIcon::fromTheme(u"document-edit"_s));
@@ -1012,7 +1012,7 @@ void MainWindow::setupActions()
     vmActionBar->addAction(actionStart);
     vmActionBar->addAction(actionStop);
     vmActionBar->addAction(actionReset);
-    vmActionBar->addAction(actionKill);
+    vmActionBar->addAction(actionPowerOff);
     vmActionBar->addSeparator();
     vmActionBar->addAction(actionChangeISO);
     vmActionBar->addAction(actionChangeFloppy);
@@ -1047,7 +1047,7 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_start_headless"_s)->setEnabled(hasSelection && !isBusy);
     actionCollection()->action(u"vm_shutdown"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
     actionCollection()->action(u"vm_reset"_s)->setEnabled(hasSelection && isRunning);
-    actionCollection()->action(u"vm_kill"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
+    actionCollection()->action(u"vm_poweroff"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
     actionCollection()->action(u"vm_change_iso"_s)->setEnabled(canChangeMedia);
     actionCollection()->action(u"vm_eject_iso"_s)->setEnabled(canChangeMedia && !currentConfig.isoPath().isEmpty());
     actionCollection()->action(u"vm_change_floppy"_s)->setEnabled(canChangeMedia);
@@ -2343,10 +2343,10 @@ void MainWindow::showContextMenu(const QPoint &pos)
                 auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"view-refresh"_s), i18n("Compacting disk..."));
                 infoAction->setEnabled(false);
             } else if (isDeploying) {
-                const QAction *originalKillAction = actionCollection()->action(u"vm_kill"_s);
-                QAction *customKillAction = contextMenu.addAction(originalKillAction->icon(), i18n("Abort Deployment"));
-                connect(customKillAction, &QAction::triggered, originalKillAction, &QAction::trigger);
-                contextMenu.addAction(customKillAction);
+                const QAction *originalPoweroffAction = actionCollection()->action(u"vm_poweroff"_s);
+                QAction *customPoweroffAction = contextMenu.addAction(originalPoweroffAction->icon(), i18n("Abort Deployment"));
+                connect(customPoweroffAction, &QAction::triggered, originalPoweroffAction, &QAction::trigger);
+                contextMenu.addAction(customPoweroffAction);
             } else if (entry && entry->state == VmEntry::State::Cloning) {
                 auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"edit-copy"_s), i18n("Cloning..."));
                 infoAction->setEnabled(false);
@@ -2383,7 +2383,7 @@ void MainWindow::showContextMenu(const QPoint &pos)
                     contextMenu.addAction(actionCollection()->action(u"vm_network_shell"_s));
                 contextMenu.addSeparator();
 
-                contextMenu.addAction(actionCollection()->action(u"vm_kill"_s));
+                contextMenu.addAction(actionCollection()->action(u"vm_poweroff"_s));
             }
         }
     } else {
@@ -2728,9 +2728,9 @@ void MainWindow::resetVM()
     resetVMByName(currentConfig.name());
 }
 
-void MainWindow::killVM()
+void MainWindow::powerOffVM()
 {
-    killVMByName(currentConfig.name());
+    powerOffVMByName(currentConfig.name());
 }
 
 void MainWindow::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus)
@@ -3054,18 +3054,18 @@ void MainWindow::resetVMByName(const QString &vmName)
     statusBar()->showMessage(i18n("Virtual machine '%1' was successfully reset.", vmName));
 }
 
-void MainWindow::killVMByName(const QString &vmName)
+void MainWindow::powerOffVMByName(const QString &vmName)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || (entry->state != VmEntry::State::Running && entry->state != VmEntry::State::Deploying))
         return;
     QWidget *parentW = dialogParentFor(vmName);
 
-    // Handle deployment kill
+    // Handle deployment Poweer Off
     if (entry->state == VmEntry::State::Deploying) {
         const auto answer = KMessageBox::questionTwoActionsCancel(parentW,
                                                                   i18n("VM '%1' is currently being deployed.\n\n"
-                                                                       "Force-stopping now will abort the installation "
+                                                                       "Forcing a power-off now will abort the installation "
                                                                        "and may leave the disk filesystem in an inconsistent state.\n\n"
                                                                        "Do you also want to delete the VM?",
                                                                        vmName),
@@ -3073,7 +3073,7 @@ void MainWindow::killVMByName(const QString &vmName)
                                                                   KGuiItem(i18n("Stop && Keep"), u"media-playback-stop"_s),
                                                                   KGuiItem(i18n("Stop && Delete"), u"edit-delete"_s),
                                                                   KStandardGuiItem::cancel(),
-                                                                  u"ConfirmVmKillDeployment"_s);
+                                                                  u"ConfirmVmPowerOffDeployment"_s);
 
         if (answer == KMessageBox::PrimaryAction)
             abortDeployment(vmName, false);
@@ -3086,7 +3086,7 @@ void MainWindow::killVMByName(const QString &vmName)
     if (!process)
         return;
 
-    const KGuiItem stopItem(i18n("Force Stop"), u"kt-stop"_s, i18n("Forcefully stop the virtual machine"));
+    const KGuiItem stopItem(i18n("Force power-off"), u"process-stop"_s, i18n("Forcefully stop the virtual machine"));
 
     const auto result = KMessageBox::warningTwoActions(parentW,
                                                        i18n("Are you sure you want to force a power-off for '%1'? "
@@ -3095,7 +3095,7 @@ void MainWindow::killVMByName(const QString &vmName)
                                                        i18nc("@title:window", "Confirm Force Stop"),
                                                        stopItem,
                                                        KStandardGuiItem::cancel(),
-                                                       u"ConfirmVmKill"_s);
+                                                       u"ConfirmVmPowerOff"_s);
 
     if (result == KMessageBox::PrimaryAction) {
         m_userInitiatedShutdowns.insert(vmName);
@@ -3117,12 +3117,12 @@ void MainWindow::killVMByName(const QString &vmName)
             process->terminate();
 
             if (!process->waitForFinished(2000)) {
-                qWarning() << "VM" << vmName << "is still hanging. Forcing kill (SIGKILL)!";
+                qWarning() << "VM" << vmName << "is still hanging. Forcing power-off (SIGKILL)!";
                 process->kill();
             }
         }
 
-        statusBar()->showMessage(i18n("Force stop (kill) initiated for virtual machine '%1'...", vmName));
+        statusBar()->showMessage(i18n("Force power-off initiated for virtual machine '%1'...", vmName));
     }
 }
 

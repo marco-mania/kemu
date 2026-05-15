@@ -76,9 +76,9 @@ void DbusViewerWindow::createActions()
     m_actReset->setStatusTip(i18n("Reset the virtual machine (hard reset)"));
     connect(m_actReset, &QAction::triggered, this, &DbusViewerWindow::resetRequested);
 
-    m_actKill = new QAction(QIcon::fromTheme(u"process-stop"_s), i18n("&Kill"), this);
-    m_actKill->setStatusTip(i18n("Force-stop the virtual machine (may cause data loss)"));
-    connect(m_actKill, &QAction::triggered, this, &DbusViewerWindow::killRequested);
+    m_actPowerOff = new QAction(QIcon::fromTheme(u"process-stop"_s), i18n("Power-&off"), this);
+    m_actPowerOff->setStatusTip(i18n("Force power-off the virtual machine (may cause data loss)"));
+    connect(m_actPowerOff, &QAction::triggered, this, &DbusViewerWindow::powerOffRequested);
 
     m_actQuit = new QAction(QIcon::fromTheme(u"window-close"_s), i18n("&Quit Viewer"), this);
     m_actQuit->setShortcut(QKeySequence(u"Ctrl+W"_s));
@@ -164,7 +164,7 @@ void DbusViewerWindow::createMenus()
     QMenu *machineMenu = menuBar()->addMenu(i18n("&Machine"));
     machineMenu->addAction(m_actShutdown);
     machineMenu->addAction(m_actReset);
-    machineMenu->addAction(m_actKill);
+    machineMenu->addAction(m_actPowerOff);
     machineMenu->addSeparator();
     machineMenu->addAction(m_actQuit);
 

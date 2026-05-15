@@ -97,7 +97,7 @@ private Q_SLOTS:
     void startVMHeadless();
     void shutdownVM();
     void resetVM();
-    void killVM();
+    void powerOffVM();
     void changeISO();
     void ejectISO();
     void changeFloppy();
@@ -130,7 +130,7 @@ private Q_SLOTS:
 private:
     void shutdownVMByName(const QString &vmName);
     void resetVMByName(const QString &vmName);
-    void killVMByName(const QString &vmName);
+    void powerOffVMByName(const QString &vmName);
 
     ImageDatabase m_imageDatabase;
 
