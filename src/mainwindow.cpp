@@ -2290,22 +2290,46 @@ void MainWindow::onTreeDoubleClicked(const QModelIndex &index)
 
     if (itemType == VirtualEnvironmentModel::Folder) {
         veTreeView->setExpanded(index, !veTreeView->isExpanded(index));
-    } else {
-        const QString vmName = index.data(VirtualEnvironmentModel::VmNameRole).toString();
-        const VmEntry *entry = veModel->entryByName(vmName);
+        return;
+    }
 
-        const bool spiceReconnect = entry && entry->state == VmEntry::State::Running && entry->isHeadless
-            && entry->config.displayType() == VMSpecs::DisplayType::Spice && !entry->spiceViewerProcess;
+    const QString vmName = index.data(VirtualEnvironmentModel::VmNameRole).toString();
+    const VmEntry *entry = veModel->entryByName(vmName);
+    const bool isRunning = entry && entry->state == VmEntry::State::Running;
 
-        const bool dbusReconnect = entry && entry->state == VmEntry::State::Running && entry->isHeadless
-            && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !m_dbusViewers.contains(vmName);
+    // VM is not running yet: start normally
+    if (!isRunning) {
+        startVM();
+        return;
+    }
 
-        if (spiceReconnect || dbusReconnect) {
-            reconnectViewer();
-        } else {
-            startVM();
+    // VM is running and the integrated D-Bus viewer window is already open:
+    // simply bring it to the front instead of trying to start the VM again.
+    if (entry->config.displayType() == VMSpecs::DisplayType::Dbus && m_dbusViewers.contains(vmName)) {
+        if (auto *win = m_dbusViewers[vmName].window.data()) {
+            if (win->isMinimized() || !win->isVisible())
+                win->showNormal();
+            win->raise();
+            win->activateWindow();
+            return;
         }
     }
+
+    // VM is running and an external SPICE viewer process already exists:
+    // an external window cannot be reliably brought to the foreground,
+    // so just display a status message (behavior as previously in reconnectViewer()).
+    if (entry->config.displayType() == VMSpecs::DisplayType::Spice && entry->spiceViewerProcess) {
+        statusBar()->showMessage(i18n("Viewer is already running for '%1'.", vmName));
+        return;
+    }
+
+    // VM is running headless: reconnect viewer
+    const bool spiceReconnect = entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Spice && !entry->spiceViewerProcess;
+
+    const bool dbusReconnect = entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !m_dbusViewers.contains(vmName);
+
+    if (spiceReconnect || dbusReconnect)
+        reconnectViewer();
 }
 
 void MainWindow::onDropCompleted()
