@@ -15,26 +15,15 @@ SnapshotManager::SnapshotManager(QObject *parent)
 
 QList<SnapshotInfo> SnapshotManager::listSnapshots(const QString &diskPath) const
 {
-    // Try JSON output first
-    auto resJson = runQemuImg({u"snapshot"_s, u"--output=json"_s, u"-l"_s, diskPath});
-    if (resJson.exitCode == 0) {
-        QList<SnapshotInfo> list = parseSnapshotListJson(resJson.out);
-        if (!list.isEmpty()) {
-            for (SnapshotInfo &snap : list)
-                snap.description = loadDescription(diskPath, snap.name);
-            return list;
-        }
-    }
-
-    // Fallback to text parsing
-    auto resText = runQemuImg({u"snapshot"_s, u"-l"_s, diskPath});
-    if (resText.exitCode != 0)
+    // qemu-img info --output=json returns a top-level object whose
+    // "snapshots" array carries the internal qcow2 snapshots.
+    const auto res = runQemuImg({u"info"_s, u"--force-share"_s, u"--output=json"_s, diskPath});
+    if (res.exitCode != 0)
         return {};
 
-    QList<SnapshotInfo> list = parseSnapshotListText(resText.out);
+    QList<SnapshotInfo> list = parseSnapshotListJson(res.out);
     for (SnapshotInfo &snap : list)
         snap.description = loadDescription(diskPath, snap.name);
-
     return list;
 }
 
@@ -62,31 +51,65 @@ bool SnapshotManager::deleteOfflineSnapshot(const QString &diskPath, const QStri
     return res.exitCode == 0;
 }
 
-// Online (QMP via human-monitor-command)
-
-QJsonObject SnapshotManager::hmc(const QString &cmd) const
-{
-    return QJsonObject{{u"command-line"_s, cmd}};
-}
-
 void SnapshotManager::createLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback)
 {
-    qmp->sendCommand(u"human-monitor-command"_s, hmc(u"savevm %1"_s.arg(name)), [callback](QMPResult r) {
-        callback(r.success, r.errorMessage);
+    queryWritableQcow2Nodes(qmp, [this, qmp, name, callback](QStringList nodes, QString err) {
+        if (!err.isEmpty()) {
+            callback(false, err);
+            return;
+        }
+        if (nodes.isEmpty()) {
+            callback(false,
+                     i18n("No writable qcow2 device found "
+                          "(snapshots require qcow2)"));
+            return;
+        }
+
+        const QString jobId = nextJobId(u"kemu-snapsave"_s);
+        QJsonObject args{
+            {u"job-id"_s, jobId},
+            {u"tag"_s, name},
+            {u"vmstate"_s, nodes.first()}, // RAM state target
+            {u"devices"_s, QJsonArray::fromStringList(nodes)},
+        };
+        startSnapshotJob(qmp, u"snapshot-save"_s, args, jobId, name, callback);
     });
 }
 
 void SnapshotManager::revertLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback)
 {
-    qmp->sendCommand(u"human-monitor-command"_s, hmc(u"loadvm %1"_s.arg(name)), [callback](QMPResult r) {
-        callback(r.success, r.errorMessage);
+    queryWritableQcow2Nodes(qmp, [this, qmp, name, callback](QStringList nodes, QString err) {
+        if (!err.isEmpty() || nodes.isEmpty()) {
+            callback(false, err.isEmpty() ? i18n("No writable qcow2 device found") : err);
+            return;
+        }
+
+        const QString jobId = nextJobId(u"kemu-snapload"_s);
+        QJsonObject args{
+            {u"job-id"_s, jobId},
+            {u"tag"_s, name},
+            {u"vmstate"_s, nodes.first()},
+            {u"devices"_s, QJsonArray::fromStringList(nodes)},
+        };
+        startSnapshotJob(qmp, u"snapshot-load"_s, args, jobId, name, callback);
     });
 }
 
 void SnapshotManager::deleteLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback)
 {
-    qmp->sendCommand(u"human-monitor-command"_s, hmc(u"delvm %1"_s.arg(name)), [callback](QMPResult r) {
-        callback(r.success, r.errorMessage);
+    queryWritableQcow2Nodes(qmp, [this, qmp, name, callback](QStringList nodes, QString err) {
+        if (!err.isEmpty() || nodes.isEmpty()) {
+            callback(false, err.isEmpty() ? i18n("No writable qcow2 device found") : err);
+            return;
+        }
+
+        const QString jobId = nextJobId(u"kemu-snapdel"_s);
+        QJsonObject args{
+            {u"job-id"_s, jobId},
+            {u"tag"_s, name},
+            {u"devices"_s, QJsonArray::fromStringList(nodes)},
+        };
+        startSnapshotJob(qmp, u"snapshot-delete"_s, args, jobId, name, callback);
     });
 }
 
@@ -184,6 +207,108 @@ QString SnapshotManager::loadDescription(const QString &diskPath, const QString 
 
 // Private
 
+void SnapshotManager::onQmpEvent(const QString &eventName, const QJsonObject &eventData)
+{
+    if (eventName != u"JOB_STATUS_CHANGE"_s)
+        return;
+
+    const QString jobId = eventData.value(u"id"_s).toString();
+    const QString status = eventData.value(u"status"_s).toString();
+
+    if (!m_pendingJobs.contains(jobId) || status != u"concluded"_s)
+        return;
+
+    QMPClient *qmp = m_pendingJobs.value(jobId).qmp;
+    if (!qmp) {
+        finishJob(jobId, false, i18n("QMP client gone"));
+        return;
+    }
+
+    // Concluded says "done", not "succeeded" -- must inspect query-jobs for the
+    // error field, then dismiss the job slot.
+    qmp->sendCommand(u"query-jobs"_s, {}, [this, jobId](QMPResult r) {
+        bool success = false;
+        QString error;
+
+        if (r.success) {
+            for (const QJsonValue &v : r.dataArray) {
+                const QJsonObject o = v.toObject();
+                if (o.value(u"id"_s).toString() != jobId)
+                    continue;
+                error = o.value(u"error"_s).toString();
+                success = error.isEmpty();
+                break;
+            }
+        } else {
+            error = r.errorMessage;
+        }
+
+        if (QMPClient *q = m_pendingJobs.value(jobId).qmp) {
+            q->sendCommand(u"job-dismiss"_s, {{u"id"_s, jobId}}, nullptr);
+        }
+        finishJob(jobId, success, error);
+    });
+}
+
+QString SnapshotManager::nextJobId(const QString &prefix)
+{
+    return u"%1-%2-%3"_s.arg(prefix).arg(QDateTime::currentMSecsSinceEpoch()).arg(++m_jobCounter);
+}
+
+void SnapshotManager::queryWritableQcow2Nodes(QMPClient *qmp, std::function<void(QStringList, QString)> cb)
+{
+    qmp->sendCommand(u"query-named-block-nodes"_s, {}, [cb](QMPResult r) {
+        if (!r.success) {
+            cb({}, r.errorMessage);
+            return;
+        }
+        QStringList nodes;
+        for (const QJsonValue &v : r.dataArray) {
+            const QJsonObject o = v.toObject();
+            if (o.value(u"drv"_s).toString() != u"qcow2"_s)
+                continue;
+            if (o.value(u"ro"_s).toBool())
+                continue;
+            const QString name = o.value(u"node-name"_s).toString();
+            if (!name.isEmpty())
+                nodes.append(name);
+        }
+        cb(nodes, {});
+    });
+}
+
+void SnapshotManager::startSnapshotJob(QMPClient *qmp,
+                                       const QString &qmpCommand,
+                                       const QJsonObject &args,
+                                       const QString &jobId,
+                                       const QString &tag,
+                                       std::function<void(bool, QString)> callback)
+{
+    PendingSnapshotJob job;
+    job.tag = tag;
+    job.callback = callback;
+    job.qmp = qmp;
+    m_pendingJobs.insert(jobId, job);
+
+    // UniqueConnection: subscribe once per QMPClient regardless of call count.
+    connect(qmp, &QMPClient::eventReceived, this, &SnapshotManager::onQmpEvent, Qt::UniqueConnection);
+
+    qmp->sendCommand(qmpCommand, args, [this, jobId](QMPResult r) {
+        // Synchronous error path: job was rejected before it ever started.
+        if (!r.success)
+            finishJob(jobId, false, r.errorMessage);
+    });
+}
+
+void SnapshotManager::finishJob(const QString &jobId, bool success, const QString &error)
+{
+    if (!m_pendingJobs.contains(jobId))
+        return;
+    auto job = m_pendingJobs.take(jobId);
+    if (job.callback)
+        job.callback(success, error);
+}
+
 SnapshotManager::ProcResult SnapshotManager::runQemuImg(const QStringList &args) const
 {
     QProcess proc;
@@ -201,24 +326,10 @@ QList<SnapshotInfo> SnapshotManager::parseSnapshotListJson(const QString &output
     if (error.error != QJsonParseError::NoError)
         return result;
 
-    QJsonValue rootVal;
-
-    if (doc.isObject()) {
-        const QJsonObject root = doc.object();
-        if (!root.contains(u"snapshots"_s)) {
-            return result;
-        }
-        rootVal = root.value(u"snapshots"_s);
-    } else if (doc.isArray()) {
-        rootVal = doc.array();
-    } else {
-        return result; // Weder Objekt noch Array
-    }
-
-    if (!rootVal.isArray())
+    if (!doc.isObject())
         return result;
 
-    const QJsonArray snapshots = rootVal.toArray();
+    const QJsonArray snapshots = doc.object().value(u"snapshots"_s).toArray();
 
     for (const QJsonValue &val : snapshots) {
         const QJsonObject snap = val.toObject();
@@ -248,29 +359,5 @@ QList<SnapshotInfo> SnapshotManager::parseSnapshotListJson(const QString &output
         result.append(info);
     }
 
-    return result;
-}
-
-QList<SnapshotInfo> SnapshotManager::parseSnapshotListText(const QString &output) const
-{
-    // qemu-img snapshot -l provides:
-    // ID        TAG                VM SIZE                DATE       VM CLOCK
-    // 1         snap1                    0 B 2025-06-01 14:30:00   00:00:00.000
-    QList<SnapshotInfo> result;
-
-    static const QRegularExpression lineRe(uR"(^\s*(\d+)\s+(\S+)\s+(\d+)\s+\S+\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}))"_s);
-
-    for (const QString &line : output.split(u'\n')) {
-        auto m = lineRe.match(line);
-        if (!m.hasMatch())
-            continue;
-
-        SnapshotInfo info;
-        info.id = m.captured(1);
-        info.name = m.captured(2);
-        info.vmStateSizeBytes = m.captured(3).toULongLong();
-        info.dateTime = QDateTime::fromString(m.captured(4) + u' ' + m.captured(5), u"yyyy-MM-dd HH:mm:ss"_s);
-        result.append(info);
-    }
     return result;
 }

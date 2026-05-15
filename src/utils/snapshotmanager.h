@@ -14,9 +14,10 @@
 #include <QJsonObject>
 #include <QList>
 #include <QObject>
+#include <QPointer>
 #include <QProcess>
-#include <QRegularExpression>
 #include <QSaveFile>
+#include <QSet>
 #include <QString>
 #include <QTimeZone>
 
@@ -82,7 +83,29 @@ public:
 
     QString loadDescription(const QString &diskPath, const QString &snapshotName) const;
 
+private Q_SLOTS:
+    void onQmpEvent(const QString &eventName, const QJsonObject &eventData);
+
 private:
+    struct PendingSnapshotJob {
+        QString tag;
+        std::function<void(bool, QString)> callback;
+        QPointer<QMPClient> qmp;
+    };
+    QMap<QString, PendingSnapshotJob> m_pendingJobs; // key: job-id
+    int m_jobCounter = 0;
+
+    // Job orchestration
+    QString nextJobId(const QString &prefix);
+    void queryWritableQcow2Nodes(QMPClient *qmp, std::function<void(QStringList nodes, QString error)> cb);
+    void startSnapshotJob(QMPClient *qmp,
+                          const QString &qmpCommand,
+                          const QJsonObject &args,
+                          const QString &jobId,
+                          const QString &tag,
+                          std::function<void(bool, QString)> callback);
+    void finishJob(const QString &jobId, bool success, const QString &error);
+
     struct ProcResult {
         int exitCode;
         QString out;
@@ -91,9 +114,6 @@ private:
     ProcResult runQemuImg(const QStringList &args) const;
 
     QList<SnapshotInfo> parseSnapshotListJson(const QString &output) const;
-    QList<SnapshotInfo> parseSnapshotListText(const QString &output) const;
-
-    QJsonObject hmc(const QString &cmd) const;
 
     QString sidecarPath(const QString &diskPath) const;
 };
