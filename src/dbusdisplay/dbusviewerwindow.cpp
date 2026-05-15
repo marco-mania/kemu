@@ -17,6 +17,7 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
                                    QemuAudioInListener *audioIn,
                                    bool audioOutConnected,
                                    bool audioInConnected,
+                                   bool hasUsbController,
                                    QWidget *parent)
     : QMainWindow(parent)
     , m_bus(bus)
@@ -26,6 +27,7 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
     , m_audioIn(audioIn)
     , m_audioOutConnected(audioOutConnected)
     , m_audioInConnected(audioInConnected)
+    , m_hasUsbController(hasUsbController)
     , m_clipDirection(ClipboardDirection::Off)
 {
     // Display widget as the central widget
@@ -66,9 +68,21 @@ DbusViewerWindow::~DbusViewerWindow()
 void DbusViewerWindow::createActions()
 {
     // --- Machine ---
-    m_actQuit = new QAction(i18n("&Quit"), this);
-    m_actQuit->setShortcut(QKeySequence::Quit);
-    m_actQuit->setStatusTip(i18n("Quit application"));
+    m_actShutdown = new QAction(QIcon::fromTheme(u"system-shutdown"_s), i18n("&Shutdown"), this);
+    m_actShutdown->setStatusTip(i18n("Send ACPI power-down signal to the guest"));
+    connect(m_actShutdown, &QAction::triggered, this, &DbusViewerWindow::shutdownRequested);
+
+    m_actReset = new QAction(QIcon::fromTheme(u"system-reboot"_s), i18n("&Reset"), this);
+    m_actReset->setStatusTip(i18n("Reset the virtual machine (hard reset)"));
+    connect(m_actReset, &QAction::triggered, this, &DbusViewerWindow::resetRequested);
+
+    m_actKill = new QAction(QIcon::fromTheme(u"process-stop"_s), i18n("&Kill"), this);
+    m_actKill->setStatusTip(i18n("Force-stop the virtual machine (may cause data loss)"));
+    connect(m_actKill, &QAction::triggered, this, &DbusViewerWindow::killRequested);
+
+    m_actQuit = new QAction(QIcon::fromTheme(u"window-close"_s), i18n("&Quit Viewer"), this);
+    m_actQuit->setShortcut(QKeySequence(u"Ctrl+W"_s));
+    m_actQuit->setStatusTip(i18n("Close the viewer window (the VM keeps running)"));
     connect(m_actQuit, &QAction::triggered, this, &QWidget::close);
 
     // --- View ---
@@ -148,6 +162,10 @@ void DbusViewerWindow::createMenus()
 {
     // Machine
     QMenu *machineMenu = menuBar()->addMenu(i18n("&Machine"));
+    machineMenu->addAction(m_actShutdown);
+    machineMenu->addAction(m_actReset);
+    machineMenu->addAction(m_actKill);
+    machineMenu->addSeparator();
     machineMenu->addAction(m_actQuit);
 
     // View
@@ -161,6 +179,15 @@ void DbusViewerWindow::createMenus()
 
     devicesMenu->addAction(m_actAudioOut);
     devicesMenu->addAction(m_actAudioIn);
+    devicesMenu->addSeparator();
+
+    // USB submenu (populated by MainWindow on aboutToShow)
+    m_usbMenu = devicesMenu->addMenu(QIcon::fromTheme(u"drive-removable-media-usb"_s), i18n("&USB Devices"));
+    m_usbMenu->setEnabled(m_hasUsbController);
+    if (!m_hasUsbController) {
+        auto *a = m_usbMenu->addAction(i18n("No USB controller configured"));
+        a->setEnabled(false);
+    }
     devicesMenu->addSeparator();
 
     QMenu *clipMenu = devicesMenu->addMenu(i18n("&Clipboard"));

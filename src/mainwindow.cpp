@@ -700,12 +700,15 @@ bool MainWindow::startDbusViewer(const QString &vmName)
         return false;
     }
 
+    const VmEntry *cfgEntry = veModel->entryByName(vmName);
+    const bool hasUsbController = cfgEntry && cfgEntry->config.usbController() != VMSpecs::UsbController::None;
+
     // --- Audio listeners (created up front, registered async below) ---
     state.audioOut = new QemuAudioListener(this);
     state.audioIn = new QemuAudioInListener(this);
 
     // --- Viewer window ---
-    state.window = new DbusViewerWindow(state.displayListener, bus, consolePath, state.audioOut, state.audioIn, false, false, nullptr);
+    state.window = new DbusViewerWindow(state.displayListener, bus, consolePath, state.audioOut, state.audioIn, false, false, hasUsbController, nullptr);
     state.window->setWindowTitle(vmName);
     state.window->setAttribute(Qt::WA_DeleteOnClose, false);
     state.window->displayWidget()->watchGLibFd(state.displayListener->socketFd());
@@ -803,6 +806,25 @@ bool MainWindow::startDbusViewer(const QString &vmName)
             }
         },
         Qt::QueuedConnection);
+
+    connect(state.window, &DbusViewerWindow::shutdownRequested, this, [this, vmName] {
+        shutdownVMByName(vmName);
+    });
+
+    connect(state.window, &DbusViewerWindow::resetRequested, this, [this, vmName] {
+        resetVMByName(vmName);
+    });
+
+    connect(state.window, &DbusViewerWindow::killRequested, this, [this, vmName] {
+        killVMByName(vmName);
+    });
+
+    // USB submenu population: reuse the existing enumerator path.
+    if (QMenu *usbMenu = state.window->usbMenu()) {
+        connect(usbMenu, &QMenu::aboutToShow, this, [this, vmName, usbMenu] {
+            populateUsbMenuFor(vmName, usbMenu);
+        });
+    }
 
     m_dbusViewers.insert(vmName, state);
     return true;
@@ -2698,147 +2720,17 @@ void MainWindow::startVMHeadless()
 
 void MainWindow::shutdownVM()
 {
-    if (!veModel->isRunning(currentConfig.name())
-        && !(veModel->entryByName(currentConfig.name()) && veModel->entryByName(currentConfig.name())->state == VmEntry::State::Deploying))
-        return;
-
-    // Handle deployment shutdown
-    const VmEntry *deployEntry = veModel->entryByName(currentConfig.name());
-    if (deployEntry && deployEntry->state == VmEntry::State::Deploying) {
-        auto answer = KMessageBox::questionTwoActionsCancel(this,
-                                                            i18n("VM '%1' is currently being deployed.\n\n"
-                                                                 "Stopping now will abort the installation. "
-                                                                 "Do you also want to delete the VM?",
-                                                                 currentConfig.name()),
-                                                            i18n("Abort Deployment"),
-                                                            KGuiItem(i18n("Stop && Keep"), u"media-playback-stop"_s),
-                                                            KGuiItem(i18n("Stop && Delete"), u"edit-delete"_s),
-                                                            KStandardGuiItem::cancel());
-
-        if (answer == KMessageBox::PrimaryAction)
-            abortDeployment(currentConfig.name(), false);
-        else if (answer == KMessageBox::SecondaryAction)
-            abortDeployment(currentConfig.name(), true);
-        return;
-    }
-
-    const VmEntry *entry = veModel->entryByName(currentConfig.name());
-    if (!entry)
-        return;
-    const QPointer<QMPClient> client = entry->qmpClient;
-    if (!client || !client->isConnected()) {
-        KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
-        return;
-    }
-
-    m_userInitiatedShutdowns.insert(currentConfig.name());
-
-    const QMPResult result = client->sendCommandSync(u"system_powerdown"_s);
-
-    if (!result.success) {
-        m_userInitiatedShutdowns.remove(currentConfig.name());
-        KMessageBox::error(this, i18n("Shutdown Failed"), result.errorMessage);
-        return;
-    }
-
-    statusBar()->showMessage(i18n("Shutting down VM '%1'...", currentConfig.name()));
+    shutdownVMByName(currentConfig.name());
 }
 
 void MainWindow::resetVM()
 {
-    if (!veModel->isRunning(currentConfig.name()))
-        return;
-    const VmEntry *entry = veModel->entryByName(currentConfig.name());
-    if (!entry)
-        return;
-    const QPointer<QMPClient> client = entry->qmpClient;
-    if (!client || !client->isConnected()) {
-        KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
-        return;
-    }
-
-    const QMPResult result = client->sendCommandSync(u"system_reset"_s);
-
-    if (!result.success) {
-        KMessageBox::error(this, i18n("Reset Failed"), result.errorMessage);
-        return;
-    }
-
-    statusBar()->showMessage(i18n("VM '%1' reset.", currentConfig.name()));
+    resetVMByName(currentConfig.name());
 }
 
 void MainWindow::killVM()
 {
-    const VmEntry *killEntry = veModel->entryByName(currentConfig.name());
-    if (!killEntry || (killEntry->state != VmEntry::State::Running && killEntry->state != VmEntry::State::Deploying))
-        return;
-
-    if (killEntry->state == VmEntry::State::Deploying) {
-        auto answer = KMessageBox::questionTwoActionsCancel(this,
-                                                            i18n("VM '%1' is currently being deployed.\n\n"
-                                                                 "Force-stopping now will abort the installation "
-                                                                 "and may leave the disk in an inconsistent state.\n\n"
-                                                                 "Do you also want to delete the VM?",
-                                                                 currentConfig.name()),
-                                                            i18n("Abort Deployment"),
-                                                            KGuiItem(i18n("Stop && Keep"), u"media-playback-stop"_s),
-                                                            KGuiItem(i18n("Stop && Delete"), u"edit-delete"_s),
-                                                            KStandardGuiItem::cancel());
-
-        if (answer == KMessageBox::PrimaryAction)
-            abortDeployment(currentConfig.name(), false);
-        else if (answer == KMessageBox::SecondaryAction)
-            abortDeployment(currentConfig.name(), true);
-        return;
-    }
-
-    const VmEntry *entry = veModel->entryByName(currentConfig.name());
-    if (!entry)
-        return;
-
-    const QString vmName = currentConfig.name();
-
-    const QPointer<KProcess> process = entry->qemuProcess;
-    if (!process)
-        return;
-
-    const KGuiItem stopItem(i18n("Force Stop"), u"kt-stop"_s, i18n("Forcefully stop the virtual machine"));
-
-    auto result = KMessageBox::warningTwoActions(this,
-                                                 i18n("Are you sure you want to force a power-off for '%1'? "
-                                                      "This is equivalent to pulling the plug and may cause data loss.",
-                                                      vmName),
-                                                 i18nc("@title:window", "Confirm Force Stop"),
-                                                 stopItem,
-                                                 KStandardGuiItem::cancel());
-
-    if (result == KMessageBox::PrimaryAction) {
-        m_userInitiatedShutdowns.insert(vmName);
-
-        bool qmpSuccess = false;
-
-        const QPointer<QMPClient> client = entry->qmpClient;
-        if (client && client->isConnected()) {
-            const QMPResult res = client->sendCommandSync(u"quit"_s, QJsonObject(), 2000);
-            qmpSuccess = res.success;
-        }
-
-        if (qmpSuccess && process->state() == KProcess::Running) {
-            process->waitForFinished(3000);
-        }
-
-        if (process->state() == KProcess::Running) {
-            qWarning() << "VM" << vmName << "did not exit gracefully. Forcing terminate (SIGTERM)!";
-            process->terminate();
-
-            if (!process->waitForFinished(2000)) {
-                qWarning() << "VM" << vmName << "is still hanging. Forcing kill (SIGKILL)!";
-                process->kill();
-            }
-        }
-
-        statusBar()->showMessage(i18n("Force stop initiated for VM '%1'.", vmName));
-    }
+    killVMByName(currentConfig.name());
 }
 
 void MainWindow::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus)
@@ -2925,36 +2817,7 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
 
 void MainWindow::onUsbMenuAboutToShow()
 {
-    usbActionMenu->menu()->clear();
-
-    const VmEntry *entry = veModel ? veModel->entryByName(selectedVmName()) : nullptr;
-
-    if (!entry || entry->state != VmEntry::State::Running || !entry->qmpClient) {
-        auto *a = usbActionMenu->menu()->addAction(i18n("VM not running"));
-        a->setEnabled(false);
-        return;
-    }
-
-    const QList<UsbDeviceInfo> devices = UsbEnumerator::enumerate();
-
-    if (devices.isEmpty()) {
-        auto *a = usbActionMenu->menu()->addAction(i18n("No USB devices found"));
-        a->setEnabled(false);
-        return;
-    }
-
-    for (const auto &dev : devices) {
-        const QString label = QStringLiteral("%1  [%2]").arg(dev.displayName(), dev.idString());
-
-        QAction *action = usbActionMenu->menu()->addAction(label);
-        action->setCheckable(true);
-        action->setChecked(entry->attachedUsb.contains(dev.busKey()));
-
-        // Store device info for the handler
-        action->setData(QVariantList{dev.busNum, dev.devAddr, dev.busKey(), dev.qemuId()});
-
-        connect(action, &QAction::triggered, this, &MainWindow::onUsbActionTriggered);
-    }
+    populateUsbMenuFor(selectedVmName(), usbActionMenu->menu());
 }
 
 void MainWindow::onUsbActionTriggered()
@@ -2968,8 +2831,9 @@ void MainWindow::onUsbActionTriggered()
     const int devAddr = d[1].toInt();
     const QString busKey = d[2].toString();
     const QString qemuId = d[3].toString();
+    const QString vmName = d.size() > 4 ? d.value(4).toString() : selectedVmName();
 
-    VmEntry *entry = veModel ? veModel->entryByName(selectedVmName()) : nullptr;
+    VmEntry *entry = veModel ? veModel->entryByName(vmName) : nullptr;
     if (!entry || !entry->qmpClient)
         return;
 
@@ -3082,6 +2946,184 @@ void MainWindow::exportOVA(const QString &filePath)
     statusBar()->showMessage(i18n("Exporting VM '%1' as OVA...", currentConfig.name()));
     updateActionStates();
     updateDetails();
+}
+
+void MainWindow::shutdownVMByName(const QString &vmName)
+{
+    if (!veModel->isRunning(vmName) && !(veModel->entryByName(vmName) && veModel->entryByName(vmName)->state == VmEntry::State::Deploying))
+        return;
+
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry)
+        return;
+    QWidget *parentW = dialogParentFor(vmName);
+
+    const QPointer<QMPClient> client = entry->qmpClient;
+    if (!client || !client->isConnected()) {
+        KMessageBox::error(parentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+        return;
+    }
+
+    // Handle deployment shutdown
+    if (entry && entry->state == VmEntry::State::Deploying) {
+        const auto answer = KMessageBox::questionTwoActionsCancel(parentW,
+                                                                  i18n("VM '%1' is currently being deployed.\n\n"
+                                                                       "Stopping now will abort the installation. "
+                                                                       "Do you also want to delete the VM?",
+                                                                       vmName),
+                                                                  i18n("Abort Deployment"),
+                                                                  KGuiItem(i18n("Stop && Keep"), u"media-playback-stop"_s),
+                                                                  KGuiItem(i18n("Stop && Delete"), u"edit-delete"_s),
+                                                                  KStandardGuiItem::cancel(),
+                                                                  u"ConfirmVmShutdownDeployment"_s); // remembered via kemurc
+
+        if (answer == KMessageBox::PrimaryAction)
+            abortDeployment(vmName, false);
+        else if (answer == KMessageBox::SecondaryAction)
+            abortDeployment(vmName, true);
+        return;
+    }
+
+    const KGuiItem shutdownItem(i18n("Shutdown"), u"system-shutdown"_s, i18n("Send ACPI power-off signal to the guest"));
+
+    const auto answer = KMessageBox::questionTwoActions(parentW,
+                                                        i18n("Are you sure you want to shut down '%1'?\n\n"
+                                                             "The guest will receive an ACPI power-off signal. "
+                                                             "Unsaved work inside the guest may be lost if the guest OS "
+                                                             "does not handle the signal.",
+                                                             vmName),
+                                                        i18nc("@title:window", "Confirm Shutdown"),
+                                                        shutdownItem,
+                                                        KStandardGuiItem::cancel(),
+                                                        u"ConfirmVmShutdown"_s); // remembered via kemurc
+    if (answer != KMessageBox::PrimaryAction)
+        return;
+
+    m_userInitiatedShutdowns.insert(vmName);
+
+    const QMPResult result = client->sendCommandSync(u"system_powerdown"_s);
+
+    if (!result.success) {
+        m_userInitiatedShutdowns.remove(vmName);
+        KMessageBox::error(parentW, i18n("Shutdown Failed"), result.errorMessage);
+        return;
+    }
+
+    statusBar()->showMessage(i18n("Shutting down virtual machine '%1'...", vmName));
+}
+
+void MainWindow::resetVMByName(const QString &vmName)
+{
+    if (!veModel->isRunning(vmName))
+        return;
+
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry)
+        return;
+    QWidget *parentW = dialogParentFor(vmName);
+
+    const QPointer<QMPClient> client = entry->qmpClient;
+    if (!client || !client->isConnected()) {
+        KMessageBox::error(parentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+        return;
+    }
+
+    const KGuiItem resetItem(i18n("Reset"), u"system-reboot"_s, i18n("Hard-reset the virtual machine"));
+
+    const auto answer = KMessageBox::warningTwoActions(parentW,
+                                                       i18n("Are you sure you want to reset '%1'?\n\n"
+                                                            "This is equivalent to pressing the hardware reset button. "
+                                                            "Unsaved data inside the guest will be lost, "
+                                                            "and the disk filesystem may become inconsistent.",
+                                                            vmName),
+                                                       i18nc("@title:window", "Confirm Reset"),
+                                                       resetItem,
+                                                       KStandardGuiItem::cancel(),
+                                                       u"ConfirmVmReset"_s);
+
+    if (answer != KMessageBox::PrimaryAction)
+        return;
+
+    const QMPResult result = client->sendCommandSync(u"system_reset"_s);
+
+    if (!result.success) {
+        KMessageBox::error(parentW, i18n("Reset Failed"), result.errorMessage);
+        return;
+    }
+
+    statusBar()->showMessage(i18n("Virtual machine '%1' was successfully reset.", vmName));
+}
+
+void MainWindow::killVMByName(const QString &vmName)
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry || (entry->state != VmEntry::State::Running && entry->state != VmEntry::State::Deploying))
+        return;
+    QWidget *parentW = dialogParentFor(vmName);
+
+    // Handle deployment kill
+    if (entry->state == VmEntry::State::Deploying) {
+        const auto answer = KMessageBox::questionTwoActionsCancel(parentW,
+                                                                  i18n("VM '%1' is currently being deployed.\n\n"
+                                                                       "Force-stopping now will abort the installation "
+                                                                       "and may leave the disk filesystem in an inconsistent state.\n\n"
+                                                                       "Do you also want to delete the VM?",
+                                                                       vmName),
+                                                                  i18n("Abort Deployment"),
+                                                                  KGuiItem(i18n("Stop && Keep"), u"media-playback-stop"_s),
+                                                                  KGuiItem(i18n("Stop && Delete"), u"edit-delete"_s),
+                                                                  KStandardGuiItem::cancel(),
+                                                                  u"ConfirmVmKillDeployment"_s);
+
+        if (answer == KMessageBox::PrimaryAction)
+            abortDeployment(vmName, false);
+        else if (answer == KMessageBox::SecondaryAction)
+            abortDeployment(vmName, true);
+        return;
+    }
+
+    const QPointer<KProcess> process = entry->qemuProcess;
+    if (!process)
+        return;
+
+    const KGuiItem stopItem(i18n("Force Stop"), u"kt-stop"_s, i18n("Forcefully stop the virtual machine"));
+
+    const auto result = KMessageBox::warningTwoActions(parentW,
+                                                       i18n("Are you sure you want to force a power-off for '%1'? "
+                                                            "This is equivalent to pulling the plug and may cause data loss.",
+                                                            vmName),
+                                                       i18nc("@title:window", "Confirm Force Stop"),
+                                                       stopItem,
+                                                       KStandardGuiItem::cancel(),
+                                                       u"ConfirmVmKill"_s);
+
+    if (result == KMessageBox::PrimaryAction) {
+        m_userInitiatedShutdowns.insert(vmName);
+
+        bool qmpSuccess = false;
+
+        const QPointer<QMPClient> client = entry->qmpClient;
+        if (client && client->isConnected()) {
+            const QMPResult res = client->sendCommandSync(u"quit"_s, QJsonObject(), 2000);
+            qmpSuccess = res.success;
+        }
+
+        if (qmpSuccess && process->state() == KProcess::Running) {
+            process->waitForFinished(3000);
+        }
+
+        if (process->state() == KProcess::Running) {
+            qWarning() << "VM" << vmName << "did not exit gracefully. Forcing terminate (SIGTERM)!";
+            process->terminate();
+
+            if (!process->waitForFinished(2000)) {
+                qWarning() << "VM" << vmName << "is still hanging. Forcing kill (SIGKILL)!";
+                process->kill();
+            }
+        }
+
+        statusBar()->showMessage(i18n("Force stop (kill) initiated for virtual machine '%1'...", vmName));
+    }
 }
 
 void MainWindow::createNewVM()
@@ -3821,4 +3863,40 @@ void MainWindow::deployCloudImage(const QString &vmName)
     saveVmConfig(vmDir.absolutePath(), config);
 
     startDeployment(vmName);
+}
+
+void MainWindow::populateUsbMenuFor(const QString &vmName, QMenu *target)
+{
+    target->clear();
+
+    VmEntry *entry = veModel ? veModel->entryByName(vmName) : nullptr;
+    if (!entry || entry->state != VmEntry::State::Running || !entry->qmpClient) {
+        auto *a = target->addAction(i18n("VM not running"));
+        a->setEnabled(false);
+        return;
+    }
+
+    const QList<UsbDeviceInfo> devices = UsbEnumerator::enumerate();
+    if (devices.isEmpty()) {
+        auto *a = target->addAction(i18n("No USB devices found"));
+        a->setEnabled(false);
+        return;
+    }
+
+    for (const auto &dev : devices) {
+        const QString label = QStringLiteral("%1  [%2]").arg(dev.displayName(), dev.idString());
+        QAction *action = target->addAction(label);
+        action->setCheckable(true);
+        action->setChecked(entry->attachedUsb.contains(dev.busKey()));
+        action->setData(QVariantList{dev.busNum, dev.devAddr, dev.busKey(), dev.qemuId(), vmName}); // carry vmName
+        connect(action, &QAction::triggered, this, &MainWindow::onUsbActionTriggered);
+    }
+}
+
+QWidget *MainWindow::dialogParentFor(const QString &vmName)
+{
+    auto it = m_dbusViewers.constFind(vmName);
+    if (it != m_dbusViewers.constEnd() && it->window && it->window->isVisible())
+        return it->window;
+    return this;
 }

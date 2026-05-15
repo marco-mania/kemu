@@ -128,6 +128,10 @@ private Q_SLOTS:
     void exportOVA(const QString &filePath);
 
 private:
+    void shutdownVMByName(const QString &vmName);
+    void resetVMByName(const QString &vmName);
+    void killVMByName(const QString &vmName);
+
     ImageDatabase m_imageDatabase;
 
     VirtualNetworkManager *m_networkManager = nullptr;
@@ -231,7 +235,11 @@ private:
 
     void deployCloudImage(const QString &vmName);
 
+    void populateUsbMenuFor(const QString &vmName, QMenu *target);
+
     KUiServerV2JobTracker *jobTracker = nullptr;
 
     VMConfig currentConfig;
+
+    QWidget *dialogParentFor(const QString &vmName);
 };

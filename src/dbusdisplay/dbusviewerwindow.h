@@ -55,6 +55,7 @@ public:
                      QemuAudioInListener *audioIn,
                      bool audioOutConnected,
                      bool audioInConnected,
+                     bool hasUsbController,
                      QWidget *parent = nullptr);
     ~DbusViewerWindow() override;
 
@@ -71,8 +72,16 @@ public:
     void audioOutReady();
     void audioInReady();
 
+    QMenu *usbMenu() const
+    {
+        return m_usbMenu;
+    }
+
 Q_SIGNALS:
     void viewerClosed();
+    void shutdownRequested();
+    void resetRequested();
+    void killRequested();
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -112,7 +121,12 @@ private:
     bool m_audioOutConnected = false;
     bool m_audioInConnected = false;
 
+    bool m_hasUsbController = false;
+
     // Menu actions
+    QAction *m_actShutdown = nullptr;
+    QAction *m_actReset = nullptr;
+    QAction *m_actKill = nullptr;
     QAction *m_actQuit = nullptr;
     QAction *m_actFullscreen = nullptr;
     QAction *m_actNativeSize = nullptr;
@@ -123,6 +137,8 @@ private:
     QAction *m_actClipToGuest = nullptr;
     QAction *m_actClipBoth = nullptr;
     QAction *m_actAbout = nullptr;
+
+    QMenu *m_usbMenu = nullptr;
 
     // Status bar labels
     QLabel *m_lblResolution = nullptr;
