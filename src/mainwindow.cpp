@@ -819,6 +819,10 @@ bool MainWindow::startDbusViewer(const QString &vmName)
         powerOffVMByName(vmName);
     });
 
+    connect(state.window, &DbusViewerWindow::snapshotManagerRequested, this, [this, vmName] {
+        manageSnapshotsForVm(vmName);
+    });
+
     // USB submenu population: reuse the existing enumerator path.
     if (QMenu *usbMenu = state.window->usbMenu()) {
         connect(usbMenu, &QMenu::aboutToShow, this, [this, vmName, usbMenu] {
@@ -1983,23 +1987,7 @@ void MainWindow::shrinkDisk()
 
 void MainWindow::manageSnapshots()
 {
-    const QString vmName = selectedVmName();
-    if (vmName.isEmpty())
-        return;
-
-    const VMConfig cfg = loadVmConfig(getVmBaseDir().filePath(vmName));
-
-    if (cfg.diskPath().isEmpty()) {
-        KMessageBox::error(this, i18n("No disk image configured for \"%1\".", vmName));
-        return;
-    }
-
-    const VmEntry *entry = veModel->entryByName(vmName);
-    const QPointer<QMPClient> qmp = entry ? entry->qmpClient : nullptr;
-
-    auto *dlg = new SnapshotDialog(vmName, cfg.diskPath(), qmp, this);
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-    dlg->exec();
+    manageSnapshotsForVm(selectedVmName());
 }
 
 void MainWindow::exportVM()
@@ -3148,6 +3136,26 @@ void MainWindow::powerOffVMByName(const QString &vmName)
 
         statusBar()->showMessage(i18n("Force power-off initiated for virtual machine '%1'...", vmName));
     }
+}
+
+void MainWindow::manageSnapshotsForVm(const QString &vmName)
+{
+    if (vmName.isEmpty())
+        return;
+
+    const VMConfig cfg = loadVmConfig(getVmBaseDir().filePath(vmName));
+
+    if (cfg.diskPath().isEmpty()) {
+        KMessageBox::error(dialogParentFor(vmName), i18n("No disk image configured for \"%1\".", vmName));
+        return;
+    }
+
+    const VmEntry *entry = veModel->entryByName(vmName);
+    const QPointer<QMPClient> qmp = entry ? entry->qmpClient : nullptr;
+
+    auto *dlg = new SnapshotDialog(vmName, cfg.diskPath(), qmp, dialogParentFor(vmName));
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->exec();
 }
 
 void MainWindow::createNewVM()

@@ -82,6 +82,7 @@ Q_SIGNALS:
     void shutdownRequested();
     void resetRequested();
     void powerOffRequested();
+    void snapshotManagerRequested();
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -127,6 +128,7 @@ private:
     QAction *m_actShutdown = nullptr;
     QAction *m_actReset = nullptr;
     QAction *m_actPowerOff = nullptr;
+    QAction *m_actSnapshots = nullptr;
     QAction *m_actQuit = nullptr;
     QAction *m_actFullscreen = nullptr;
     QAction *m_actNativeSize = nullptr;

@@ -131,6 +131,7 @@ private:
     void shutdownVMByName(const QString &vmName);
     void resetVMByName(const QString &vmName);
     void powerOffVMByName(const QString &vmName);
+    void manageSnapshotsForVm(const QString &vmName);
 
     ImageDatabase m_imageDatabase;
 

@@ -80,6 +80,10 @@ void DbusViewerWindow::createActions()
     m_actPowerOff->setStatusTip(i18n("Force power-off the virtual machine (may cause data loss)"));
     connect(m_actPowerOff, &QAction::triggered, this, &DbusViewerWindow::powerOffRequested);
 
+    m_actSnapshots = new QAction(QIcon::fromTheme(u"camera-photo"_s), i18n("Manage &Snapshots..."), this);
+    m_actSnapshots->setStatusTip(i18n("Open the snapshot manager for this VM"));
+    connect(m_actSnapshots, &QAction::triggered, this, &DbusViewerWindow::snapshotManagerRequested);
+
     m_actQuit = new QAction(QIcon::fromTheme(u"window-close"_s), i18n("&Quit Viewer"), this);
     m_actQuit->setShortcut(QKeySequence(u"Ctrl+W"_s));
     m_actQuit->setStatusTip(i18n("Close the viewer window (the VM keeps running)"));
@@ -165,6 +169,8 @@ void DbusViewerWindow::createMenus()
     machineMenu->addAction(m_actShutdown);
     machineMenu->addAction(m_actReset);
     machineMenu->addAction(m_actPowerOff);
+    machineMenu->addSeparator();
+    machineMenu->addAction(m_actSnapshots);
     machineMenu->addSeparator();
     machineMenu->addAction(m_actQuit);
 
