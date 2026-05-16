@@ -679,7 +679,7 @@ void DbusViewerWindow::fitContentToWindow()
 {
     QSize availableSize = m_scrollArea->size() * devicePixelRatio();
     qreal scale = qMin(qreal(availableSize.width()) / qreal(m_scanoutSize.width()), qreal(availableSize.height()) / m_scanoutSize.height());
-    qDebug() << "DbusViewerWindow::fitContentToWindow" << availableSize << m_scanoutSize << scale;
+    qCDebug(KEMU_DBUSDISPLAY) << "DbusViewerWindow::fitContentToWindow" << availableSize << m_scanoutSize << scale;
     m_display->setScale(scale);
 }
 

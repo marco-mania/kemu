@@ -258,7 +258,7 @@ void QemuClipboardManager::handleGrab(uint selection, uint serial, const QString
     if (selection != 0)
         return;
     if (!m_registered) {
-        qDebug() << "Clipboard: Grab received before Register ack - ignoring";
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Grab received before Register ack - ignoring";
         return;
     }
     if (m_direction != ClipboardDirection::ToHost && m_direction != ClipboardDirection::Both) {
@@ -278,7 +278,7 @@ void QemuClipboardManager::handleGrab(uint selection, uint serial, const QString
     m_currentSerial = serial;
     m_weAreOwner = false;
 
-    qDebug() << "Clipboard: Guest grabbed clipboard, MIMEs:" << mimes;
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Guest grabbed clipboard, MIMEs:" << mimes;
 
     static const QStringList preferred = {
         u"text/plain;charset=utf-8"_s,
@@ -398,7 +398,7 @@ void QemuClipboardManager::onHostClipboardChanged()
     // under Wayland). Without this guard we'd bounce the content back to
     // the guest as a fresh Grab.
     if (m_settingFromGuest) {
-        qDebug() << "Clipboard: dataChanged ignored (self-induced echo)";
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: dataChanged ignored (self-induced echo)";
         return;
     }
 

@@ -493,7 +493,7 @@ void QemuDisplayWidget::resizeGL(int, int)
 
 void QemuDisplayWidget::onScanoutChanged(int w, int h)
 {
-    qDebug() << "QemuDisplayWidget::onScanoutChanged" << w << h;
+    qCDebug(KEMU_DBUSDISPLAY) << "QemuDisplayWidget::onScanoutChanged" << w << h;
     if (w == 0 || h == 0) {
         return;
     }
@@ -678,7 +678,7 @@ int QemuDisplayWidget::qtButtonToQemu(Qt::MouseButton button)
 
 void QemuDisplayWidget::setScale(float scale)
 {
-    qDebug() << "QemuDisplayWidget::setScale" << scale;
+    qCDebug(KEMU_DBUSDISPLAY) << "QemuDisplayWidget::setScale" << scale;
     if (scale == m_scale)
         return;
     m_scale = scale;
@@ -687,7 +687,7 @@ void QemuDisplayWidget::setScale(float scale)
 
 void QemuDisplayWidget::updateWidgetSize()
 {
-    qDebug() << "QemuDisplayWidget::updateWidgetSize" << m_fbSize << m_scale;
+    qCDebug(KEMU_DBUSDISPLAY) << "QemuDisplayWidget::updateWidgetSize" << m_fbSize << m_scale;
     QSize scaledSize = m_fbSize * m_scale / devicePixelRatio();
     resize(scaledSize.width(), scaledSize.height());
     updateCursor();

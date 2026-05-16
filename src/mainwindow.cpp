@@ -3126,11 +3126,11 @@ void MainWindow::powerOffVMByName(const QString &vmName)
         }
 
         if (process->state() == KProcess::Running) {
-            qWarning() << "VM" << vmName << "did not exit gracefully. Forcing terminate (SIGTERM)!";
+            qCWarning(KEMU) << "VM" << vmName << "did not exit gracefully. Forcing terminate (SIGTERM)!";
             process->terminate();
 
             if (!process->waitForFinished(2000)) {
-                qWarning() << "VM" << vmName << "is still hanging. Forcing power-off (SIGKILL)!";
+                qCWarning(KEMU) << "VM" << vmName << "is still hanging. Forcing power-off (SIGKILL)!";
                 process->kill();
             }
         }
