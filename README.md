@@ -113,7 +113,7 @@ cd build/bin
 
 ### Local Installation (Recommended for testing)
 
-**Installs** KEMU to your user's **home directory** (~/.local). This requires no root privilegesn.
+**Installs** KEMU to your user's **home directory** (~/.local). This requires no root privileges.
 
 ```bash
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=~/.local -B build/
@@ -135,6 +135,30 @@ To **uninstall**:
 
 ```bash
 (sudo) make uninstall
+```
+
+## Debug Logging
+
+KEMU uses Qt logging categories. Two categories are defined:
+
+| Category                    | Covers                                                 |
+|-----------------------------|--------------------------------------------------------|
+| `org.kde.kemu`              | Main application, VM lifecycle, QMP, snapshots, etc.   |
+| `org.kde.kemu.dbusdisplay`  | Integrated D-Bus display viewer (frame-level traffic)  |
+
+Only warnings and critical messages are printed by default. To enable debug output for a single run:
+
+```bash
+QT_LOGGING_RULES="org.kde.kemu.debug=true" kemu
+QT_LOGGING_RULES="org.kde.kemu*=true" kemu # both categories
+```
+
+If `kdebugsettings` is installed, KEMU's categories will appear there and can be toggled with a GUI.
+
+When filing a bug report, please attach the debug output:
+
+```bash
+QT_LOGGING_RULES="org.kde.kemu*=true" kemu 2>&1 | tee kemu.log
 ```
 
 ## File Locations
