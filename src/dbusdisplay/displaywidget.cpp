@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "displaywidget.h"
-#include "kemu_dbusdisplay_debug.h"
 
 #include <cstring>
 #include <glib.h>
