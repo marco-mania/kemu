@@ -101,6 +101,7 @@ private:
     GLuint m_vbo = 0;
 
     QSize m_fbSize;
+    QSize m_texAllocSize;
     bool m_flipY = false;
     bool m_textureReady = false;
     bool m_usingDmaBuf = false;

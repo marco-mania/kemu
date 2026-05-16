@@ -360,6 +360,7 @@ bool QemuDisplayWidget::importDmaBuf()
     m_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, m_eglImage);
 
     m_fbSize = QSize(buf.width, buf.height);
+    m_texAllocSize = QSize();
     m_textureReady = true;
     m_usingDmaBuf = true;
     m_flipY = buf.y0_top;
@@ -399,20 +400,17 @@ void QemuDisplayWidget::uploadSoftwareFrame()
     glBindTexture(GL_TEXTURE_2D, m_textureId);
 
     if (m_hasBGRA && (source.format() == QImage::Format_RGB32 || source.format() == QImage::Format_ARGB32)) {
-        // ---- Fast path: upload BGRA directly ----
-        // QImage::Format_RGB32 = 0xffRRGGBB in Memory = BGRA bytes (little-endian)
-        if (m_fbSize != source.size()) {
+        if (m_texAllocSize != source.size()) {
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, source.width(), source.height(), 0, GL_BGRA_EXT, GL_UNSIGNED_BYTE, source.constBits());
-            m_fbSize = source.size();
+            m_texAllocSize = source.size();
         } else {
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, source.width(), source.height(), GL_BGRA_EXT, GL_UNSIGNED_BYTE, source.constBits());
         }
     } else {
-        // ---- Fallback: RGBA conversion ----
         const QImage rgba = source.convertToFormat(QImage::Format_RGBA8888);
-        if (m_fbSize != rgba.size()) {
+        if (m_texAllocSize != rgba.size()) {
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rgba.width(), rgba.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.constBits());
-            m_fbSize = rgba.size();
+            m_texAllocSize = rgba.size();
         } else {
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rgba.width(), rgba.height(), GL_RGBA, GL_UNSIGNED_BYTE, rgba.constBits());
         }
