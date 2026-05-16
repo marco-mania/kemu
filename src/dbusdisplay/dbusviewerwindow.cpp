@@ -519,11 +519,14 @@ void DbusViewerWindow::teardownClipboard()
 
 void DbusViewerWindow::onScanoutChanged(int width, int height)
 {
-    if (width > 0 && height > 0 && m_scanoutSize != QSize(width, height)) {
-        m_scanoutSize = {width, height};
+    if (width > 0 && height > 0) {
         m_lblResolution->setText(u"%1 × %2"_s.arg(width).arg(height));
-        updateWindowAndDisplaySize();
+        if (m_scanoutSize != QSize(width, height)) {
+            m_scanoutSize = {width, height};
+            updateWindowAndDisplaySize();
+        }
     } else {
+        m_scanoutSize = {};
         m_lblResolution->setText(i18n("No Display"));
     }
 }
