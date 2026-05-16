@@ -4,7 +4,7 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-project(kemu VERSION 0.2.0)
+project(kemu VERSION 0.3.0)
 
 add_compile_definitions(APP_VERSION=\"${PROJECT_VERSION}\" APP_NAME=\"KEMU\"
                         TRANSLATION_DOMAIN=\"kemu\")

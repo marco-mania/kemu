@@ -57,8 +57,8 @@ A traditional, direct-to-QEMU desktop frontend for Linux, built with Qt6 Widgets
 
 ```bash
 sudo pacman -S qt6-base qt6-declarative extra-cmake-modules \
-  kconfig kcoreaddons ki18n kxmlgui kwidgetsaddons kiconthemes \
-  qemu-full edk2-ovmf libarchive passt libmnl libnftnl
+  kconfig kcoreaddons ki18n kxmlgui kwidgetsaddons kdbusaddons \
+  kiconthemes qemu-full edk2-ovmf libarchive passt libmnl libnftnl
 ```
 
 Optional:
@@ -74,7 +74,8 @@ sudo apt install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-multimedia-dev
   libkf6config-dev libkf6coreaddons-dev libkf6i18n-dev libkf6kio-dev \
   libkf6crash-dev libkf6xmlgui-dev libkf6widgetsaddons-dev libkf6iconthemes-dev \
   libkf6texttemplate-dev qemu-system extra-cmake-modules libegl1-mesa-dev \
-  libarchive-dev passt libmnl-dev libnftnl-dev libudev-dev build-essential cmake
+  libarchive-dev passt libmnl-dev libnftnl-dev libudev-dev libkf6dbusaddons-dev \
+  build-essential cmake
 ```
 
 Optional:
@@ -89,8 +90,8 @@ sudo apt install ovmf swtpm virtiofsd dnsmasq virt-viewer dbus-daemon genisoimag
 sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
   qt6-qtmultimedia-devel kf6-kconfig-devel kf6-kcoreaddons-devel kf6-ki18n-devel \
   kf6-kio-devel kf6-kcrash-devel kf6-kxmlgui-devel kf6-kwidgetsaddons-devel \
-  kf6-kiconthemes-devel kf6-ktexttemplate-devel extra-cmake-modules \
-  qemu-system-x86 mesa-libEGL-devel libarchive-devel passt \
+  kf6-kiconthemes-devel kf6-ktexttemplate-devel kf6-kdbusaddons-devel \
+  extra-cmake-modules qemu-system-x86 mesa-libEGL-devel libarchive-devel passt \
   libmnl-devel libnftnl-devel systemd-devel gcc-c++ make cmake
 ```
 
