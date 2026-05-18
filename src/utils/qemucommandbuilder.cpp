@@ -301,12 +301,13 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             // qemu-vdagent chardev (NOT spicevmc, which is SPICE-only). QEMU
             // bridges that to /org/qemu/Display1/Clipboard on its D-Bus bus.
             // Without this block, the Clipboard D-Bus object exists but has
-            // no peer on the guest side - Grab/Request calls go nowhere.
-            if (config.spiceAgent()) {
-                args << u"-device"_s << u"virtio-serial-pci"_s;
-                args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,name=vdagent,clipboard=on"_s;
-                args << u"-device"_s << u"virtserialport,chardev=vdagent,name=com.redhat.spice.0"_s;
-            }
+            // no peer on the guest side -- Grab/Request calls go nowhere.
+
+            // NB: The port name "com.redhat.spice.0" is hardcoded in the
+            // spice-vdagent daemon only for historical reasons.
+            args << u"-device"_s << u"virtio-serial-pci"_s;
+            args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,name=vdagent,clipboard=on"_s;
+            args << u"-device"_s << u"virtserialport,chardev=vdagent,name=com.redhat.spice.0"_s;
         }
     } else if (headless) {
         args << u"-display"_s << u"none"_s;
