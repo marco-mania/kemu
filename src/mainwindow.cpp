@@ -1147,15 +1147,15 @@ QStringList MainWindow::usedMacAddresses() const
 QList<MacUsageInfo> MainWindow::macUsageInfo() const
 {
     QList<MacUsageInfo> result;
-    for (const QString &name : existingVmNames()) {
-        const VMConfig cfg = loadVmConfig(getVmBaseDir().filePath(name));
-        if (cfg.macAddress().isEmpty())
+    for (const QString &name : veModel->vmNames()) {
+        const VmEntry *e = veModel->entryByName(name);
+        if (!e || e->config.macAddress().isEmpty())
             continue;
         MacUsageInfo info;
         info.vmName = name;
-        info.mac = cfg.macAddress();
-        info.networkMode = cfg.networkMode();
-        info.virtualNetworkName = cfg.virtualNetworkName();
+        info.mac = e->config.macAddress();
+        info.networkMode = e->config.networkMode();
+        info.virtualNetworkName = e->config.virtualNetworkName();
         result << info;
     }
     return result;
@@ -1652,13 +1652,19 @@ void MainWindow::loadVmList()
 
     QStringList macs = usedMacAddresses();
     for (const QString &name : veModel->vmNames()) {
+        VmEntry *e = veModel->entryByName(name);
+        if (!e)
+            continue;
+        if (e->config.networkCard() == VMSpecs::NetworkCard::None || !e->config.macAddress().isEmpty())
+            continue;
+
+        VMConfig healed = e->config;
+        healed.ensureMacAddress(macs);
+        macs << healed.macAddress();
+
         const QString vmPath = getVmDir(name).absolutePath();
-        VMConfig cfg = loadVmConfig(vmPath);
-        if (cfg.networkCard() != VMSpecs::NetworkCard::None && cfg.macAddress().isEmpty()) {
-            cfg.ensureMacAddress(macs);
-            macs << cfg.macAddress();
-            saveVmConfig(vmPath, cfg);
-        }
+        saveVmConfig(vmPath, healed);
+        veModel->updateConfig(name, healed);
     }
 
     KConfig kconfig(u"kemurc"_s);
@@ -3703,12 +3709,7 @@ void MainWindow::cloneVM()
             KMessageBox::error(this, i18n("Failed to clone VM '%1':\n%2", srcName, cloneJob->errorText()), i18n("Clone Failed"));
         } else {
             // collect used macs to exclude random generation matches
-            QStringList usedMacs;
-            for (const QString &name : existingVmNames()) {
-                const VMConfig cfg = loadVmConfig(getVmBaseDir().filePath(name));
-                if (!cfg.macAddress().isEmpty())
-                    usedMacs << cfg.macAddress();
-            }
+            const QStringList usedMacs = usedMacAddresses();
 
             VMConfig cloneConfig = loadVmConfig(dstPath);
             cloneConfig.setName(cloneName);
