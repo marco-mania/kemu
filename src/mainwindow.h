@@ -170,12 +170,15 @@ private:
     QDir getVmDir(const QString &vmName) const;
     QString monitorSocketPath(const QString &vmName) const;
 
-    bool startSwtpm(const QString &vmName);
-    bool startVirtiofsd(const QString &vmName);
-    bool startPasst(const QString &vmName, const QList<PortForwardRule> &portForwards = QList<PortForwardRule>());
-    bool startSpiceViewer(const QString &vmName);
-    bool startDbusDaemon(const QString &vmName);
+    void startSwtpmAsync(const QString &vmName, std::function<void(bool ok)> done);
+    void startVirtiofsdAsync(const QString &vmName, std::function<void(bool ok)> done);
+    void startPasstAsync(const QString &vmName, const QList<PortForwardRule> &portForwards, std::function<void(bool ok)> done);
+    void startSpiceViewerAsync(const QString &vmName, std::function<void(bool ok)> done);
+    void startDbusDaemonAsync(const QString &vmName, std::function<void(bool ok)> done);
     QString dbusBusAddress(const QString &vmName) const;
+
+    void launchQemuProcess(const QString &vmName, bool headless, const QString &tapDevice);
+    void launchQemuForDeployment(const QString &vmName, bool headless, const QString &tapDevice);
 
     // D-Bus integrated viewer lifecycle
     bool startDbusViewer(const QString &vmName);

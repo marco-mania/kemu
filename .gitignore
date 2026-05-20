@@ -10,3 +10,4 @@ build/
 *.bak
 compile_commands.json
 .clang-format
+.clangd

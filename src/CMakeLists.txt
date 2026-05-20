@@ -68,6 +68,10 @@ target_sources(
           utils/usbenumerator.cpp
           utils/savestatemanager.cpp
           utils/savestatemanager.h
+          utils/asynchelperprocess.cpp
+          utils/asynchelperprocess.h
+          utils/startupchain.cpp
+          utils/startupchain.h
           utils/3rdparty/crypt_sha512.c
           models/virtualenvironmentmodel.cpp
           models/virtualenvironmentmodel.h

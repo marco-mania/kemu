@@ -20,8 +20,10 @@
 #include "jobs/ovaimportjob.h"
 #include "jobs/shrinkjob.h"
 #include "kemu_debug.h"
+#include "utils/asynchelperprocess.h"
 #include "utils/namespacehelper.h"
 #include "utils/qemucommandbuilder.h"
+#include "utils/startupchain.h"
 #include "utils/usbenumerator.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
@@ -339,225 +341,215 @@ void MainWindow::setupUi()
     statusBar()->showMessage(i18n("Ready."));
 }
 
-bool MainWindow::startSwtpm(const QString &vmName)
+void MainWindow::startSwtpmAsync(const QString &vmName, std::function<void(bool)> done)
 {
-    if (!requireTool(ExternalTools::Swtpm))
-        return false;
+    if (!requireTool(ExternalTools::Swtpm)) {
+        done(false);
+        return;
+    }
 
     const QString vmPath = getVmDir(vmName).absolutePath();
     const QString sockPath = vmPath + u'/' + KEMUConst::SwtpmSocketFileName;
-
     QFile::remove(sockPath);
 
-    KProcess *process = new KProcess(this);
-    process->setChildProcessModifier([] {
-        // Ask the kernel to SIGTERM us if our parent (KEMU) dies, for any
-        // reason -- including SIGKILL, SEGV, OOM-kill. This is a reliable
-        // cleanup without any supervision.
-        prctl(PR_SET_PDEATHSIG, SIGTERM);
-    });
-    process->setProgram(ExternalTools::instance().path(ExternalTools::Swtpm));
-    process->setArguments(
-        {u"socket"_s, u"--ctrl"_s, u"type=unixio,path=%1"_s.arg(sockPath), u"--terminate"_s, u"--tpmstate"_s, u"dir=%1"_s.arg(vmPath), u"--tpm2"_s});
-    process->start();
+    AsyncHelperProcess::Options opts;
+    opts.program = ExternalTools::instance().path(ExternalTools::Swtpm);
+    opts.arguments =
+        {u"socket"_s, u"--ctrl"_s, u"type=unixio,path=%1"_s.arg(sockPath), u"--terminate"_s, u"--tpmstate"_s, u"dir=%1"_s.arg(vmPath), u"--tpm2"_s};
+    opts.socketPath = sockPath;
 
-    if (!process->waitForStarted(3000)) {
-        KMessageBox::error(this, i18n("Failed to start swtpm: %1", process->errorString()));
-        delete process;
-        return false;
-    }
-
-    if (Utils::waitForSocket(sockPath, 5000)) {
+    AsyncHelperProcess::run(this, opts, [this, vmName, sockPath, done = std::move(done)](KProcess *process, bool ok, const QString &err) {
+        if (!ok) {
+            KMessageBox::error(this, i18n("Failed to start swtpm: %1", err));
+            QFile::remove(sockPath);
+            done(false);
+            return;
+        }
         veModel->setSwtpmProcess(vmName, process);
-        return true;
-    }
-
-    KMessageBox::error(this, i18n("swtpm started but socket was not created in time."));
-    process->terminate();
-    process->waitForFinished(2000);
-    delete process;
-
-    QFile::remove(getVmBaseDir().filePath(vmName) + u'/' + KEMUConst::SwtpmSocketFileName);
-
-    return false;
+        done(true);
+    });
 }
 
-bool MainWindow::startVirtiofsd(const QString &vmName)
+void MainWindow::startVirtiofsdAsync(const QString &vmName, std::function<void(bool)> done)
 {
-    if (!requireTool(ExternalTools::Virtiofsd))
-        return false;
+    if (!requireTool(ExternalTools::Virtiofsd)) {
+        done(false);
+        return;
+    }
+
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry) {
+        done(false);
+        return;
+    }
 
     const QString sockPath = getVmDir(vmName).absolutePath() + u'/' + KEMUConst::VirtiofsdSocketFileName;
-    const QString sharedPath = currentConfig.sharedPath();
-
+    const QString sharedPath = entry->config.sharedPath();
     QFile::remove(sockPath);
 
-    auto *process = new KProcess(this);
-    process->setChildProcessModifier([] {
-        prctl(PR_SET_PDEATHSIG, SIGTERM);
-    });
-    process->setProgram(ExternalTools::instance().path(ExternalTools::Virtiofsd));
-    process->setArguments({u"--socket-path=%1"_s.arg(sockPath), u"--shared-dir=%1"_s.arg(sharedPath), u"--cache=auto"_s, u"--sandbox=none"_s});
-    process->start();
+    AsyncHelperProcess::Options opts;
+    opts.program = ExternalTools::instance().path(ExternalTools::Virtiofsd);
+    opts.arguments = {u"--socket-path=%1"_s.arg(sockPath), u"--shared-dir=%1"_s.arg(sharedPath), u"--cache=auto"_s, u"--sandbox=none"_s};
+    opts.socketPath = sockPath;
 
-    if (!process->waitForStarted(3000)) {
-        KMessageBox::error(this, i18n("Failed to start virtiofsd: %1", process->errorString()));
-        delete process;
-        return false;
-    }
-
-    if (Utils::waitForSocket(sockPath, 5000)) {
+    AsyncHelperProcess::run(this, opts, [this, vmName, sockPath, done = std::move(done)](KProcess *process, bool ok, const QString &err) {
+        if (!ok) {
+            KMessageBox::error(this, i18n("Failed to start virtiofsd: %1", err));
+            QFile::remove(sockPath);
+            QFile::remove(getVmDir(vmName).absolutePath() + u'/' + KEMUConst::VirtiofsdPidFileName);
+            done(false);
+            return;
+        }
         veModel->setVirtiofsdProcess(vmName, process);
-        return true;
-    }
-
-    KMessageBox::error(this, i18n("virtiofsd started but socket was not created in time."));
-    process->terminate();
-    process->waitForFinished(2000);
-    delete process;
-
-    QFile::remove(getVmBaseDir().filePath(vmName) + u'/' + KEMUConst::VirtiofsdSocketFileName);
-    QFile::remove(getVmBaseDir().filePath(vmName) + u'/' + KEMUConst::VirtiofsdPidFileName);
-
-    return false;
+        done(true);
+    });
 }
 
-bool MainWindow::startPasst(const QString &vmName, const QList<PortForwardRule> &portForwards)
+void MainWindow::startPasstAsync(const QString &vmName, const QList<PortForwardRule> &portForwards, std::function<void(bool)> done)
 {
-    if (!requireTool(ExternalTools::Passt))
-        return false;
+    if (!requireTool(ExternalTools::Passt)) {
+        done(false);
+        return;
+    }
 
     const QString sockPath = getVmDir(vmName).absolutePath() + u'/' + KEMUConst::PasstSocketFileName;
-
     QFile::remove(sockPath);
 
     QStringList passtArgs = {u"--socket"_s, sockPath, u"-f"_s, u"-q"_s};
 
-    // Collect ports per protocol
     QStringList tcpPorts, udpPorts;
     for (const auto &rule : portForwards) {
         const QString mapping = (rule.hostPort != rule.guestPort) ? u"%1:%2"_s.arg(rule.hostPort).arg(rule.guestPort) : QString::number(rule.hostPort);
-
         if (rule.protocol == PortForwardRule::Protocol::Tcp)
             tcpPorts << mapping;
         else
             udpPorts << mapping;
     }
-
     if (!tcpPorts.isEmpty())
         passtArgs << u"-t"_s << tcpPorts.join(u","_s);
     if (!udpPorts.isEmpty())
         passtArgs << u"-u"_s << udpPorts.join(u","_s);
 
-    auto *process = new KProcess(this);
-    process->setChildProcessModifier([] {
-        prctl(PR_SET_PDEATHSIG, SIGTERM);
-    });
-    process->setProgram(ExternalTools::instance().path(ExternalTools::Passt));
-    process->setArguments(passtArgs);
-    process->start();
+    AsyncHelperProcess::Options opts;
+    opts.program = ExternalTools::instance().path(ExternalTools::Passt);
+    opts.arguments = passtArgs;
+    opts.socketPath = sockPath;
 
-    if (!process->waitForStarted(3000)) {
-        KMessageBox::error(this, i18n("Failed to start passt: %1", process->errorString()));
-        delete process;
-        return false;
-    }
-
-    if (Utils::waitForSocket(sockPath, 5000)) {
+    AsyncHelperProcess::run(this, opts, [this, vmName, sockPath, done = std::move(done)](KProcess *process, bool ok, const QString &err) {
+        if (!ok) {
+            KMessageBox::error(this, i18n("Failed to start passt: %1", err));
+            QFile::remove(sockPath);
+            done(false);
+            return;
+        }
         veModel->setPasstProcess(vmName, process);
-        return true;
-    }
-
-    KMessageBox::error(this, i18n("passt started but socket was not created in time."));
-    process->terminate();
-    process->waitForFinished(2000);
-    delete process;
-
-    QFile::remove(sockPath);
-
-    return false;
+        done(true);
+    });
 }
 
-bool MainWindow::startSpiceViewer(const QString &vmName)
+void MainWindow::startSpiceViewerAsync(const QString &vmName, std::function<void(bool)> done)
 {
-    if (!requireTool(ExternalTools::RemoteViewer))
-        return false;
+    if (!requireTool(ExternalTools::RemoteViewer)) {
+        done(false);
+        return;
+    }
 
     const QString vmPath = getVmDir(vmName).absolutePath();
     const QString spiceSockPath = vmPath + u'/' + KEMUConst::SpiceSocketFileName;
-
-    if (!Utils::waitForSocket(spiceSockPath, 3000)) {
-        KMessageBox::error(this, i18n("SPICE socket was not created in time."), i18n("Viewer Error"));
-        return false;
-    }
-
-    // Write a .vv connection file, avoids all URI encoding issues
     const QString vvFile = vmPath + u'/' + KEMUConst::SpiceVVFileName;
-    QFile f(vvFile);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        KMessageBox::error(this, i18n("Failed to write SPICE connection file."), i18n("Viewer Error"));
-        return false;
-    }
-    f.write("[virt-viewer]\n");
-    f.write("type=spice\n");
-    f.write(u"unix-path=%1\n"_s.arg(spiceSockPath).toUtf8());
-    f.close();
 
-    auto *viewer = new KProcess(this);
-    viewer->setProgram(ExternalTools::instance().path(ExternalTools::RemoteViewer));
-    viewer->setArguments({vvFile});
-
-    connect(viewer, &QProcess::finished, viewer, [this, vmName, viewer, vvFile]() {
-        QFile::remove(vvFile);
-        VmEntry *entry = veModel->entryByName(vmName);
-        if (entry && entry->spiceViewerProcess == viewer)
-            entry->spiceViewerProcess = nullptr;
-        viewer->deleteLater();
-
-        if (!entry || entry->state != VmEntry::State::Running)
+    // First: wait for QEMU to create the SPICE socket.
+    AsyncHelperProcess::waitForSocket(this, spiceSockPath, 3000, 50, [this, vmName, vvFile, spiceSockPath, done = std::move(done)](bool socketOk) mutable {
+        if (!socketOk) {
+            KMessageBox::error(this, i18n("SPICE socket was not created in time."), i18n("Viewer Error"));
+            done(false);
             return;
+        }
 
-        const auto action = SettingsDialog::spiceViewerCloseAction();
+        // Write the .vv connection file -- avoids all URI encoding issues
+        // we would otherwise hit when passing the unix socket on the
+        // remote-viewer command line.
+        QFile f(vvFile);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            KMessageBox::error(this, i18n("Failed to write SPICE connection file."), i18n("Viewer Error"));
+            done(false);
+            return;
+        }
+        f.write("[virt-viewer]\n");
+        f.write("type=spice\n");
+        f.write(u"unix-path=%1\n"_s.arg(spiceSockPath).toUtf8());
+        f.close();
 
-        if (action == SettingsDialog::ShutdownVm) {
-            if (entry->qmpClient && entry->qmpClient->isConnected()) {
-                entry->qmpClient->sendCommand(u"system_powerdown"_s);
-                statusBar()->showMessage(i18n("SPICE viewer closed - shutting down '%1'.", vmName));
+        // Then: launch remote-viewer with the .vv file. opts.socketPath
+        // stays empty -- success here just means "process started".
+        AsyncHelperProcess::Options opts;
+        opts.program = ExternalTools::instance().path(ExternalTools::RemoteViewer);
+        opts.arguments = {vvFile};
+
+        AsyncHelperProcess::run(this, opts, [this, vmName, vvFile, done = std::move(done)](KProcess *viewer, bool ok, const QString &err) {
+            if (!ok) {
+                KMessageBox::error(this, i18n("Failed to start SPICE viewer: %1", err), i18n("Viewer Error"));
+                QFile::remove(vvFile);
+                done(false);
+                return;
             }
-            return;
-        }
 
-        // SwitchToHeadless (default)
-        veModel->setHeadless(vmName, true);
-        statusBar()->showMessage(i18n("SPICE viewer closed - '%1' continues headless.", vmName));
+            // Register the viewer process BEFORE attaching the close
+            // handler so the handler's identity check
+            // (entry->spiceViewerProcess == viewer) works.
+            veModel->setSpiceViewerProcess(vmName, viewer);
 
-        if (selectedVmName() == vmName) {
-            updateDetails();
-            updateActionStates();
-        }
+            // Viewer-close handler -- same behaviour as the original
+            // startSpiceViewer():
+            //   * remove the leftover .vv file
+            //   * drop the model's pointer
+            //   * honour the user's "viewer closed" preference
+            //     (Shutdown VM, or continue headless)
+            connect(viewer, &QProcess::finished, viewer, [this, vmName, viewer, vvFile]() {
+                QFile::remove(vvFile);
+
+                VmEntry *entry = veModel->entryByName(vmName);
+                if (entry && entry->spiceViewerProcess == viewer)
+                    entry->spiceViewerProcess = nullptr;
+                viewer->deleteLater();
+
+                if (!entry || entry->state != VmEntry::State::Running)
+                    return;
+
+                const auto action = SettingsDialog::spiceViewerCloseAction();
+                if (action == SettingsDialog::ShutdownVm) {
+                    if (entry->qmpClient && entry->qmpClient->isConnected()) {
+                        entry->qmpClient->sendCommand(u"system_powerdown"_s);
+                        statusBar()->showMessage(i18n("SPICE viewer closed - shutting down '%1'.", vmName));
+                    }
+                    return;
+                }
+                // SwitchToHeadless (default)
+                veModel->setHeadless(vmName, true);
+                statusBar()->showMessage(i18n("SPICE viewer closed - '%1' continues headless.", vmName));
+                if (selectedVmName() == vmName) {
+                    updateDetails();
+                    updateActionStates();
+                }
+            });
+
+            done(true);
+        });
     });
-
-    viewer->start();
-
-    if (!viewer->waitForStarted(3000)) {
-        KMessageBox::error(this, i18n("Failed to start SPICE viewer: %1", viewer->errorString()), i18n("Viewer Error"));
-        QFile::remove(vvFile);
-        delete viewer;
-        return false;
-    }
-
-    veModel->setSpiceViewerProcess(vmName, viewer);
-    return true;
 }
 
-bool MainWindow::startDbusDaemon(const QString &vmName)
+void MainWindow::startDbusDaemonAsync(const QString &vmName, std::function<void(bool)> done)
 {
-    if (!requireTool(ExternalTools::DbusDaemon))
-        return false;
+    if (!requireTool(ExternalTools::DbusDaemon)) {
+        done(false);
+        return;
+    }
 
     const VmEntry *entry = veModel->entryByName(vmName);
-    if (!entry)
-        return false;
+    if (!entry) {
+        done(false);
+        return;
+    }
 
     const QString sockPath = getVmDir(vmName).absoluteFilePath(KEMUConst::DBUSSocketFileName);
     qCDebug(KEMU) << "D-Bus raw sockPath:" << sockPath;
@@ -569,11 +561,11 @@ bool MainWindow::startDbusDaemon(const QString &vmName)
     // Per-VM dbus-daemon config: minimal session bus, no fork.
     // Written into the VM directory so it lives alongside other state.
     const QString configPath = getVmDir(vmName).absoluteFilePath(KEMUConst::DBUSConfigFileName);
-
     QFile cfg(configPath);
     if (!cfg.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         KMessageBox::error(this, i18n("Failed to write D-Bus daemon config."));
-        return false;
+        done(false);
+        return;
     }
 
     const QString content = QStringLiteral(
@@ -595,32 +587,323 @@ bool MainWindow::startDbusDaemon(const QString &vmName)
     cfg.write(content.toUtf8());
     cfg.close();
 
-    auto *daemon = new KProcess(this);
-    daemon->setChildProcessModifier([] {
-        prctl(PR_SET_PDEATHSIG, SIGTERM);
+    AsyncHelperProcess::Options opts;
+    opts.program = ExternalTools::instance().path(ExternalTools::DbusDaemon);
+    opts.arguments = {u"--config-file=%1"_s.arg(configPath), u"--nofork"_s};
+    opts.socketPath = sockPath;
+    opts.socketTimeoutMs = 3000; // matches the original blocking wait
+
+    AsyncHelperProcess::run(this, opts, [this, vmName, sockPath, configPath, done = std::move(done)](KProcess *process, bool ok, const QString &err) {
+        if (!ok) {
+            // AsyncHelperProcess folds "didn't start" and "started
+            // but no socket" into a single failure path; the error
+            // string carries the specific reason for either case.
+            KMessageBox::error(this, i18n("Failed to start D-Bus daemon: %1", err));
+            QFile::remove(sockPath);
+            QFile::remove(configPath);
+            done(false);
+            return;
+        }
+        veModel->setDBusDaemonProcess(vmName, process);
+        done(true);
     });
-    daemon->setProgram(ExternalTools::instance().path(ExternalTools::DbusDaemon));
-    daemon->setArguments({u"--config-file=%1"_s.arg(configPath), u"--nofork"_s});
+}
 
-    daemon->start();
-    if (!daemon->waitForStarted(3000)) {
-        KMessageBox::error(this, i18n("Failed to start D-Bus daemon: %1", daemon->errorString()));
-        delete daemon;
-        return false;
+void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const QString &tapDevice)
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry)
+        return;
+    const VMConfig &config = entry->config;
+
+    const QString vmDirPath = getVmDir(vmName).absolutePath();
+    const QString sockPath = vmDirPath + u'/' + KEMUConst::QemuMonitorSocketFileName;
+
+    NetworkContext netCtx;
+    if (!tapDevice.isEmpty())
+        netCtx.tapDevice = tapDevice;
+
+    const QString savestatePath = SaveStateManager::hasSavestate(vmDirPath, vmName) ? SaveStateManager::savestateFilePath(vmDirPath, vmName) : QString{};
+    const bool isResume = !savestatePath.isEmpty();
+
+    const QStringList args = QemuCommandBuilder::build(config,
+                                                       getVmDir(vmName),
+                                                       sockPath,
+                                                       netCtx,
+                                                       /*relativePaths=*/false,
+                                                       headless,
+                                                       savestatePath);
+
+    if (!requireTool(ExternalTools::QemuSystem))
+        return;
+
+    KProcess *process = new KProcess(this);
+    process->setOutputChannelMode(KProcess::SeparateChannels);
+
+    constexpr int kStderrTailLimit = 65536;
+    connect(process, &QProcess::readyReadStandardError, this, [this, process, vmName]() {
+        QByteArray &tail = m_qemuStderrTails[vmName];
+        tail.append(process->readAllStandardError());
+        if (tail.size() > kStderrTailLimit)
+            tail.remove(0, tail.size() - kStderrTailLimit);
+    });
+
+    if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !tapDevice.isEmpty()) {
+        const qint64 nsPid = m_networkManager->namespacePid(config.virtualNetworkName());
+        NamespaceHelper::prepareProcessForNamespace(process, nsPid);
+    } else {
+        process->setChildProcessModifier([] {
+            prctl(PR_SET_PDEATHSIG, SIGTERM);
+        });
     }
 
-    // Wait for the socket to actually appear
-    if (!Utils::waitForSocket(sockPath, 3000)) {
-        KMessageBox::error(this, i18n("D-Bus daemon socket was not created in time."));
-        daemon->terminate();
-        if (!daemon->waitForFinished(2000))
-            daemon->kill();
-        delete daemon;
-        return false;
+    process->setProgram(ExternalTools::instance().path(ExternalTools::QemuSystem));
+    process->setArguments(args);
+
+    // Bind vmName into the slot directly (Commit-1 refactor; no sender() needed).
+    connect(process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, [this, vmName](int code, KProcess::ExitStatus status) {
+        handleQemuExit(vmName, code, status);
+    });
+
+    // Error-during-start path (e.g. exec failure). We never reach the probe
+    // in that case.
+    connect(process, &QProcess::errorOccurred, this, [this, process, vmName](QProcess::ProcessError) {
+        const VmEntry *e = veModel->entryByName(vmName);
+        if (e && e->qemuProcess == process)
+            return; // handleQemuExit will own this.
+        const QString err = process->errorString();
+        m_startupFailureShown.insert(vmName);
+        showQemuFailureDialog(vmName, true, -1, KProcess::CrashExit, err.toUtf8());
+        process->deleteLater();
+        tearDownVmRuntime(vmName);
+    });
+
+    process->start();
+
+    // Optimistic registration: if QEMU dies inside the probe window, the
+    // probe will surface a startup-failure dialog and dedup against
+    // handleQemuExit via m_startupFailureShown.
+    veModel->setHeadless(vmName, headless);
+    veModel->setQemuProcess(vmName, process);
+    veModel->setVmState(vmName, VmEntry::State::Running);
+    statusBar()->showMessage(i18n("VM '%1' started.", vmName));
+    updateDetails();
+    updateActionStates();
+
+    scheduleQemuStartupProbe(process, vmName);
+
+    // SPICE / D-Bus viewer (now async).
+    if (!headless && config.displayType() == VMSpecs::DisplayType::Spice) {
+        startSpiceViewerAsync(vmName, [](bool) { /* errors already surfaced by helper */ });
+    } else if (!headless && config.displayType() == VMSpecs::DisplayType::Dbus) {
+        QTimer::singleShot(500, this, [this, vmName]() {
+            startDbusViewer(vmName);
+        });
     }
 
-    veModel->setDBusDaemonProcess(vmName, daemon);
-    return true;
+    // QMP setup
+    QMPClient *client = new QMPClient(this);
+    veModel->setQmpClient(vmName, client);
+    connect(client, &QMPClient::eventReceived, this, [this, vmName](const QString &eventName, const QJsonObject &data) {
+        this->onQMPEvent(vmName, eventName, data);
+    });
+
+    connect(client, &QMPClient::connected, this, [this, client, vmName, isResume]() {
+        client->startPerformanceTimer(1000);
+
+        // Enable balloon guest statistics for actual RAM usage
+        QJsonObject balloonArgs;
+        balloonArgs[u"path"_s] = u"/machine/peripheral-anon/balloon0"_s;
+        balloonArgs[u"property"_s] = u"guest-stats-polling-interval"_s;
+        balloonArgs[u"value"_s] = 2;
+        client->sendCommand(u"qom-set"_s, balloonArgs);
+
+        if (selectedVmName() == vmName && perfMonitor) {
+            const VmEntry *e = veModel->entryByName(vmName);
+            if (e) {
+                perfMonitor->setHistory(PerformanceMonitorWidget::Cpu, e->cpuHistory);
+                perfMonitor->setHistory(PerformanceMonitorWidget::Ram, e->ramHistory);
+                perfMonitor->setHistory(PerformanceMonitorWidget::Io, e->ioHistory);
+            }
+            perfMonitor->setActive(true);
+        }
+
+        // Successful resume: the savestate file has done its job, drop it so
+        // a subsequent normal start does not try to resume again.
+        const QString dir = getVmDir(vmName).absolutePath();
+        if (SaveStateManager::hasSavestate(dir, vmName)) {
+            SaveStateManager::discardSavestate(dir, vmName);
+            veModel->setHasSavestate(vmName, false);
+        }
+
+        if (isResume) {
+            // QEMU loaded a paused state from the savestate file. Resume the
+            // guest now that the QMP channel is up.
+            client->sendCommand(u"cont"_s, {}, [vmName](QMPResult r) {
+                if (!r.success)
+                    qWarning() << "Could not resume" << vmName << "from savestate:" << r.errorMessage;
+            });
+            SaveStateManager::discardSavestate(getVmDir(vmName).absolutePath(), vmName);
+        }
+    });
+
+    connect(client, &QMPClient::cpuUsageUpdated, this, [this, vmName](const VmCpuUsage &usage) {
+        if (!usage.isValid)
+            return;
+        veModel->appendPerfSample(vmName, 0, usage.averagePercent);
+        if (selectedVmName() == vmName && perfMonitor)
+            perfMonitor->addSample(PerformanceMonitorWidget::Cpu, usage.averagePercent);
+    });
+
+    connect(client, &QMPClient::memoryUsageUpdated, this, [this, vmName](const VmMemoryUsage &usage) {
+        if (!usage.isValid)
+            return;
+        veModel->appendPerfSample(vmName, 1, usage.usagePercent);
+        if (selectedVmName() == vmName && perfMonitor)
+            perfMonitor->addSample(PerformanceMonitorWidget::Ram, usage.usagePercent);
+    });
+
+    connect(client, &QMPClient::blockStatsUpdated, this, [this, vmName](const VmBlockStats &stats) {
+        if (!stats.isValid)
+            return;
+        VmEntry *e = veModel->entryByName(vmName);
+        if (!e)
+            return;
+
+        const double totalBps = stats.totalRdBytesPerSec + stats.totalWrBytesPerSec;
+        if (totalBps > e->ioPeakBytesPerSec)
+            e->ioPeakBytesPerSec = totalBps;
+        const double pct = (e->ioPeakBytesPerSec > 0.0) ? (totalBps / e->ioPeakBytesPerSec * 100.0) : 0.0;
+
+        veModel->appendPerfSample(vmName, 2, pct);
+        if (selectedVmName() == vmName && perfMonitor)
+            perfMonitor->addSample(PerformanceMonitorWidget::Io, pct);
+    });
+
+    if (Utils::waitForSocket(sockPath, 2000)) {
+        client->connectToVm(sockPath);
+    } else {
+        qCWarning(KEMU) << "Failed to connect to QMP: Socket was not created in time.";
+    }
+}
+
+void MainWindow::launchQemuForDeployment(const QString &vmName, bool headless, const QString &tapDevice)
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry || entry->state != VmEntry::State::Deploying)
+        return;
+
+    const VMConfig &config = entry->config;
+    const QString vmPath = getVmDir(vmName).absolutePath();
+    const QString sockPath = vmPath + u'/' + KEMUConst::QemuMonitorSocketFileName;
+
+    QFile::remove(sockPath);
+
+    NetworkContext netCtx;
+    if (!tapDevice.isEmpty())
+        netCtx.tapDevice = tapDevice;
+
+    QStringList args = QemuCommandBuilder::build(config,
+                                                 getVmDir(vmName),
+                                                 sockPath,
+                                                 netCtx,
+                                                 /*relativePaths=*/false,
+                                                 headless);
+
+    // Optional serial log for unattended-install debugging.
+    if (SettingsDialog::deploySerialLog()) {
+        const QString logFile = vmPath + u'/' + KEMUConst::DeploySerialLogFileName;
+        args << u"-serial"_s << u"file:%1"_s.arg(logFile);
+    }
+
+    KProcess *process = new KProcess(this);
+    process->setOutputChannelMode(KProcess::SeparateChannels);
+
+    // Capture stderr in a rolling tail so the failure dialog has something
+    // to show if the install dies.
+    constexpr int kStderrTailLimit = 65536;
+    connect(process, &QProcess::readyReadStandardError, this, [this, process, vmName]() {
+        QByteArray &tail = m_qemuStderrTails[vmName];
+        tail.append(process->readAllStandardError());
+        if (tail.size() > kStderrTailLimit)
+            tail.remove(0, tail.size() - kStderrTailLimit);
+    });
+
+    // Namespace prep when running inside a virtual network. The original
+    // startDeployment() read this off currentConfig, which was a bug: if
+    // the user clicked a different VM while a deployment was in flight,
+    // the wrong network mode could be read. We now use the deploying
+    // VM's own config.
+    if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !tapDevice.isEmpty()) {
+        const qint64 nsPid = m_networkManager->namespacePid(config.virtualNetworkName());
+        NamespaceHelper::prepareProcessForNamespace(process, nsPid);
+    } else {
+        process->setChildProcessModifier([] {
+            prctl(PR_SET_PDEATHSIG, SIGTERM);
+        });
+    }
+
+    process->setProgram(ExternalTools::instance().path(ExternalTools::QemuSystem));
+    process->setArguments(args);
+
+    // Bind vmName into the slot directly; no sender() introspection.
+    connect(process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, [this, vmName](int code, KProcess::ExitStatus status) {
+        handleQemuExit(vmName, code, status);
+    });
+
+    // Failure-on-start path (exec failure etc.). Once QEMU has been
+    // registered as the entry's qemuProcess, handleQemuExit() owns the
+    // failure handling instead.
+    connect(process, &QProcess::errorOccurred, this, [this, process, vmName](QProcess::ProcessError) {
+        const VmEntry *e = veModel->entryByName(vmName);
+        if (e && e->qemuProcess == process)
+            return;
+        KMessageBox::error(this, i18n("Failed to start QEMU for deployment: %1", process->errorString()));
+        process->deleteLater();
+        abortDeployment(vmName, false);
+    });
+
+    process->start();
+
+    // State stays Deploying (NOT Running). handleQemuExit() detects this
+    // on normal QEMU exit and routes to finalizeDeployment(), which
+    // flips the state to Stopped and clears the deploy markers.
+    veModel->setHeadless(vmName, headless);
+    veModel->setQemuProcess(vmName, process);
+
+    statusBar()->showMessage(i18n("Deploying '%1' - unattended installation running...", vmName));
+    updateDetails();
+    updateActionStates();
+
+    // Optional SPICE viewer for interactive deployments. Errors are
+    // surfaced inside the helper, so we ignore the result here.
+    if (!headless && config.displayType() == VMSpecs::DisplayType::Spice) {
+        startSpiceViewerAsync(vmName, [](bool) { });
+    }
+
+    // QMP client for monitoring the deployment's shutdown signal.
+    QMPClient *client = new QMPClient(this);
+    veModel->setQmpClient(vmName, client);
+
+    connect(client, &QMPClient::eventReceived, this, [this, vmName](const QString &eventName, const QJsonObject &data) {
+        onQMPEvent(vmName, eventName, data);
+    });
+    connect(client, &QMPClient::connected, this, [client]() {
+        client->startPerformanceTimer(1000);
+    });
+
+    // Wait for the QMP socket asynchronously. QPointer protects against
+    // the (unlikely) case where the client is torn down before the
+    // socket becomes available.
+    QPointer<QMPClient> safeClient(client);
+    AsyncHelperProcess::waitForSocket(this, sockPath, 2000, 50, [safeClient, vmName, sockPath](bool ok) {
+        if (!ok) {
+            qCWarning(KEMU) << "Deployment QMP: socket not ready for" << vmName;
+            return;
+        }
+        if (safeClient)
+            safeClient->connectToVm(sockPath);
+    });
 }
 
 QString MainWindow::dbusBusAddress(const QString &vmName) const
@@ -2276,12 +2559,14 @@ void MainWindow::reconnectViewer()
             statusBar()->showMessage(i18n("Viewer is already running for '%1'.", vmName));
             return;
         }
-        if (startSpiceViewer(vmName)) {
+        startSpiceViewerAsync(vmName, [this, vmName](bool ok) {
+            if (!ok)
+                return;
             veModel->setHeadless(vmName, false);
             statusBar()->showMessage(i18n("Viewer reconnected to '%1'.", vmName));
             updateDetails();
             updateActionStates();
-        }
+        });
         return;
     }
 
@@ -2509,7 +2794,7 @@ void MainWindow::startVM(bool headless)
     if (vmName.isEmpty())
         return;
 
-    const QString vmDirPath = getVmDir(currentConfig.name()).absolutePath();
+    const QString vmDirPath = getVmDir(vmName).absolutePath();
 
     const bool isResume = SaveStateManager::hasSavestate(vmDirPath, vmName);
     if (veModel->isBusy(vmName) && !isResume) {
@@ -2517,277 +2802,54 @@ void MainWindow::startVM(bool headless)
         return;
     }
 
-    // Reset failure-handling state from any previous run of this VM
     m_qemuStderrTails.remove(vmName);
     m_userInitiatedShutdowns.remove(vmName);
+    m_startupFailureShown.remove(vmName);
 
-    if (currentConfig.useKvm() && !QFile::exists(u"/dev/kvm"_s)) {
-        KMessageBox::error(this,
-                           i18n("/dev/kvm not found. Hardware virtualization may "
-                                "be disabled in BIOS."),
-                           i18n("KVM not available"));
-        return;
-    }
-
-    if (currentConfig.gpuType() == VMSpecs::GpuType::VgaISA) {
-        const QString qemuDataDir = QFileInfo(ExternalTools::instance().path(ExternalTools::QemuSystem)).absoluteDir().absoluteFilePath(u"../share/qemu"_s);
-        const QString romPath = QDir(qemuDataDir).absoluteFilePath(u"vgabios.bin"_s);
-        if (!QFile::exists(romPath)) {
-            const QString isavgaRom = QDir(qemuDataDir).absoluteFilePath(u"vgabios-isavga.bin"_s);
-            QString detail;
-            if (QFile::exists(isavgaRom)) {
-                detail = i18n(
-                    "<p>A compatible ROM was found at:<br/>"
-                    "<tt>%1</tt></p>"
-                    "<p>To fix this, create a symbolic link:</p>"
-                    "<pre>sudo ln -s vgabios-isavga.bin %2</pre>",
-                    isavgaRom,
-                    romPath);
-            } else {
-                detail = i18n("Please install the QEMU VGA BIOS package for your distribution.");
-            }
-            KMessageBox::error(this,
-                               u"<p>"_s + i18n("The ISA VGA device requires %1 which was not found in:", u"<tt>vgabios.bin</tt><br/>"_s) + u"<tt>"_s
-                                   + qemuDataDir + u"</tt></p>"_s + detail,
-                               i18n("Missing VGA BIOS ROM"));
-            return;
-        }
-    }
-
-    if (!isDisplayTypeAvailable(currentConfig.displayType())) {
-        const auto configuredType = currentConfig.displayType();
-        const auto fallbackType = VMSpecs::DisplayType::Gtk;
-
-        const auto result = KMessageBox::warningTwoActions(this,
-                                                           i18n("The configured display type '%1' is currently not available.\n"
-                                                                "KEMU will use '%2' instead.\n\n",
-                                                                VMConfig::toUIString(configuredType),
-                                                                VMConfig::toUIString(fallbackType)),
-                                                           i18n("Display Type Unavailable"),
-                                                           KStandardGuiItem::cont(),
-                                                           KStandardGuiItem::cancel());
-
-        if (result != KMessageBox::PrimaryAction)
-            return;
-
-        currentConfig.setDisplayType(fallbackType);
-    }
-
-    QFile::remove(monitorSocketPath(vmName));
-
-    // Remove any stale D-Bus display socket from a previous run
-    if (currentConfig.displayType() == VMSpecs::DisplayType::Dbus)
-        cleanupDbusSocket(vmName);
+    auto *chain = new StartupChain(this);
 
     if (!headless && currentConfig.displayType() == VMSpecs::DisplayType::Dbus) {
-        if (!startDbusDaemon(vmName)) {
-            tearDownVmRuntime(vmName);
-            return;
-        }
+        chain->then([this, vmName](auto done) {
+            startDbusDaemonAsync(vmName, std::move(done));
+        });
     }
-
     if (currentConfig.useTpm()) {
-        if (!startSwtpm(vmName)) {
-            tearDownVmRuntime(vmName);
-            return;
-        }
+        chain->then([this, vmName](auto done) {
+            startSwtpmAsync(vmName, std::move(done));
+        });
     }
-
     if (!currentConfig.sharedPath().isEmpty() && currentConfig.osType() == VMSpecs::OsType::Windows) {
-        if (!startVirtiofsd(vmName)) {
-            tearDownVmRuntime(vmName);
-            return;
-        }
+        chain->then([this, vmName](auto done) {
+            startVirtiofsdAsync(vmName, std::move(done));
+        });
     }
 
-    QString tapDevice;
+    // Network: passt is async, virtual-network setup is sync (namespace
+    // operations don't block long enough to matter).
+    QString resolvedTap;
     if (currentConfig.networkCard() != VMSpecs::NetworkCard::None) {
         if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
-            tapDevice = ensureNetworkRunning(currentConfig.virtualNetworkName(), vmName);
-            if (tapDevice.isEmpty()) {
+            resolvedTap = ensureNetworkRunning(currentConfig.virtualNetworkName(), vmName);
+            if (resolvedTap.isEmpty()) {
+                delete chain;
                 tearDownVmRuntime(vmName);
                 return;
             }
         } else {
-            if (!startPasst(vmName, currentConfig.portForwards())) {
-                tearDownVmRuntime(vmName);
-                return;
-            }
-        }
-    }
-
-    const QString sockPath = vmDirPath + u'/' + KEMUConst::QemuMonitorSocketFileName;
-
-    NetworkContext netCtx;
-    if (!tapDevice.isEmpty())
-        netCtx.tapDevice = tapDevice;
-
-    const QString savestatePath = SaveStateManager::hasSavestate(vmDirPath, vmName) ? SaveStateManager::savestateFilePath(vmDirPath, vmName) : QString{};
-
-    const QStringList args =
-        QemuCommandBuilder::build(currentConfig, getVmDir(currentConfig.name()), sockPath, netCtx, /*relativePaths=*/false, headless, savestatePath);
-
-    if (!requireTool(ExternalTools::QemuSystem))
-        return;
-
-    KProcess *process = new KProcess(this);
-    process->setOutputChannelMode(KProcess::SeparateChannels);
-
-    // Capture QEMU stderr in a rolling tail buffer for diagnostics
-    constexpr int kStderrTailLimit = 65536;
-    connect(process, &QProcess::readyReadStandardError, this, [this, process, vmName]() {
-        QByteArray &tail = m_qemuStderrTails[vmName];
-        tail.append(process->readAllStandardError());
-        if (tail.size() > kStderrTailLimit)
-            tail.remove(0, tail.size() - kStderrTailLimit);
-    });
-
-    if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !tapDevice.isEmpty()) {
-        const qint64 nsPid = m_networkManager->namespacePid(currentConfig.virtualNetworkName());
-        NamespaceHelper::prepareProcessForNamespace(process, nsPid);
-        // PR_SET_PDEATHSIG is handled inside prepareProcessForNamespace.
-    } else {
-        process->setChildProcessModifier([] {
-            prctl(PR_SET_PDEATHSIG, SIGTERM);
-        });
-    }
-
-    process->setProgram(ExternalTools::instance().path(ExternalTools::QemuSystem));
-    process->setArguments(args);
-
-    connect(process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, [this, vmName](int code, KProcess::ExitStatus status) {
-        handleQemuExit(vmName, code, status);
-    });
-
-    // We connect started/errorOccurred BEFORE start() so we never miss the signal.
-    // On success we keep the process running; on failure we tear everything down.
-    connect(process, &QProcess::errorOccurred, this, [this, process, vmName](QProcess::ProcessError) {
-        // Only handle errors that occur before QEMU has been registered
-        // as the entry's qemuProcess. Once registered, handleQemuExit()
-        // owns the failure path.
-        const VmEntry *e = veModel->entryByName(vmName);
-        if (e && e->qemuProcess == process)
-            return;
-        const QString err = process->errorString();
-        process->disconnect();
-        process->deleteLater();
-        tearDownVmRuntime(vmName);
-        showQemuFailureDialog(vmName, true, -1, KProcess::CrashExit, err.toUtf8());
-    });
-
-    process->start();
-
-    // Optimistically register the process. If QEMU exits within the probe
-    // window, handleQemuExit() will see startupFailed == true (see below)
-    // and route to showQemuFailureDialog instead of the normal stop path.
-    veModel->setHeadless(vmName, headless);
-    veModel->setQemuProcess(vmName, process);
-    veModel->setVmState(vmName, VmEntry::State::Running);
-    statusBar()->showMessage(i18n("VM '%1' started.", vmName));
-    updateDetails();
-    updateActionStates();
-
-    scheduleQemuStartupProbe(process, vmName);
-
-    statusBar()->showMessage(i18n("VM '%1' started.", vmName));
-    updateDetails();
-    updateActionStates();
-
-    // Launch SPICE viewer if configured
-    if (!headless && currentConfig.displayType() == VMSpecs::DisplayType::Spice) {
-        startSpiceViewer(vmName);
-    }
-
-    // Launch integrated D-Bus viewer if configured
-    if (!headless && currentConfig.displayType() == VMSpecs::DisplayType::Dbus) {
-        QTimer::singleShot(500, this, [this, vmName]() {
-            startDbusViewer(vmName);
-        });
-    }
-
-    QMPClient *client = new QMPClient(this);
-    veModel->setQmpClient(vmName, client);
-    connect(client, &QMPClient::eventReceived, this, [this, vmName](const QString &eventName, const QJsonObject &data) {
-        this->onQMPEvent(vmName, eventName, data);
-    });
-
-    connect(client, &QMPClient::connected, this, [this, client, vmName, isResume]() {
-        client->startPerformanceTimer(1000);
-
-        // Enable balloon guest statistics for actual RAM usage
-        QJsonObject balloonArgs;
-        balloonArgs[u"path"_s] = u"/machine/peripheral-anon/balloon0"_s;
-        balloonArgs[u"property"_s] = u"guest-stats-polling-interval"_s;
-        balloonArgs[u"value"_s] = 2;
-        client->sendCommand(u"qom-set"_s, balloonArgs);
-
-        if (selectedVmName() == vmName && perfMonitor) {
-            const VmEntry *e = veModel->entryByName(vmName);
-            if (e) {
-                perfMonitor->setHistory(PerformanceMonitorWidget::Cpu, e->cpuHistory);
-                perfMonitor->setHistory(PerformanceMonitorWidget::Ram, e->ramHistory);
-                perfMonitor->setHistory(PerformanceMonitorWidget::Io, e->ioHistory);
-            }
-            perfMonitor->setActive(true);
-        }
-
-        // Successful resume: the savestate file has done its job, drop it so
-        // a subsequent normal start does not try to resume again.
-        const QString dir = getVmDir(vmName).absolutePath();
-        if (SaveStateManager::hasSavestate(dir, vmName)) {
-            SaveStateManager::discardSavestate(dir, vmName);
-            veModel->setHasSavestate(vmName, false);
-        }
-
-        if (isResume) {
-            // QEMU loaded a paused state from the savestate file. Resume the
-            // guest now that the QMP channel is up.
-            client->sendCommand(u"cont"_s, {}, [vmName](QMPResult r) {
-                if (!r.success)
-                    qWarning() << "Could not resume" << vmName << "from savestate:" << r.errorMessage;
+            const auto pf = currentConfig.portForwards();
+            chain->then([this, vmName, pf](auto done) {
+                startPasstAsync(vmName, pf, std::move(done));
             });
-            SaveStateManager::discardSavestate(getVmDir(vmName).absolutePath(), vmName);
         }
-    });
-
-    connect(client, &QMPClient::cpuUsageUpdated, this, [this, vmName](const VmCpuUsage &usage) {
-        if (!usage.isValid)
-            return;
-        veModel->appendPerfSample(vmName, 0, usage.averagePercent);
-        if (selectedVmName() == vmName && perfMonitor)
-            perfMonitor->addSample(PerformanceMonitorWidget::Cpu, usage.averagePercent);
-    });
-
-    connect(client, &QMPClient::memoryUsageUpdated, this, [this, vmName](const VmMemoryUsage &usage) {
-        if (!usage.isValid)
-            return;
-        veModel->appendPerfSample(vmName, 1, usage.usagePercent);
-        if (selectedVmName() == vmName && perfMonitor)
-            perfMonitor->addSample(PerformanceMonitorWidget::Ram, usage.usagePercent);
-    });
-
-    connect(client, &QMPClient::blockStatsUpdated, this, [this, vmName](const VmBlockStats &stats) {
-        if (!stats.isValid)
-            return;
-        VmEntry *e = veModel->entryByName(vmName);
-        if (!e)
-            return;
-
-        const double totalBps = stats.totalRdBytesPerSec + stats.totalWrBytesPerSec;
-        if (totalBps > e->ioPeakBytesPerSec)
-            e->ioPeakBytesPerSec = totalBps;
-        const double pct = (e->ioPeakBytesPerSec > 0.0) ? (totalBps / e->ioPeakBytesPerSec * 100.0) : 0.0;
-
-        veModel->appendPerfSample(vmName, 2, pct);
-        if (selectedVmName() == vmName && perfMonitor)
-            perfMonitor->addSample(PerformanceMonitorWidget::Io, pct);
-    });
-
-    if (Utils::waitForSocket(sockPath, 2000)) {
-        client->connectToVm(sockPath);
-    } else {
-        qCWarning(KEMU) << "Failed to connect to QMP: Socket was not created in time.";
     }
+
+    chain->run([this, vmName, headless, resolvedTap](bool ok) {
+        if (!ok) {
+            tearDownVmRuntime(vmName);
+            return;
+        }
+        launchQemuProcess(vmName, headless, resolvedTap);
+    });
 }
 
 void MainWindow::startVMHeadless()
@@ -2824,20 +2886,15 @@ void MainWindow::handleQemuExit(const QString &vmName, int exitCode, KProcess::E
 {
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry)
-        return; // VM bereits aus dem Model entfernt
+        return;
 
     QPointer<KProcess> p = entry->qemuProcess;
 
-    if (vmName.isEmpty()) {
-        p->deleteLater();
-        return;
-    }
-
-    const bool wasDeploying = entry && entry->state == VmEntry::State::Deploying;
+    const bool wasDeploying = entry->state == VmEntry::State::Deploying;
     const bool userInitiated = m_userInitiatedShutdowns.contains(vmName);
+    const bool startupAlreadyShown = m_startupFailureShown.contains(vmName);
     const bool abnormal = (exitStatus != KProcess::NormalExit) || (exitCode != 0);
 
-    // Drain any remaining stderr before tear-down clears the buffer
     if (p) {
         QByteArray &tail = m_qemuStderrTails[vmName];
         tail.append(p->readAllStandardError());
@@ -2851,11 +2908,9 @@ void MainWindow::handleQemuExit(const QString &vmName, int exitCode, KProcess::E
     if (wasDeploying) {
         finalizeDeployment(vmName);
     } else if (savestatePresent && !abnormal) {
-        // The VM was suspended to disk. Show it as 'Saved' instead of 'Stopped'.
-        if (entry)
-            veModel->setVmState(vmName, VmEntry::State::Saved);
+        veModel->setVmState(vmName, VmEntry::State::Saved);
         statusBar()->showMessage(i18n("VM '%1' state saved.", vmName));
-    } else if (abnormal && !userInitiated && !m_startupFailureShown.contains(vmName)) {
+    } else if (abnormal && !userInitiated && !startupAlreadyShown) {
         showQemuFailureDialog(vmName, /*startupFailed=*/false, exitCode, exitStatus, stderrTail);
     } else {
         statusBar()->showMessage(i18n("VM '%1' stopped.", vmName));
@@ -2872,7 +2927,8 @@ void MainWindow::handleQemuExit(const QString &vmName, int exitCode, KProcess::E
         }
     }
 
-    p->deleteLater();
+    if (p)
+        p->deleteLater();
 }
 
 void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, const QJsonObject &data)
@@ -3901,112 +3957,68 @@ void MainWindow::startDeployment(const QString &vmName, const bool disable_headl
     if (!entry || entry->state != VmEntry::State::Deploying)
         return;
 
-    // Load current config from disk
+    // The config may have been touched between VM creation and start (e.g.
+    // CloudImageDeployer rewrote the disk path). Reload it and let the
+    // model emit a refresh so the details view stays in sync.
     const QString vmPath = getVmDir(vmName).absolutePath();
     const VMConfig config = loadVmConfig(vmPath);
-    entry->config = config;
+    veModel->updateConfig(vmName, config);
 
-    if (config.useTpm()) {
-        if (!startSwtpm(vmName)) {
-            abortDeployment(vmName, false);
-            return;
-        }
-    }
+    // Reset failure-handling state from any previous attempt of this VM.
+    m_qemuStderrTails.remove(vmName);
+    m_userInitiatedShutdowns.remove(vmName);
+    m_startupFailureShown.remove(vmName);
 
-    if (!config.sharedPath().isEmpty() && config.osType() == VMSpecs::OsType::Windows) {
-        if (!startVirtiofsd(vmName)) {
-            abortDeployment(vmName, false);
-            return;
-        }
-    }
-
-    QString tapDevice;
-    if (config.networkCard() != VMSpecs::NetworkCard::None) {
-        if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
-            tapDevice = ensureNetworkRunning(config.virtualNetworkName(), vmName);
-            if (tapDevice.isEmpty()) {
-                abortDeployment(vmName, false);
-                return;
-            }
-        } else {
-            if (!startPasst(vmName, config.portForwards())) {
-                abortDeployment(vmName, false);
-                return;
-            }
-        }
-    }
-
-    QFile::remove(monitorSocketPath(vmName));
-
-    const bool headless = disable_headless ? false : SettingsDialog::deployHeadless();
-    const QString sockPath = vmPath + u'/' + KEMUConst::QemuMonitorSocketFileName;
-    NetworkContext netCtx;
-    if (!tapDevice.isEmpty())
-        netCtx.tapDevice = tapDevice;
-
-    QStringList args = QemuCommandBuilder::build(config, getVmDir(vmName), sockPath, netCtx, false, headless);
-
-    const bool serialLog = SettingsDialog::deploySerialLog();
-    if (serialLog) {
-        const QString logFile = vmPath + u'/' + KEMUConst::DeploySerialLogFileName;
-        args << u"-serial"_s << u"file:%1"_s.arg(logFile);
-    }
-
+    // Pre-flight: bail out before starting helpers if QEMU is missing,
+    // so we don't leave half-set-up helpers running.
     if (!requireTool(ExternalTools::QemuSystem)) {
         abortDeployment(vmName, false);
         return;
     }
 
-    KProcess *process = new KProcess(this);
+    // --- Helper chain ---
+    auto *chain = new StartupChain(this);
 
-    if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !tapDevice.isEmpty()) {
-        const qint64 nsPid = m_networkManager->namespacePid(config.virtualNetworkName());
-        NamespaceHelper::prepareProcessForNamespace(process, nsPid);
+    if (config.useTpm()) {
+        chain->then([this, vmName](auto done) {
+            startSwtpmAsync(vmName, std::move(done));
+        });
     }
-    process->setProgram(ExternalTools::instance().path(ExternalTools::QemuSystem));
-    process->setArguments(args);
-
-    connect(process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, [this, vmName](int code, KProcess::ExitStatus status) {
-        handleQemuExit(vmName, code, status);
-    });
-
-    process->start();
-
-    if (!process->waitForStarted()) {
-        KMessageBox::error(this, i18n("Failed to start QEMU for deployment: %1", process->errorString()));
-        delete process;
-        abortDeployment(vmName, false);
-        return;
+    if (!config.sharedPath().isEmpty() && config.osType() == VMSpecs::OsType::Windows) {
+        chain->then([this, vmName](auto done) {
+            startVirtiofsdAsync(vmName, std::move(done));
+        });
     }
 
-    if (!headless && config.displayType() == VMSpecs::DisplayType::Spice) {
-        startSpiceViewer(vmName);
+    // Network: passt is async, virtual-network setup is sync (namespace
+    // operations are short and we need the tap device name before QEMU
+    // starts).
+    QString resolvedTap;
+    if (config.networkCard() != VMSpecs::NetworkCard::None) {
+        if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
+            resolvedTap = ensureNetworkRunning(config.virtualNetworkName(), vmName);
+            if (resolvedTap.isEmpty()) {
+                delete chain;
+                abortDeployment(vmName, false);
+                return;
+            }
+        } else {
+            const auto pf = config.portForwards();
+            chain->then([this, vmName, pf](auto done) {
+                startPasstAsync(vmName, pf, std::move(done));
+            });
+        }
     }
 
-    veModel->setHeadless(vmName, headless);
-    veModel->setQemuProcess(vmName, process);
-    // State stays Deploying (not Running)
+    const bool headless = disable_headless ? false : SettingsDialog::deployHeadless();
 
-    statusBar()->showMessage(i18n("Deploying '%1' - unattended installation running...", vmName));
-    updateDetails();
-    updateActionStates();
-
-    // QMP connection for monitoring shutdown
-    QMPClient *client = new QMPClient(this);
-    veModel->setQmpClient(vmName, client);
-
-    connect(client, &QMPClient::eventReceived, this, [this, vmName](const QString &eventName, const QJsonObject &data) {
-        this->onQMPEvent(vmName, eventName, data);
+    chain->run([this, vmName, headless, resolvedTap](bool ok) {
+        if (!ok) {
+            abortDeployment(vmName, false);
+            return;
+        }
+        launchQemuForDeployment(vmName, headless, resolvedTap);
     });
-
-    connect(client, &QMPClient::connected, this, [client]() {
-        client->startPerformanceTimer(1000);
-    });
-
-    if (Utils::waitForSocket(sockPath, 2000))
-        client->connectToVm(sockPath);
-    else
-        qCWarning(KEMU) << "Deployment QMP: socket not ready for" << vmName;
 }
 
 void MainWindow::finalizeDeployment(const QString &vmName)
@@ -4174,20 +4186,20 @@ void MainWindow::populateUsbMenuFor(const QString &vmName, QMenu *target)
 
 void MainWindow::scheduleQemuStartupProbe(KProcess *process, const QString &vmName)
 {
-    QTimer::singleShot(kQemuStartupProbeMs, this, [this, process, vmName]() {
-        if (!process)
+    QPointer<KProcess> safeProcess(process);
+    QTimer::singleShot(kQemuStartupProbeMs, this, [this, safeProcess, vmName]() {
+        if (!safeProcess)
             return;
-        // If it's still running, we're past the danger zone. handleQemuExit()
-        // will handle any future exit normally.
-        if (process->state() == KProcess::Running)
-            return;
+        if (safeProcess->state() == KProcess::Running)
+            return; // Past the danger zone; handleQemuExit() owns any future exit.
 
-        // QEMU died inside the probe window -> classify as startup failure.
-        const int exitCode = process->exitCode();
-        const auto exitStatus = process->exitStatus();
-        const QByteArray tail = m_qemuStderrTails.value(vmName);
-
+        // QEMU died inside the probe window. Mark so handleQemuExit doesn't
+        // raise a second, duplicate dialog about the same failure.
         m_startupFailureShown.insert(vmName);
+
+        const int exitCode = safeProcess->exitCode();
+        const auto exitStatus = safeProcess->exitStatus();
+        const QByteArray tail = m_qemuStderrTails.value(vmName);
         showQemuFailureDialog(vmName, /*startupFailed=*/true, exitCode, exitStatus, tail);
     });
 }
