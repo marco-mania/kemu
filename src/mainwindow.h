@@ -119,7 +119,7 @@ private Q_SLOTS:
     void showContextMenu(const QPoint &pos);
 
     void onVmSelectionChanged();
-    void onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus);
+    void handleQemuExit(const QString &vmName, int exitCode, KProcess::ExitStatus exitStatus);
 
     void onQMPEvent(const QString &vmName, const QString &eventName, const QJsonObject &data);
 

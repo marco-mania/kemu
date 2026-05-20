@@ -2649,7 +2649,9 @@ void MainWindow::startVM(bool headless)
     process->setProgram(ExternalTools::instance().path(ExternalTools::QemuSystem));
     process->setArguments(args);
 
-    connect(process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, &MainWindow::onProcessFinished);
+    connect(process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, [this, vmName](int code, KProcess::ExitStatus status) {
+        handleQemuExit(vmName, code, status);
+    });
 
     process->start();
 
@@ -2809,27 +2811,19 @@ void MainWindow::discardSavedState()
     discardSavedStateForVm(currentConfig.name());
 }
 
-void MainWindow::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus)
+void MainWindow::handleQemuExit(const QString &vmName, int exitCode, KProcess::ExitStatus exitStatus)
 {
-    const QPointer<KProcess> p = qobject_cast<KProcess *>(sender());
-    if (!p)
-        return;
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry)
+        return; // VM bereits aus dem Model entfernt
 
-    QString vmName;
-    for (const QString &name : veModel->vmNames()) {
-        const VmEntry *e = veModel->entryByName(name);
-        if (e && e->qemuProcess == p) {
-            vmName = name;
-            break;
-        }
-    }
+    QPointer<KProcess> p = entry->qemuProcess;
 
     if (vmName.isEmpty()) {
         p->deleteLater();
         return;
     }
 
-    const VmEntry *entry = veModel->entryByName(vmName);
     const bool wasDeploying = entry && entry->state == VmEntry::State::Deploying;
     const bool userInitiated = m_userInitiatedShutdowns.contains(vmName);
     const bool abnormal = (exitStatus != KProcess::NormalExit) || (exitCode != 0);
@@ -3962,7 +3956,9 @@ void MainWindow::startDeployment(const QString &vmName, const bool disable_headl
     process->setProgram(ExternalTools::instance().path(ExternalTools::QemuSystem));
     process->setArguments(args);
 
-    connect(process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, &MainWindow::onProcessFinished);
+    connect(process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, [this, vmName](int code, KProcess::ExitStatus status) {
+        handleQemuExit(vmName, code, status);
+    });
 
     process->start();
 
