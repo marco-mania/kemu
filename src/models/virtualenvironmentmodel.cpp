@@ -5,7 +5,9 @@
  */
 
 #include "models/virtualenvironmentmodel.h"
+
 #include "const.h"
+#include "utils/savestatemanager.h"
 
 VirtualEnvironmentModel::VirtualEnvironmentModel(ImageDatabase *imageDb, QObject *parent)
     : QAbstractItemModel(parent)
@@ -253,6 +255,7 @@ void VirtualEnvironmentModel::loadFromDisk(const QDir &baseDir,
         entry.name = d;
         entry.config = loader(vmPath);
         entry.folderName = folderAssignments.value(d);
+        entry.hasSavestateFile = SaveStateManager::hasSavestate(vmPath, d);
         m_vms.append(std::move(entry));
     }
 
@@ -403,6 +406,16 @@ void VirtualEnvironmentModel::appendPerfSample(const QString &name, int channel,
     hist->append(value);
     if (hist->size() > MaxHistory)
         hist->removeFirst();
+}
+
+void VirtualEnvironmentModel::setHasSavestate(const QString &name, bool exists)
+{
+    if (VmEntry *e = entryByName(name)) {
+        if (e->hasSavestateFile != exists) {
+            e->hasSavestateFile = exists;
+            emitVmChanged(name);
+        }
+    }
 }
 
 bool VirtualEnvironmentModel::isRunning(const QString &name) const

@@ -59,6 +59,8 @@ struct VmEntry {
 
     // USB passthrough: key = "bus:addr", value = QEMU device id
     QMap<QString, QString> attachedUsb;
+
+    bool hasSavestateFile = false; // cached: existence of savestate file on disk
 };
 
 struct FolderEntry {
@@ -126,6 +128,8 @@ public:
     void setQmpClient(const QString &name, QMPClient *client);
     void updateConfig(const QString &name, const VMConfig &config);
     void appendPerfSample(const QString &name, int channel, double value);
+
+    void setHasSavestate(const QString &name, bool exists);
 
     bool isRunning(const QString &name) const;
     bool isBusy(const QString &name) const;

@@ -1056,7 +1056,7 @@ void MainWindow::updateActionStates()
     const bool isDeploying = entry && entry->state == VmEntry::State::Deploying;
     const bool isBusy = entry && entry->state != VmEntry::State::Stopped;
 
-    const bool hasSaved = hasSelection && entry && SaveStateManager::hasSavestate(getVmDir(entry->config.name()).absolutePath(), entry->config.name());
+    const bool hasSaved = hasSelection && entry && entry->hasSavestateFile;
     const bool isSaving = entry && entry->state == VmEntry::State::Saving;
     const bool isSavedOnly = entry && entry->state == VmEntry::State::Saved;
     const bool hasDisk = entry && !entry->config.diskPath().isEmpty();
@@ -2727,8 +2727,10 @@ void MainWindow::startVM(bool headless)
         // Successful resume: the savestate file has done its job, drop it so
         // a subsequent normal start does not try to resume again.
         const QString dir = getVmDir(vmName).absolutePath();
-        if (SaveStateManager::hasSavestate(dir, vmName))
+        if (SaveStateManager::hasSavestate(dir, vmName)) {
             SaveStateManager::discardSavestate(dir, vmName);
+            veModel->setHasSavestate(vmName, false);
+        }
 
         if (isResume) {
             // QEMU loaded a paused state from the savestate file. Resume the
@@ -3324,6 +3326,8 @@ void MainWindow::saveStateVMByName(const QString &vmName, bool skipConfirm)
             currentEntry->qmpClient->sendCommand(u"quit"_s, {}, nullptr);
         }
 
+        veModel->setHasSavestate(vmName, true);
+
         QTimer::singleShot(1000, this, [this, vmName, process]() {
             if (!process || process->state() != KProcess::Running)
                 return;
@@ -3364,6 +3368,8 @@ void MainWindow::discardSavedStateForVm(const QString &vmName)
         KMessageBox::error(safeParentW, i18n("Could not delete the savestate file."));
         return;
     }
+
+    veModel->setHasSavestate(vmName, false);
 
     if (veModel->entryByName(vmName) && veModel->entryByName(vmName)->state == VmEntry::State::Saved)
         veModel->setVmState(vmName, VmEntry::State::Stopped);
