@@ -127,7 +127,6 @@ MainWindow::~MainWindow()
 
         // Stop the QEMU process; Qt's parent-child cleanup deletes it
         if (e->qemuProcess) {
-            m_userInitiatedShutdowns.insert(name);
             e->qemuProcess->disconnect();
             if (e->qemuProcess->state() == KProcess::Running) {
                 e->qemuProcess->terminate();
@@ -309,7 +308,6 @@ void MainWindow::setupUi()
     vmActionBar->setMovable(false);
 
     detailsBrowser = new QTextBrowser();
-    detailsBrowser->setOpenLinks(false);
     detailsBrowser->setFrameShape(QFrame::NoFrame);
     detailsBrowser->setStyleSheet(u"QTextBrowser { background: palette(window); padding: 12px; }"_s);
     detailsBrowser->setOpenLinks(false);
@@ -1446,9 +1444,6 @@ void MainWindow::updateDetails()
         ".pid { color: %5; margin-left: 8px; }"
         ".pid a { color: %6; text-decoration: none; }"
         ".pid a:hover { text-decoration: underline; color: %7; }"
-        ".pid a:hover { text-decoration: underline; color: %7; }"
-        ".hw-table { width: 100%; border-collapse: collapse; margin-top: 4px; "
-        "line-height: 1.0; }"
         ".hw-table { width: 100%; border-collapse: collapse; margin-top: 4px; "
         "line-height: 1.0; }"
         ".hw-table td { padding: 2px 10px; vertical-align: middle; }"
@@ -2520,11 +2515,13 @@ void MainWindow::startVM(bool headless)
     m_qemuStderrTails.remove(vmName);
     m_userInitiatedShutdowns.remove(vmName);
 
-    if (currentConfig.useKvm() && !QFile::exists(u"/dev/kvm"_s))
+    if (currentConfig.useKvm() && !QFile::exists(u"/dev/kvm"_s)) {
         KMessageBox::error(this,
                            i18n("/dev/kvm not found. Hardware virtualization may "
                                 "be disabled in BIOS."),
                            i18n("KVM not available"));
+        return;
+    }
 
     if (currentConfig.gpuType() == VMSpecs::GpuType::VgaISA) {
         const QString qemuDataDir = QFileInfo(ExternalTools::instance().path(ExternalTools::QemuSystem)).absoluteDir().absoluteFilePath(u"../share/qemu"_s);
@@ -2566,6 +2563,8 @@ void MainWindow::startVM(bool headless)
 
         if (result != KMessageBox::PrimaryAction)
             return;
+
+        currentConfig.setDisplayType(fallbackType);
     }
 
     QFile::remove(monitorSocketPath(vmName));
@@ -3956,8 +3955,8 @@ void MainWindow::startDeployment(const QString &vmName, const bool disable_headl
 
     KProcess *process = new KProcess(this);
 
-    if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !tapDevice.isEmpty()) {
-        const qint64 nsPid = m_networkManager->namespacePid(currentConfig.virtualNetworkName());
+    if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !tapDevice.isEmpty()) {
+        const qint64 nsPid = m_networkManager->namespacePid(config.virtualNetworkName());
         NamespaceHelper::prepareProcessForNamespace(process, nsPid);
     }
     process->setProgram(ExternalTools::instance().path(ExternalTools::QemuSystem));

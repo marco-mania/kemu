@@ -248,11 +248,5 @@ private:
 
     VMConfig currentConfig;
 
-    // Grace period between QMP `quit` and forced termination after savestate.
-    // QEMU should exit within milliseconds; anything beyond a few seconds
-    // means the process is wedged and must be killed to preserve the
-    // "savestate exists ⇒ VM not running" invariant.
-    static constexpr int kSaveStateQuitGraceMs = 5000;
-
     QWidget *dialogParentFor(const QString &vmName);
 };
