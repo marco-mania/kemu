@@ -248,5 +248,9 @@ private:
 
     VMConfig currentConfig;
 
+    void scheduleQemuStartupProbe(KProcess *process, const QString &vmName);
+    static constexpr int kQemuStartupProbeMs = 750;
+    QSet<QString> m_startupFailureShown;
+
     QWidget *dialogParentFor(const QString &vmName);
 };

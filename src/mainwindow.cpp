@@ -2659,35 +2659,36 @@ void MainWindow::startVM(bool headless)
         handleQemuExit(vmName, code, status);
     });
 
+    // We connect started/errorOccurred BEFORE start() so we never miss the signal.
+    // On success we keep the process running; on failure we tear everything down.
+    connect(process, &QProcess::errorOccurred, this, [this, process, vmName](QProcess::ProcessError) {
+        // Only handle errors that occur before QEMU has been registered
+        // as the entry's qemuProcess. Once registered, handleQemuExit()
+        // owns the failure path.
+        const VmEntry *e = veModel->entryByName(vmName);
+        if (e && e->qemuProcess == process)
+            return;
+        const QString err = process->errorString();
+        process->disconnect();
+        process->deleteLater();
+        tearDownVmRuntime(vmName);
+        showQemuFailureDialog(vmName, true, -1, KProcess::CrashExit, err.toUtf8());
+    });
+
     process->start();
 
-    if (!process->waitForStarted(3000)) {
-        const QString errStr = process->errorString();
-        process->disconnect();
-        delete process;
-        tearDownVmRuntime(vmName);
-        showQemuFailureDialog(vmName, true, -1, KProcess::CrashExit, errStr.toUtf8());
-        return;
-    }
-
-    // Quick-exit probe: if QEMU dies within 750 ms, treat it as a startup
-    // failure (bad arguments, missing firmware, KVM permission denied, ...)
-    // rather than a normal run that ended.
-    if (process->waitForFinished(750)) {
-        const int exitCode = process->exitCode();
-        const auto exitStatus = process->exitStatus();
-        QByteArray tail = m_qemuStderrTails.value(vmName);
-        tail.append(process->readAllStandardError());
-        process->disconnect();
-        delete process;
-        tearDownVmRuntime(vmName);
-        showQemuFailureDialog(vmName, true, exitCode, exitStatus, tail);
-        return;
-    }
-
+    // Optimistically register the process. If QEMU exits within the probe
+    // window, handleQemuExit() will see startupFailed == true (see below)
+    // and route to showQemuFailureDialog instead of the normal stop path.
     veModel->setHeadless(vmName, headless);
     veModel->setQemuProcess(vmName, process);
     veModel->setVmState(vmName, VmEntry::State::Running);
+    statusBar()->showMessage(i18n("VM '%1' started.", vmName));
+    updateDetails();
+    updateActionStates();
+
+    scheduleQemuStartupProbe(process, vmName);
+
     statusBar()->showMessage(i18n("VM '%1' started.", vmName));
     updateDetails();
     updateActionStates();
@@ -2854,11 +2855,13 @@ void MainWindow::handleQemuExit(const QString &vmName, int exitCode, KProcess::E
         if (entry)
             veModel->setVmState(vmName, VmEntry::State::Saved);
         statusBar()->showMessage(i18n("VM '%1' state saved.", vmName));
-    } else if (abnormal && !userInitiated) {
+    } else if (abnormal && !userInitiated && !m_startupFailureShown.contains(vmName)) {
         showQemuFailureDialog(vmName, /*startupFailed=*/false, exitCode, exitStatus, stderrTail);
     } else {
         statusBar()->showMessage(i18n("VM '%1' stopped.", vmName));
     }
+
+    m_startupFailureShown.remove(vmName);
 
     if (selectedVmName() == vmName) {
         updateDetails();
@@ -4167,6 +4170,26 @@ void MainWindow::populateUsbMenuFor(const QString &vmName, QMenu *target)
         action->setData(QVariantList{dev.busNum, dev.devAddr, dev.busKey(), dev.qemuId(), vmName}); // carry vmName
         connect(action, &QAction::triggered, this, &MainWindow::onUsbActionTriggered);
     }
+}
+
+void MainWindow::scheduleQemuStartupProbe(KProcess *process, const QString &vmName)
+{
+    QTimer::singleShot(kQemuStartupProbeMs, this, [this, process, vmName]() {
+        if (!process)
+            return;
+        // If it's still running, we're past the danger zone. handleQemuExit()
+        // will handle any future exit normally.
+        if (process->state() == KProcess::Running)
+            return;
+
+        // QEMU died inside the probe window -> classify as startup failure.
+        const int exitCode = process->exitCode();
+        const auto exitStatus = process->exitStatus();
+        const QByteArray tail = m_qemuStderrTails.value(vmName);
+
+        m_startupFailureShown.insert(vmName);
+        showQemuFailureDialog(vmName, /*startupFailed=*/true, exitCode, exitStatus, tail);
+    });
 }
 
 QWidget *MainWindow::dialogParentFor(const QString &vmName)
