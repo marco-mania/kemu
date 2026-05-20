@@ -709,7 +709,12 @@ public:
     bool removeCustomIcon(const QDir &dir);
 
     // --- Static Icon Helper ---
-    [[nodiscard]] static QIcon styledVmIcon(const QIcon &baseIcon, bool isRunning, bool isHeadless, int size = KEMUConst::ListViewIconSize);
+    enum class VmVisualState {
+        Stopped,
+        Running,
+        Saved
+    };
+    [[nodiscard]] static QIcon styledVmIcon(const QIcon &baseIcon, VmVisualState state, bool isHeadless, int size = KEMUConst::ListViewIconSize);
     [[nodiscard]] static QString osIconDir();
     [[nodiscard]] static QString defaultIconForType(VMSpecs::OsType type);
     [[nodiscard]] static QString defaultIconFor(VMSpecs::OsType type, const QString &variant);

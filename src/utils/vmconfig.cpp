@@ -253,20 +253,16 @@ bool VMConfig::removeCustomIcon(const QDir &dir)
 
 // --- Static Icon Helper ---
 
-QIcon VMConfig::styledVmIcon(const QIcon &baseIcon, bool isRunning, bool isHeadless, int size)
+QIcon VMConfig::styledVmIcon(const QIcon &baseIcon, VmVisualState state, bool isHeadless, int size)
 {
     const qreal dpr = qApp->devicePixelRatio();
     const int margin = 4;
     const int totalSize = size + margin * 2;
 
-    // Allocate at device-pixel resolution, but mark with DPR
-    // so QPainter works in logical coordinates (0 ... totalSize)
     QPixmap result(qRound(totalSize * dpr), qRound(totalSize * dpr));
     result.setDevicePixelRatio(dpr);
     result.fill(Qt::transparent);
 
-    // Request base icon at logical size with DPR hint –
-    // Qt returns a high-res pixmap with DPR already set
     const QPixmap basePix = baseIcon.pixmap(QSize(size, size), dpr);
     if (basePix.isNull())
         return baseIcon;
@@ -274,9 +270,32 @@ QIcon VMConfig::styledVmIcon(const QIcon &baseIcon, bool isRunning, bool isHeadl
     QPainter painter(&result);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    // ---- All coordinates below are LOGICAL ----
+    const int emblemSize = size / 2;
+    const int ex = totalSize - emblemSize - 1;
+    const int ey = totalSize - emblemSize - 1;
 
-    if (isRunning) {
+    // Helper: desaturate the base icon to a given alpha factor.
+    auto drawDesaturated = [&](qreal alphaFactor) {
+        QImage img = basePix.toImage();
+        for (int y = 0; y < img.height(); ++y) {
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                const int gray = qGray(c.red(), c.green(), c.blue());
+                img.setPixelColor(x, y, QColor(gray, gray, gray, int(c.alpha() * alphaFactor)));
+            }
+        }
+        painter.drawImage(QRectF(margin, margin, size, size), img, QRectF(0, 0, img.width(), img.height()));
+    };
+
+    // Helper: white ring around the emblem for contrast against the base icon.
+    auto drawEmblemRing = [&]() {
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(255, 255, 255, 200));
+        painter.drawEllipse(ex - 1, ey - 1, emblemSize + 2, emblemSize + 2);
+    };
+
+    if (state == VmVisualState::Running) {
+        // Green radial glow underneath
         QRadialGradient glow(totalSize / 2.0, totalSize / 2.0, totalSize / 2.0);
         glow.setColorAt(0.0, QColor(76, 175, 80, 100));
         glow.setColorAt(0.6, QColor(76, 175, 80, 50));
@@ -287,42 +306,44 @@ QIcon VMConfig::styledVmIcon(const QIcon &baseIcon, bool isRunning, bool isHeadl
 
         painter.drawPixmap(QRect(margin, margin, size, size), basePix);
 
-        const int emblemSize = size / 2;
-        const int ex = totalSize - emblemSize - 1;
-        const int ey = totalSize - emblemSize - 1;
-
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(QColor(255, 255, 255, 200));
-        painter.drawEllipse(ex - 1, ey - 1, emblemSize + 2, emblemSize + 2);
-
+        drawEmblemRing();
         painter.setBrush(isHeadless ? QColor(33, 150, 243) : QColor(76, 175, 80));
         painter.drawEllipse(ex, ey, emblemSize, emblemSize);
 
+        // White play triangle
         painter.setBrush(Qt::white);
         const int m = emblemSize / 4;
         QPolygon tri;
         tri << QPoint(ex + m + 2, ey + m) << QPoint(ex + emblemSize - m, ey + emblemSize / 2) << QPoint(ex + m + 2, ey + emblemSize - m);
         painter.drawPolygon(tri);
-    } else {
-        QImage img = basePix.toImage();
-        for (int y = 0; y < img.height(); ++y) {
-            for (int x = 0; x < img.width(); ++x) {
-                const QColor c = img.pixelColor(x, y);
-                const int gray = qGray(c.red(), c.green(), c.blue());
-                img.setPixelColor(x, y, QColor(gray, gray, gray, c.alpha() * 0.5));
-            }
-        }
-        // Map full device-pixel image into logical rect
-        painter.drawImage(QRectF(margin, margin, size, size), img, QRectF(0, 0, img.width(), img.height()));
 
-        const int emblemSize = size / 2;
-        const int ex = totalSize - emblemSize - 1;
-        const int ey = totalSize - emblemSize - 1;
+    } else if (state == VmVisualState::Saved) {
+        // Saved looks "more present" than fully stopped: higher alpha,
+        // amber pause emblem to read as "suspended, ready to resume".
+        drawDesaturated(0.75);
 
+        drawEmblemRing();
         painter.setPen(Qt::NoPen);
-        painter.setBrush(QColor(255, 255, 255, 200));
-        painter.drawEllipse(ex - 1, ey - 1, emblemSize + 2, emblemSize + 2);
+        painter.setBrush(QColor(255, 152, 0)); // Material Amber 500
+        painter.drawEllipse(ex, ey, emblemSize, emblemSize);
 
+        // Two white pause bars
+        painter.setBrush(Qt::white);
+        const int barW = qMax(2, emblemSize / 6);
+        const int barH = emblemSize - 2 * (emblemSize / 4);
+        const int barY = ey + (emblemSize - barH) / 2;
+        const int gap = qMax(2, emblemSize / 8);
+        const int leftX = ex + emblemSize / 2 - gap / 2 - barW;
+        const int rightX = ex + emblemSize / 2 + gap / 2;
+        painter.drawRect(leftX, barY, barW, barH);
+        painter.drawRect(rightX, barY, barW, barH);
+
+    } else {
+        // Stopped (and all other non-active states)
+        drawDesaturated(0.5);
+
+        drawEmblemRing();
+        painter.setPen(Qt::NoPen);
         painter.setBrush(QColor(158, 158, 158));
         painter.drawEllipse(ex, ey, emblemSize, emblemSize);
 

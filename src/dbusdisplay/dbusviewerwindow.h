@@ -77,6 +77,8 @@ public:
         return m_usbMenu;
     }
 
+    void setSuspended(bool suspended);
+
 Q_SIGNALS:
     void viewerClosed();
     void shutdownRequested();
@@ -172,4 +174,6 @@ private:
     qreal m_scale = 1.0f;
     bool m_windowFitsContent = true;
     bool m_contentFitsWindow = false;
+
+    bool m_suspended = false;
 };

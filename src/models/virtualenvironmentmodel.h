@@ -33,7 +33,9 @@ struct VmEntry {
         Shrinking,
         Exporting,
         Deploying,
-        Cloning
+        Cloning,
+        Saving,
+        Saved
     };
     State state = State::Stopped;
 

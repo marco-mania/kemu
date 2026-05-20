@@ -45,6 +45,12 @@ public:
 
     void setScale(float scale);
 
+    void setDimmed(bool dimmed);
+    bool isDimmed() const
+    {
+        return m_dimmed;
+    }
+
 Q_SIGNALS:
     void fullscreenToggleRequested();
 
@@ -120,4 +126,6 @@ private:
     bool m_eglAvailable = false;
 
     qreal m_scale = 1.0f;
+
+    bool m_dimmed = false;
 };

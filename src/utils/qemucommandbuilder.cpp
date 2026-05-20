@@ -17,7 +17,8 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
                                       const QString &monitorSocketPath,
                                       const NetworkContext &networkContext,
                                       const bool relativePaths,
-                                      const bool headless)
+                                      const bool headless,
+                                      const QString &incomingSavestatePath)
 {
     QStringList args;
 
@@ -394,6 +395,12 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     // --- Extra Args ---
     if (!config.extraArgs().isEmpty())
         args << KProcess::splitCommand(config.extraArgs());
+
+    // Resume from a previously saved VM state. Must come last so it cannot be
+    // overridden by earlier defaults.
+    if (!incomingSavestatePath.isEmpty()) {
+        args << u"-incoming"_s << u"file:"_s + incomingSavestatePath;
+    }
 
     return args;
 }

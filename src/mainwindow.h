@@ -59,6 +59,7 @@
 #include "utils/cloudimagedeployer.h"
 #include "utils/externaltools.h"
 #include "utils/imagedatabase.h"
+#include "utils/savestatemanager.h"
 #include "utils/virtualnetworkmanager.h"
 #include "utils/vmconfig.h"
 #include "widgets/performancemonitorwidget.h"
@@ -97,6 +98,8 @@ private Q_SLOTS:
     void shutdownVM();
     void resetVM();
     void powerOffVM();
+    void saveStateVM();
+    void discardSavedState();
     void changeISO();
     void ejectISO();
     void changeFloppy();
@@ -130,9 +133,13 @@ private:
     void shutdownVMByName(const QString &vmName);
     void resetVMByName(const QString &vmName);
     void powerOffVMByName(const QString &vmName);
+    void saveStateVMByName(const QString &vmName, bool skipConfirm = false);
+    void discardSavedStateForVm(const QString &vmName);
     void manageSnapshotsForVm(const QString &vmName);
 
     ImageDatabase m_imageDatabase;
+
+    SaveStateManager m_saveStateManager;
 
     VirtualNetworkManager *m_networkManager = nullptr;
 
@@ -240,6 +247,12 @@ private:
     KUiServerV2JobTracker *jobTracker = nullptr;
 
     VMConfig currentConfig;
+
+    // Grace period between QMP `quit` and forced termination after savestate.
+    // QEMU should exit within milliseconds; anything beyond a few seconds
+    // means the process is wedged and must be killed to preserve the
+    // "savestate exists ⇒ VM not running" invariant.
+    static constexpr int kSaveStateQuitGraceMs = 5000;
 
     QWidget *dialogParentFor(const QString &vmName);
 };

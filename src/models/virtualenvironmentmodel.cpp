@@ -87,11 +87,14 @@ QVariant VirtualEnvironmentModel::data(const QModelIndex &index, int role) const
         switch (role) {
         case Qt::DisplayRole:
             return vm.name;
-        case Qt::DecorationRole:
-            return VMConfig::styledVmIcon(vm.config.icon(KEMUConst::ListViewIconSize),
-                                          vm.state == VmEntry::State::Running,
-                                          vm.isHeadless,
-                                          KEMUConst::ListViewIconSize);
+        case Qt::DecorationRole: {
+            VMConfig::VmVisualState vs = VMConfig::VmVisualState::Stopped;
+            if (vm.state == VmEntry::State::Running)
+                vs = VMConfig::VmVisualState::Running;
+            else if (vm.state == VmEntry::State::Saving || vm.state == VmEntry::State::Saved)
+                vs = VMConfig::VmVisualState::Saved;
+            return VMConfig::styledVmIcon(vm.config.icon(KEMUConst::ListViewIconSize), vs, vm.isHeadless, KEMUConst::ListViewIconSize);
+        }
         case ItemTypeRole:
             return Vm;
         case VmNameRole:
@@ -101,6 +104,10 @@ QVariant VirtualEnvironmentModel::data(const QModelIndex &index, int role) const
                 return i18n("Deploying...");
             if (vm.state == VmEntry::State::Cloning)
                 return i18n("Cloning...");
+            if (vm.state == VmEntry::State::Saving)
+                return i18n("Saving state...");
+            if (vm.state == VmEntry::State::Saved)
+                return i18n("Saved");
             QString label = VMConfig::toUIString(vm.config.osType());
             if (!vm.config.distroId().isEmpty() && vm.config.distroId() != u"other"_s)
                 label += u" \u2014 "_s + m_imageDatabase->displayName(vm.config.distroId());
@@ -401,7 +408,7 @@ void VirtualEnvironmentModel::appendPerfSample(const QString &name, int channel,
 bool VirtualEnvironmentModel::isRunning(const QString &name) const
 {
     const VmEntry *e = entryByName(name);
-    return e && e->state == VmEntry::State::Running;
+    return e && (e->state == VmEntry::State::Running || e->state == VmEntry::State::Saving);
 }
 
 bool VirtualEnvironmentModel::isBusy(const QString &name) const

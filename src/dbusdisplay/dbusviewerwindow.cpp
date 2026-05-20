@@ -277,7 +277,7 @@ void DbusViewerWindow::createStatusBar()
     statusBar()->addPermanentWidget(m_lblClipboard);
 
     updateStatusBar();
-    statusBar()->showMessage(i18n("Ready – connected to %1", m_consolePath), 5000);
+    statusBar()->showMessage(i18n("Ready - connected to %1", m_consolePath), 5000);
 }
 
 void DbusViewerWindow::updateStatusBar()
@@ -510,6 +510,23 @@ void DbusViewerWindow::teardownClipboard()
     if (m_clipboard) {
         delete m_clipboard;
         m_clipboard = nullptr;
+    }
+}
+
+void DbusViewerWindow::setSuspended(bool suspended)
+{
+    if (m_suspended == suspended)
+        return;
+    m_suspended = suspended;
+
+    if (m_display)
+        m_display->setDimmed(suspended);
+
+    if (suspended) {
+        // Sticky message (timeout 0). Cleared explicitly when we resume.
+        statusBar()->showMessage(i18n("VM suspended - saving state..."));
+    } else {
+        statusBar()->clearMessage();
     }
 }
 

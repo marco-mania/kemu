@@ -42,9 +42,13 @@ static const char *fragmentShaderSource = R"(
     #endif
     varying vec2 vTexCoord;
     uniform sampler2D uTexture;
+    uniform float uDim;          // 0.0 = normal, 1.0 = fully dimmed
     void main() {
         vec4 color = texture2D(uTexture, vTexCoord);
-        gl_FragColor = vec4(color.rgb, 1.0);
+        float lum = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+        vec3 desat = mix(color.rgb, vec3(lum), uDim * 0.7);
+        vec3 final = desat * mix(1.0, 0.35, uDim);
+        gl_FragColor = vec4(final, 1.0);
     }
 )";
 
@@ -465,6 +469,7 @@ void QemuDisplayWidget::renderQuad()
     m_shader->setUniformValue("uTexture", 0);
     m_shader->setUniformValue("uFlipX", 0.0f);
     m_shader->setUniformValue("uFlipY", m_flipY ? 1.0f : 0.0f);
+    m_shader->setUniformValue("uDim", m_dimmed ? 1.0f : 0.0f);
 
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     const int posLoc = m_shader->attributeLocation("aPos");
@@ -529,6 +534,12 @@ void QemuDisplayWidget::onRegionUpdated(const QRect &)
 
 void QemuDisplayWidget::keyPressEvent(QKeyEvent *event)
 {
+    // While dimmed (e.g.during a save-state), the guest is paused or
+    // about to be killed. Swallow input to make the state unambiguous.
+    if (m_dimmed) {
+        event->accept();
+        return;
+    }
     // Reclaim F11 from the guest while fullscreen, so the user
     // always has a way out. In windowed mode F11 keeps reaching
     // the guest, and the QAction shortcut handles toggling.
@@ -547,6 +558,12 @@ void QemuDisplayWidget::keyPressEvent(QKeyEvent *event)
 
 void QemuDisplayWidget::keyReleaseEvent(QKeyEvent *event)
 {
+    // While dimmed (e.g.during a save-state), the guest is paused or
+    // about to be killed. Swallow input to make the state unambiguous.
+    if (m_dimmed) {
+        event->accept();
+        return;
+    }
     if (window()->isFullScreen() && event->key() == Qt::Key_F11 && event->modifiers() == Qt::NoModifier) {
         event->accept();
         return;
@@ -590,12 +607,20 @@ QPointF QemuDisplayWidget::mapToFramebuffer(const QPointF &widgetPos) const
 
 void QemuDisplayWidget::mouseMoveEvent(QMouseEvent *event)
 {
+    // While dimmed (e.g.during a save-state), the guest is paused or
+    // about to be killed.
+    if (m_dimmed)
+        return;
     auto fb = mapToFramebuffer(event->position());
     m_mouse->asyncCall(u"SetAbsPosition"_s, static_cast<uint>(fb.x()), static_cast<uint>(fb.y()));
 }
 
 void QemuDisplayWidget::mousePressEvent(QMouseEvent *event)
 {
+    // While dimmed (e.g.during a save-state), the guest is paused or
+    // about to be killed.
+    if (m_dimmed)
+        return;
     mouseMoveEvent(event);
     const int btn = qtButtonToQemu(event->button());
     if (btn >= 0)
@@ -604,6 +629,10 @@ void QemuDisplayWidget::mousePressEvent(QMouseEvent *event)
 
 void QemuDisplayWidget::mouseReleaseEvent(QMouseEvent *event)
 {
+    // While dimmed (e.g.during a save-state), the guest is paused or
+    // about to be killed.
+    if (m_dimmed)
+        return;
     const int btn = qtButtonToQemu(event->button());
     if (btn >= 0)
         m_mouse->asyncCall(u"Release"_s, static_cast<uint>(btn));
@@ -611,6 +640,10 @@ void QemuDisplayWidget::mouseReleaseEvent(QMouseEvent *event)
 
 void QemuDisplayWidget::wheelEvent(QWheelEvent *event)
 {
+    // While dimmed (e.g.during a save-state), the guest is paused or
+    // about to be killed.
+    if (m_dimmed)
+        return;
     const QPoint delta = event->angleDelta();
     if (delta.y() != 0) {
         const uint btn = (delta.y() > 0) ? 3u : 4u;
@@ -681,6 +714,14 @@ void QemuDisplayWidget::setScale(float scale)
         return;
     m_scale = scale;
     updateWidgetSize();
+}
+
+void QemuDisplayWidget::setDimmed(bool dimmed)
+{
+    if (m_dimmed == dimmed)
+        return;
+    m_dimmed = dimmed;
+    scheduleRepaint();
 }
 
 void QemuDisplayWidget::updateWidgetSize()

@@ -524,14 +524,14 @@ bool MainWindow::startSpiceViewer(const QString &vmName)
         if (action == SettingsDialog::ShutdownVm) {
             if (entry->qmpClient && entry->qmpClient->isConnected()) {
                 entry->qmpClient->sendCommand(u"system_powerdown"_s);
-                statusBar()->showMessage(i18n("SPICE viewer closed -- shutting down '%1'.", vmName));
+                statusBar()->showMessage(i18n("SPICE viewer closed - shutting down '%1'.", vmName));
             }
             return;
         }
 
         // SwitchToHeadless (default)
         veModel->setHeadless(vmName, true);
-        statusBar()->showMessage(i18n("SPICE viewer closed -- '%1' continues headless.", vmName));
+        statusBar()->showMessage(i18n("SPICE viewer closed - '%1' continues headless.", vmName));
 
         if (selectedVmName() == vmName) {
             updateDetails();
@@ -646,6 +646,10 @@ bool MainWindow::startDbusViewer(const QString &vmName)
     // --- Connect to the per-VM private D-Bus ---
     const QString busAddress = dbusBusAddress(vmName);
     const QString connName = u"kemu-dbus-%1"_s.arg(vmName);
+
+    // Drop any cached connection from a previous run before reconnecting.
+    // connectToBus() would otherwise hand back a stale, dead handle.
+    QDBusConnection::disconnectFromBus(connName);
 
     QDBusConnection bus = QDBusConnection::connectToBus(busAddress, connName);
     if (!bus.isConnected()) {
@@ -856,7 +860,7 @@ void MainWindow::stopDbusViewer(const QString &vmName)
         state.displayListener->deleteLater();
 
     if (!state.connectionName.isEmpty())
-        QDBusConnection::disconnectFromPeer(state.connectionName);
+        QDBusConnection::disconnectFromBus(state.connectionName);
 }
 
 void MainWindow::cleanupDbusSocket(const QString &vmName)
@@ -943,6 +947,18 @@ void MainWindow::setupActions()
     actionPowerOff->setIcon(QIcon::fromTheme(u"process-stop"_s));
     actionPowerOff->setText(i18n("Power-off"));
     connect(actionPowerOff, &QAction::triggered, this, &MainWindow::powerOffVM);
+
+    auto *actionSaveState = ac->addAction(u"vm_save_state"_s);
+    actionSaveState->setIcon(QIcon::fromTheme(u"document-save"_s));
+    actionSaveState->setText(i18n("Save State"));
+    actionSaveState->setToolTip(i18n("Save the complete running state to disk and stop the VM"));
+    connect(actionSaveState, &QAction::triggered, this, &MainWindow::saveStateVM);
+
+    auto *actionDiscardSavedState = ac->addAction(u"vm_discard_saved_state"_s);
+    actionDiscardSavedState->setIcon(QIcon::fromTheme(u"edit-clear"_s));
+    actionDiscardSavedState->setText(i18n("Discard Saved State"));
+    actionDiscardSavedState->setToolTip(i18n("Delete the saved VM state so the VM boots normally next time"));
+    connect(actionDiscardSavedState, &QAction::triggered, this, &MainWindow::discardSavedState);
 
     auto *actionEdit = ac->addAction(u"vm_edit"_s);
     actionEdit->setIcon(QIcon::fromTheme(u"document-edit"_s));
@@ -1041,27 +1057,42 @@ void MainWindow::updateActionStates()
     const bool isRunning = entry && entry->state == VmEntry::State::Running;
     const bool isDeploying = entry && entry->state == VmEntry::State::Deploying;
     const bool isBusy = entry && entry->state != VmEntry::State::Stopped;
+
+    const bool hasSaved = hasSelection && entry && SaveStateManager::hasSavestate(getVmDir(entry->config.name()).absolutePath(), entry->config.name());
+    const bool isSaving = entry && entry->state == VmEntry::State::Saving;
+    const bool isSavedOnly = entry && entry->state == VmEntry::State::Saved;
     const bool hasDisk = entry && !entry->config.diskPath().isEmpty();
     const bool canChangeMedia = hasSelection && entry && (entry->state == VmEntry::State::Stopped || entry->state == VmEntry::State::Running);
 
+    // --- Configure action states ---
     actionCollection()->action(u"vm_edit"_s)->setEnabled(hasSelection && !isBusy);
     actionCollection()->action(u"vm_delete"_s)->setEnabled(hasSelection && !isBusy);
     actionCollection()->action(u"vm_clone"_s)->setEnabled(hasSelection && !isBusy);
     actionCollection()->action(u"vm_show_cmd"_s)->setEnabled(hasSelection);
-    actionCollection()->action(u"vm_start"_s)->setEnabled(hasSelection && !isBusy);
-    actionCollection()->action(u"vm_start_headless"_s)->setEnabled(hasSelection && !isBusy);
+
+    // A VM can be started if it is not busy OR if it is currently in 'Saved' state (it will resume).
+    actionCollection()->action(u"vm_start"_s)->setEnabled(hasSelection && (!isBusy || isSavedOnly));
+    actionCollection()->action(u"vm_start_headless"_s)->setEnabled(hasSelection && (!isBusy || isSavedOnly));
+
     actionCollection()->action(u"vm_shutdown"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
     actionCollection()->action(u"vm_reset"_s)->setEnabled(hasSelection && isRunning);
     actionCollection()->action(u"vm_poweroff"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
+    actionCollection()->action(u"vm_save_state"_s)->setEnabled(isRunning && !isSaving);
+    actionCollection()->action(u"vm_discard_saved_state"_s)->setEnabled(hasSaved && !isRunning && !isSaving);
     actionCollection()->action(u"vm_change_iso"_s)->setEnabled(canChangeMedia);
     actionCollection()->action(u"vm_eject_iso"_s)->setEnabled(canChangeMedia && !currentConfig.isoPath().isEmpty());
     actionCollection()->action(u"vm_change_floppy"_s)->setEnabled(canChangeMedia);
     actionCollection()->action(u"vm_eject_floppy"_s)->setEnabled(canChangeMedia && !currentConfig.floppyPath().isEmpty());
     actionCollection()->action(u"vm_shrink"_s)->setEnabled(hasSelection && !isBusy);
-    actionCollection()->action(u"vm_manage_snapshots"_s)->setEnabled(hasSelection && hasDisk && !isDeploying);
+
+    // Snapshots must not be managed if the VM is in 'Saved' state.
+    actionCollection()->action(u"vm_manage_snapshots"_s)->setEnabled(hasSelection && hasDisk && !isDeploying && !isSavedOnly);
+
     actionCollection()->action(u"vm_export"_s)->setEnabled(hasSelection && !isBusy);
     actionCollection()->action(u"vm_import"_s)->setEnabled(true);
     actionCollection()->action(u"vm_screenshot"_s)->setEnabled(hasSelection && isRunning && vmSupportsScreendump());
+
+    // --- Additional UI states ---
     const bool hasUsbController = hasSelection && entry && entry->config.usbController() != VMSpecs::UsbController::None;
     usbActionMenu->setEnabled(hasUsbController && isRunning);
 
@@ -2381,6 +2412,7 @@ void MainWindow::showContextMenu(const QPoint &pos)
 
                 contextMenu.addAction(actionCollection()->action(u"vm_shutdown"_s));
                 contextMenu.addAction(actionCollection()->action(u"vm_reset"_s));
+                contextMenu.addAction(actionCollection()->action(u"vm_poweroff"_s));
 
                 contextMenu.addSeparator();
 
@@ -2476,7 +2508,10 @@ void MainWindow::startVM(bool headless)
     if (vmName.isEmpty())
         return;
 
-    if (veModel->isBusy(vmName)) {
+    const QString vmDirPath = getVmDir(currentConfig.name()).absolutePath();
+
+    const bool isResume = SaveStateManager::hasSavestate(vmDirPath, vmName);
+    if (veModel->isBusy(vmName) && !isResume) {
         KMessageBox::error(this, i18n("The VM '%1' is currently busy.", vmName), i18n("Busy"));
         return;
     }
@@ -2576,13 +2611,16 @@ void MainWindow::startVM(bool headless)
         }
     }
 
-    const QString sockPath = getVmDir(currentConfig.name()).absolutePath() + u'/' + KEMUConst::QemuMonitorSocketFileName;
+    const QString sockPath = vmDirPath + u'/' + KEMUConst::QemuMonitorSocketFileName;
 
     NetworkContext netCtx;
     if (!tapDevice.isEmpty())
         netCtx.tapDevice = tapDevice;
 
-    const QStringList args = QemuCommandBuilder::build(currentConfig, getVmDir(currentConfig.name()), sockPath, netCtx, false, headless);
+    const QString savestatePath = SaveStateManager::hasSavestate(vmDirPath, vmName) ? SaveStateManager::savestateFilePath(vmDirPath, vmName) : QString{};
+
+    const QStringList args =
+        QemuCommandBuilder::build(currentConfig, getVmDir(currentConfig.name()), sockPath, netCtx, /*relativePaths=*/false, headless, savestatePath);
 
     if (!requireTool(ExternalTools::QemuSystem))
         return;
@@ -2665,7 +2703,7 @@ void MainWindow::startVM(bool headless)
         this->onQMPEvent(vmName, eventName, data);
     });
 
-    connect(client, &QMPClient::connected, this, [this, client, vmName]() {
+    connect(client, &QMPClient::connected, this, [this, client, vmName, isResume]() {
         client->startPerformanceTimer(1000);
 
         // Enable balloon guest statistics for actual RAM usage
@@ -2683,6 +2721,22 @@ void MainWindow::startVM(bool headless)
                 perfMonitor->setHistory(PerformanceMonitorWidget::Io, e->ioHistory);
             }
             perfMonitor->setActive(true);
+        }
+
+        // Successful resume: the savestate file has done its job, drop it so
+        // a subsequent normal start does not try to resume again.
+        const QString dir = getVmDir(vmName).absolutePath();
+        if (SaveStateManager::hasSavestate(dir, vmName))
+            SaveStateManager::discardSavestate(dir, vmName);
+
+        if (isResume) {
+            // QEMU loaded a paused state from the savestate file. Resume the
+            // guest now that the QMP channel is up.
+            client->sendCommand(u"cont"_s, {}, [vmName](QMPResult r) {
+                if (!r.success)
+                    qWarning() << "Could not resume" << vmName << "from savestate:" << r.errorMessage;
+            });
+            SaveStateManager::discardSavestate(getVmDir(vmName).absolutePath(), vmName);
         }
     });
 
@@ -2746,6 +2800,16 @@ void MainWindow::powerOffVM()
     powerOffVMByName(currentConfig.name());
 }
 
+void MainWindow::saveStateVM()
+{
+    saveStateVMByName(currentConfig.name());
+}
+
+void MainWindow::discardSavedState()
+{
+    discardSavedStateForVm(currentConfig.name());
+}
+
 void MainWindow::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus)
 {
     const QPointer<KProcess> p = qobject_cast<KProcess *>(sender());
@@ -2778,10 +2842,17 @@ void MainWindow::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus
     }
     const QByteArray stderrTail = m_qemuStderrTails.value(vmName);
 
+    const bool savestatePresent = SaveStateManager::hasSavestate(getVmDir(vmName).absolutePath(), vmName);
+
     tearDownVmRuntime(vmName);
 
     if (wasDeploying) {
         finalizeDeployment(vmName);
+    } else if (savestatePresent && !abnormal) {
+        // The VM was suspended to disk. Show it as 'Saved' instead of 'Stopped'.
+        if (entry)
+            veModel->setVmState(vmName, VmEntry::State::Saved);
+        statusBar()->showMessage(i18n("VM '%1' state saved.", vmName));
     } else if (abnormal && !userInitiated) {
         showQemuFailureDialog(vmName, /*startupFailed=*/false, exitCode, exitStatus, stderrTail);
     } else {
@@ -2804,27 +2875,56 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
 {
     qCDebug(KEMU) << "QMP Event for" << vmName << ":" << eventName << data;
 
+    // Pause/resume events that occur as part of a save-state operation are
+    // internal bookkeeping. The user already sees the "Saving state..."
+    // subtitle and the Saved-style icon, so no extra status-bar noise.
+    const VmEntry *entry = veModel->entryByName(vmName);
+    const bool isSaving = entry && entry->state == VmEntry::State::Saving;
+
     if (eventName == u"SHUTDOWN"_s) {
         statusBar()->showMessage(i18n("VM '%1' is shutting down...", vmName));
+        return;
     }
 
-    else if (eventName == u"GUEST_CRASHED"_s) {
+    if (eventName == u"GUEST_CRASHED"_s) {
+        // During a save-state operation a "crash" event would be a confusing
+        // duplicate of the save-state failure dialog. Suppress it; the save
+        // path surfaces the real reason.
+        if (isSaving)
+            return;
         KMessageBox::error(this, i18n("The virtual machine '%1' has crashed.", vmName), i18n("VM Crashed"));
+        return;
     }
 
-    else if (eventName == u"STOP"_s) {
+    if (eventName == u"STOP"_s) {
+        if (isSaving)
+            return;
         statusBar()->showMessage(i18n("VM '%1' paused.", vmName));
+        return;
     }
 
-    else if (eventName == u"DEVICE_TRAY_MOVED"_s) {
-        if (data.value(u"id"_s).toString() == u"cdrom0"_s && data.value(u"tray-open"_s).toBool()) {
-            if (currentConfig.name() == vmName && !currentConfig.isoPath().isEmpty()) {
-                currentConfig.setISOPath({});
-                saveVmConfig(getVmDir(vmName).absolutePath(), currentConfig);
-                updateDetails();
-                statusBar()->showMessage(i18n("VM '%1' ejected the ISO.", vmName));
-            }
-        }
+    if (eventName == u"RESUME"_s) {
+        // Only happens as a rollback after a failed migration - in that
+        // case the save-state failure dialog explains what's going on.
+        if (isSaving)
+            return;
+        statusBar()->showMessage(i18n("VM '%1' resumed.", vmName));
+        return;
+    }
+
+    if (eventName == u"DEVICE_TRAY_MOVED"_s) {
+        if (data.value(u"id"_s).toString() != u"cdrom0"_s)
+            return;
+        if (!data.value(u"tray-open"_s).toBool())
+            return;
+        if (currentConfig.name() != vmName || currentConfig.isoPath().isEmpty())
+            return;
+
+        currentConfig.setISOPath({});
+        saveVmConfig(getVmDir(vmName).absolutePath(), currentConfig);
+        updateDetails();
+        statusBar()->showMessage(i18n("VM '%1' ejected the ISO.", vmName));
+        return;
     }
 }
 
@@ -3033,17 +3133,17 @@ void MainWindow::resetVMByName(const QString &vmName)
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry)
         return;
-    QWidget *parentW = dialogParentFor(vmName);
+    QPointer<QWidget> safeParentW = dialogParentFor(vmName);
 
     const QPointer<QMPClient> client = entry->qmpClient;
     if (!client || !client->isConnected()) {
-        KMessageBox::error(parentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+        KMessageBox::error(safeParentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
         return;
     }
 
     const KGuiItem resetItem(i18n("Reset"), u"system-reboot"_s, i18n("Hard-reset the virtual machine"));
 
-    const auto answer = KMessageBox::warningTwoActions(parentW,
+    const auto answer = KMessageBox::warningTwoActions(safeParentW,
                                                        i18n("Are you sure you want to reset '%1'?\n\n"
                                                             "This is equivalent to pressing the hardware reset button. "
                                                             "Unsaved data inside the guest will be lost, "
@@ -3060,7 +3160,7 @@ void MainWindow::resetVMByName(const QString &vmName)
     const QMPResult result = client->sendCommandSync(u"system_reset"_s);
 
     if (!result.success) {
-        KMessageBox::error(parentW, i18n("Reset Failed"), result.errorMessage);
+        KMessageBox::error(safeParentW, i18n("Reset Failed"), result.errorMessage);
         return;
     }
 
@@ -3072,19 +3172,19 @@ void MainWindow::powerOffVMByName(const QString &vmName)
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || (entry->state != VmEntry::State::Running && entry->state != VmEntry::State::Deploying))
         return;
-    QWidget *parentW = dialogParentFor(vmName);
+    QPointer<QWidget> safeParentW = dialogParentFor(vmName);
 
-    // Handle deployment Poweer Off
+    // Deployment is a separate flow: an in-progress install cannot be saved.
     if (entry->state == VmEntry::State::Deploying) {
-        const auto answer = KMessageBox::questionTwoActionsCancel(parentW,
+        const auto answer = KMessageBox::questionTwoActionsCancel(safeParentW,
                                                                   i18n("VM '%1' is currently being deployed.\n\n"
                                                                        "Forcing a power-off now will abort the installation "
                                                                        "and may leave the disk filesystem in an inconsistent state.\n\n"
                                                                        "Do you also want to delete the VM?",
                                                                        vmName),
                                                                   i18n("Abort Deployment"),
-                                                                  KGuiItem(i18n("Stop && Keep"), u"media-playback-stop"_s),
-                                                                  KGuiItem(i18n("Stop && Delete"), u"edit-delete"_s),
+                                                                  KGuiItem(i18n("Power-off && Keep"), u"media-playback-stop"_s),
+                                                                  KGuiItem(i18n("Power-off && Delete"), u"edit-delete"_s),
                                                                   KStandardGuiItem::cancel(),
                                                                   u"ConfirmVmPowerOffDeployment"_s);
 
@@ -3099,44 +3199,185 @@ void MainWindow::powerOffVMByName(const QString &vmName)
     if (!process)
         return;
 
-    const KGuiItem stopItem(i18n("Force power-off"), u"process-stop"_s, i18n("Forcefully stop the virtual machine"));
+    // Save State requires a working QMP channel. Without it we can only
+    // offer the classic two-button dialog (Force power-off / Cancel).
+    const QPointer<QMPClient> client = entry->qmpClient;
+    const bool canSaveState = client && client->isConnected();
 
-    const auto result = KMessageBox::warningTwoActions(parentW,
-                                                       i18n("Are you sure you want to force a power-off for '%1'? "
-                                                            "This is equivalent to pulling the plug and may cause data loss.",
-                                                            vmName),
-                                                       i18nc("@title:window", "Confirm Force Stop"),
-                                                       stopItem,
-                                                       KStandardGuiItem::cancel(),
-                                                       u"ConfirmVmPowerOff"_s);
+    const KGuiItem saveStateItem(i18n("Save State"), u"document-save"_s, i18n("Save the running state to disk; resume exactly here on next start"));
+    const KGuiItem forceStopItem(i18n("Force power-off"), u"process-stop"_s, i18n("Forcefully stop the virtual machine (may cause data loss)"));
 
-    if (result == KMessageBox::PrimaryAction) {
-        m_userInitiatedShutdowns.insert(vmName);
+    KMessageBox::ButtonCode answer;
+    if (canSaveState) {
+        answer = KMessageBox::warningTwoActionsCancel(safeParentW,
+                                                      i18n("How do you want to stop '%1'?<br/><br/>"
+                                                           "<b>Save State</b> suspends the VM to disk so it can resume "
+                                                           "from this exact point on the next start.<br/><br/>"
+                                                           "<b>Force power-off</b> is equivalent to pulling the plug "
+                                                           "and may cause data loss.<br/>",
+                                                           vmName),
+                                                      i18nc("@title:window", "Power-off Virtual Machine"),
+                                                      saveStateItem,
+                                                      forceStopItem,
+                                                      KStandardGuiItem::cancel(),
+                                                      {},
+                                                      KMessageBox::AllowLink);
+    } else {
+        answer = KMessageBox::warningTwoActions(safeParentW,
+                                                i18n("Are you sure you want to force a power-off for '%1'? "
+                                                     "This is equivalent to pulling the plug and may cause data loss.",
+                                                     vmName),
+                                                i18nc("@title:window", "Confirm Force Power-off"),
+                                                forceStopItem,
+                                                KStandardGuiItem::cancel(),
+                                                u"ConfirmVmPowerOff"_s);
+    }
 
-        bool qmpSuccess = false;
+    if (canSaveState && answer == KMessageBox::PrimaryAction) {
+        saveStateVMByName(vmName, true);
+        return;
+    }
 
-        const QPointer<QMPClient> client = entry->qmpClient;
-        if (client && client->isConnected()) {
-            const QMPResult res = client->sendCommandSync(u"quit"_s, QJsonObject(), 2000);
-            qmpSuccess = res.success;
+    // three-button dialog -> SecondaryAction, two-button dialog   -> PrimaryAction
+    const bool forcePowerOff = (canSaveState && answer == KMessageBox::SecondaryAction) || (!canSaveState && answer == KMessageBox::PrimaryAction);
+    if (!forcePowerOff)
+        return;
+
+    m_userInitiatedShutdowns.insert(vmName);
+
+    bool qmpSuccess = false;
+    if (client && client->isConnected()) {
+        const QMPResult res = client->sendCommandSync(u"quit"_s, QJsonObject(), 2000);
+        qmpSuccess = res.success;
+    }
+
+    if (qmpSuccess && process->state() == KProcess::Running) {
+        process->waitForFinished(3000);
+    }
+
+    if (process->state() == KProcess::Running) {
+        qCWarning(KEMU) << "VM" << vmName << "did not exit gracefully. Forcing terminate (SIGTERM)!";
+        process->terminate();
+
+        if (!process->waitForFinished(2000)) {
+            qCWarning(KEMU) << "VM" << vmName << "is still hanging. Forcing power-off (SIGKILL)!";
+            process->kill();
+        }
+    }
+
+    statusBar()->showMessage(i18n("Force power-off initiated for virtual machine '%1'...", vmName));
+}
+
+void MainWindow::saveStateVMByName(const QString &vmName, bool skipConfirm)
+{
+    if (vmName.isEmpty() || !veModel->isRunning(vmName))
+        return;
+
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected())
+        return;
+
+    const QPointer<KProcess> process = entry->qemuProcess;
+    if (!process)
+        return;
+
+    QPointer<QWidget> safeParentW = dialogParentFor(vmName);
+
+    if (!skipConfirm) {
+        const auto answer = KMessageBox::questionTwoActions(safeParentW,
+                                                            i18n("Save the running state of '%1' to disk?\n\n"
+                                                                 "The VM will stop. On next start it will resume exactly "
+                                                                 "from this point. The disk image must not be modified "
+                                                                 "while a saved state exists.",
+                                                                 vmName),
+                                                            i18nc("@title:window", "Save VM State"),
+                                                            KGuiItem(i18n("Save State"), u"document-save"_s),
+                                                            KStandardGuiItem::cancel());
+        if (answer != KMessageBox::PrimaryAction)
+            return;
+    }
+
+    m_userInitiatedShutdowns.insert(vmName);
+    veModel->setVmState(vmName, VmEntry::State::Saving);
+    statusBar()->showMessage(i18n("Saving state of '%1'...", vmName));
+    updateActionStates();
+
+    // Visually mark the integrated D-Bus viewer as suspended.
+    if (auto it = m_dbusViewers.find(vmName); it != m_dbusViewers.end() && it->window)
+        it->window->setSuspended(true);
+
+    const QString vmDirPath = getVmDir(vmName).absolutePath();
+
+    m_saveStateManager.save(entry->qmpClient, vmDirPath, vmName, [this, vmName, safeParentW, process](bool ok, QString err) {
+        if (!ok) {
+            m_userInitiatedShutdowns.remove(vmName);
+            if (veModel->entryByName(vmName))
+                veModel->setVmState(vmName, VmEntry::State::Running);
+
+            // Restore the viewer to its normal, interactive state.
+            if (auto it = m_dbusViewers.find(vmName); it != m_dbusViewers.end() && it->window)
+                it->window->setSuspended(false);
+
+            if (safeParentW) {
+                KMessageBox::error(safeParentW, i18n("Could not save VM state: %1", err), i18n("Save State Failed"));
+            }
+            updateActionStates();
+            return;
         }
 
-        if (qmpSuccess && process->state() == KProcess::Running) {
-            process->waitForFinished(3000);
+        const VmEntry *currentEntry = veModel->entryByName(vmName);
+
+        if (currentEntry && currentEntry->qmpClient && currentEntry->qmpClient->isConnected()) {
+            currentEntry->qmpClient->sendCommand(u"quit"_s, {}, nullptr);
         }
 
-        if (process->state() == KProcess::Running) {
-            qCWarning(KEMU) << "VM" << vmName << "did not exit gracefully. Forcing terminate (SIGTERM)!";
+        QTimer::singleShot(1000, this, [this, vmName, process]() {
+            if (!process || process->state() != KProcess::Running)
+                return;
+
+            qCWarning(KEMU) << "VM" << vmName << "did not exit after savestate quit; sending SIGTERM.";
             process->terminate();
 
-            if (!process->waitForFinished(2000)) {
-                qCWarning(KEMU) << "VM" << vmName << "is still hanging. Forcing power-off (SIGKILL)!";
-                process->kill();
-            }
-        }
+            QTimer::singleShot(1000, this, [process, vmName]() {
+                if (process && process->state() == KProcess::Running) {
+                    qCWarning(KEMU) << "VM" << vmName << "still alive after SIGTERM; sending SIGKILL.";
+                    process->kill();
+                }
+            });
+        });
+    });
+}
 
-        statusBar()->showMessage(i18n("Force power-off initiated for virtual machine '%1'...", vmName));
+void MainWindow::discardSavedStateForVm(const QString &vmName)
+{
+    if (vmName.isEmpty())
+        return;
+
+    QPointer<QWidget> safeParentW = dialogParentFor(vmName);
+
+    const auto answer = KMessageBox::warningTwoActions(safeParentW,
+                                                       i18n("Discard the saved state of '%1'?\n\n"
+                                                            "The VM will boot from scratch on the next start. "
+                                                            "Any unsaved work inside the suspended guest will be lost.",
+                                                            vmName),
+                                                       i18nc("@title:window", "Discard Saved State"),
+                                                       KGuiItem(i18n("Discard"), u"edit-delete"_s),
+                                                       KStandardGuiItem::cancel());
+    if (answer != KMessageBox::PrimaryAction)
+        return;
+
+    const QString dir = getVmDir(vmName).absolutePath();
+    if (!SaveStateManager::discardSavestate(dir, vmName)) {
+        KMessageBox::error(safeParentW, i18n("Could not delete the savestate file."));
+        return;
     }
+
+    if (veModel->entryByName(vmName) && veModel->entryByName(vmName)->state == VmEntry::State::Saved)
+        veModel->setVmState(vmName, VmEntry::State::Stopped);
+
+    statusBar()->showMessage(i18n("Discarded saved state for '%1'.", vmName));
+    updateActionStates();
+    updateDetails();
 }
 
 void MainWindow::manageSnapshotsForVm(const QString &vmName)
@@ -3255,7 +3496,7 @@ void MainWindow::createNewVM()
         updateActionStates();
 
         if (needsDownload) {
-            statusBar()->showMessage(i18n("Deploying '%1' -- downloading cloud image...", newConfig.name()));
+            statusBar()->showMessage(i18n("Deploying '%1' - downloading cloud image...", newConfig.name()));
 
             auto *job = new DownloadJob(image.url, imageLocalPath, Utils::ChecksumType::NONE, {}, this);
             jobTracker->registerJob(job);
@@ -3741,7 +3982,7 @@ void MainWindow::startDeployment(const QString &vmName, const bool disable_headl
     veModel->setQemuProcess(vmName, process);
     // State stays Deploying (not Running)
 
-    statusBar()->showMessage(i18n("Deploying '%1' -- unattended installation running...", vmName));
+    statusBar()->showMessage(i18n("Deploying '%1' - unattended installation running...", vmName));
     updateDetails();
     updateActionStates();
 
