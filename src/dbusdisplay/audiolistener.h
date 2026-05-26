@@ -72,6 +72,11 @@ public:
                              gpointer user_data);
     static void onConnectionClosed(GDBusConnection *connection, gboolean remote_peer_vanished, GError *error, gpointer user_data);
 
+    GMainContext *mainContext() const
+    {
+        return m_context;
+    }
+
 Q_SIGNALS:
     void connectionLost();
 
@@ -92,6 +97,7 @@ private:
     };
 
     GDBusConnection *m_conn = nullptr;
+    GMainContext *m_context = nullptr;
     guint m_registrationId = 0;
     int m_qemuFd = -1;
     int m_ourFd = -1;

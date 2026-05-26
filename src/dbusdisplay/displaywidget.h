@@ -37,7 +37,7 @@ public:
 
     // Monitor GLib socket FD (instead of polling timer).
     // Call for each GDBus socketpair FD (Display, AudioOut, AudioIn).
-    void watchGLibFd(int fd);
+    void watchGLibFd(int fd, GMainContext *ctx);
 
     // Immediately deactivate all GLib socket notifiers.
     // Must be called BEFORE listeners are destroyed.
@@ -72,7 +72,7 @@ private Q_SLOTS:
     void onRegionUpdated(const QRect &rect);
     void updateCursor();
     void onCursorChanged();
-    void dispatchGLib();
+    void dispatchContext(GMainContext *ctx);
     void onFrameTick();
 
 private:

@@ -143,7 +143,15 @@ QemuDisplayListener::~QemuDisplayListener()
         g_object_unref(m_listenerConn);
         m_listenerConn = nullptr;
     }
-    while (g_main_context_iteration(nullptr, FALSE)) { }
+
+    if (m_context) {
+        for (int i = 0; i < 16; ++i) {
+            if (!g_main_context_iteration(m_context, FALSE))
+                break;
+        }
+        g_main_context_unref(m_context);
+        m_context = nullptr;
+    }
 
     unmapMemory();
     closeDmaBuf();
@@ -199,28 +207,45 @@ bool QemuDisplayListener::connectListener()
 {
     if (m_ourFd < 0)
         return false;
+
     const int ourFd = m_ourFd;
     m_ourFd = -1;
-    m_socketFd = ourFd; // Remember FD number for QSocketNotifier
+    m_socketFd = ourFd;
+
+    m_context = g_main_context_new();
 
     GError *error = nullptr;
     GSocket *gsock = g_socket_new_from_fd(ourFd, &error);
     if (!gsock) {
-        qCCritical(KEMU_DBUSDISPLAY) << "g_socket_new_from_fd:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "Audio: g_socket_new_from_fd:" << error->message;
         g_error_free(error);
         close(ourFd);
+        g_main_context_unref(m_context);
+        m_context = nullptr;
         return false;
     }
+
     GSocketConnection *sockConn = g_socket_connection_factory_create_connection(gsock);
     g_object_unref(gsock);
-    if (!sockConn)
+    if (!sockConn) {
+        qCCritical(KEMU_DBUSDISPLAY) << "Audio: Socket connection failed";
+        g_main_context_unref(m_context);
+        m_context = nullptr;
         return false;
+    }
+
+    g_main_context_push_thread_default(m_context);
 
     m_listenerConn = g_dbus_connection_new_sync(G_IO_STREAM(sockConn), nullptr, G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT, nullptr, nullptr, &error);
+
+    g_main_context_pop_thread_default(m_context);
     g_object_unref(sockConn);
+
     if (!m_listenerConn) {
-        qCCritical(KEMU_DBUSDISPLAY) << "D-Bus Auth:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "Audio: D-Bus auth failed:" << error->message;
         g_error_free(error);
+        g_main_context_unref(m_context);
+        m_context = nullptr;
         return false;
     }
 

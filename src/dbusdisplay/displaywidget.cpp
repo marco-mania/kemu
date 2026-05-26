@@ -6,7 +6,6 @@
 
 #include <cstring>
 #include <glib.h>
-#include <poll.h>
 #include <unistd.h>
 
 // GL_BGRA_EXT - not defined in all GLES2 headers,
@@ -118,27 +117,25 @@ QemuDisplayWidget::~QemuDisplayWidget()
     doneCurrent();
 }
 
-// =============================================================================
-// Optimization 3: GLib event-driven instead of 500 Hz polling
-// =============================================================================
-// The old 2ms timer (pumpGLib) caused ~500 CPU wakeups/s even in idle.
-//
-// New approach: Create a QSocketNotifier for each GDBus socketpair FD.
-// Qt then only wakes up when data is actually pending on the socket
-// (epoll-based), and dispatches the GLib main context.
-//
-// Result: ~0 wakeups in idle, immediate reaction to data.
-
-void QemuDisplayWidget::watchGLibFd(int fd)
+void QemuDisplayWidget::watchGLibFd(int fd, GMainContext *ctx)
 {
-    if (fd < 0)
+    if (fd < 0 || !ctx)
         return;
 
-    auto *notifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
-    connect(notifier, &QSocketNotifier::activated, this, &QemuDisplayWidget::dispatchGLib);
-    m_glibNotifiers.append(notifier);
+    // Eigene Ref auf den Context, damit er den Listener überlebt, falls der
+    // zuerst stirbt. Wird beim destroyed() des Notifiers wieder freigegeben.
+    g_main_context_ref(ctx);
 
-    qCDebug(KEMU_DBUSDISPLAY) << "Monitoring GLib socket: FD" << fd;
+    auto *notifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
+    connect(notifier, &QSocketNotifier::activated, this, [this, ctx]() {
+        dispatchContext(ctx);
+    });
+    connect(notifier, &QObject::destroyed, this, [ctx]() {
+        g_main_context_unref(ctx);
+    });
+
+    m_glibNotifiers.append(notifier);
+    qCDebug(KEMU_DBUSDISPLAY) << "Monitoring GLib socket: FD" << fd << "ctx" << ctx;
 }
 
 void QemuDisplayWidget::stopAllGLibWatching()
@@ -153,35 +150,12 @@ void QemuDisplayWidget::stopAllGLibWatching()
     qCDebug(KEMU_DBUSDISPLAY) << "All GLib socket notifiers deactivated";
 }
 
-void QemuDisplayWidget::dispatchGLib()
+void QemuDisplayWidget::dispatchContext(GMainContext *ctx)
 {
-    if (m_glibNotifiers.isEmpty())
-        return;
-
-    // POLLHUP-Check unverändert lassen ...
-    for (auto *n : m_glibNotifiers) {
-        struct pollfd pfd = {};
-        pfd.fd = n->socket();
-        pfd.events = POLLIN;
-        if (poll(&pfd, 1, 0) >= 0 && (pfd.revents & (POLLHUP | POLLERR | POLLNVAL))) {
-            qCDebug(KEMU_DBUSDISPLAY) << "dispatchGLib: Socket" << pfd.fd << "dead - stopping GLib dispatching";
-            stopAllGLibWatching();
-            return;
-        }
-    }
-
-    // Process a BOUNDED batch of GLib events, then yield back to the Qt
-    // event loop. A fast guest (e.g. Windows during boot) produces display
-    // updates continuously; an unbounded `while (g_main_context_iteration())`
-    // loop would never return, starving the GUI thread and freezing the
-    // window. The QSocketNotifier re-fires immediately if data remains, so
-    // bounding the batch costs nothing but keeps the UI responsive.
     constexpr int kMaxIterationsPerActivation = 16;
     for (int i = 0; i < kMaxIterationsPerActivation; ++i) {
-        if (m_glibNotifiers.isEmpty())
-            return;
-        if (!g_main_context_iteration(nullptr, FALSE))
-            break; // nothing left to do
+        if (!g_main_context_iteration(ctx, FALSE))
+            break;
     }
 }
 
