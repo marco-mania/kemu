@@ -997,7 +997,8 @@ bool MainWindow::startDbusViewer(const QString &vmName)
     state.window = new DbusViewerWindow(state.displayListener, bus, consolePath, state.audioOut, state.audioIn, false, false, hasUsbController, nullptr);
     state.window->setWindowTitle(vmName);
     state.window->setAttribute(Qt::WA_DeleteOnClose, false);
-    state.window->displayWidget()->watchGLibFd(state.displayListener->socketFd());
+    state.window->displayWidget()->watchGLibFd(state.displayListener->socketFd(), state.displayListener->mainContext());
+    state.window->show();
     state.window->show();
 
     // --- Async audio registration ---
@@ -1025,7 +1026,7 @@ bool MainWindow::startDbusViewer(const QString &vmName)
                     return;
                 if (s.window) {
                     s.window->audioOutReady();
-                    s.window->displayWidget()->watchGLibFd(s.audioOut->socketFd());
+                    s.window->displayWidget()->watchGLibFd(s.audioOut->socketFd(), s.audioOut->mainContext());
                 }
             });
         }
@@ -1051,7 +1052,7 @@ bool MainWindow::startDbusViewer(const QString &vmName)
                     return;
                 if (s.window) {
                     s.window->audioInReady();
-                    s.window->displayWidget()->watchGLibFd(s.audioIn->socketFd());
+                    s.window->displayWidget()->watchGLibFd(s.audioIn->socketFd(), s.audioIn->mainContext());
                 }
             });
         }
