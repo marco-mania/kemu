@@ -152,7 +152,7 @@ void QemuDisplayWidget::stopAllGLibWatching()
 
 void QemuDisplayWidget::dispatchContext(GMainContext *ctx)
 {
-    constexpr int kMaxIterationsPerActivation = 16;
+    constexpr int kMaxIterationsPerActivation = 32;
     for (int i = 0; i < kMaxIterationsPerActivation; ++i) {
         if (!g_main_context_iteration(ctx, FALSE))
             break;

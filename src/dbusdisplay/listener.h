@@ -103,7 +103,6 @@ private:
     guint m_registrationId = 0;
     guint m_registrationIdUnix = 0;
 
-    int m_qemuFd = -1;
     int m_ourFd = -1;
     int m_socketFd = -1; // Stored FD for external monitoring
 

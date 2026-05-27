@@ -90,8 +90,6 @@ QemuAudioListener::~QemuAudioListener()
     }
     m_streams.clear();
 
-    if (m_qemuFd >= 0)
-        close(m_qemuFd);
     if (m_ourFd >= 0)
         close(m_ourFd);
 }
@@ -106,10 +104,10 @@ int QemuAudioListener::createSocketPair()
         qCCritical(KEMU_DBUSDISPLAY) << "Audio: socketpair() failed:" << strerror(errno);
         return -1;
     }
-    m_qemuFd = sv[0];
+    // See note in QemuDisplayListener::createSocketPair() about FD ownership.
     m_ourFd = sv[1];
     qCDebug(KEMU_DBUSDISPLAY) << "Audio: Socketpair created";
-    return m_qemuFd;
+    return sv[0];
 }
 
 // =============================================================================

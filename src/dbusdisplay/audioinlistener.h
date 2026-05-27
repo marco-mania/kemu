@@ -91,7 +91,6 @@ private:
     GDBusConnection *m_conn = nullptr;
     GMainContext *m_context = nullptr;
     guint m_registrationId = 0;
-    int m_qemuFd = -1;
     int m_ourFd = -1;
     int m_socketFd = -1;
 

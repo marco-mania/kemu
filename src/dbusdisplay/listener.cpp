@@ -155,8 +155,6 @@ QemuDisplayListener::~QemuDisplayListener()
 
     unmapMemory();
     closeDmaBuf();
-    if (m_qemuFd >= 0)
-        close(m_qemuFd);
     if (m_ourFd >= 0)
         close(m_ourFd);
 }
@@ -198,9 +196,12 @@ int QemuDisplayListener::createSocketPair()
         qCCritical(KEMU_DBUSDISPLAY) << "socketpair():" << strerror(errno);
         return -1;
     }
-    m_qemuFd = sv[0];
+    // Ownership of sv[0] transfers to the caller (which passes it to QEMU
+    // via D-Bus and closes its local handle). We must NOT keep our own
+    // reference to it - otherwise the destructor would double-close after
+    // the kernel has potentially reassigned the FD number.
     m_ourFd = sv[1];
-    return m_qemuFd;
+    return sv[0];
 }
 
 bool QemuDisplayListener::connectListener()
