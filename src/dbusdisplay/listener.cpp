@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "dbusdisplay/dbusdisplayconst.h"
+#include "dbusdisplay/gvariantptr.h"
 #include "kemu_dbusdisplay_debug.h"
 
 // =============================================================================
@@ -379,14 +380,15 @@ void QemuDisplayListener::handleUpdateDMABUF(GVariant *parameters, GDBusMethodIn
 void QemuDisplayListener::handleScanout(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint32 width, height, stride, pixman_format;
-    GVariant *dataVariant = nullptr;
-    g_variant_get(parameters, "(uuuu@ay)", &width, &height, &stride, &pixman_format, &dataVariant);
+    GVariant *rawData = nullptr;
+    g_variant_get(parameters, "(uuuu@ay)", &width, &height, &stride, &pixman_format, &rawData);
+    const GVariantPtr dataVariant(rawData); // takes ownership
+
     gsize dataLen = 0;
-    const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant, &dataLen, sizeof(guint8)));
+    const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
 
     const QImage::Format qtFormat = pixmanFormatToQt(pixman_format);
     if (qtFormat == QImage::Format_Invalid) {
-        g_variant_unref(dataVariant);
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_NOT_SUPPORTED, "Unsupported pixman format: 0x%x", pixman_format);
         return;
     }
@@ -403,7 +405,6 @@ void QemuDisplayListener::handleScanout(GVariant *parameters, GDBusMethodInvocat
         m_image = view.copy();
     }
 
-    g_variant_unref(dataVariant);
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT scanoutChanged(width, height);
 }
@@ -461,11 +462,12 @@ void QemuDisplayListener::handleUpdate(GVariant *parameters, GDBusMethodInvocati
 {
     gint32 x, y, w, h;
     guint32 stride, pixman_format;
-    GVariant *dataVariant = nullptr;
-    g_variant_get(parameters, "(iiiiuu@ay)", &x, &y, &w, &h, &stride, &pixman_format, &dataVariant);
+    GVariant *rawData = nullptr;
+    g_variant_get(parameters, "(iiiiuu@ay)", &x, &y, &w, &h, &stride, &pixman_format, &rawData);
+    const GVariantPtr dataVariant(rawData); // takes ownership
 
     gsize dataLen = 0;
-    const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant, &dataLen, sizeof(guint8)));
+    const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
 
     const QImage::Format qtFormat = pixmanFormatToQt(pixman_format);
     if (qtFormat != QImage::Format_Invalid && data && w > 0 && h > 0 && dataLen >= static_cast<gsize>(h) * stride) {
@@ -478,7 +480,6 @@ void QemuDisplayListener::handleUpdate(GVariant *parameters, GDBusMethodInvocati
         }
     }
 
-    g_variant_unref(dataVariant);
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT regionUpdated(QRect(x, y, w, h));
 }
@@ -513,11 +514,12 @@ void QemuDisplayListener::handleDisable(GDBusMethodInvocation *invocation)
 void QemuDisplayListener::handleCursorDefine(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     gint32 width, height, hot_x, hot_y;
-    GVariant *dataVariant = nullptr;
-    g_variant_get(parameters, "(iiii@ay)", &width, &height, &hot_x, &hot_y, &dataVariant);
+    GVariant *rawData = nullptr;
+    g_variant_get(parameters, "(iiii@ay)", &width, &height, &hot_x, &hot_y, &rawData);
+    const GVariantPtr dataVariant(rawData); // takes ownership
 
     gsize dataLen = 0;
-    const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant, &dataLen, sizeof(guint8)));
+    const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
 
     // qCDebug(KEMU_DBUSDISPLAY) << "CursorDefine:" << width << "x" << height
     //          << "hot:" << hot_x << "," << hot_y
@@ -532,7 +534,6 @@ void QemuDisplayListener::handleCursorDefine(GVariant *parameters, GDBusMethodIn
         }
     }
 
-    g_variant_unref(dataVariant);
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT cursorChanged();
 }

@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #include "dbusdisplay/dbusdisplayconst.h"
+#include "dbusdisplay/gvariantptr.h"
 #include "kemu_dbusdisplay_debug.h"
 
 // =============================================================================
@@ -367,8 +368,9 @@ void QemuAudioInListener::handleSetVolume(GVariant *parameters, GDBusMethodInvoc
 {
     guint64 id;
     gboolean mute;
-    GVariant *volumeVariant = nullptr;
-    g_variant_get(parameters, "(tb@ay)", &id, &mute, &volumeVariant);
+    GVariant *raw = nullptr;
+    g_variant_get(parameters, "(tb@ay)", &id, &mute, &raw);
+    const GVariantPtr volumeVariant(raw); // null-safe via wrapper
 
     auto *stream = m_streams.value(id, nullptr);
     if (stream && stream->source) {
@@ -376,7 +378,7 @@ void QemuAudioInListener::handleSetVolume(GVariant *parameters, GDBusMethodInvoc
             stream->source->setVolume(0.0);
         } else if (volumeVariant) {
             gsize nVols = 0;
-            const guint8 *vols = static_cast<const guint8 *>(g_variant_get_fixed_array(volumeVariant, &nVols, sizeof(guint8)));
+            const guint8 *vols = static_cast<const guint8 *>(g_variant_get_fixed_array(volumeVariant.get(), &nVols, sizeof(guint8)));
             if (nVols > 0) {
                 double sum = 0;
                 for (gsize i = 0; i < nVols; i++)
@@ -386,9 +388,6 @@ void QemuAudioInListener::handleSetVolume(GVariant *parameters, GDBusMethodInvoc
         }
     }
 
-    // g_variant_unref tolerates nullptr only from glib 2.36+ - guard explicitly.
-    if (volumeVariant)
-        g_variant_unref(volumeVariant);
     g_dbus_method_invocation_return_value(invocation, nullptr);
 }
 
@@ -405,7 +404,7 @@ void QemuAudioInListener::handleRead(GVariant *parameters, GDBusMethodInvocation
     guint64 id, size;
     g_variant_get(parameters, "(tt)", &id, &size);
 
-    auto *stream = m_streams.value(id, nullptr);
+    const auto *stream = m_streams.value(id, nullptr);
 
     QByteArray data;
 
@@ -427,6 +426,7 @@ void QemuAudioInListener::handleRead(GVariant *parameters, GDBusMethodInvocation
         }
     }
 
+    // g_variant_new_tuple consumes 'result' (floating reference rules)
     GVariant *result = g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, data.constData(), data.size(), sizeof(guint8));
 
     g_dbus_method_invocation_return_value(invocation, g_variant_new_tuple(&result, 1));

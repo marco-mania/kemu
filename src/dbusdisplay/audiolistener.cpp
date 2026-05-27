@@ -4,6 +4,7 @@
 
 #include "audiolistener.h"
 #include "dbusdisplay/dbusdisplayconst.h"
+#include "dbusdisplay/gvariantptr.h"
 #include "kemu_dbusdisplay_debug.h"
 
 #include <sys/socket.h>
@@ -325,20 +326,20 @@ void QemuAudioListener::handleFini(GVariant *parameters, GDBusMethodInvocation *
 void QemuAudioListener::handleWrite(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint64 id;
-    GVariant *dataVariant = nullptr;
-    g_variant_get(parameters, "(t@ay)", &id, &dataVariant);
+    GVariant *rawData = nullptr;
+    g_variant_get(parameters, "(t@ay)", &id, &rawData);
+    const GVariantPtr dataVariant(rawData);
 
     auto *stream = m_streams.value(id, nullptr);
     if (stream && stream->ioDevice && stream->enabled && !m_muted) {
         gsize dataLen = 0;
-        const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant, &dataLen, sizeof(guint8)));
+        const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
 
         if (data && dataLen > 0) {
             stream->ioDevice->write(reinterpret_cast<const char *>(data), static_cast<qint64>(dataLen));
         }
     }
 
-    g_variant_unref(dataVariant);
     g_dbus_method_invocation_return_value(invocation, nullptr);
 }
 
@@ -383,8 +384,9 @@ void QemuAudioListener::handleSetVolume(GVariant *parameters, GDBusMethodInvocat
 {
     guint64 id;
     gboolean mute;
-    GVariant *volumeVariant = nullptr;
-    g_variant_get(parameters, "(tb@ay)", &id, &mute, &volumeVariant);
+    GVariant *raw = nullptr;
+    g_variant_get(parameters, "(tb@ay)", &id, &mute, &raw);
+    const GVariantPtr volumeVariant(raw);
 
     auto *stream = m_streams.value(id, nullptr);
     if (stream && stream->sink) {
@@ -392,7 +394,7 @@ void QemuAudioListener::handleSetVolume(GVariant *parameters, GDBusMethodInvocat
             stream->sink->setVolume(0.0);
         } else if (volumeVariant) {
             gsize nVols = 0;
-            const guint8 *vols = static_cast<const guint8 *>(g_variant_get_fixed_array(volumeVariant, &nVols, sizeof(guint8)));
+            const guint8 *vols = static_cast<const guint8 *>(g_variant_get_fixed_array(volumeVariant.get(), &nVols, sizeof(guint8)));
             if (nVols > 0) {
                 double sum = 0;
                 for (gsize i = 0; i < nVols; i++)
@@ -402,9 +404,6 @@ void QemuAudioListener::handleSetVolume(GVariant *parameters, GDBusMethodInvocat
         }
     }
 
-    // g_variant_unref tolerates nullptr only from glib 2.36+ - guard explicitly.
-    if (volumeVariant)
-        g_variant_unref(volumeVariant);
     g_dbus_method_invocation_return_value(invocation, nullptr);
 }
 
