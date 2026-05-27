@@ -161,23 +161,19 @@ QemuDisplayListener::~QemuDisplayListener()
 
 QImage QemuDisplayListener::currentImage() const
 {
-    const QMutexLocker l(&m_mutex);
     return m_image;
 }
 bool QemuDisplayListener::isDmaBuf() const
 {
-    const QMutexLocker l(&m_mutex);
     return m_isDmaBuf;
 }
 CursorInfo QemuDisplayListener::cursorInfo() const
 {
-    const QMutexLocker l(&m_mutex);
     return m_cursor;
 }
 
 bool QemuDisplayListener::takeDmaBufScanout(DmaBufScanout &out)
 {
-    const QMutexLocker l(&m_mutex);
     if (!m_isDmaBuf || m_dmaBuf.fd < 0)
         return false;
     out = m_dmaBuf;
@@ -382,7 +378,6 @@ void QemuDisplayListener::handleScanoutDMABUF(GVariant *parameters, GDBusMethodI
     //          << "y0_top:" << y0_top << "FD:" << dmabufFd;
 
     {
-        const QMutexLocker l(&m_mutex);
         unmapMemory();
         m_image = QImage();
         closeDmaBuf();
@@ -420,7 +415,6 @@ void QemuDisplayListener::handleScanout(GVariant *parameters, GDBusMethodInvocat
     }
 
     {
-        const QMutexLocker l(&m_mutex);
         closeDmaBuf();
         unmapMemory();
         m_isDmaBuf = false;
@@ -467,7 +461,6 @@ void QemuDisplayListener::handleScanoutMap(GVariant *parameters, GDBusMethodInvo
         return;
     }
     {
-        const QMutexLocker l(&m_mutex);
         closeDmaBuf();
         unmapMemory();
         m_isDmaBuf = false;
@@ -499,7 +492,6 @@ void QemuDisplayListener::handleUpdate(GVariant *parameters, GDBusMethodInvocati
 
     const QImage::Format qtFormat = pixmanFormatToQt(pixman_format);
     if (qtFormat != QImage::Format_Invalid && data && w > 0 && h > 0 && dataLen >= static_cast<gsize>(h) * stride) {
-        const QMutexLocker l(&m_mutex);
         if (!m_image.isNull() && m_image.format() == qtFormat) {
             // Die Update-Region ist ein eigenständiges, eng gestridetes Teilbild.
             const QImage tile(data, w, h, stride, qtFormat);
@@ -525,7 +517,6 @@ void QemuDisplayListener::handleUpdateMap(GVariant *parameters, GDBusMethodInvoc
 void QemuDisplayListener::handleDisable(GDBusMethodInvocation *invocation)
 {
     {
-        const QMutexLocker l(&m_mutex);
         closeDmaBuf();
         unmapMemory();
         m_image = QImage();
@@ -556,7 +547,6 @@ void QemuDisplayListener::handleCursorDefine(GVariant *parameters, GDBusMethodIn
     //          << "Data:" << dataLen << "bytes";
 
     {
-        const QMutexLocker l(&m_mutex);
         if (data && dataLen >= static_cast<gsize>(width * height * 4)) {
             // QEMU sends ARGB32 data
             m_cursor.image = QImage(data, width, height, width * 4, QImage::Format_ARGB32).copy();
@@ -579,7 +569,6 @@ void QemuDisplayListener::handleMouseSet(GVariant *parameters, GDBusMethodInvoca
     g_variant_get(parameters, "(iii)", &x, &y, &on);
 
     {
-        const QMutexLocker l(&m_mutex);
         m_cursor.pos_x = x;
         m_cursor.pos_y = y;
         m_cursor.visible = (on != 0);

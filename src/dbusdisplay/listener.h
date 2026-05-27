@@ -12,7 +12,6 @@
 #pragma pop_macro("signals")
 
 #include <QImage>
-#include <QMutex>
 #include <QObject>
 #include <QPainter>
 #include <QPoint>
@@ -38,6 +37,22 @@ struct CursorInfo {
     int pos_y = 0;
     bool visible = false;
 };
+
+// =============================================================================
+// QemuDisplayListener
+// =============================================================================
+// Receives display updates from QEMU via D-Bus.
+//
+// Threading model:
+//   All public methods (currentImage(), cursorInfo(), takeDmaBufScanout(),
+//   isDmaBuf()) and all GDBus method handlers run on the GUI thread.
+//   GDBus dispatch is driven by QSocketNotifier::activated -> dispatchContext(),
+//   which fires in the thread that owns the notifier - that is the parent
+//   QemuDisplayWidget, which lives on the GUI thread.
+//
+//   Therefore no internal synchronisation is required. Do NOT call methods
+//   of this class from any other thread without revisiting this assumption.
+// =============================================================================
 
 class QemuDisplayListener : public QObject
 {
@@ -105,8 +120,6 @@ private:
 
     int m_ourFd = -1;
     int m_socketFd = -1; // Stored FD for external monitoring
-
-    mutable QMutex m_mutex;
 
     QImage m_image;
     void *m_mappedMemory = nullptr;
