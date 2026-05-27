@@ -438,22 +438,24 @@ void QemuDisplayListener::handleScanoutMap(GVariant *parameters, GDBusMethodInvo
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "mmap failed");
         return;
     }
-    {
-        closeDmaBuf();
-        unmapMemory();
-        m_isDmaBuf = false;
 
-        const uchar *pixels = static_cast<const uchar *>(mapped) + offset;
-        const QImage view(pixels, width, height, stride, qtFormat);
-        // Deep-copy so we don't depend on the mmap region staying alive.
-        m_image = view.copy();
+    // Drop previous frame/mapping. unmapMemory() handles the munmap of any
+    // existing m_mappedMemory and resets m_image; closeDmaBuf() releases any
+    // previous DMA-BUF FD.
+    closeDmaBuf();
+    unmapMemory();
+    m_isDmaBuf = false;
 
-        // We can unmap immediately now that the pixels are copied. Keeping
-        // the mapping around would just consume address space.
-        munmap(mapped, mapSize);
-        m_mappedMemory = nullptr;
-        m_mappedSize = 0;
-    }
+    // Keep the mapping alive: m_image is now a NON-OWNING view over QEMU's
+    // shared framebuffer. Subsequent UpdateMap calls write into this memory
+    // from the QEMU side; paintGL reads from it directly. The mapping stays
+    // alive until the next Scanout/ScanoutMap/Disable or destruction.
+    m_mappedMemory = mapped;
+    m_mappedSize = mapSize;
+
+    const uchar *pixels = static_cast<const uchar *>(mapped) + offset;
+    m_image = QImage(pixels, width, height, stride, qtFormat);
+
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT scanoutChanged(width, height);
 }
@@ -486,7 +488,14 @@ void QemuDisplayListener::handleUpdate(GVariant *parameters, GDBusMethodInvocati
 
 void QemuDisplayListener::handleUpdateMap(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
-    handleUpdate(parameters, invocation);
+    // UpdateMap signals that QEMU has written into the existing scanout
+    // mapping at rect (x, y, w, h). No pixel data on the wire - we already
+    // see the new bytes via m_image's non-owning view.
+    gint32 x, y, w, h;
+    g_variant_get(parameters, "(iiii)", &x, &y, &w, &h);
+
+    g_dbus_method_invocation_return_value(invocation, nullptr);
+    Q_EMIT regionUpdated(QRect(x, y, w, h));
 }
 
 // =============================================================================
@@ -562,10 +571,12 @@ void QemuDisplayListener::handleMouseSet(GVariant *parameters, GDBusMethodInvoca
 
 void QemuDisplayListener::unmapMemory()
 {
-    if (m_mappedMemory && m_mappedMemory != MAP_FAILED)
+    if (m_mappedMemory) {
         munmap(m_mappedMemory, m_mappedSize);
-    m_mappedMemory = nullptr;
-    m_mappedSize = 0;
+        m_mappedMemory = nullptr;
+        m_mappedSize = 0;
+    }
+    m_image = {};
 }
 
 void QemuDisplayListener::closeDmaBuf()
