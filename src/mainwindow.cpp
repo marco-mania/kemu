@@ -1026,7 +1026,6 @@ bool MainWindow::startDbusViewer(const QString &vmName)
                     return;
                 if (s.window) {
                     s.window->audioOutReady();
-                    s.window->displayWidget()->watchGLibFd(s.audioOut->socketFd(), s.audioOut->mainContext());
                 }
             });
         }
@@ -1052,7 +1051,6 @@ bool MainWindow::startDbusViewer(const QString &vmName)
                     return;
                 if (s.window) {
                     s.window->audioInReady();
-                    s.window->displayWidget()->watchGLibFd(s.audioIn->socketFd(), s.audioIn->mainContext());
                 }
             });
         }
