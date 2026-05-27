@@ -62,24 +62,7 @@ QemuAudioListener::~QemuAudioListener()
 {
     m_closed = true;
 
-    if (m_registrationId && m_conn) {
-        g_dbus_connection_unregister_object(m_conn, m_registrationId);
-        m_registrationId = 0;
-    }
-    if (m_conn) {
-        g_dbus_connection_close_sync(m_conn, nullptr, nullptr);
-        g_object_unref(m_conn);
-        m_conn = nullptr;
-    }
-
-    if (m_context) {
-        for (int i = 0; i < 16; ++i) {
-            if (!g_main_context_iteration(m_context, FALSE))
-                break;
-        }
-        g_main_context_unref(m_context);
-        m_context = nullptr;
-    }
+    cleanupConnection();
 
     for (auto *stream : m_streams) {
         if (stream->sink) {
@@ -152,10 +135,9 @@ bool QemuAudioListener::connectListener()
     g_object_unref(sockConn);
 
     if (!m_conn) {
-        qCCritical(KEMU_DBUSDISPLAY) << "Audio: D-Bus auth failed:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "AudioOut: D-Bus auth failed:" << error->message;
         g_error_free(error);
-        g_main_context_unref(m_context);
-        m_context = nullptr;
+        cleanupConnection();
         return false;
     }
 
@@ -164,13 +146,14 @@ bool QemuAudioListener::connectListener()
 
     GDBusNodeInfo *nodeInfo = g_dbus_node_info_new_for_xml(audioOutListenerXml, &error);
     if (!nodeInfo) {
-        qCCritical(KEMU_DBUSDISPLAY) << "Audio: XML error:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "AudioOut: XML error:" << error->message;
         g_error_free(error);
+        cleanupConnection();
         return false;
     }
 
     m_registrationId = g_dbus_connection_register_object(m_conn,
-                                                         KemuDbusDisplayConst::AudioOutListenerPath.constData(), //"/org/qemu/Display1/AudioOutListener",
+                                                         KemuDbusDisplayConst::AudioOutListenerPath.constData(),
                                                          nodeInfo->interfaces[0],
                                                          &audioVTable,
                                                          this,
@@ -179,8 +162,9 @@ bool QemuAudioListener::connectListener()
     g_dbus_node_info_unref(nodeInfo);
 
     if (!m_registrationId) {
-        qCCritical(KEMU_DBUSDISPLAY) << "Audio: Registration failed:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "AudioOut: Registration failed:" << error->message;
         g_error_free(error);
+        cleanupConnection();
         return false;
     }
 
@@ -422,4 +406,21 @@ void QemuAudioListener::handleSetVolume(GVariant *parameters, GDBusMethodInvocat
     if (volumeVariant)
         g_variant_unref(volumeVariant);
     g_dbus_method_invocation_return_value(invocation, nullptr);
+}
+
+void QemuAudioListener::cleanupConnection()
+{
+    if (m_registrationId && m_conn) {
+        g_dbus_connection_unregister_object(m_conn, m_registrationId);
+        m_registrationId = 0;
+    }
+    if (m_conn) {
+        g_dbus_connection_close_sync(m_conn, nullptr, nullptr);
+        g_object_unref(m_conn);
+        m_conn = nullptr;
+    }
+    if (m_context) {
+        g_main_context_unref(m_context);
+        m_context = nullptr;
+    }
 }

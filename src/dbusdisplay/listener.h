@@ -113,6 +113,8 @@ private:
     void closeDmaBuf();
     static QImage::Format pixmanFormatToQt(uint32_t pixman_format);
 
+    void cleanupConnection();
+
     GDBusConnection *m_listenerConn = nullptr;
     GMainContext *m_context = nullptr;
     guint m_registrationId = 0;

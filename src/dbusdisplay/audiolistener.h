@@ -102,6 +102,8 @@ private:
     int m_ourFd = -1;
     int m_socketFd = -1;
 
+    void cleanupConnection();
+
     QHash<quint64, AudioStream *> m_streams;
     bool m_muted = false;
     bool m_closed = false;

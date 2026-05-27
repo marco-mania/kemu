@@ -130,28 +130,7 @@ QemuDisplayListener::~QemuDisplayListener()
 {
     m_closed = true;
 
-    if (m_registrationId && m_listenerConn) {
-        g_dbus_connection_unregister_object(m_listenerConn, m_registrationId);
-        m_registrationId = 0;
-    }
-    if (m_registrationIdUnix && m_listenerConn) {
-        g_dbus_connection_unregister_object(m_listenerConn, m_registrationIdUnix);
-        m_registrationIdUnix = 0;
-    }
-    if (m_listenerConn) {
-        g_dbus_connection_close_sync(m_listenerConn, nullptr, nullptr);
-        g_object_unref(m_listenerConn);
-        m_listenerConn = nullptr;
-    }
-
-    if (m_context) {
-        for (int i = 0; i < 16; ++i) {
-            if (!g_main_context_iteration(m_context, FALSE))
-                break;
-        }
-        g_main_context_unref(m_context);
-        m_context = nullptr;
-    }
+    cleanupConnection();
 
     unmapMemory();
     closeDmaBuf();
@@ -217,8 +196,7 @@ bool QemuDisplayListener::connectListener()
         qCCritical(KEMU_DBUSDISPLAY) << "Display: g_socket_new_from_fd:" << error->message;
         g_error_free(error);
         close(ourFd);
-        g_main_context_unref(m_context);
-        m_context = nullptr;
+        cleanupConnection();
         return false;
     }
 
@@ -226,23 +204,19 @@ bool QemuDisplayListener::connectListener()
     g_object_unref(gsock);
     if (!sockConn) {
         qCCritical(KEMU_DBUSDISPLAY) << "Display: Socket connection failed";
-        g_main_context_unref(m_context);
-        m_context = nullptr;
+        cleanupConnection();
         return false;
     }
 
     g_main_context_push_thread_default(m_context);
-
     m_listenerConn = g_dbus_connection_new_sync(G_IO_STREAM(sockConn), nullptr, G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT, nullptr, nullptr, &error);
-
     g_main_context_pop_thread_default(m_context);
     g_object_unref(sockConn);
 
     if (!m_listenerConn) {
         qCCritical(KEMU_DBUSDISPLAY) << "Display: D-Bus auth failed:" << error->message;
         g_error_free(error);
-        g_main_context_unref(m_context);
-        m_context = nullptr;
+        cleanupConnection();
         return false;
     }
 
@@ -251,8 +225,9 @@ bool QemuDisplayListener::connectListener()
 
     GDBusNodeInfo *nodeInfo = g_dbus_node_info_new_for_xml(listenerIntrospectionXml, &error);
     if (!nodeInfo) {
-        qCCritical(KEMU_DBUSDISPLAY) << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "Display: introspection XML error:" << error->message;
         g_error_free(error);
+        cleanupConnection();
         return false;
     }
     m_registrationId = g_dbus_connection_register_object(m_listenerConn,
@@ -264,8 +239,9 @@ bool QemuDisplayListener::connectListener()
                                                          &error);
     g_dbus_node_info_unref(nodeInfo);
     if (!m_registrationId) {
-        qCCritical(KEMU_DBUSDISPLAY) << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "Display: register_object failed:" << error->message;
         g_error_free(error);
+        cleanupConnection();
         return false;
     }
 
@@ -280,8 +256,9 @@ bool QemuDisplayListener::connectListener()
                                                                  &error);
         g_dbus_node_info_unref(unixNode);
         if (!m_registrationIdUnix) {
-            qCWarning(KEMU_DBUSDISPLAY) << error->message;
+            qCWarning(KEMU_DBUSDISPLAY) << "Display: Unix interface register failed:" << error->message;
             g_error_free(error);
+            // Note: not fatal - the Unix interface is optional
         }
     }
 
@@ -625,5 +602,26 @@ QImage::Format QemuDisplayListener::pixmanFormatToQt(uint32_t pf)
     default:
         qCWarning(KEMU_DBUSDISPLAY) << "Unsupported pixman format: 0x" << Qt::hex << pf << Qt::dec << "- ignoring frame.";
         return QImage::Format_Invalid;
+    }
+}
+
+void QemuDisplayListener::cleanupConnection()
+{
+    if (m_registrationIdUnix && m_listenerConn) {
+        g_dbus_connection_unregister_object(m_listenerConn, m_registrationIdUnix);
+        m_registrationIdUnix = 0;
+    }
+    if (m_registrationId && m_listenerConn) {
+        g_dbus_connection_unregister_object(m_listenerConn, m_registrationId);
+        m_registrationId = 0;
+    }
+    if (m_listenerConn) {
+        g_dbus_connection_close_sync(m_listenerConn, nullptr, nullptr);
+        g_object_unref(m_listenerConn);
+        m_listenerConn = nullptr;
+    }
+    if (m_context) {
+        g_main_context_unref(m_context);
+        m_context = nullptr;
     }
 }

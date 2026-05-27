@@ -97,4 +97,6 @@ private:
     QHash<quint64, AudioInStream *> m_streams;
     bool m_muted = false;
     bool m_closed = false;
+
+    void cleanupConnection();
 };
