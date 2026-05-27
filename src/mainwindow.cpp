@@ -999,7 +999,6 @@ bool MainWindow::startDbusViewer(const QString &vmName)
     state.window->setAttribute(Qt::WA_DeleteOnClose, false);
     state.window->displayWidget()->watchGLibFd(state.displayListener->socketFd(), state.displayListener->mainContext());
     state.window->show();
-    state.window->show();
 
     // --- Async audio registration ---
     QDBusInterface *audioIface = new QDBusInterface(KemuDbusDisplayConst::ServiceName, KemuDbusDisplayConst::AudioPath, KemuDbusDisplayConst::AudioIface, bus);
