@@ -477,9 +477,7 @@ void DbusViewerWindow::setupClipboard(ClipboardDirection dir)
 
     m_clipboard = new QemuClipboardManager(m_bus, dir, this);
     if (!m_clipboard->setup()) {
-        statusBar()->showMessage(i18n("Clipboard registration failed – "
-                                      "QEMU needs a clipboard agent in the guest"),
-                                 5000);
+        statusBar()->showMessage(i18n("Clipboard registration failed – QEMU needs a clipboard agent in the guest"), 5000);
         delete m_clipboard;
         m_clipboard = nullptr;
         m_clipDirection = ClipboardDirection::Off;
@@ -499,7 +497,7 @@ void DbusViewerWindow::setupClipboard(ClipboardDirection dir)
         default:
             break;
         }
-        statusBar()->showMessage(i18n("Clipboard enabled: %1").arg(dirStr), 3000);
+        statusBar()->showMessage(i18n("Clipboard enabled: %1", dirStr), 3000);
     }
 
     updateStatusBar();
@@ -673,7 +671,7 @@ void DbusViewerWindow::audioInReady()
 
     if (m_audioIn) {
         m_display->watchGLibFd(m_audioIn->socketFd(),
-                               m_audioIn->mainContext());    // NEU
+                               m_audioIn->mainContext()); // NEU
     }
 
     updateStatusBar();
