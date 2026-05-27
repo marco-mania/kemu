@@ -217,7 +217,7 @@ bool QemuDisplayListener::connectListener()
     GError *error = nullptr;
     GSocket *gsock = g_socket_new_from_fd(ourFd, &error);
     if (!gsock) {
-        qCCritical(KEMU_DBUSDISPLAY) << "Audio: g_socket_new_from_fd:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "Display: g_socket_new_from_fd:" << error->message;
         g_error_free(error);
         close(ourFd);
         g_main_context_unref(m_context);
@@ -228,7 +228,7 @@ bool QemuDisplayListener::connectListener()
     GSocketConnection *sockConn = g_socket_connection_factory_create_connection(gsock);
     g_object_unref(gsock);
     if (!sockConn) {
-        qCCritical(KEMU_DBUSDISPLAY) << "Audio: Socket connection failed";
+        qCCritical(KEMU_DBUSDISPLAY) << "Display: Socket connection failed";
         g_main_context_unref(m_context);
         m_context = nullptr;
         return false;
@@ -242,7 +242,7 @@ bool QemuDisplayListener::connectListener()
     g_object_unref(sockConn);
 
     if (!m_listenerConn) {
-        qCCritical(KEMU_DBUSDISPLAY) << "Audio: D-Bus auth failed:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "Display: D-Bus auth failed:" << error->message;
         g_error_free(error);
         g_main_context_unref(m_context);
         m_context = nullptr;

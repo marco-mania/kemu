@@ -140,7 +140,7 @@ bool QemuAudioInListener::connectListener()
     GError *error = nullptr;
     GSocket *gsock = g_socket_new_from_fd(ourFd, &error);
     if (!gsock) {
-        qCCritical(KEMU_DBUSDISPLAY) << "Audio: g_socket_new_from_fd:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "AudioIn: g_socket_new_from_fd:" << error->message;
         g_error_free(error);
         close(ourFd);
         g_main_context_unref(m_context);
@@ -151,7 +151,7 @@ bool QemuAudioInListener::connectListener()
     GSocketConnection *sockConn = g_socket_connection_factory_create_connection(gsock);
     g_object_unref(gsock);
     if (!sockConn) {
-        qCCritical(KEMU_DBUSDISPLAY) << "Audio: Socket connection failed";
+        qCCritical(KEMU_DBUSDISPLAY) << "AudioIn: Socket connection failed";
         g_main_context_unref(m_context);
         m_context = nullptr;
         return false;
@@ -165,7 +165,7 @@ bool QemuAudioInListener::connectListener()
     g_object_unref(sockConn);
 
     if (!m_conn) {
-        qCCritical(KEMU_DBUSDISPLAY) << "Audio: D-Bus auth failed:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "AudioIn: D-Bus auth failed:" << error->message;
         g_error_free(error);
         g_main_context_unref(m_context);
         m_context = nullptr;
@@ -312,7 +312,7 @@ void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation
     }
 
     if (!inputDevice.isFormatSupported(format)) {
-        qCWarning(KEMU_DBUSDISPLAY) << "Audio: format not advertised as supported"
+        qCWarning(KEMU_DBUSDISPLAY) << "AudioIn: format not advertised as supported"
                                     << "(rate=" << format.sampleRate() << "ch=" << format.channelCount() << "fmt=" << format.sampleFormat() << ")";
     }
 
