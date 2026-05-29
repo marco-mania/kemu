@@ -122,7 +122,9 @@ target_sources(
           dbusdisplay/audioinlistener.cpp
           dbusdisplay/audioinlistener.h
           dbusdisplay/clipboard.cpp
-          dbusdisplay/clipboard.h)
+          dbusdisplay/clipboard.h
+          dbusdisplay/uniquefd.h
+          dbusdisplay/gvariantptr.h)
 
 target_include_directories(
   ${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MNL_INCLUDE_DIRS}

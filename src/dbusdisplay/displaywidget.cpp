@@ -1,6 +1,8 @@
-// SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
-//
-// SPDX-License-Identifier: GPL-3.0-or-later
+/*
+ * SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
 
 #include "displaywidget.h"
 
@@ -294,7 +296,7 @@ bool QemuDisplayWidget::initEglFunctions()
 }
 
 // =============================================================================
-// DMA-BUF Import (unchanged)
+// DMA-BUF Import
 // =============================================================================
 
 bool QemuDisplayWidget::importDmaBuf()
@@ -302,6 +304,11 @@ bool QemuDisplayWidget::importDmaBuf()
     DmaBufScanout buf;
     if (!m_listener->takeDmaBufScanout(buf))
         return false;
+
+    // buf.fd is now a UniqueFd that we own. It will be closed at the end
+    // of this function by RAII regardless of which path we take.
+    // EGL_DMA_BUF_PLANE0_FD_EXT requires the raw FD value; EGL dup's it
+    // internally on success, so closing our copy afterwards is correct.
 
     makeCurrent();
     destroyEglImage();
@@ -315,7 +322,7 @@ bool QemuDisplayWidget::importDmaBuf()
     attribs[i++] = EGL_LINUX_DRM_FOURCC_EXT;
     attribs[i++] = buf.fourcc;
     attribs[i++] = EGL_DMA_BUF_PLANE0_FD_EXT;
-    attribs[i++] = buf.fd;
+    attribs[i++] = buf.fd.get(); // <-- .get(), still owned by buf
     attribs[i++] = EGL_DMA_BUF_PLANE0_OFFSET_EXT;
     attribs[i++] = 0;
     attribs[i++] = EGL_DMA_BUF_PLANE0_PITCH_EXT;
@@ -330,7 +337,7 @@ bool QemuDisplayWidget::importDmaBuf()
     attribs[i++] = EGL_NONE;
 
     m_eglImage = m_eglCreateImageKHR(m_eglDisplay, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
-    ::close(buf.fd);
+    // buf.fd's destructor will close the FD when 'buf' goes out of scope.
 
     if (m_eglImage == EGL_NO_IMAGE_KHR) {
         qCWarning(KEMU_DBUSDISPLAY) << "EGLImage failed: fourcc=0x" << Qt::hex << buf.fourcc;
@@ -346,8 +353,6 @@ bool QemuDisplayWidget::importDmaBuf()
     m_usingDmaBuf = true;
     m_flipY = buf.y0_top;
 
-    // qCDebug(KEMU_DBUSDISPLAY) << "DMA-BUF imported:" << buf.width << "x" << buf.height
-    //          << "flipY:" << m_flipY;
     return true;
 }
 

@@ -153,7 +153,7 @@ QRegion QemuDisplayListener::takeDirtyRegion()
 
 bool QemuDisplayListener::isDmaBuf() const
 {
-    return m_isDmaBuf;
+    return m_dmaBuf.fd.isValid();
 }
 
 CursorInfo QemuDisplayListener::cursorInfo() const
@@ -163,10 +163,19 @@ CursorInfo QemuDisplayListener::cursorInfo() const
 
 bool QemuDisplayListener::takeDmaBufScanout(DmaBufScanout &out)
 {
-    if (!m_isDmaBuf || m_dmaBuf.fd < 0)
+    if (!isDmaBuf() || !m_dmaBuf.fd.isValid())
         return false;
-    out = m_dmaBuf;
-    m_dmaBuf.fd = -1;
+
+    // Move all members. The FD moves out (m_dmaBuf.fd becomes invalid),
+    // the other plain-old-data members get copied.
+    out.fd = std::move(m_dmaBuf.fd);
+    out.width = m_dmaBuf.width;
+    out.height = m_dmaBuf.height;
+    out.stride = m_dmaBuf.stride;
+    out.fourcc = m_dmaBuf.fourcc;
+    out.modifier = m_dmaBuf.modifier;
+    out.y0_top = m_dmaBuf.y0_top;
+
     return true;
 }
 
@@ -352,25 +361,32 @@ void QemuDisplayListener::handleScanoutDMABUF(GVariant *parameters, GDBusMethodI
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "No FD list");
         return;
     }
+
     GError *error = nullptr;
-    const int dmabufFd = g_unix_fd_list_get(fdList, fdIndex, &error);
-    if (dmabufFd < 0) {
-        g_error_free(error);
+    // Take ownership immediately. From this point on, any return path
+    // (early or successful) frees the FD correctly via UniqueFd's destructor.
+    UniqueFd newFd(g_unix_fd_list_get(fdList, fdIndex, &error));
+    if (!newFd.isValid()) {
+        const QString msg = error ? QString::fromUtf8(error->message) : QStringLiteral("unknown");
+        qCWarning(KEMU_DBUSDISPLAY) << "ScanoutDMABUF: FD extraction failed:" << msg;
+        if (error)
+            g_error_free(error);
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "FD error");
         return;
     }
 
-    // qCDebug(KEMU_DBUSDISPLAY) << "ScanoutDMABUF:" << width << "x" << height
-    //          << "fourcc: 0x" << Qt::hex << fourcc << Qt::dec
-    //          << "y0_top:" << y0_top << "FD:" << dmabufFd;
+    // Drop previous state (any old DMA-BUF FD, any software mapping).
+    unmapMemory();
+    closeDmaBuf(); // also resets m_isDmaBuf
 
-    {
-        unmapMemory();
-        m_image = QImage();
-        closeDmaBuf();
-        m_dmaBuf = {dmabufFd, width, height, stride, fourcc, modifier, bool(y0_top)};
-        m_isDmaBuf = true;
-    }
+    m_dmaBuf.fd = std::move(newFd); // ownership now in m_dmaBuf
+    m_dmaBuf.width = width;
+    m_dmaBuf.height = height;
+    m_dmaBuf.stride = stride;
+    m_dmaBuf.fourcc = fourcc;
+    m_dmaBuf.modifier = modifier;
+    m_dmaBuf.y0_top = bool(y0_top);
+
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT dmaBufScanout(width, height);
 }
@@ -413,7 +429,6 @@ void QemuDisplayListener::handleScanout(GVariant *parameters, GDBusMethodInvocat
     // unmapMemory() m_image is null - we re-create it next.
     closeDmaBuf();
     unmapMemory();
-    m_isDmaBuf = false;
 
     // Reuse the existing backbuffer if geometry AND format match.
     // In steady state (constant resolution, constant format) this
@@ -477,7 +492,6 @@ void QemuDisplayListener::handleScanoutMap(GVariant *parameters, GDBusMethodInvo
     // previous DMA-BUF FD.
     closeDmaBuf();
     unmapMemory();
-    m_isDmaBuf = false;
 
     // Keep the mapping alive: m_image is now a NON-OWNING view over QEMU's
     // shared framebuffer. Subsequent UpdateMap calls write into this memory
@@ -566,7 +580,6 @@ void QemuDisplayListener::handleDisable(GDBusMethodInvocation *invocation)
 {
     closeDmaBuf();
     unmapMemory(); // clears m_image
-    m_isDmaBuf = false;
     m_dirtyRegion = QRegion(); // nothing to upload anymore
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
@@ -641,10 +654,9 @@ void QemuDisplayListener::unmapMemory()
 
 void QemuDisplayListener::closeDmaBuf()
 {
-    if (m_dmaBuf.fd >= 0) {
-        close(m_dmaBuf.fd);
-        m_dmaBuf.fd = -1;
-    }
+    // UniqueFd::reset() closes the FD if valid and resets to -1.
+    // We also clear the bool so the state stays consistent.
+    m_dmaBuf.fd.reset();
 }
 
 QImage::Format QemuDisplayListener::pixmanFormatToQt(uint32_t pf)

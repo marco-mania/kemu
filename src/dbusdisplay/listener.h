@@ -18,10 +18,12 @@
 #include <QRect>
 #include <QRegion>
 
+#include "dbusdisplay/uniquefd.h"
+
 using namespace Qt::StringLiterals;
 
 struct DmaBufScanout {
-    int fd = -1;
+    UniqueFd fd;
     uint32_t width = 0;
     uint32_t height = 0;
     uint32_t stride = 0;
@@ -141,7 +143,6 @@ private:
     size_t m_mappedSize = 0;
 
     DmaBufScanout m_dmaBuf;
-    bool m_isDmaBuf = false;
 
     CursorInfo m_cursor;
     bool m_closed = false;
