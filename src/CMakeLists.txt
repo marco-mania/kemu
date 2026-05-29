@@ -160,3 +160,5 @@ target_link_libraries(
   KF6::TextTemplate
   KF6::DBusAddons
   KF6::Crash)
+
+install(TARGETS ${PROJECT_NAME} ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})

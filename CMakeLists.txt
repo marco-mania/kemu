@@ -4,6 +4,11 @@
 
 cmake_minimum_required(VERSION 3.20)
 
+if(POLICY CMP0175)
+  cmake_policy(SET CMP0175 OLD)
+endif()
+# -------------------------------------------------------------------------
+
 project(kemu VERSION 0.3.0)
 
 add_compile_definitions(APP_VERSION=\"${PROJECT_VERSION}\" APP_NAME=\"KEMU\"
@@ -68,7 +73,6 @@ pkg_check_modules(EGL REQUIRED IMPORTED_TARGET egl)
 
 add_subdirectory(src)
 
-install(TARGETS ${PROJECT_NAME} ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
 install(FILES src/kemuui.rc
         DESTINATION ${KDE_INSTALL_KXMLGUIDIR}/${PROJECT_NAME})
 install(
