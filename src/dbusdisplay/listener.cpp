@@ -143,10 +143,19 @@ QImage QemuDisplayListener::currentImage() const
 {
     return m_image;
 }
+
+QRegion QemuDisplayListener::takeDirtyRegion()
+{
+    QRegion r = std::move(m_dirtyRegion);
+    m_dirtyRegion = QRegion();
+    return r;
+}
+
 bool QemuDisplayListener::isDmaBuf() const
 {
     return m_isDmaBuf;
 }
+
 CursorInfo QemuDisplayListener::cursorInfo() const
 {
     return m_cursor;
@@ -382,31 +391,55 @@ void QemuDisplayListener::handleScanout(GVariant *parameters, GDBusMethodInvocat
     guint32 width, height, stride, pixman_format;
     GVariant *rawData = nullptr;
     g_variant_get(parameters, "(uuuu@ay)", &width, &height, &stride, &pixman_format, &rawData);
-    const GVariantPtr dataVariant(rawData); // takes ownership
-
-    gsize dataLen = 0;
-    const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
+    GVariantPtr dataVariant(rawData); // RAII (from Punkt 6)
 
     const QImage::Format qtFormat = pixmanFormatToQt(pixman_format);
     if (qtFormat == QImage::Format_Invalid) {
-        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_NOT_SUPPORTED, "Unsupported pixman format: 0x%x", pixman_format);
+        qCWarning(KEMU_DBUSDISPLAY) << "Scanout: unsupported pixman format" << pixman_format;
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_NOT_SUPPORTED, "unsupported pixel format");
         return;
     }
 
-    {
-        closeDmaBuf();
-        unmapMemory();
-        m_isDmaBuf = false;
-
-        // Construct QImage as a view onto the GDBus-owned buffer, then deep-copy
-        // so we own the pixel data. The original `data` pointer becomes invalid
-        // as soon as we return from this method.
-        const QImage view(reinterpret_cast<const uchar *>(data), width, height, stride, qtFormat);
-        m_image = view.copy();
+    gsize dataLen = 0;
+    const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
+    const gsize expected = static_cast<gsize>(stride) * height;
+    if (!data || dataLen < expected) {
+        qCWarning(KEMU_DBUSDISPLAY) << "Scanout: short pixel array" << dataLen << "<" << expected;
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "short pixel array");
+        return;
     }
 
+    // Drop any previous state (DMA-BUF or ScanoutMap mapping). After
+    // unmapMemory() m_image is null - we re-create it next.
+    closeDmaBuf();
+    unmapMemory();
+    m_isDmaBuf = false;
+
+    // Reuse the existing backbuffer if geometry AND format match.
+    // In steady state (constant resolution, constant format) this
+    // branch is never taken, so no per-frame allocation.
+    if (m_image.size() != QSize(int(width), int(height)) || m_image.format() != qtFormat) {
+        m_image = QImage(int(width), int(height), qtFormat);
+    }
+
+    // memcpy row-by-row. Source and destination strides may differ
+    // (QImage rounds up to 32-bit alignment), so we cannot blast the
+    // whole buffer in one memcpy. dstStride is needed because
+    // m_image.scanLine(y) already accounts for it - but only for the
+    // destination side. We still need srcStride to walk the input.
+    const size_t srcStride = stride;
+    const int bpp = m_image.depth() / 8;
+    const size_t rowBytes = static_cast<size_t>(width) * bpp;
+
+    for (uint32_t y = 0; y < height; ++y) {
+        memcpy(m_image.scanLine(static_cast<int>(y)), data + y * srcStride, rowBytes);
+    }
+
+    // Full-frame change.
+    m_dirtyRegion = QRegion(0, 0, int(width), int(height));
+
     g_dbus_method_invocation_return_value(invocation, nullptr);
-    Q_EMIT scanoutChanged(width, height);
+    Q_EMIT scanoutChanged(int(width), int(height));
 }
 
 void QemuDisplayListener::handleScanoutMap(GVariant *parameters, GDBusMethodInvocation *invocation)
@@ -466,19 +499,47 @@ void QemuDisplayListener::handleUpdate(GVariant *parameters, GDBusMethodInvocati
     guint32 stride, pixman_format;
     GVariant *rawData = nullptr;
     g_variant_get(parameters, "(iiiiuu@ay)", &x, &y, &w, &h, &stride, &pixman_format, &rawData);
-    const GVariantPtr dataVariant(rawData); // takes ownership
+    GVariantPtr dataVariant(rawData);
 
-    gsize dataLen = 0;
-    const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
+    // Update is only valid in the non-mapped Scanout path. ScanoutMap
+    // sends UpdateMap, which is handled separately and writes nothing.
+    if (m_mappedMemory) {
+        qCDebug(KEMU_DBUSDISPLAY) << "Update while ScanoutMap active - ignoring";
+        g_dbus_method_invocation_return_value(invocation, nullptr);
+        return;
+    }
 
     const QImage::Format qtFormat = pixmanFormatToQt(pixman_format);
-    if (qtFormat != QImage::Format_Invalid && data && w > 0 && h > 0 && dataLen >= static_cast<gsize>(h) * stride) {
-        if (!m_image.isNull() && m_image.format() == qtFormat) {
-            // Die Update-Region ist ein eigenständiges, eng gestridetes Teilbild.
-            const QImage tile(data, w, h, stride, qtFormat);
-            QPainter p(&m_image);
-            p.setCompositionMode(QPainter::CompositionMode_Source);
-            p.drawImage(x, y, tile);
+    if (m_image.isNull() || m_image.format() != qtFormat) {
+        // No matching backbuffer to update into. QEMU will resync via a
+        // full Scanout if needed.
+        qCDebug(KEMU_DBUSDISPLAY) << "Update without matching backbuffer - ignoring";
+        g_dbus_method_invocation_return_value(invocation, nullptr);
+        return;
+    }
+
+    // Clip rect to backbuffer (defensive against bogus coordinates).
+    const int dstX = std::max(0, x);
+    const int dstY = std::max(0, y);
+    const int copyW = std::min(w, m_image.width() - dstX);
+    const int copyH = std::min(h, m_image.height() - dstY);
+
+    if (copyW > 0 && copyH > 0) {
+        gsize dataLen = 0;
+        const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
+        const gsize expected = static_cast<gsize>(stride) * copyH;
+        if (data && dataLen >= expected) {
+            const int bpp = m_image.depth() / 8;
+            const size_t rowBytes = static_cast<size_t>(copyW) * bpp;
+            const size_t srcStride = stride;
+
+            for (int row = 0; row < copyH; ++row) {
+                memcpy(m_image.scanLine(dstY + row) + dstX * bpp, data + row * srcStride, rowBytes);
+            }
+
+            m_dirtyRegion += QRect(dstX, dstY, copyW, copyH);
+        } else {
+            qCWarning(KEMU_DBUSDISPLAY) << "Update: short pixel array";
         }
     }
 
@@ -503,12 +564,11 @@ void QemuDisplayListener::handleUpdateMap(GVariant *parameters, GDBusMethodInvoc
 // =============================================================================
 void QemuDisplayListener::handleDisable(GDBusMethodInvocation *invocation)
 {
-    {
-        closeDmaBuf();
-        unmapMemory();
-        m_image = QImage();
-        m_isDmaBuf = false;
-    }
+    closeDmaBuf();
+    unmapMemory(); // clears m_image
+    m_isDmaBuf = false;
+    m_dirtyRegion = QRegion(); // nothing to upload anymore
+
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT scanoutChanged(0, 0);
 }

@@ -264,6 +264,9 @@ void QemuDisplayWidget::initializeGL()
     // qCDebug(KEMU_DBUSDISPLAY) << (m_eglAvailable
     //     ? "EGL DMA-BUF import available -> GPU path active"
     //     : "EGL not available -> Software fallback");
+
+    m_textureReady = false;
+    m_texAllocSize = {};
 }
 
 void QemuDisplayWidget::setupQuad()
@@ -356,42 +359,25 @@ void QemuDisplayWidget::destroyEglImage()
     }
 }
 
-// =============================================================================
-// Optimization 2: Software path without convertToFormat()
-// =============================================================================
-// Before: source.convertToFormat(RGBA8888) + glTexImage2D(GL_RGBA)
-//   -> Full pixel copy with byte swizzle (BGRA -> RGBA) per frame
-//   -> At 1080p: copy 8 MB + swizzle = ~3ms CPU time
-//
-// After: glTexImage2D(GL_BGRA_EXT) directly on source.constBits()
-//   -> No copy, GPU takes data directly in BGRA order
-//   -> 0ms CPU format conversion
-
 void QemuDisplayWidget::uploadSoftwareFrame()
 {
     const QImage source = m_listener->currentImage();
     if (source.isNull()) {
         m_textureReady = false;
+        // Drain any pending dirty rects so a stale region doesn't
+        // re-fire on the next frame.
+        m_listener->takeDirtyRegion();
         return;
     }
 
     glBindTexture(GL_TEXTURE_2D, m_textureId);
 
-    if (m_hasBGRA && (source.format() == QImage::Format_RGB32 || source.format() == QImage::Format_ARGB32)) {
-        if (m_texAllocSize != source.size()) {
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, source.width(), source.height(), 0, GL_BGRA_EXT, GL_UNSIGNED_BYTE, source.constBits());
-            m_texAllocSize = source.size();
-        } else {
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, source.width(), source.height(), GL_BGRA_EXT, GL_UNSIGNED_BYTE, source.constBits());
-        }
+    const bool canDirtyUpload = m_hasBGRA && (source.format() == QImage::Format_RGB32 || source.format() == QImage::Format_ARGB32);
+
+    if (canDirtyUpload) {
+        uploadDirtyRects(source);
     } else {
-        const QImage rgba = source.convertToFormat(QImage::Format_RGBA8888);
-        if (m_texAllocSize != rgba.size()) {
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rgba.width(), rgba.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.constBits());
-            m_texAllocSize = rgba.size();
-        } else {
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rgba.width(), rgba.height(), GL_RGBA, GL_UNSIGNED_BYTE, rgba.constBits());
-        }
+        uploadFullFrameConverted(source);
     }
 
     m_flipY = false;
@@ -705,4 +691,64 @@ void QemuDisplayWidget::updateWidgetSize()
     resize(scaledSize.width(), scaledSize.height());
     updateCursor();
     update(); // Trigger repaint with new size
+}
+
+// BGRA-direct path: re-allocate the texture only on size change,
+// then upload only the dirty rects from the listener.
+void QemuDisplayWidget::uploadDirtyRects(const QImage &source)
+{
+    const int srcBpp = source.depth() / 8; // always 4 for RGB32/ARGB32
+
+    // (Re-)allocate texture on geometry change. Texture content is
+    // garbage afterwards, so force a full upload by overriding
+    // the dirty region.
+    bool forceFullUpload = false;
+    if (m_texAllocSize != source.size()) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, source.width(), source.height(), 0, GL_BGRA_EXT, GL_UNSIGNED_BYTE, nullptr);
+        m_texAllocSize = source.size();
+        forceFullUpload = true;
+    }
+
+    QRegion dirty = m_listener->takeDirtyRegion();
+    if (forceFullUpload || !m_textureReady) {
+        dirty = QRegion(0, 0, source.width(), source.height());
+    }
+    if (dirty.isEmpty()) {
+        return; // GPU state still matches; just re-render the quad
+    }
+
+    // GL_UNPACK_ROW_LENGTH tells GL how to walk the source buffer.
+    // bytesPerLine() includes Qt's row padding (multiple of 4 bytes).
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, source.bytesPerLine() / srcBpp);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+
+    const uchar *base = source.constBits();
+
+    for (const QRect &rect : dirty) {
+        // Compute pointer to top-left pixel of this rect within source.
+        const uchar *ptr = base + static_cast<size_t>(rect.y()) * source.bytesPerLine() + static_cast<size_t>(rect.x()) * srcBpp;
+
+        glTexSubImage2D(GL_TEXTURE_2D, 0, rect.x(), rect.y(), rect.width(), rect.height(), GL_BGRA_EXT, GL_UNSIGNED_BYTE, ptr);
+    }
+
+    // Reset GL state to defaults so we don't leak settings into
+    // other GL clients sharing this context.
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+}
+
+// Fallback path: no BGRA extension. convertToFormat() walks the whole
+// frame anyway, so a partial upload would buy nothing. Drain the dirty
+// region (we satisfy it with a full upload) and upload the full frame.
+void QemuDisplayWidget::uploadFullFrameConverted(const QImage &source)
+{
+    m_listener->takeDirtyRegion(); // drain - we satisfy it fully below
+
+    const QImage rgba = source.convertToFormat(QImage::Format_RGBA8888);
+    if (m_texAllocSize != rgba.size()) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rgba.width(), rgba.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.constBits());
+        m_texAllocSize = rgba.size();
+    } else {
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rgba.width(), rgba.height(), GL_RGBA, GL_UNSIGNED_BYTE, rgba.constBits());
+    }
 }

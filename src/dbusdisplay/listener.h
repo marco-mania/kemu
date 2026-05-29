@@ -16,6 +16,7 @@
 #include <QPainter>
 #include <QPoint>
 #include <QRect>
+#include <QRegion>
 
 using namespace Qt::StringLiterals;
 
@@ -66,6 +67,16 @@ public:
     bool connectListener();
 
     QImage currentImage() const;
+
+    // Returns rects that have changed since the last call and resets the
+    // internal dirty region. After this call, the listener considers all
+    // pixel data to be uploaded to the GPU.
+    //
+    // On full-frame events (Scanout, ScanoutMap, Disable), the dirty
+    // region implicitly covers the whole frame so the caller re-uploads
+    // everything.
+    QRegion takeDirtyRegion();
+
     bool takeDmaBufScanout(DmaBufScanout &out);
     bool isDmaBuf() const;
     CursorInfo cursorInfo() const;
@@ -119,6 +130,8 @@ private:
     GMainContext *m_context = nullptr;
     guint m_registrationId = 0;
     guint m_registrationIdUnix = 0;
+
+    QRegion m_dirtyRegion;
 
     int m_ourFd = -1;
     int m_socketFd = -1; // Stored FD for external monitoring

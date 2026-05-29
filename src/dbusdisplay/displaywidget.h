@@ -128,4 +128,7 @@ private:
     qreal m_scale = 1.0f;
 
     bool m_dimmed = false;
+
+    void uploadDirtyRects(const QImage &source);
+    void uploadFullFrameConverted(const QImage &source);
 };
