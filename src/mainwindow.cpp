@@ -737,13 +737,17 @@ void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const Q
         }
 
         if (isResume) {
-            // QEMU loaded a paused state from the savestate file. Resume the
-            // guest now that the QMP channel is up.
-            client->sendCommand(u"cont"_s, {}, [vmName](QMPResult r) {
-                if (!r.success)
-                    qWarning() << "Could not resume" << vmName << "from savestate:" << r.errorMessage;
-            });
-            SaveStateManager::discardSavestate(getVmDir(vmName).absolutePath(), vmName);
+            // Do NOT 'cont' here: QMP is up long before the incoming migration
+            // has finished loading the (paused) state. Enable MIGRATION events
+            // and let onQMPEvent() resume once status == "completed".
+            m_resumingFromSavestate.insert(vmName);
+
+            QJsonArray caps;
+            QJsonObject capEvents;
+            capEvents.insert(u"capability"_s, u"events"_s);
+            capEvents.insert(u"state"_s, true);
+            caps.append(capEvents);
+            client->sendCommand(u"migrate-set-capabilities"_s, {{u"capabilities"_s, caps}}, nullptr);
         }
     });
 
@@ -2084,6 +2088,7 @@ void MainWindow::tearDownVmRuntime(const QString &vmName)
 
     m_qemuStderrTails.remove(vmName);
     m_userInitiatedShutdowns.remove(vmName);
+    m_resumingFromSavestate.remove(vmName);
 }
 
 void MainWindow::changeISO()
@@ -2802,6 +2807,7 @@ void MainWindow::startVM(bool headless)
 
     m_qemuStderrTails.remove(vmName);
     m_userInitiatedShutdowns.remove(vmName);
+    m_resumingFromSavestate.remove(vmName);
     m_startupFailureShown.remove(vmName);
 
     auto *chain = new StartupChain(this);
@@ -2938,6 +2944,23 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
     // subtitle and the Saved-style icon, so no extra status-bar noise.
     const VmEntry *entry = veModel->entryByName(vmName);
     const bool isSaving = entry && entry->state == VmEntry::State::Saving;
+
+    if (eventName == u"MIGRATION"_s) {
+        const QString status = data.value(u"status"_s).toString();
+        // Incoming-migration completion on the resume path. The guest was
+        // saved in a paused state (save() issued 'stop' before migrate), so it
+        // stays paused until we 'cont'. Doing it here - not on QMP connect -
+        // closes the race where QMP is up before the migration has finished.
+        if (status == u"completed"_s && m_resumingFromSavestate.remove(vmName)) {
+            if (const VmEntry *e = veModel->entryByName(vmName); e && e->qmpClient) {
+                e->qmpClient->sendCommand(u"cont"_s, {}, [vmName](QMPResult r) {
+                    if (!r.success)
+                        qCWarning(KEMU) << "Could not resume" << vmName << "from savestate:" << r.errorMessage;
+                });
+            }
+        }
+        return;
+    }
 
     if (eventName == u"SHUTDOWN"_s) {
         statusBar()->showMessage(i18n("VM '%1' is shutting down...", vmName));
@@ -3176,6 +3199,7 @@ void MainWindow::shutdownVMByName(const QString &vmName)
 
     if (!result.success) {
         m_userInitiatedShutdowns.remove(vmName);
+        m_resumingFromSavestate.remove(vmName);
         KMessageBox::error(parentW, i18n("Shutdown Failed"), result.errorMessage);
         return;
     }
@@ -3369,6 +3393,7 @@ void MainWindow::saveStateVMByName(const QString &vmName, bool skipConfirm)
     m_saveStateManager.save(entry->qmpClient, vmDirPath, vmName, [this, vmName, safeParentW, process](bool ok, QString err) {
         if (!ok) {
             m_userInitiatedShutdowns.remove(vmName);
+            m_resumingFromSavestate.remove(vmName);
             if (veModel->entryByName(vmName))
                 veModel->setVmState(vmName, VmEntry::State::Running);
 
@@ -3965,6 +3990,7 @@ void MainWindow::startDeployment(const QString &vmName, const bool disable_headl
     // Reset failure-handling state from any previous attempt of this VM.
     m_qemuStderrTails.remove(vmName);
     m_userInitiatedShutdowns.remove(vmName);
+    m_resumingFromSavestate.remove(vmName);
     m_startupFailureShown.remove(vmName);
 
     // Pre-flight: bail out before starting helpers if QEMU is missing,

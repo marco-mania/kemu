@@ -217,6 +217,7 @@ private:
     // QEMU failure handling, keyed by VM name
     QMap<QString, QByteArray> m_qemuStderrTails;
     QSet<QString> m_userInitiatedShutdowns;
+    QSet<QString> m_resumingFromSavestate; // VMs awaiting incoming-migration completion
 
     void showQemuFailureDialog(const QString &vmName, bool startupFailed, int exitCode, KProcess::ExitStatus exitStatus, const QByteArray &stderrTail);
 
