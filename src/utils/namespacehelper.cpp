@@ -176,7 +176,10 @@ qint64 NamespaceHelper::createNamespace(QString *error)
 
         // Signal parent that unshare() succeeded
         char ready = 'R';
-        (void)write(syncPipe[1], &ready, 1);
+        if (write(syncPipe[1], &ready, 1) != 1) {
+            close(syncPipe[1]);
+            _exit(1);
+        }
         close(syncPipe[1]);
 
         // Die with our creator. When KEMU exits the kernel sends SIGTERM,
@@ -715,10 +718,10 @@ QString NamespaceHelper::getDefaultRouteDevice(qint64 nsPid)
                         char ifname[IFNAMSIZ];
                         if (if_indextoname(static_cast<unsigned>(oif), ifname)) {
                             const size_t nameLen = strlen(ifname);
-                            (void)write(writeFd, ifname, nameLen);
+                            const ssize_t written = write(writeFd, ifname, nameLen);
                             close(writeFd);
                             mnl_socket_close(nl);
-                            return 0;
+                            return (written == static_cast<ssize_t>(nameLen)) ? 0 : 1;
                         }
                     }
                 }
@@ -767,7 +770,9 @@ bool NamespaceHelper::setupMasquerade(qint64 nsPid, const QString &outIface, QSt
         nsPid,
         [&](int writeFd) -> int {
             auto fail = [writeFd](const char *msg) -> int {
-                (void)write(writeFd, msg, strlen(msg));
+                if (write(writeFd, msg, strlen(msg)) < 0) {
+                    // Ignore error on error route
+                }
                 close(writeFd);
                 return 1;
             };
