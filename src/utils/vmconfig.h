@@ -704,6 +704,7 @@ public:
     // --- Icon Helpers ---
     [[nodiscard]] QIcon icon(int size) const;
     [[nodiscard]] QString iconSetPath() const; // Get the filesystem path for IconSet icons
+    [[nodiscard]] static QString customIconFileName();
     bool saveCustomIcon(const QDir &dir) const;
     bool loadCustomIcon(const QDir &dir);
     bool removeCustomIcon(const QDir &dir);

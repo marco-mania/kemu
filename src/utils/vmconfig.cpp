@@ -196,13 +196,18 @@ QString VMConfig::iconSetPath() const
     return QFile::exists(fullPath) ? fullPath : QString();
 }
 
+QString VMConfig::customIconFileName()
+{
+    return KEMUConst::CustomIconFileNameBase + u'.' + QString(KEMUConst::CustomIconFileFormat).toLower();
+}
+
 bool VMConfig::saveCustomIcon(const QDir &dir) const
 {
     if (m_iconSource != IconSource::Custom || m_customIcon.isNull()) {
         return false;
     }
 
-    const QString iconPath = dir.absoluteFilePath(KEMUConst::CustomIconFileNameBase + u'.' + QString(KEMUConst::CustomIconFileFormat).toLower());
+    const QString iconPath = dir.absoluteFilePath(customIconFileName());
     QFile iconFile(iconPath);
 
     if (!iconFile.open(QIODevice::WriteOnly)) {
@@ -222,7 +227,7 @@ bool VMConfig::loadCustomIcon(const QDir &dir)
     if (!m_iconIdentifier.isEmpty())
         iconPath = dir.absoluteFilePath(m_iconIdentifier);
     else
-        iconPath = dir.absoluteFilePath(KEMUConst::CustomIconFileNameBase + u'.' + QString(KEMUConst::CustomIconFileFormat).toLower());
+        iconPath = dir.absoluteFilePath(customIconFileName());
 
     if (!QFile::exists(iconPath)) {
         return false;
@@ -243,7 +248,7 @@ bool VMConfig::removeCustomIcon(const QDir &dir)
     if (!m_iconIdentifier.isEmpty())
         iconPath = dir.absoluteFilePath(m_iconIdentifier);
     else
-        iconPath = dir.absoluteFilePath(KEMUConst::CustomIconFileNameBase + u'.' + QString(KEMUConst::CustomIconFileFormat).toLower());
+        iconPath = dir.absoluteFilePath(customIconFileName());
 
     m_iconSource = IconSource::SystemTheme;
     m_iconIdentifier = KEMUConst::VMDefaultIcon;

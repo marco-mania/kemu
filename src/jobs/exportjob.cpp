@@ -263,15 +263,16 @@ bool ExportJob::prepareConfig()
         m_configModified = true;
     }
 
-    // Check for custom icon
+    // Custom icons live under a fixed file name (see VMConfig::saveCustomIcon)
+    // and icon_identifier is usually empty, so fall back to that name.
     if (obj.contains(u"icon_source"_s) && obj[u"icon_source"_s].toString() == u"custom"_s) {
         QString iconId = obj[u"icon_identifier"_s].toString();
-        if (!iconId.isEmpty()) {
-            const QString iconPath = m_vmPath + u"/"_s + iconId;
-            if (QFile::exists(iconPath)) {
-                m_customIconFileName = iconId;
-            }
-        }
+        if (iconId.isEmpty())
+            iconId = VMConfig::customIconFileName();
+
+        const QString iconPath = m_vmPath + u"/"_s + iconId;
+        if (QFile::exists(iconPath))
+            m_customIconFileName = iconId;
     }
 
     if (m_configModified) {
