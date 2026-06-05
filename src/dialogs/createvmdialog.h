@@ -112,6 +112,7 @@ private:
     void updateCloudImageStatus();
     void updateDiskInterfaceHint();
     void updateDeviceAvailability();
+    void updateInputDeviceAvailability();
 
     bool isDisplayTypeAvailable(const VMSpecs::DisplayType type);
 
@@ -185,8 +186,8 @@ private:
     QLabel *diskHintLabel = nullptr;
     QLabel *usbControllerLabel = nullptr;
     QComboBox *usbCombo = nullptr;
-    QCheckBox *usbTabletCheck = nullptr;
-    QCheckBox *usbKeyboardCheck = nullptr;
+    QComboBox *mouseCombo = nullptr;
+    QComboBox *keyboardCombo = nullptr;
     QComboBox *machineCombo = nullptr;
     QCheckBox *uefiCheck = nullptr;
     QCheckBox *localTimeCheck = nullptr;

@@ -14,6 +14,18 @@
 #include "utils/vmconfig.h"
 #include <kmessagebox.h>
 
+namespace
+{
+// Select the combo entry whose userData matches the given enum value.
+template<typename E>
+void setCombo(QComboBox *combo, E enumValue)
+{
+    const int idx = combo->findData(static_cast<int>(enumValue));
+    if (idx >= 0)
+        combo->setCurrentIndex(idx);
+}
+} // namespace
+
 CreateVmDialog::CreateVmDialog(QWidget *parent)
     : QDialog(parent)
 {
@@ -369,19 +381,22 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     hwLayout->addRow(i18n("USB Controller:"), usbCombo);
     usbControllerLabel = qobject_cast<QLabel *>(hwLayout->labelForField(usbCombo));
 
-    usbTabletCheck = new QCheckBox(i18n("USB tablet (absolute mouse positioning)"));
-    usbTabletCheck->setChecked(true);
-    usbTabletCheck->setToolTip(
-        i18n("Appends a USB HID mouse device. Provides seamless mouse "
-             "integration without grabbing. Default: PS/2."));
-    hwLayout->addRow({}, usbTabletCheck);
+    mouseCombo = new QComboBox();
+    mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::Ps2), static_cast<int>(VMSpecs::PointerDevice::Ps2));
+    mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::UsbMouse), static_cast<int>(VMSpecs::PointerDevice::UsbMouse));
+    mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::UsbTablet), static_cast<int>(VMSpecs::PointerDevice::UsbTablet));
+    mouseCombo->setToolTip(
+        i18n("PS/2 and USB mouse are relative pointers; USB tablet gives absolute "
+             "positioning (seamless, no grab). USB options need a USB controller."));
+    setCombo(mouseCombo, GlobalDefaults.pointerDevice);
+    hwLayout->addRow(i18n("Mouse:"), mouseCombo);
 
-    usbKeyboardCheck = new QCheckBox(i18n("USB keyboard"));
-    usbKeyboardCheck->setChecked(false);
-    usbKeyboardCheck->setToolTip(
-        i18n("Appends a USB HID keyboard device. Recommended for modern guests "
-             "to avoid PS/2 interrupt latency. Default: PS/2."));
-    hwLayout->addRow({}, usbKeyboardCheck);
+    keyboardCombo = new QComboBox();
+    keyboardCombo->addItem(VMConfig::toUIString(VMSpecs::KeyboardDevice::Ps2), static_cast<int>(VMSpecs::KeyboardDevice::Ps2));
+    keyboardCombo->addItem(VMConfig::toUIString(VMSpecs::KeyboardDevice::Usb), static_cast<int>(VMSpecs::KeyboardDevice::Usb));
+    keyboardCombo->setToolTip(i18n("USB keyboard needs a USB controller. Legacy guests require PS/2."));
+    setCombo(keyboardCombo, GlobalDefaults.keyboardDevice);
+    hwLayout->addRow(i18n("Keyboard:"), keyboardCombo);
 
     displayCombo = new QComboBox();
     displayCombo->addItem(VMConfig::toUIString(VMSpecs::DisplayType::Gtk), static_cast<int>(VMSpecs::DisplayType::Gtk));
@@ -720,12 +735,7 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
 
     connect(usbCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
         const bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
-        usbTabletCheck->setEnabled(hasUsb);
-        usbKeyboardCheck->setEnabled(hasUsb);
-        if (!hasUsb) {
-            usbTabletCheck->setChecked(false);
-            usbKeyboardCheck->setChecked(false);
-        }
+        updateInputDeviceAvailability();
 
         // SPICE USB redirection requires an USB controller
         spiceUsbRedirCheck->setEnabled(hasUsb);
@@ -1394,12 +1404,6 @@ void CreateVmDialog::setupForEdit(const VMConfig &config)
 
     commentEdit->setPlainText(config.comment());
 
-    auto setCombo = [](QComboBox *combo, auto enumValue) {
-        const int idx = combo->findData(static_cast<int>(enumValue));
-        if (idx >= 0)
-            combo->setCurrentIndex(idx);
-    };
-
     setCombo(osTypeCombo, config.osType());
     const int variantIdx = osNameCombo->findData(config.distroId());
     if (variantIdx >= 0)
@@ -1509,8 +1513,8 @@ void CreateVmDialog::setupForEdit(const VMConfig &config)
     }
     setCombo(diskInterfaceCombo, config.diskInterface());
     setCombo(usbCombo, config.usbController());
-    usbTabletCheck->setChecked(config.useUsbTablet());
-    usbKeyboardCheck->setChecked(config.useUsbKeyboard());
+    setCombo(mouseCombo, config.pointerDevice());
+    setCombo(keyboardCombo, config.keyboardDevice());
 
     uefiCheck->setChecked(config.useUefi());
     localTimeCheck->setChecked(config.useLocalTime());
@@ -1684,20 +1688,14 @@ VMConfig CreateVmDialog::getResult() const
     c.setPortForwards(rules);
     c.setDiskInterface(static_cast<VMSpecs::DiskInterface>(diskInterfaceCombo->currentData().toInt()));
     c.setUsbController(static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()));
-    c.setUseUsbTablet(usbTabletCheck->isChecked());
-    c.setUseUsbKeyboard(usbKeyboardCheck->isChecked());
+    c.setPointerDevice(static_cast<VMSpecs::PointerDevice>(mouseCombo->currentData().toInt()));
+    c.setKeyboardDevice(static_cast<VMSpecs::KeyboardDevice>(keyboardCombo->currentData().toInt()));
 
     return c;
 }
 
 void CreateVmDialog::applyReleaseDefaults(const VMConfig &defaults)
 {
-    const auto setCombo = [](QComboBox *combo, auto enumValue) {
-        const int idx = combo->findData(static_cast<int>(enumValue));
-        if (idx >= 0)
-            combo->setCurrentIndex(idx);
-    };
-
     ramSpin->setValue(defaults.ramMb());
     cpuSpin->setValue(defaults.cpuCoreCount());
     if (!isEditMode)
@@ -1717,8 +1715,8 @@ void CreateVmDialog::applyReleaseDefaults(const VMConfig &defaults)
     preallocCheck->setChecked(defaults.preallocMemory());
     accel3dCheck->setChecked(defaults.gpu3dAcceleration());
     gpuMemSpin->setValue(defaults.gpuMemMb());
-    usbTabletCheck->setChecked(defaults.useUsbTablet());
-    usbKeyboardCheck->setChecked(defaults.useUsbKeyboard());
+    setCombo(mouseCombo, defaults.pointerDevice());
+    setCombo(keyboardCombo, defaults.keyboardDevice());
     spiceAgentCheck->setChecked(defaults.spiceAgent());
     spiceUsbRedirCheck->setChecked(defaults.spiceUsbRedir());
     spiceUsbRedirCountSpin->setValue(defaults.spiceUsbRedirCount());
@@ -1956,18 +1954,13 @@ void CreateVmDialog::updateDeviceAvailability()
                 usbCombo->setCurrentIndex(noneIdx);
             usbCombo->setEnabled(false);
             usbControllerLabel->setEnabled(false);
-            usbTabletCheck->setChecked(false);
-            usbTabletCheck->setEnabled(false);
-            usbKeyboardCheck->setChecked(false);
-            usbKeyboardCheck->setEnabled(false);
         } else {
             usbCombo->setEnabled(true);
             usbControllerLabel->setEnabled(true);
-            const bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
-            usbTabletCheck->setEnabled(hasUsb);
-            usbKeyboardCheck->setEnabled(hasUsb);
         }
     }
+
+    updateInputDeviceAvailability(); // keep mouse/keyboard combos in sync
 
     // --- Disk Interface ---
     if (auto *diskModel = qobject_cast<QStandardItemModel *>(diskInterfaceCombo->model())) {
@@ -2026,6 +2019,35 @@ void CreateVmDialog::updateDeviceAvailability()
 
     updateDiskInterfaceHint();
     onGpuDisplayChanged();
+}
+
+void CreateVmDialog::updateInputDeviceAvailability()
+{
+    const bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
+    const QString tip = hasUsb ? QString() : i18n("Requires a USB controller.");
+
+    // Enable/disable USB-dependent items via the combo's item model.
+    const auto setUsbItemEnabled = [&](QComboBox *combo, int enumValue) {
+        if (auto *model = qobject_cast<QStandardItemModel *>(combo->model())) {
+            const int idx = combo->findData(enumValue);
+            if (idx >= 0 && model->item(idx)) {
+                model->item(idx)->setEnabled(hasUsb);
+                combo->setItemData(idx, tip, Qt::ToolTipRole);
+            }
+        }
+    };
+
+    setUsbItemEnabled(mouseCombo, static_cast<int>(VMSpecs::PointerDevice::UsbMouse));
+    setUsbItemEnabled(mouseCombo, static_cast<int>(VMSpecs::PointerDevice::UsbTablet));
+    setUsbItemEnabled(keyboardCombo, static_cast<int>(VMSpecs::KeyboardDevice::Usb));
+
+    // Fall back to PS/2 if a USB device is selected but USB is unavailable.
+    if (!hasUsb) {
+        if (static_cast<VMSpecs::PointerDevice>(mouseCombo->currentData().toInt()) != VMSpecs::PointerDevice::Ps2)
+            setCombo(mouseCombo, VMSpecs::PointerDevice::Ps2);
+        if (static_cast<VMSpecs::KeyboardDevice>(keyboardCombo->currentData().toInt()) != VMSpecs::KeyboardDevice::Ps2)
+            setCombo(keyboardCombo, VMSpecs::KeyboardDevice::Ps2);
+    }
 }
 
 bool CreateVmDialog::isDisplayTypeAvailable(const VMSpecs::DisplayType type)
@@ -2143,12 +2165,6 @@ void CreateVmDialog::resetToFactoryDefaults()
         return;
     }
 
-    const auto setCombo = [](QComboBox *combo, auto enumValue) {
-        const int idx = combo->findData(static_cast<int>(enumValue));
-        if (idx >= 0)
-            combo->setCurrentIndex(idx);
-    };
-
     // VMConfig defaults from vmconfig.h
     ramSpin->setValue(GlobalDefaults.ramMb);
     cpuSpin->setValue(GlobalDefaults.cpuCoreCount);
@@ -2165,8 +2181,8 @@ void CreateVmDialog::resetToFactoryDefaults()
     setCombo(netCombo, GlobalDefaults.networkCard);
     setCombo(displayCombo, GlobalDefaults.displayType);
     setCombo(usbCombo, GlobalDefaults.usbController);
-    usbTabletCheck->setChecked(GlobalDefaults.useUsbTablet);
-    usbKeyboardCheck->setChecked(false);
+    setCombo(mouseCombo, GlobalDefaults.pointerDevice);
+    setCombo(keyboardCombo, GlobalDefaults.keyboardDevice);
 
     const QSize defaultRes = SettingsDialog::getDefaultResolution();
     for (int i = 0; i < resolutionCombo->count(); ++i) {

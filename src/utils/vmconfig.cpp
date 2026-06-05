@@ -727,6 +727,24 @@ QString VMConfig::toUIString(VMSpecs::UsbController controller)
     return {};
 }
 
+QString VMConfig::toUIString(VMSpecs::PointerDevice dev)
+{
+    switch (dev) {
+    case VMSpecs::PointerDevice::Ps2:
+        return i18n("PS/2");
+    case VMSpecs::PointerDevice::UsbMouse:
+        return i18n("USB mouse");
+    case VMSpecs::PointerDevice::UsbTablet:
+        return i18n("USB tablet");
+    }
+    return {};
+}
+
+QString VMConfig::toUIString(VMSpecs::KeyboardDevice dev)
+{
+    return dev == VMSpecs::KeyboardDevice::Usb ? i18n("USB") : i18n("PS/2");
+}
+
 QString VMConfig::toUIString(VMSpecs::MachineType type)
 {
     switch (type) {
@@ -915,6 +933,24 @@ QString VMConfig::toString(VMSpecs::UsbController type)
     if (type == VMSpecs::UsbController::Default)
         return u"default"_s;
     return u"none"_s;
+}
+
+QString VMConfig::toString(VMSpecs::PointerDevice dev)
+{
+    switch (dev) {
+    case VMSpecs::PointerDevice::Ps2:
+        return u"ps2"_s;
+    case VMSpecs::PointerDevice::UsbMouse:
+        return u"usb-mouse"_s;
+    case VMSpecs::PointerDevice::UsbTablet:
+        return u"usb-tablet"_s;
+    }
+    return u"usb-tablet"_s;
+}
+
+QString VMConfig::toString(VMSpecs::KeyboardDevice dev)
+{
+    return dev == VMSpecs::KeyboardDevice::Usb ? u"usb"_s : u"ps2"_s;
 }
 
 QString VMConfig::toString(PortForwardRule::Protocol proto)
@@ -1137,6 +1173,21 @@ VMSpecs::UsbController VMConfig::parseUSBController(const QString &str)
     if (str_l_t == u"default"_s)
         return VMSpecs::UsbController::Default;
     return VMSpecs::UsbController::None;
+}
+
+VMSpecs::PointerDevice VMConfig::parsePointerDevice(const QString &str)
+{
+    const QString s = str.toLower().trimmed();
+    if (s == u"ps2"_s)
+        return VMSpecs::PointerDevice::Ps2;
+    if (s == u"usb-mouse"_s)
+        return VMSpecs::PointerDevice::UsbMouse;
+    return VMSpecs::PointerDevice::UsbTablet; // default
+}
+
+VMSpecs::KeyboardDevice VMConfig::parseKeyboardDevice(const QString &str)
+{
+    return str.toLower().trimmed() == u"usb"_s ? VMSpecs::KeyboardDevice::Usb : VMSpecs::KeyboardDevice::Ps2;
 }
 
 PortForwardRule::Protocol VMConfig::parseProtocol(const QString &str)
@@ -1366,8 +1417,8 @@ QJsonObject VMConfig::toJson() const
 
     j[u"disk_interface"_s] = toString(m_diskInterface);
     j[u"usb_controller"_s] = toString(m_usbController);
-    j[u"use_usb_tablet"_s] = m_useUsbTablet;
-    j[u"use_usb_keyboard"_s] = m_useUsbKeyboard;
+    j[u"pointer_device"_s] = toString(m_pointerDevice);
+    j[u"keyboard_device"_s] = toString(m_keyboardDevice);
 
     j[u"deploy_state"_s] = toString(m_deployState);
 
@@ -1450,8 +1501,17 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
 
     c.m_diskInterface = parseDiskInterface(j[u"disk_interface"_s].toString());
     c.m_usbController = parseUSBController(j[u"usb_controller"_s].toString());
-    c.m_useUsbTablet = j[u"use_usb_tablet"_s].toBool(GlobalDefaults.useUsbTablet);
-    c.m_useUsbKeyboard = j[u"use_usb_keyboard"_s].toBool(GlobalDefaults.useUsbKeyboard);
+    // Migration: prefer the new enum keys; fall back to the old booleans
+    // (use_usb_tablet=false historically meant the implicit PS/2 mouse).
+    if (j.contains(u"pointer_device"_s))
+        c.m_pointerDevice = parsePointerDevice(j[u"pointer_device"_s].toString());
+    else
+        c.m_pointerDevice = j[u"use_usb_tablet"_s].toBool(true) ? VMSpecs::PointerDevice::UsbTablet : VMSpecs::PointerDevice::Ps2;
+
+    if (j.contains(u"keyboard_device"_s))
+        c.m_keyboardDevice = parseKeyboardDevice(j[u"keyboard_device"_s].toString());
+    else
+        c.m_keyboardDevice = j[u"use_usb_keyboard"_s].toBool(false) ? VMSpecs::KeyboardDevice::Usb : VMSpecs::KeyboardDevice::Ps2;
 
     c.m_deployState = parseDeployState(j[u"deploy_state"_s].toString());
 

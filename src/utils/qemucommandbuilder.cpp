@@ -361,26 +361,36 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         }
     }
 
-    // --- USB ---
+    // --- USB controller ---
+    QString usbBus;
     if (config.usbController() == VMSpecs::UsbController::Xhci) {
         args << u"-device"_s << u"qemu-xhci,id=xhci"_s;
-        if (config.useUsbTablet())
-            args << u"-device"_s << u"usb-tablet,bus=xhci.0"_s;
-        if (config.useUsbKeyboard())
-            args << u"-device"_s << u"usb-kbd,bus=xhci.0"_s;
+        usbBus = u"xhci.0"_s;
     } else if (config.usbController() == VMSpecs::UsbController::Ehci) {
         args << u"-device"_s << u"usb-ehci,id=ehci"_s;
-        if (config.useUsbTablet())
-            args << u"-device"_s << u"usb-tablet,bus=ehci.0"_s;
-        if (config.useUsbKeyboard())
-            args << u"-device"_s << u"usb-kbd,bus=ehci.0"_s;
+        usbBus = u"ehci.0"_s;
     } else if (config.usbController() == VMSpecs::UsbController::Default) {
         args << u"-device"_s << u"pci-ohci,id=ohci"_s;
-        if (config.useUsbTablet())
-            args << u"-device"_s << u"usb-tablet,bus=ohci.0"_s;
-        if (config.useUsbKeyboard())
-            args << u"-device"_s << u"usb-kbd,bus=ohci.0"_s;
+        usbBus = u"ohci.0"_s;
     }
+
+    // --- Pointer device ---
+    switch (config.pointerDevice()) {
+    case VMSpecs::PointerDevice::Ps2:
+        break;
+    case VMSpecs::PointerDevice::UsbMouse:
+        if (!usbBus.isEmpty())
+            args << u"-device"_s << u"usb-mouse,bus=%1"_s.arg(usbBus);
+        break;
+    case VMSpecs::PointerDevice::UsbTablet:
+        if (!usbBus.isEmpty())
+            args << u"-device"_s << u"usb-tablet,bus=%1"_s.arg(usbBus);
+        break;
+    }
+
+    // --- Keyboard device ---
+    if (config.keyboardDevice() == VMSpecs::KeyboardDevice::Usb && !usbBus.isEmpty())
+        args << u"-device"_s << u"usb-kbd,bus=%1"_s.arg(usbBus);
 
     // usb-redir devices must come after the USB controller
     if (config.displayType() == VMSpecs::DisplayType::Spice && config.spiceUsbRedir() && config.usbController() != VMSpecs::UsbController::None) {

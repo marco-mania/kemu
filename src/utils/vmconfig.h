@@ -115,6 +115,17 @@ enum class NetworkMode {
     VirtualNetwork
 };
 
+enum class PointerDevice {
+    Ps2, // relative, always present on pc/q35, no USB required
+    UsbMouse, // relative, requires a USB controller
+    UsbTablet // absolute, requires a USB controller
+};
+
+enum class KeyboardDevice {
+    Ps2, // always present, no USB required
+    Usb // requires a USB controller
+};
+
 enum class OsType {
     Linux,
     Windows,
@@ -132,6 +143,8 @@ Q_ENUM_NS(CpuModel)
 Q_ENUM_NS(MachineType)
 Q_ENUM_NS(NetworkCard)
 Q_ENUM_NS(NetworkMode)
+Q_ENUM_NS(PointerDevice)
+Q_ENUM_NS(KeyboardDevice)
 Q_ENUM_NS(OsType)
 
 struct Defaults {
@@ -151,8 +164,8 @@ struct Defaults {
     VMSpecs::NetworkCard networkCard = VMSpecs::NetworkCard::Virtio;
     VMSpecs::DisplayType displayType = VMSpecs::DisplayType::Gtk;
     VMSpecs::UsbController usbController = VMSpecs::UsbController::Xhci;
-    bool useUsbTablet = true;
-    bool useUsbKeyboard = false;
+    VMSpecs::PointerDevice pointerDevice = VMSpecs::PointerDevice::UsbTablet;
+    VMSpecs::KeyboardDevice keyboardDevice = VMSpecs::KeyboardDevice::Ps2;
     QSize displayResolution = QSize(1280, 720);
     bool useUefi = true;
     bool useTpm = false;
@@ -358,13 +371,13 @@ public:
     {
         return m_usbController;
     }
-    [[nodiscard]] bool useUsbTablet() const
+    [[nodiscard]] VMSpecs::PointerDevice pointerDevice() const
     {
-        return m_useUsbTablet;
+        return m_pointerDevice;
     }
-    [[nodiscard]] bool useUsbKeyboard() const
+    [[nodiscard]] VMSpecs::KeyboardDevice keyboardDevice() const
     {
-        return m_useUsbKeyboard;
+        return m_keyboardDevice;
     }
     [[nodiscard]] bool spiceAgent() const
     {
@@ -586,13 +599,13 @@ public:
     {
         m_usbController = controller;
     }
-    void setUseUsbTablet(const bool tablet)
+    void setPointerDevice(const VMSpecs::PointerDevice dev)
     {
-        m_useUsbTablet = tablet;
+        m_pointerDevice = dev;
     }
-    void setUseUsbKeyboard(const bool keyboard)
+    void setKeyboardDevice(const VMSpecs::KeyboardDevice dev)
     {
-        m_useUsbKeyboard = keyboard;
+        m_keyboardDevice = dev;
     }
     void setSpiceAgent(bool enabled)
     {
@@ -735,6 +748,8 @@ public:
     [[nodiscard]] static QString toUIString(VMSpecs::GpuType type);
     [[nodiscard]] static QString toUIString(VMSpecs::DisplayType type);
     [[nodiscard]] static QString toUIString(VMSpecs::UsbController controller);
+    [[nodiscard]] static QString toUIString(VMSpecs::PointerDevice dev);
+    [[nodiscard]] static QString toUIString(VMSpecs::KeyboardDevice dev);
     [[nodiscard]] static QString toUIString(VMSpecs::MachineType type);
     [[nodiscard]] static QString toUIString(VMSpecs::OsType type);
     [[nodiscard]] static QString toUIString(VMSpecs::NetworkMode mode);
@@ -749,6 +764,8 @@ public:
     [[nodiscard]] static QString toString(VMSpecs::NetworkCard type);
     [[nodiscard]] static QString toString(VMSpecs::DiskInterface type);
     [[nodiscard]] static QString toString(VMSpecs::UsbController type);
+    [[nodiscard]] static QString toString(VMSpecs::PointerDevice dev);
+    [[nodiscard]] static QString toString(VMSpecs::KeyboardDevice dev);
     [[nodiscard]] static QString toString(PortForwardRule::Protocol proto);
     [[nodiscard]] static QString toString(VMSpecs::OsType type);
     [[nodiscard]] static QString toString(VMSpecs::NetworkMode mode);
@@ -765,6 +782,8 @@ public:
     [[nodiscard]] static VMSpecs::NetworkCard parseNetworkCard(const QString &str);
     [[nodiscard]] static VMSpecs::DiskInterface parseDiskInterface(const QString &str);
     [[nodiscard]] static VMSpecs::UsbController parseUSBController(const QString &str);
+    [[nodiscard]] static VMSpecs::PointerDevice parsePointerDevice(const QString &str);
+    [[nodiscard]] static VMSpecs::KeyboardDevice parseKeyboardDevice(const QString &str);
     [[nodiscard]] static PortForwardRule::Protocol parseProtocol(const QString &str);
     [[nodiscard]] static VMSpecs::OsType parseOsType(const QString &str);
     [[nodiscard]] static VMSpecs::NetworkMode parseNetworkMode(const QString &str);
@@ -814,8 +833,8 @@ private:
     Sb16Config m_sb16Config;
     VMSpecs::DiskInterface m_diskInterface = GlobalDefaults.diskInterface;
     VMSpecs::UsbController m_usbController = GlobalDefaults.usbController;
-    bool m_useUsbTablet = GlobalDefaults.useUsbTablet;
-    bool m_useUsbKeyboard = GlobalDefaults.useUsbKeyboard;
+    VMSpecs::PointerDevice m_pointerDevice = GlobalDefaults.pointerDevice;
+    VMSpecs::KeyboardDevice m_keyboardDevice = GlobalDefaults.keyboardDevice;
     bool m_spiceAgent = GlobalDefaults.spiceAgent;
     bool m_spiceUsbRedir = GlobalDefaults.spiceUsbRedir;
     int m_spiceUsbRedirCount = GlobalDefaults.spiceUsbRedirCount;
