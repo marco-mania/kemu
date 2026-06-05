@@ -212,6 +212,10 @@ private:
     void saveFolderStructure() const;
     QMap<QString, QString> loadFolderAssignments() const;
 
+    ViewerDevicePrefs loadViewerPrefs(const QString &vmName) const;
+    void saveViewerPrefs(const QString &vmName, const ViewerDevicePrefs &prefs) const;
+    void removeViewerPrefs(const QString &vmName) const;
+
     QMap<QString, QDir> m_lastMediaDir;
 
     // QEMU failure handling, keyed by VM name

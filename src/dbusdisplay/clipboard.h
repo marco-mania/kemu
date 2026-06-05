@@ -30,6 +30,9 @@ enum class ClipboardDirection {
     Both
 };
 
+const QString clipboardDirToString(ClipboardDirection dir);
+ClipboardDirection clipboardDirFromString(const QString &s);
+
 // =============================================================================
 // ClipboardDBusHandler – receives ALL D-Bus calls from QEMU
 // =============================================================================

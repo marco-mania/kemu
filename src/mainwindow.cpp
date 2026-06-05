@@ -992,13 +992,15 @@ bool MainWindow::startDbusViewer(const QString &vmName)
 
     const VmEntry *cfgEntry = veModel->entryByName(vmName);
     const bool hasUsbController = cfgEntry && cfgEntry->config.usbController() != VMSpecs::UsbController::None;
+    const ViewerDevicePrefs viewerPrefs = loadViewerPrefs(vmName);
 
     // --- Audio listeners (created up front, registered async below) ---
     state.audioOut = new QemuAudioListener(this);
     state.audioIn = new QemuAudioInListener(this);
 
     // --- Viewer window ---
-    state.window = new DbusViewerWindow(state.displayListener, bus, consolePath, state.audioOut, state.audioIn, false, false, hasUsbController, nullptr);
+    state.window =
+        new DbusViewerWindow(state.displayListener, bus, consolePath, state.audioOut, state.audioIn, false, false, hasUsbController, viewerPrefs, nullptr);
     state.window->setWindowTitle(vmName);
     state.window->setAttribute(Qt::WA_DeleteOnClose, false);
     state.window->displayWidget()->watchGLibFd(state.displayListener->socketFd(), state.displayListener->mainContext());
@@ -1109,6 +1111,10 @@ bool MainWindow::startDbusViewer(const QString &vmName)
 
     connect(state.window, &DbusViewerWindow::snapshotManagerRequested, this, [this, vmName] {
         manageSnapshotsForVm(vmName);
+    });
+
+    connect(state.window, &DbusViewerWindow::devicePrefsChanged, this, [this, vmName](const ViewerDevicePrefs &p) {
+        saveViewerPrefs(vmName, p);
     });
 
     // USB submenu population: reuse the existing enumerator path.
@@ -3701,6 +3707,12 @@ void MainWindow::editVM()
                 grp.writeEntry(newName, folder);
                 grp.sync();
             }
+            // migrate per-VM viewer preferences to the new name
+            if (kconfig.group(u"ViewerState"_s).hasGroup(oldName)) {
+                const ViewerDevicePrefs vp = loadViewerPrefs(oldName);
+                saveViewerPrefs(newName, vp);
+                removeViewerPrefs(oldName);
+            }
         }
 
         QString vmPath = getVmDir(newConfig.name()).absolutePath();
@@ -3732,6 +3744,7 @@ void MainWindow::deleteVM()
 
     if (answer == KMessageBox::PrimaryAction) {
         getVmDir(currentConfig.name()).removeRecursively();
+        removeViewerPrefs(currentConfig.name());
         currentConfig = VMConfig();
         loadVmList();
         onVmSelectionChanged();
@@ -3924,6 +3937,37 @@ QMap<QString, QString> MainWindow::loadFolderAssignments() const
             map.insert(key, grp.readEntry(key, {}));
     }
     return map;
+}
+
+ViewerDevicePrefs MainWindow::loadViewerPrefs(const QString &vmName) const
+{
+    ViewerDevicePrefs prefs;
+    KConfig config(u"kemurc"_s);
+    const KConfigGroup grp = config.group(u"ViewerState"_s).group(vmName);
+
+    prefs.audioOut = grp.readEntry(u"AudioOut"_s, prefs.audioOut);
+    prefs.audioIn = grp.readEntry(u"AudioIn"_s, prefs.audioIn);
+    prefs.clipboard = clipboardDirFromString(grp.readEntry(u"Clipboard"_s, clipboardDirToString(prefs.clipboard)));
+    return prefs;
+}
+
+void MainWindow::saveViewerPrefs(const QString &vmName, const ViewerDevicePrefs &prefs) const
+{
+    KConfig config(u"kemurc"_s);
+    KConfigGroup grp = config.group(u"ViewerState"_s).group(vmName);
+
+    grp.writeEntry(u"AudioOut"_s, prefs.audioOut);
+    grp.writeEntry(u"AudioIn"_s, prefs.audioIn);
+    grp.writeEntry(u"Clipboard"_s, clipboardDirToString(prefs.clipboard));
+    grp.sync();
+}
+
+void MainWindow::removeViewerPrefs(const QString &vmName) const
+{
+    KConfig config(u"kemurc"_s);
+    KConfigGroup parent = config.group(u"ViewerState"_s);
+    parent.deleteGroup(vmName);
+    parent.sync();
 }
 
 void MainWindow::saveFolderStructure() const

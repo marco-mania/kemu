@@ -18,6 +18,7 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
                                    bool audioOutConnected,
                                    bool audioInConnected,
                                    bool hasUsbController,
+                                   const ViewerDevicePrefs &prefs,
                                    QWidget *parent)
     : QMainWindow(parent)
     , m_bus(bus)
@@ -28,6 +29,7 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
     , m_audioOutConnected(audioOutConnected)
     , m_audioInConnected(audioInConnected)
     , m_hasUsbController(hasUsbController)
+    , m_prefs(prefs)
     , m_clipDirection(ClipboardDirection::Off)
 {
     // Display widget as the central widget
@@ -54,6 +56,13 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
     qCDebug(KEMU_DBUSDISPLAY) << "DbusViewerWindow: audioOutConnected=" << m_audioOutConnected << "audioInConnected=" << m_audioInConnected;
 
     resize(m_lastWindowSize);
+
+    QMetaObject::invokeMethod(
+        this,
+        [this] {
+            setClipboardMode(m_prefs.clipboard);
+        },
+        Qt::QueuedConnection);
 }
 
 DbusViewerWindow::~DbusViewerWindow()
@@ -431,7 +440,9 @@ void DbusViewerWindow::onToggleAudioOut(bool checked)
         m_audioOut->setMuted(!checked);
         qCDebug(KEMU_DBUSDISPLAY) << "Audio output:" << (checked ? "ON" : "MUTED");
     }
+    m_prefs.audioOut = checked;
     updateStatusBar();
+    Q_EMIT devicePrefsChanged(m_prefs);
 }
 
 void DbusViewerWindow::onToggleAudioIn(bool checked)
@@ -440,7 +451,9 @@ void DbusViewerWindow::onToggleAudioIn(bool checked)
         m_audioIn->setMuted(!checked);
         qCDebug(KEMU_DBUSDISPLAY) << "Audio input:" << (checked ? "ON" : "MUTED");
     }
+    m_prefs.audioIn = checked;
     updateStatusBar();
+    Q_EMIT devicePrefsChanged(m_prefs);
 }
 
 // =============================================================================
@@ -451,8 +464,10 @@ void DbusViewerWindow::onClipboardOff()
 {
     teardownClipboard();
     m_clipDirection = ClipboardDirection::Off;
+    m_prefs.clipboard = ClipboardDirection::Off;
     updateStatusBar();
     statusBar()->showMessage(i18n("Clipboard disabled"), 3000);
+    Q_EMIT devicePrefsChanged(m_prefs);
 }
 
 void DbusViewerWindow::onClipboardToHost()
@@ -473,7 +488,9 @@ void DbusViewerWindow::onClipboardBoth()
 void DbusViewerWindow::setupClipboard(ClipboardDirection dir)
 {
     teardownClipboard();
-    m_clipDirection = dir;
+    m_clipDirection = dir; // effective state (may revert on failure)
+    m_prefs.clipboard = dir; // intended state (persisted)
+    Q_EMIT devicePrefsChanged(m_prefs);
 
     m_clipboard = new QemuClipboardManager(m_bus, dir, this);
     if (!m_clipboard->setup()) {
@@ -650,7 +667,11 @@ void DbusViewerWindow::audioOutReady()
 {
     m_audioOutConnected = true;
     m_actAudioOut->setEnabled(true);
-    m_actAudioOut->setChecked(true);
+
+    if (m_audioOut)
+        m_audioOut->setMuted(!m_prefs.audioOut);
+    m_actAudioOut->setChecked(m_prefs.audioOut);
+
     m_actAudioOut->setStatusTip(i18n("Toggle audio output (playback)"));
 
     if (m_audioOut) {
@@ -666,7 +687,11 @@ void DbusViewerWindow::audioInReady()
 {
     m_audioInConnected = true;
     m_actAudioIn->setEnabled(true);
-    m_actAudioIn->setChecked(true);
+
+    if (m_audioIn)
+        m_audioIn->setMuted(!m_prefs.audioIn);
+    m_actAudioIn->setChecked(m_prefs.audioIn);
+
     m_actAudioIn->setStatusTip(i18n("Toggle audio input (microphone)"));
 
     if (m_audioIn) {

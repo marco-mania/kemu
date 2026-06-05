@@ -7,6 +7,32 @@
 #include "dbusdisplay/dbusdisplayconst.h"
 #include "kemu_dbusdisplay_debug.h"
 
+const QString clipboardDirToString(ClipboardDirection dir)
+{
+    switch (dir) {
+    case ClipboardDirection::ToHost:
+        return u"ToHost"_s;
+    case ClipboardDirection::ToGuest:
+        return u"ToGuest"_s;
+    case ClipboardDirection::Both:
+        return u"Both"_s;
+    case ClipboardDirection::Off:
+    default:
+        return u"Off"_s;
+    }
+}
+
+ClipboardDirection clipboardDirFromString(const QString &s)
+{
+    if (s == u"ToHost"_s)
+        return ClipboardDirection::ToHost;
+    if (s == u"ToGuest"_s)
+        return ClipboardDirection::ToGuest;
+    if (s == u"Both"_s)
+        return ClipboardDirection::Both;
+    return ClipboardDirection::Off;
+}
+
 // =============================================================================
 // ClipboardDBusHandler – receives and dispatches all D-Bus calls from QEMU
 // =============================================================================

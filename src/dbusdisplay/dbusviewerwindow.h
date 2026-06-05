@@ -34,6 +34,12 @@
 
 using namespace Qt::StringLiterals;
 
+struct ViewerDevicePrefs {
+    bool audioOut = true; // default: on (current behaviour)
+    bool audioIn = false; // default: off
+    ClipboardDirection clipboard = ClipboardDirection::Off; // default: off
+};
+
 // =============================================================================
 // DbusViewerWindow
 // =============================================================================
@@ -56,6 +62,7 @@ public:
                      bool audioOutConnected,
                      bool audioInConnected,
                      bool hasUsbController,
+                     const ViewerDevicePrefs &prefs,
                      QWidget *parent = nullptr);
     ~DbusViewerWindow() override;
 
@@ -85,6 +92,8 @@ Q_SIGNALS:
     void resetRequested();
     void powerOffRequested();
     void snapshotManagerRequested();
+
+    void devicePrefsChanged(const ViewerDevicePrefs &prefs);
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -166,6 +175,7 @@ private:
     QLabel *m_lblAudioIn = nullptr;
     QLabel *m_lblClipboard = nullptr;
 
+    ViewerDevicePrefs m_prefs;
     ClipboardDirection m_clipDirection;
 
     QSize m_scanoutSize;
