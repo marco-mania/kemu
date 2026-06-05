@@ -1,6 +1,8 @@
-// SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
-//
-// SPDX-License-Identifier: GPL-3.0-or-later
+/*
+ * SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
 
 #include "clipboard.h"
 
