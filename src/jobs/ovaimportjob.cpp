@@ -282,6 +282,15 @@ bool OvaImportJob::parseOvf()
     m_importedConfig.setRamMb(ramMb > 0 ? ramMb : GlobalDefaults.ramMb);
     m_importedConfig.setCpuCoreCount(cpuCoreCount > 0 ? cpuCoreCount : GlobalDefaults.cpuCoreCount);
     m_importedConfig.setDiskSizeGb(m_diskSizeGb);
+    // Conservative profile for foreign appliances: maximise the chance the
+    // imported guest boots without extra drivers. Users can refine per-VM later.
+    m_importedConfig.setMachineType(VMSpecs::MachineType::Pc); // i440fx
+    m_importedConfig.setUseUefi(false); // SeaBIOS
+    m_importedConfig.setDiskInterface(VMSpecs::DiskInterface::SataIde); // IDE on pc
+    m_importedConfig.setNetworkCard(VMSpecs::NetworkCard::E1000);
+    m_importedConfig.setGpuType(VMSpecs::GpuType::Vga);
+    m_importedConfig.setPointerDevice(VMSpecs::PointerDevice::Ps2);
+    m_importedConfig.setKeyboardDevice(VMSpecs::KeyboardDevice::Ps2);
     m_importedConfig.setComment(i18n("Imported from OVA"));
 
     return true;
