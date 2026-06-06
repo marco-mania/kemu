@@ -354,24 +354,23 @@ void OvaImportJob::onConvertFinished(int exitCode, QProcess::ExitStatus exitStat
 
 bool OvaImportJob::doKill()
 {
-    // 1. Abort the extraction background thread
     m_cancelImport = true;
 
-    // 2. Abort the qemu-img process if it's currently running
+    // Process phase: disconnect before killing so onConvertFinished() cannot
+    // emit a second result.
     if (m_process && m_process->state() != QProcess::NotRunning) {
-        m_process->kill(); // kill() ist bei einem Abbruch sicherer als terminate()
+        disconnect(m_process, nullptr, this, nullptr);
+        m_process->kill();
     }
 
-    if (m_watcher && m_watcher->isRunning()) {
-        // Der Entpacken-Thread läuft noch! Wir geben false zurück.
-        // onExtractionFinished() kümmert sich um den Rest.
+    // Thread phase: defer to onExtractionFinished(), which cleans up.
+    if (m_watcher && m_watcher->isRunning())
         return false;
-    }
 
-    // Cleanup target directory
-    if (!m_vmName.isEmpty()) {
+    // Convert phase (or before anything started): clean up and let KJob emit
+    // the single KilledJobError result.
+    if (!m_vmName.isEmpty())
         QDir(m_vmBaseDir + u"/"_s + m_vmName).removeRecursively();
-    }
 
     return true;
 }

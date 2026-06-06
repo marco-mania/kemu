@@ -557,19 +557,22 @@ void OvaExportJob::cleanup()
 
 bool OvaExportJob::doKill()
 {
-    // 1. Abort the background thread (if running)
     m_cancelExport = true;
 
-    // 2. Abort the qemu-img process (if running)
+    // Process phase: stop reacting to qemu-img *before* killing it, so
+    // onConvertFinished() cannot emit a second result.
     if (m_process && m_process->state() != QProcess::NotRunning) {
-        m_process->terminate();
-        if (!m_process->waitForFinished(3000)) {
-            m_process->kill();
-        }
+        disconnect(m_process, nullptr, this, nullptr);
+        m_process->kill();
     }
 
-    // Cleanup incomplete files
-    QFile::remove(m_outputFilePath);
+    // Thread phase: let the worker unwind; onPackageFinished() (which checks
+    // m_cancelExport) removes the partial file and emits the result.
+    if (m_watcher && m_watcher->isRunning())
+        return false;
 
+    // Otherwise we are still in the convert phase: clean up and let KJob emit
+    // the single KilledJobError result.
+    QFile::remove(m_outputFilePath);
     return true;
 }
