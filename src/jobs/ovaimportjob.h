@@ -68,7 +68,7 @@ private:
 
     QTemporaryDir m_stagingDir;
     QString m_ovfPath;
-    QString m_vmdkPath;
+    QString m_diskPath;
 
     QString m_vmName;
     VMConfig m_importedConfig;
@@ -78,4 +78,9 @@ private:
     // Threading and cancellation for the extraction step
     QFutureWatcher<bool> *m_watcher = nullptr;
     std::atomic<bool> m_cancelImport{false};
+
+    // Convert an OVF quantity + AllocationUnits string to bytes.
+    // Handles the programmatic form ("byte * 2^20") and textual units
+    // ("MegaBytes", ...). Falls back to defaultUnitBytes when empty/unknown.
+    static qint64 ovfQuantityToBytes(qint64 quantity, const QString &units, qint64 defaultUnitBytes);
 };

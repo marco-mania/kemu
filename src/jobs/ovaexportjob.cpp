@@ -385,8 +385,8 @@ bool OvaExportJob::createManifestInThread()
                 processedBytes += readBytes;
 
                 if (totalBytes > 0) {
-                    const int hashPercent = static_cast<int>((processedBytes * 50) / totalBytes);
-                    const int totalPercent = 850 + hashPercent;
+                    const int hashPercent = static_cast<int>((processedBytes * 100) / totalBytes);
+                    const int totalPercent = 800 + hashPercent;
 
                     QMetaObject::invokeMethod(
                         this,
@@ -412,18 +412,6 @@ bool OvaExportJob::createManifestInThread()
     mfFile.write("\n");
 
     return true;
-}
-
-void OvaExportJob::packageOva()
-{
-    // Setup threaded execution for packaging
-    m_cancelExport = false;
-    m_watcher = new QFutureWatcher<bool>(this);
-    connect(m_watcher, &QFutureWatcher<bool>::finished, this, &OvaExportJob::onPackageFinished);
-
-    // Start packaging in a background thread to prevent UI freezing
-    const QFuture<bool> future = QtConcurrent::run(&OvaExportJob::performOvaPackagingInThread, this);
-    m_watcher->setFuture(future);
 }
 
 bool OvaExportJob::performOvaPackagingInThread()

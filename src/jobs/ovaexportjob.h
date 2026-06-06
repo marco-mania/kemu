@@ -58,7 +58,6 @@ private:
     void createOvfDescriptor();
     bool createManifestInThread();
 
-    void packageOva();
     bool performOvaPackagingInThread();
 
     void cleanup();
