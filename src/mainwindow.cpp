@@ -1591,6 +1591,7 @@ void MainWindow::updateDetails()
     if (!currentConfig.distroId().isEmpty() && currentConfig.distroId() != u"other"_s) {
         osVal += u" / "_s + m_imageDatabase.displayName(currentConfig.distroId());
     }
+    osVal += u" / "_s + VMConfig::toUIString(currentConfig.architecture());
 
     QString memVal = i18n("%1 MB", currentConfig.ramMb());
     QStringList memFlags;

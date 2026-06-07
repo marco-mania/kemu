@@ -21,6 +21,7 @@
 #include <QSize>
 #include <QStandardPaths>
 #include <QString>
+#include <QSysInfo>
 #include <QtSvg>
 
 #include <KLocalizedString>
@@ -134,6 +135,13 @@ enum class OsType {
     Other
 };
 
+enum class Architecture {
+    X86_64, // amd64 / x86-64
+    I386, // x86, 32-bit
+    Aarch64, // ARM, 64-bit
+    Riscv64 // RISC-V, 64-bit
+};
+
 Q_ENUM_NS(DisplayType)
 Q_ENUM_NS(GpuType)
 Q_ENUM_NS(AudioDevice)
@@ -146,6 +154,7 @@ Q_ENUM_NS(NetworkMode)
 Q_ENUM_NS(PointerDevice)
 Q_ENUM_NS(KeyboardDevice)
 Q_ENUM_NS(OsType)
+Q_ENUM_NS(Architecture)
 
 struct Defaults {
     bool useKvm = true;
@@ -173,6 +182,7 @@ struct Defaults {
     bool useLocalTime = false;
     bool useAcpi = true;
     VMSpecs::OsType osType = VMSpecs::OsType::Linux;
+    VMSpecs::Architecture architecture = VMSpecs::Architecture::X86_64;
     VMSpecs::NetworkMode networkMode = VMSpecs::NetworkMode::Passt;
     QString macAddress = u"52:54:00:12:34:56"_s;
     bool spiceAgent = true;
@@ -270,6 +280,10 @@ public:
     [[nodiscard]] VMSpecs::OsType osType() const
     {
         return m_osType;
+    }
+    [[nodiscard]] VMSpecs::Architecture architecture() const
+    {
+        return m_architecture;
     }
     [[nodiscard]] QString distroId() const
     {
@@ -469,6 +483,7 @@ public:
     static int maxCoresForModel(VMSpecs::CpuModel type);
     static int vgaMemMbLowerLimit(const VMSpecs::GpuType &type);
     static int vgaMemMbUpperLimit(const VMSpecs::GpuType &type);
+    static QString x86ArchHint(VMSpecs::CpuModel model);
 
     // --- Setter ---
     void setName(const QString &name)
@@ -482,6 +497,10 @@ public:
     void setOsType(const VMSpecs::OsType type)
     {
         m_osType = type;
+    }
+    void setArchitecture(const VMSpecs::Architecture arch)
+    {
+        m_architecture = arch;
     }
     void setDistroId(const QString &id)
     {
@@ -733,6 +752,8 @@ public:
     [[nodiscard]] static QString defaultIconForType(VMSpecs::OsType type);
     [[nodiscard]] static QString defaultIconFor(VMSpecs::OsType type, const QString &variant);
 
+    [[nodiscard]] static QString toQemuSystemBinary(VMSpecs::Architecture arch);
+
     // --- QEMU Strings ---
     [[nodiscard]] static QString toQemuString(VMSpecs::CpuModel model);
     [[nodiscard]] static QString toQemuString(VMSpecs::NetworkCard card);
@@ -752,6 +773,7 @@ public:
     [[nodiscard]] static QString toUIString(VMSpecs::KeyboardDevice dev);
     [[nodiscard]] static QString toUIString(VMSpecs::MachineType type);
     [[nodiscard]] static QString toUIString(VMSpecs::OsType type);
+    [[nodiscard]] static QString toUIString(VMSpecs::Architecture arch);
     [[nodiscard]] static QString toUIString(VMSpecs::NetworkMode mode);
     [[nodiscard]] static QString firmwareToUIString(bool useUefi, bool useSecureBoot);
 
@@ -768,6 +790,7 @@ public:
     [[nodiscard]] static QString toString(VMSpecs::KeyboardDevice dev);
     [[nodiscard]] static QString toString(PortForwardRule::Protocol proto);
     [[nodiscard]] static QString toString(VMSpecs::OsType type);
+    [[nodiscard]] static QString toString(VMSpecs::Architecture arch);
     [[nodiscard]] static QString toString(VMSpecs::NetworkMode mode);
     [[nodiscard]] static QString toString(ImageType type);
     [[nodiscard]] static QString toString(DeployState state);
@@ -786,6 +809,7 @@ public:
     [[nodiscard]] static VMSpecs::KeyboardDevice parseKeyboardDevice(const QString &str);
     [[nodiscard]] static PortForwardRule::Protocol parseProtocol(const QString &str);
     [[nodiscard]] static VMSpecs::OsType parseOsType(const QString &str);
+    [[nodiscard]] static VMSpecs::Architecture parseArchitecture(const QString &str);
     [[nodiscard]] static VMSpecs::NetworkMode parseNetworkMode(const QString &str);
     [[nodiscard]] static ImageType parseImageType(const QString &str);
     [[nodiscard]] static DeployState parseDeployState(const QString &str);
@@ -803,6 +827,7 @@ private:
     QString m_name;
     QString m_comment;
     VMSpecs::OsType m_osType = GlobalDefaults.osType;
+    VMSpecs::Architecture m_architecture = GlobalDefaults.architecture;
     QString m_distroId;
 
     IconSource m_iconSource = IconSource::None;

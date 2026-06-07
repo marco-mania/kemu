@@ -123,6 +123,8 @@ private:
 
     QString originalMac;
 
+    VMSpecs::Architecture m_originalArchitecture = VMSpecs::Architecture::X86_64;
+
     QLineEdit *nameEdit = nullptr;
     QPlainTextEdit *commentEdit = nullptr;
     QComboBox *osTypeCombo = nullptr;

@@ -109,6 +109,32 @@ int VMConfig::vgaMemMbUpperLimit(const VMSpecs::GpuType &type)
     }
 }
 
+QString VMConfig::x86ArchHint(VMSpecs::CpuModel model)
+{
+    switch (model) {
+    case VMSpecs::CpuModel::Qemu32:
+    case VMSpecs::CpuModel::I486:
+    case VMSpecs::CpuModel::Pentium:
+    case VMSpecs::CpuModel::Pentium2:
+    case VMSpecs::CpuModel::Pentium3:
+    case VMSpecs::CpuModel::CoreDuo:
+        return u"i386"_s;
+    case VMSpecs::CpuModel::Qemu64:
+    case VMSpecs::CpuModel::Core2Duo:
+    case VMSpecs::CpuModel::Nehalem:
+    case VMSpecs::CpuModel::SandyBridge:
+    case VMSpecs::CpuModel::Haswell:
+    case VMSpecs::CpuModel::Skylake:
+    case VMSpecs::CpuModel::Phenom:
+    case VMSpecs::CpuModel::Epyc:
+        return u"x86_64"_s;
+    case VMSpecs::CpuModel::Pentium4: // Prescott: EM64T depending on stepping
+    case VMSpecs::CpuModel::Host: // depends on the host CPU
+        return {}; // empty -> host decides
+    }
+    return {};
+}
+
 void VMConfig::ensureMacAddress(const QStringList &usedMacs)
 {
     if (!m_macAddress.isEmpty())
@@ -457,6 +483,21 @@ QString VMConfig::defaultIconFor(VMSpecs::OsType type, const QString &variant)
     return QFile::exists(path) ? path : defaultIconForType(type);
 }
 
+QString VMConfig::toQemuSystemBinary(VMSpecs::Architecture arch)
+{
+    switch (arch) {
+    case VMSpecs::Architecture::I386:
+        return u"qemu-system-i386"_s;
+    case VMSpecs::Architecture::Aarch64:
+        return u"qemu-system-aarch64"_s;
+    case VMSpecs::Architecture::Riscv64:
+        return u"qemu-system-riscv64"_s;
+    case VMSpecs::Architecture::X86_64:
+        return u"qemu-system-x86_64"_s;
+    }
+    return u"qemu-system-x86_64"_s;
+}
+
 // --- QEMU Strings ---
 
 QString VMConfig::toQemuString(VMSpecs::CpuModel model)
@@ -775,6 +816,21 @@ QString VMConfig::toUIString(VMSpecs::OsType type)
     return {};
 }
 
+QString VMConfig::toUIString(VMSpecs::Architecture arch)
+{
+    switch (arch) {
+    case VMSpecs::Architecture::X86_64:
+        return i18n("x86-64");
+    case VMSpecs::Architecture::I386:
+        return i18n("x86 (32-bit)");
+    case VMSpecs::Architecture::Aarch64:
+        return i18n("ARM64 (AArch64)");
+    case VMSpecs::Architecture::Riscv64:
+        return i18n("RISC-V 64");
+    }
+    return i18n("x86-64");
+}
+
 QString VMConfig::toUIString(VMSpecs::NetworkMode mode)
 {
     switch (mode) {
@@ -971,6 +1027,21 @@ QString VMConfig::toString(VMSpecs::OsType type)
     if (type == VMSpecs::OsType::Other)
         return u"other"_s;
     return u"linux"_s;
+}
+
+QString VMConfig::toString(VMSpecs::Architecture arch)
+{
+    switch (arch) {
+    case VMSpecs::Architecture::I386:
+        return u"i386"_s;
+    case VMSpecs::Architecture::Aarch64:
+        return u"aarch64"_s;
+    case VMSpecs::Architecture::Riscv64:
+        return u"riscv64"_s;
+    case VMSpecs::Architecture::X86_64:
+        return u"x86_64"_s;
+    }
+    return u"x86_64"_s;
 }
 
 QString VMConfig::toString(VMSpecs::NetworkMode mode)
@@ -1209,6 +1280,18 @@ VMSpecs::OsType VMConfig::parseOsType(const QString &str)
     return VMSpecs::OsType::Linux;
 }
 
+VMSpecs::Architecture VMConfig::parseArchitecture(const QString &str)
+{
+    const QString s = str.toLower().trimmed();
+    if (s == u"i386"_s || s == u"i486"_s || s == u"i586"_s || s == u"i686"_s || s == u"x86"_s)
+        return VMSpecs::Architecture::I386;
+    if (s == u"aarch64"_s || s == u"arm64"_s)
+        return VMSpecs::Architecture::Aarch64;
+    if (s == u"riscv64"_s || s == u"rv64"_s)
+        return VMSpecs::Architecture::Riscv64;
+    return VMSpecs::Architecture::X86_64;
+}
+
 VMSpecs::NetworkMode VMConfig::parseNetworkMode(const QString &str)
 {
     if (str.toLower().trimmed() == u"virtual_network"_s)
@@ -1349,6 +1432,7 @@ QJsonObject VMConfig::toJson() const
     j[u"name"_s] = m_name;
     j[u"comment"_s] = m_comment;
     j[u"os_type"_s] = toString(m_osType);
+    j[u"architecture"_s] = toString(m_architecture);
     j[u"distro_id"_s] = m_distroId;
     j[u"image_type"_s] = toString(m_imageType);
 
@@ -1432,6 +1516,17 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
     c.m_name = j[u"name"_s].toString();
     c.m_comment = j[u"comment"_s].toString();
     c.m_osType = parseOsType(j[u"os_type"_s].toString());
+    c.m_cpuModel = parseCpuModel(j[u"cpu_model"_s].toString());
+    // Architecture: explicit from file; if key is missing (legacy configs),
+    // derive from CPU model -- Host or ambiguous models -> host arch.
+    if (j.contains(u"architecture"_s)) {
+        c.m_architecture = parseArchitecture(j[u"architecture"_s].toString());
+    } else {
+        QString hint = x86ArchHint(c.m_cpuModel);
+        if (hint.isEmpty())
+            hint = QSysInfo::currentCpuArchitecture();
+        c.m_architecture = parseArchitecture(hint);
+    }
     c.m_distroId = j[u"distro_id"_s].toString();
     c.m_imageType = parseImageType(j[u"image_type"_s].toString());
 

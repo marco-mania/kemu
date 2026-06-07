@@ -1398,6 +1398,8 @@ void CreateVmDialog::setupForEdit(const VMConfig &config)
 
     originalMac = config.macAddress();
 
+    m_originalArchitecture = config.architecture();
+
     diskSpin->setValue(config.diskSizeGb());
     diskSpin->setDisabled(true);
     diskLabel->setDisabled(true);
@@ -1639,6 +1641,23 @@ VMConfig CreateVmDialog::getResult() const
     }
 
     c.setCpuModel(static_cast<VMSpecs::CpuModel>(cpuCombo->currentData().toInt()));
+
+    // Architecture: no dedicated selector yet -- currently only x86 vs x86_64.
+    //   - Cloud Deploy: architecture of the selected image
+    //   - Edit Mode:     keep existing value (never silently overwrite)
+    //   - New VM:        host architecture as fallback
+    const QString imgArch = isCloudDeployRequested() ? selectedCloudImage().arch : QString();
+    if (!imgArch.isEmpty())
+        c.setArchitecture(VMConfig::parseArchitecture(imgArch));
+    else if (isEditMode)
+        c.setArchitecture(m_originalArchitecture);
+    else {
+        QString hint = VMConfig::x86ArchHint(c.cpuModel());
+        if (hint.isEmpty())
+            hint = ImageDatabase::hostArch();
+        c.setArchitecture(VMConfig::parseArchitecture(hint));
+    }
+
     c.setUseKvm(kvmCheck->isChecked());
     c.setRamMb(ramSpin->value());
     c.setUseBalloon(balloonCheck->isChecked());
