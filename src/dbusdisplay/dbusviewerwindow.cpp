@@ -53,6 +53,9 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
 
     connect(m_display, &QemuDisplayWidget::fullscreenToggleRequested, m_actFullscreen, &QAction::trigger);
 
+    connect(m_display, &QemuDisplayWidget::relativeGrabChanged, this, &DbusViewerWindow::onPointerCaptureChanged);
+    connect(m_display, &QemuDisplayWidget::pointerModeChanged, this, &DbusViewerWindow::updateMouseStatus);
+
     qCDebug(KEMU_DBUSDISPLAY) << "DbusViewerWindow: audioOutConnected=" << m_audioOutConnected << "audioInConnected=" << m_audioInConnected;
 
     resize(m_lastWindowSize);
@@ -88,6 +91,10 @@ void DbusViewerWindow::createActions()
     m_actPowerOff = new QAction(QIcon::fromTheme(u"process-stop"_s), i18n("Power-&off"), this);
     m_actPowerOff->setStatusTip(i18n("Force power-off the virtual machine (may cause data loss)"));
     connect(m_actPowerOff, &QAction::triggered, this, &DbusViewerWindow::powerOffRequested);
+
+    m_actSendCAD = new QAction(QIcon::fromTheme(u"input-keyboard"_s), i18n("Send Ctrl+Alt+&Del"), this);
+    m_actSendCAD->setStatusTip(i18n("Send the Ctrl+Alt+Del key sequence to the guest"));
+    connect(m_actSendCAD, &QAction::triggered, m_display, &QemuDisplayWidget::sendCtrlAltDel);
 
     m_actSnapshots = new QAction(QIcon::fromTheme(u"camera-photo"_s), i18n("Manage &Snapshots..."), this);
     m_actSnapshots->setStatusTip(i18n("Open the snapshot manager for this VM"));
@@ -140,6 +147,11 @@ void DbusViewerWindow::createActions()
     m_actZoomReset = new QAction(i18n("&Reset Zoom"), this);
     m_actZoomReset->setStatusTip(i18n("Reset zoom level to 100%"));
     connect(m_actZoomReset, &QAction::triggered, this, &DbusViewerWindow::onZoomReset);
+
+    m_actGrabMouse = new QAction(QIcon::fromTheme(u"input-mouse"_s), i18n("&Capture Mouse"), this);
+    m_actGrabMouse->setCheckable(true);
+    m_actGrabMouse->setStatusTip(i18n("Confine the mouse pointer to the VM (release with Ctrl+Alt+G)"));
+    connect(m_actGrabMouse, &QAction::toggled, m_display, &QemuDisplayWidget::setPointerCaptured);
 
     // --- Devices: Audio ---
     m_actAudioOut = new QAction(i18n("Audio &Output"), this);
@@ -210,6 +222,8 @@ void DbusViewerWindow::createMenus()
     machineMenu->addAction(m_actReset);
     machineMenu->addAction(m_actPowerOff);
     machineMenu->addSeparator();
+    machineMenu->addAction(m_actSendCAD);
+    machineMenu->addSeparator();
     machineMenu->addAction(m_actSnapshots);
     machineMenu->addSeparator();
     machineMenu->addAction(m_actQuit);
@@ -232,6 +246,10 @@ void DbusViewerWindow::createMenus()
 
     devicesMenu->addAction(m_actAudioOut);
     devicesMenu->addAction(m_actAudioIn);
+    devicesMenu->addSeparator();
+
+    QMenu *mouseMenu = devicesMenu->addMenu(i18n("&Mouse"));
+    mouseMenu->addAction(m_actGrabMouse);
     devicesMenu->addSeparator();
 
     // USB submenu (populated by MainWindow on aboutToShow)
@@ -265,6 +283,11 @@ void DbusViewerWindow::createStatusBar()
     m_lblResolution->setMinimumWidth(140);
     m_lblResolution->setAlignment(Qt::AlignCenter);
 
+    m_lblMouse = new QLabel;
+    m_lblMouse->setFrameStyle(QFrame::Panel | QFrame::Sunken);
+    m_lblMouse->setMinimumWidth(140);
+    m_lblMouse->setAlignment(Qt::AlignCenter);
+
     m_lblAudioOut = new QLabel;
     m_lblAudioOut->setFrameStyle(QFrame::Panel | QFrame::Sunken);
     m_lblAudioOut->setMinimumWidth(100);
@@ -281,11 +304,13 @@ void DbusViewerWindow::createStatusBar()
     m_lblClipboard->setAlignment(Qt::AlignCenter);
 
     statusBar()->addPermanentWidget(m_lblResolution);
+    statusBar()->addPermanentWidget(m_lblMouse);
     statusBar()->addPermanentWidget(m_lblAudioOut);
     statusBar()->addPermanentWidget(m_lblAudioIn);
     statusBar()->addPermanentWidget(m_lblClipboard);
 
     updateStatusBar();
+    updateMouseStatus();
     statusBar()->showMessage(i18n("Ready - connected to %1", m_consolePath), 5000);
 }
 
@@ -503,13 +528,13 @@ void DbusViewerWindow::setupClipboard(ClipboardDirection dir)
         QString dirStr;
         switch (dir) {
         case ClipboardDirection::ToHost:
-            dirStr = i18n("Guest → Host");
+            dirStr = i18n("Guest -> Host");
             break;
         case ClipboardDirection::ToGuest:
-            dirStr = i18n("Host → Guest");
+            dirStr = i18n("Host -> Guest");
             break;
         case ClipboardDirection::Both:
-            dirStr = i18n("↔ Bidirectional");
+            dirStr = i18n("<-> Bidirectional");
             break;
         default:
             break;
@@ -571,6 +596,32 @@ void DbusViewerWindow::onAbout()
 {
     KAboutApplicationDialog dialog(KAboutData::applicationData(), this);
     dialog.exec();
+}
+
+void DbusViewerWindow::updateMouseStatus()
+{
+    if (m_display->isPointerCaptured()) {
+        m_lblMouse->setText(i18n("Pointer: Captured (Ctrl+Alt+G to release)"));
+        m_lblMouse->setToolTip(i18n("Pointer captured – press Ctrl+Alt+G to release"));
+        return;
+    }
+    if (m_display->isGuestAbsolute()) {
+        m_lblMouse->setText(i18n("Pointer: Absolute"));
+        m_lblMouse->setToolTip(i18n("Absolute pointer – host and guest cursor are synced; no capture needed"));
+    } else {
+        m_lblMouse->setText(i18n("Pointer: Released"));
+        m_lblMouse->setToolTip(i18n("Click into the display to capture the pointer"));
+    }
+}
+
+void DbusViewerWindow::onPointerCaptureChanged(bool active)
+{
+    // Keep the menu toggle in sync without re-triggering its toggled() signal.
+    if (m_actGrabMouse) {
+        QSignalBlocker block(m_actGrabMouse);
+        m_actGrabMouse->setChecked(active);
+    }
+    updateMouseStatus();
 }
 
 // =============================================================================

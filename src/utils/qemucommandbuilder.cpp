@@ -297,7 +297,8 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             }
             args << u"-display"_s << displayOpt;
 
-            // ---- Guest agent for clipboard (and absolute mouse, if used) ----
+            // ---- Guest agent for clipboard (clipboard only; pointing is
+            //      handled by the selected pointer device) ----
             // For -display dbus, the in-guest spice-vdagent talks to QEMU's
             // qemu-vdagent chardev (NOT spicevmc, which is SPICE-only). QEMU
             // bridges that to /org/qemu/Display1/Clipboard on its D-Bus bus.
@@ -307,7 +308,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             // NB: The port name "com.redhat.spice.0" is hardcoded in the
             // spice-vdagent daemon only for historical reasons.
             args << u"-device"_s << u"virtio-serial-pci"_s;
-            args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,name=vdagent,clipboard=on"_s;
+            args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,name=vdagent,clipboard=on,mouse=off"_s;
             args << u"-device"_s << u"virtserialport,chardev=vdagent,name=com.redhat.spice.0"_s;
         }
     } else if (headless) {

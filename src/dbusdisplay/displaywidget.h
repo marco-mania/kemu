@@ -8,6 +8,11 @@
 
 #include <QDBusConnection>
 #include <QDBusInterface>
+#include <QDBusMessage>
+#include <QDBusPendingCall>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
+#include <QDBusVariant>
 #include <QKeyEvent>
 #include <QList>
 #include <QMouseEvent>
@@ -15,6 +20,7 @@
 #include <QOpenGLFunctions>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLWidget>
+#include <QPainter>
 #include <QPixmap>
 #include <QSize>
 #include <QSocketNotifier>
@@ -51,13 +57,28 @@ public:
         return m_dimmed;
     }
 
+    bool isGuestAbsolute() const
+    {
+        return m_guestAbsolute;
+    }
+
+    bool isPointerCaptured() const
+    {
+        return m_relativeGrabActive;
+    }
+
+    void sendCtrlAltDel();
+
+    void setPointerCaptured(bool capture);
+
 Q_SIGNALS:
     void fullscreenToggleRequested();
+    void relativeGrabChanged(bool active);
+    void pointerModeChanged(bool absolute);
 
 protected:
     void initializeGL() override;
     void paintGL() override;
-    void resizeGL(int w, int h) override;
 
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
@@ -74,6 +95,7 @@ private Q_SLOTS:
     void onCursorChanged();
     void dispatchContext(GMainContext *ctx);
     void onFrameTick();
+    void onMousePropertiesChanged(const QString &iface, const QVariantMap &changed, const QStringList &invalidated);
 
 private:
     bool initEglFunctions();
@@ -82,6 +104,12 @@ private:
     void uploadSoftwareFrame();
     void setupQuad();
     void renderQuad();
+    void drawGuestCursorOverlay();
+
+    void queryPointerMode();
+    void setGuestAbsolute(bool absolute);
+    void beginRelativeGrab();
+    void endRelativeGrab();
 
     void scheduleRepaint();
     void updateWidgetSize();
@@ -126,6 +154,12 @@ private:
     bool m_eglAvailable = false;
 
     qreal m_scale = 1.0f;
+
+    QPointF m_absVirtual; // synthetic absolute position while captured (abs guests)
+    bool m_guestAbsolute = true; // from QEMU IsAbsolute; default = absolute
+    bool m_relativeGrabActive = false; // pointer captured?
+    bool m_suppressRelMove = false; // discard next (warp) move event
+    bool m_pointerModeProbed = false; // IsAbsolute re-checked after first scanout
 
     bool m_dimmed = false;
 

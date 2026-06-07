@@ -116,6 +116,8 @@ private Q_SLOTS:
     void onScanoutChanged(int width, int height);
     void onQemuDisconnected();
     void onAbout();
+    void updateMouseStatus();
+    void onPointerCaptureChanged(bool active);
 
 private:
     void createActions();
@@ -148,6 +150,7 @@ private:
     QAction *m_actShutdown = nullptr;
     QAction *m_actReset = nullptr;
     QAction *m_actPowerOff = nullptr;
+    QAction *m_actSendCAD = nullptr;
     QAction *m_actSnapshots = nullptr;
     QAction *m_actQuit = nullptr;
     QAction *m_actFullscreen = nullptr;
@@ -165,6 +168,7 @@ private:
     QAction *m_actClipToHost = nullptr;
     QAction *m_actClipToGuest = nullptr;
     QAction *m_actClipBoth = nullptr;
+    QAction *m_actGrabMouse = nullptr;
     QAction *m_actAbout = nullptr;
 
     QMenu *m_usbMenu = nullptr;
@@ -174,6 +178,7 @@ private:
     QLabel *m_lblAudioOut = nullptr;
     QLabel *m_lblAudioIn = nullptr;
     QLabel *m_lblClipboard = nullptr;
+    QLabel *m_lblMouse = nullptr;
 
     ViewerDevicePrefs m_prefs;
     ClipboardDirection m_clipDirection;

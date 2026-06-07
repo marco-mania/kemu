@@ -88,6 +88,19 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QDBusConnect
     m_keyboard = new QDBusInterface(KemuDbusDisplayConst::ServiceName, consolePath, KemuDbusDisplayConst::KeyboardIface, conn, this);
     m_mouse = new QDBusInterface(KemuDbusDisplayConst::ServiceName, consolePath, KemuDbusDisplayConst::MouseIface, conn, this);
 
+    // React to later changes (guest loads/unloads a tablet driver, console
+    // switch). Non-blocking: AddMatch goes to the bus daemon.
+    conn.connect(KemuDbusDisplayConst::ServiceName,
+                 consolePath,
+                 u"org.freedesktop.DBus.Properties"_s,
+                 u"PropertiesChanged"_s,
+                 this,
+                 SLOT(onMousePropertiesChanged(QString, QVariantMap, QStringList)));
+
+    // Read IsAbsolute asynchronously. A blocking call here would deadlock the
+    // display-listener handshake (its GLib FD is watched only after construction).
+    queryPointerMode();
+
     connect(listener, &QemuDisplayListener::scanoutChanged, this, &QemuDisplayWidget::onScanoutChanged);
     connect(listener, &QemuDisplayListener::dmaBufScanout, this, &QemuDisplayWidget::onDmaBufScanout);
     connect(listener, &QemuDisplayListener::regionUpdated, this, &QemuDisplayWidget::onRegionUpdated);
@@ -179,6 +192,17 @@ void QemuDisplayWidget::onFrameTick()
 
 void QemuDisplayWidget::updateCursor()
 {
+    if (m_relativeGrabActive) {
+        // Captured (relative or absolute): hide the host cursor; the overlay
+        // (or the guest's framebuffer cursor) shows where the pointer is.
+        setCursor(Qt::BlankCursor);
+        return;
+    }
+    if (!m_guestAbsolute) {
+        setCursor(Qt::ArrowCursor); // relative, ungrabbed
+        return;
+    }
+
     const CursorInfo ci = m_listener->cursorInfo();
     if (ci.image.isNull() || !ci.visible) {
         setCursor(Qt::BlankCursor);
@@ -202,6 +226,7 @@ void QemuDisplayWidget::updateCursor()
 void QemuDisplayWidget::onCursorChanged()
 {
     updateCursor();
+    scheduleRepaint();
 }
 
 void QemuDisplayWidget::scheduleRepaint()
@@ -410,6 +435,7 @@ void QemuDisplayWidget::paintGL()
     if (!m_textureReady)
         return;
     renderQuad();
+    drawGuestCursorOverlay();
 }
 
 void QemuDisplayWidget::renderQuad()
@@ -451,8 +477,114 @@ void QemuDisplayWidget::renderQuad()
     m_shader->release();
 }
 
-void QemuDisplayWidget::resizeGL(int, int)
+void QemuDisplayWidget::drawGuestCursorOverlay()
 {
+    // Whenever captured, the host cursor is hidden -> draw the guest cursor.
+    if (!m_relativeGrabActive || m_fbSize.isEmpty())
+        return;
+
+    const CursorInfo ci = m_listener->cursorInfo();
+    if (!ci.visible || ci.image.isNull())
+        return;
+
+    const qreal dpr = devicePixelRatio();
+
+    // Same centring/scale as renderQuad()/mapToFramebuffer() (device pixels).
+    const float drawW = m_fbSize.width() * m_scale;
+    const float drawH = m_fbSize.height() * m_scale;
+    const float offX = (width() * dpr - drawW) / 2.0f;
+    const float offY = (height() * dpr - drawH) / 2.0f;
+
+    const float devX = offX + (ci.pos_x - ci.hot_x) * m_scale;
+    const float devY = offY + (ci.pos_y - ci.hot_y) * m_scale;
+
+    // QPainter on a QOpenGLWidget works in logical coordinates.
+    const QRectF target(devX / dpr, devY / dpr, ci.image.width() * m_scale / dpr, ci.image.height() * m_scale / dpr);
+
+    QPainter p(this);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    p.drawImage(target, ci.image);
+    p.end();
+}
+
+void QemuDisplayWidget::queryPointerMode()
+{
+    // Use the Mouse interface's own service/path/connection; read IsAbsolute
+    // via a raw async Properties.Get (no QDBusInterface introspection, no block).
+    QDBusMessage get = QDBusMessage::createMethodCall(m_mouse->service(), m_mouse->path(), u"org.freedesktop.DBus.Properties"_s, u"Get"_s);
+    get << QString(KemuDbusDisplayConst::MouseIface) << u"IsAbsolute"_s;
+
+    auto *watcher = new QDBusPendingCallWatcher(m_mouse->connection().asyncCall(get), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
+        w->deleteLater();
+        const QDBusPendingReply<QDBusVariant> reply = *w;
+        if (reply.isValid()) {
+            const bool abs = reply.value().variant().toBool();
+            qCDebug(KEMU_DBUSDISPLAY) << "IsAbsolute read:" << abs; // raw value, every probe
+            setGuestAbsolute(abs);
+        } else {
+            qCWarning(KEMU_DBUSDISPLAY) << "IsAbsolute read failed:" << reply.error().message();
+        }
+        // On error: stay absolute (no regression).
+    });
+}
+
+void QemuDisplayWidget::onMousePropertiesChanged(const QString &iface, const QVariantMap &changed, const QStringList &)
+{
+    if (iface != KemuDbusDisplayConst::MouseIface)
+        return;
+    const auto it = changed.find(u"IsAbsolute"_s);
+    if (it != changed.end())
+        setGuestAbsolute(it.value().toBool());
+}
+
+void QemuDisplayWidget::setGuestAbsolute(bool absolute)
+{
+    if (absolute == m_guestAbsolute)
+        return;
+    m_guestAbsolute = absolute;
+    qCDebug(KEMU_DBUSDISPLAY) << "Pointer mode changed: IsAbsolute =" << absolute;
+
+    if (m_guestAbsolute && m_relativeGrabActive)
+        endRelativeGrab(); // switched to absolute while grabbed
+    updateCursor();
+    Q_EMIT pointerModeChanged(absolute);
+}
+
+void QemuDisplayWidget::beginRelativeGrab()
+{
+    if (m_relativeGrabActive)
+        return;
+    m_relativeGrabActive = true;
+
+    setCursor(Qt::BlankCursor);
+    grabMouse();
+    setFocus(Qt::MouseFocusReason);
+
+    // Confine the host cursor by re-centring it on every move (see mouseMove).
+    // m_absVirtual tracks the synthetic absolute position for absolute guests.
+    m_absVirtual = QPointF(rect().center());
+    m_suppressRelMove = true;
+    QCursor::setPos(mapToGlobal(rect().center()));
+
+    Q_EMIT relativeGrabChanged(true);
+}
+
+void QemuDisplayWidget::endRelativeGrab()
+{
+    if (!m_relativeGrabActive)
+        return;
+    m_relativeGrabActive = false;
+
+    releaseMouse();
+    m_suppressRelMove = false;
+
+    // Release modifiers so Ctrl/Alt cannot stick in the guest.
+    for (uint32_t evdev : {29u /*LCtrl*/, 97u /*RCtrl*/, 56u /*LAlt*/, 100u /*RAlt*/})
+        m_keyboard->asyncCall(u"Release"_s, evdevToQnum(evdev));
+
+    updateCursor();
+    Q_EMIT relativeGrabChanged(false);
 }
 
 // =============================================================================
@@ -464,6 +596,10 @@ void QemuDisplayWidget::onScanoutChanged(int w, int h)
     qCDebug(KEMU_DBUSDISPLAY) << "QemuDisplayWidget::onScanoutChanged" << w << h;
     if (w == 0 || h == 0) {
         return;
+    }
+    if (!m_pointerModeProbed) {
+        m_pointerModeProbed = true;
+        queryPointerMode();
     }
     m_usingDmaBuf = false;
     scheduleRepaint();
@@ -499,12 +635,21 @@ void QemuDisplayWidget::onRegionUpdated(const QRect &)
 
 void QemuDisplayWidget::keyPressEvent(QKeyEvent *event)
 {
-    // While dimmed (e.g.during a save-state), the guest is paused or
+    // While dimmed (e.g. during a save-state), the guest is paused or
     // about to be killed. Swallow input to make the state unambiguous.
     if (m_dimmed) {
         event->accept();
         return;
     }
+
+    // Release the relative pointer grab with Ctrl+Alt+G (SDL-style).
+    // Ctrl+Alt alone is left untouched, so Ctrl+Alt+Del reaches the guest.
+    if (m_relativeGrabActive && event->key() == Qt::Key_G && (event->modifiers() & Qt::ControlModifier) && (event->modifiers() & Qt::AltModifier)) {
+        endRelativeGrab();
+        event->accept();
+        return;
+    }
+
     // Reclaim F11 from the guest while fullscreen, so the user
     // always has a way out. In windowed mode F11 keeps reaching
     // the guest, and the QAction shortcut handles toggling.
@@ -572,21 +717,58 @@ QPointF QemuDisplayWidget::mapToFramebuffer(const QPointF &widgetPos) const
 
 void QemuDisplayWidget::mouseMoveEvent(QMouseEvent *event)
 {
-    // While dimmed (e.g.during a save-state), the guest is paused or
-    // about to be killed.
     if (m_dimmed)
         return;
-    auto fb = mapToFramebuffer(event->position());
-    m_mouse->asyncCall(u"SetAbsPosition"_s, static_cast<uint>(fb.x()), static_cast<uint>(fb.y()));
+
+    if (m_relativeGrabActive) {
+        // Captured: keep the host cursor centred so it never leaves the window.
+        if (m_suppressRelMove) {
+            m_suppressRelMove = false; // swallow the warp echo
+            return;
+        }
+        const QPoint center = rect().center();
+        const QPoint d = event->position().toPoint() - center;
+        if (!d.isNull()) {
+            if (m_guestAbsolute) {
+                // Virtual absolute position, confined to the framebuffer.
+                m_absVirtual += QPointF(d);
+                m_absVirtual.setX(qBound(0.0, m_absVirtual.x(), qreal(width() - 1)));
+                m_absVirtual.setY(qBound(0.0, m_absVirtual.y(), qreal(height() - 1)));
+                const QPointF fb = mapToFramebuffer(m_absVirtual);
+                const uint fx = uint(qBound(0, int(fb.x()), m_fbSize.width() - 1));
+                const uint fy = uint(qBound(0, int(fb.y()), m_fbSize.height() - 1));
+                m_mouse->asyncCall(u"SetAbsPosition"_s, fx, fy);
+            } else {
+                m_mouse->asyncCall(u"RelMotion"_s, d.x(), d.y());
+            }
+            m_suppressRelMove = true;
+            QCursor::setPos(mapToGlobal(center));
+        }
+        return;
+    }
+
+    // Not captured: absolute guests track the host pointer 1:1.
+    if (m_guestAbsolute) {
+        const auto fb = mapToFramebuffer(event->position());
+        m_mouse->asyncCall(u"SetAbsPosition"_s, static_cast<uint>(fb.x()), static_cast<uint>(fb.y()));
+    }
+    // relative + not captured: nothing to send
 }
 
 void QemuDisplayWidget::mousePressEvent(QMouseEvent *event)
 {
-    // While dimmed (e.g.during a save-state), the guest is paused or
-    // about to be killed.
     if (m_dimmed)
         return;
-    mouseMoveEvent(event);
+
+    // Relative: first click captures the pointer (SDL-style).
+    if (!m_guestAbsolute && !m_relativeGrabActive) {
+        beginRelativeGrab();
+        return; // grab click is not forwarded
+    }
+
+    if (m_guestAbsolute)
+        mouseMoveEvent(event); // keep absolute position in sync (unchanged)
+
     const int btn = qtButtonToQemu(event->button());
     if (btn >= 0)
         m_mouse->asyncCall(u"Press"_s, static_cast<uint>(btn));
@@ -594,10 +776,13 @@ void QemuDisplayWidget::mousePressEvent(QMouseEvent *event)
 
 void QemuDisplayWidget::mouseReleaseEvent(QMouseEvent *event)
 {
-    // While dimmed (e.g.during a save-state), the guest is paused or
-    // about to be killed.
     if (m_dimmed)
         return;
+
+    // Relative + not grabbed: the press was the grab click – swallow its release.
+    if (!m_guestAbsolute && !m_relativeGrabActive)
+        return;
+
     const int btn = qtButtonToQemu(event->button());
     if (btn >= 0)
         m_mouse->asyncCall(u"Release"_s, static_cast<uint>(btn));
@@ -687,6 +872,28 @@ void QemuDisplayWidget::setDimmed(bool dimmed)
         return;
     m_dimmed = dimmed;
     scheduleRepaint();
+}
+
+void QemuDisplayWidget::sendCtrlAltDel()
+{
+    if (m_dimmed)
+        return;
+
+    // Inject Ctrl+Alt+Del directly to the guest; the host normally
+    // intercepts the real key combination.
+    for (uint32_t evdev : {29u /*LCtrl*/, 56u /*LAlt*/, 111u /*Delete*/})
+        m_keyboard->asyncCall(u"Press"_s, evdevToQnum(evdev));
+    for (uint32_t evdev : {111u /*Delete*/, 56u /*LAlt*/, 29u /*LCtrl*/})
+        m_keyboard->asyncCall(u"Release"_s, evdevToQnum(evdev));
+}
+
+void QemuDisplayWidget::setPointerCaptured(bool capture)
+{
+    // Public entry point for the menu toggle; works for both pointer modes.
+    if (capture)
+        beginRelativeGrab();
+    else
+        endRelativeGrab();
 }
 
 void QemuDisplayWidget::updateWidgetSize()
