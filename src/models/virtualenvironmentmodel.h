@@ -7,10 +7,12 @@
 #pragma once
 
 #include <QAbstractItemModel>
+#include <QDateTime>
 #include <QDir>
 #include <QIcon>
 #include <QMimeData>
 #include <QPointer>
+#include <QTimer>
 #include <QVector>
 
 #include <KProcess>
@@ -61,6 +63,9 @@ struct VmEntry {
     QMap<QString, QString> attachedUsb;
 
     bool hasSavestateFile = false; // cached: existence of savestate file on disk
+    QDateTime startedAt; // wall-clock when the VM entered Running; null otherwise
+    QDateTime savestateTime; // mtime of the savestate file; null when none
+    QIcon styledIcon; // cached composed icon (visual state + headless emblem)
 };
 
 struct FolderEntry {
@@ -180,4 +185,12 @@ private:
     Node *findFolderNode(const QString &folderName) const;
     void emitVmChanged(const QString &name);
     void rebuildTree(const QMap<QString, QString> &folderAssignments);
+
+    QDir m_baseDir; // remembered for deriving savestate file paths
+    QTimer *m_uptimeTimer = nullptr;
+
+    void recomputeIcon(VmEntry &e) const; // rebuild cached styled icon
+    void refreshSavestateTime(VmEntry &e) const; // (re)read savestate file mtime
+    void updateUptimeTimer(); // start/stop based on running VMs
+    void tickUptime(); // emit subtitle/tooltip for running VMs
 };

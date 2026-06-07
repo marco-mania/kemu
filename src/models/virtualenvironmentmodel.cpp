@@ -6,8 +6,57 @@
 
 #include "models/virtualenvironmentmodel.h"
 
+#include <QFileInfo>
+
+#include <KFormat>
+
 #include "const.h"
 #include "utils/savestatemanager.h"
+
+namespace
+{
+QString formatUptime(const QDateTime &since)
+{
+    if (!since.isValid())
+        return {};
+
+    const qint64 totalSecs = since.secsTo(QDateTime::currentDateTime());
+    if (totalSecs < 0)
+        return {};
+
+    qint64 mins = totalSecs / 60;
+    qint64 hours = mins / 60;
+    qint64 days = hours / 24;
+
+    mins %= 60;
+    hours %= 24;
+    const qint64 years = days / 365;
+    days %= 365;
+    const qint64 weeks = days / 7;
+    days %= 7;
+
+    QStringList parts;
+
+    if (years > 0) {
+        parts << i18ncp("VM uptime year", "%1 year", "%1 years", years);
+    }
+    if (weeks > 0) {
+        parts << i18ncp("VM uptime week", "%1 week", "%1 weeks", weeks);
+    }
+    if (days > 0) {
+        parts << i18ncp("VM uptime day", "%1 day", "%1 days", days);
+    }
+    if (hours > 0) {
+        parts << i18ncp("VM uptime hour", "%1 hour", "%1 hours", hours);
+    }
+
+    if (mins > 0 || parts.isEmpty()) {
+        parts << i18ncp("VM uptime minute", "%1 minute", "%1 minutes", mins);
+    }
+
+    return i18nc("VM uptime prefix", "up %1", parts.join(QStringLiteral(", ")));
+}
+}
 
 VirtualEnvironmentModel::VirtualEnvironmentModel(ImageDatabase *imageDb, QObject *parent)
     : QAbstractItemModel(parent)
@@ -15,6 +64,12 @@ VirtualEnvironmentModel::VirtualEnvironmentModel(ImageDatabase *imageDb, QObject
     , m_root(new Node)
 {
     m_root->type = Node::RootNode;
+
+    m_uptimeTimer = new QTimer(this);
+    m_uptimeTimer->setInterval(1000);
+    connect(m_uptimeTimer, &QTimer::timeout, this, [this] {
+        tickUptime();
+    });
 }
 
 VirtualEnvironmentModel::~VirtualEnvironmentModel()
@@ -89,31 +144,63 @@ QVariant VirtualEnvironmentModel::data(const QModelIndex &index, int role) const
         switch (role) {
         case Qt::DisplayRole:
             return vm.name;
-        case Qt::DecorationRole: {
-            VMConfig::VmVisualState vs = VMConfig::VmVisualState::Stopped;
-            if (vm.state == VmEntry::State::Running)
-                vs = VMConfig::VmVisualState::Running;
-            else if (vm.state == VmEntry::State::Saving || vm.state == VmEntry::State::Saved)
-                vs = VMConfig::VmVisualState::Saved;
-            return VMConfig::styledVmIcon(vm.config.icon(KEMUConst::ListViewIconSize), vs, vm.isHeadless, KEMUConst::ListViewIconSize);
-        }
+        case Qt::DecorationRole:
+            return vm.styledIcon;
         case ItemTypeRole:
             return Vm;
         case VmNameRole:
             return vm.name;
         case SubtitleRole: {
-            if (vm.state == VmEntry::State::Deploying)
-                return i18n("Deploying...");
-            if (vm.state == VmEntry::State::Cloning)
-                return i18n("Cloning...");
-            if (vm.state == VmEntry::State::Saving)
+            switch (vm.state) {
+            case VmEntry::State::Running: {
+                QString s = formatUptime(vm.startedAt);
+                if (vm.isHeadless && !s.isEmpty())
+                    s += i18nc("appended to VM uptime", " \u00B7 headless");
+                return s;
+            }
+            case VmEntry::State::Saved:
+                if (vm.savestateTime.isValid())
+                    return i18nc("saved VM, with absolute timestamp",
+                                 "Saved State \u00B7 %1",
+                                 QLocale::system().toString(vm.savestateTime, QLocale::ShortFormat));
+                return i18n("Saved State");
+            case VmEntry::State::Saving:
                 return i18n("Saving state...");
-            if (vm.state == VmEntry::State::Saved)
-                return i18n("Saved");
-            QString label = VMConfig::toUIString(vm.config.osType());
+            case VmEntry::State::Deploying:
+                return i18n("Deploying...");
+            case VmEntry::State::Cloning:
+                return i18n("Cloning...");
+            case VmEntry::State::Creating:
+                return i18n("Creating...");
+            case VmEntry::State::Shrinking:
+                return i18n("Shrinking disk...");
+            case VmEntry::State::Exporting:
+                return i18n("Exporting...");
+            case VmEntry::State::ShuttingDown:
+                return i18n("Shutting down...");
+            case VmEntry::State::Stopped:
+                return {}; // intentionally empty
+            }
+            return {};
+        }
+        case Qt::ToolTipRole: {
+            QStringList lines;
+            lines << vm.name;
+
+            QString os = VMConfig::toUIString(vm.config.osType());
             if (!vm.config.distroId().isEmpty() && vm.config.distroId() != u"other"_s)
-                label += u" \u2014 "_s + m_imageDatabase->displayName(vm.config.distroId());
-            return label;
+                os += u" \u2014 "_s + m_imageDatabase->displayName(vm.config.distroId());
+            lines << os;
+
+            if (vm.state == VmEntry::State::Running && vm.startedAt.isValid()) {
+                lines << i18n("Uptime: %1", formatUptime(vm.startedAt));
+                if (vm.isHeadless)
+                    lines << i18n("Headless");
+            } else if (vm.state == VmEntry::State::Saved && vm.savestateTime.isValid()) {
+                lines << i18n("Saved: %1", QLocale::system().toString(vm.savestateTime, QLocale::ShortFormat));
+            }
+
+            return lines.join(u'\n');
         }
         case VmStateRole:
             return static_cast<int>(vm.state);
@@ -238,6 +325,8 @@ void VirtualEnvironmentModel::loadFromDisk(const QDir &baseDir,
 {
     beginResetModel();
 
+    m_baseDir = baseDir;
+
     m_vms.clear();
     m_folders.clear();
     delete m_root;
@@ -256,11 +345,19 @@ void VirtualEnvironmentModel::loadFromDisk(const QDir &baseDir,
         entry.config = loader(vmPath);
         entry.folderName = folderAssignments.value(d);
         entry.hasSavestateFile = SaveStateManager::hasSavestate(vmPath, d);
+        if (entry.hasSavestateFile) {
+            const QFileInfo fi(SaveStateManager::savestateFilePath(vmPath, d));
+            if (fi.exists())
+                entry.savestateTime = fi.lastModified();
+            entry.state = VmEntry::State::Saved;
+        }
+        recomputeIcon(entry);
         m_vms.append(std::move(entry));
     }
 
     rebuildTree(folderAssignments);
     endResetModel();
+    updateUptimeTimer();
 }
 
 void VirtualEnvironmentModel::reload(const QDir &baseDir, const QMap<QString, QString> &folderAssignments, std::function<VMConfig(const QString &)> loader)
@@ -272,6 +369,8 @@ void VirtualEnvironmentModel::reload(const QDir &baseDir, const QMap<QString, QS
     }
 
     beginResetModel();
+
+    m_baseDir = baseDir;
 
     delete m_root;
     m_root = new Node;
@@ -294,6 +393,7 @@ void VirtualEnvironmentModel::reload(const QDir &baseDir, const QMap<QString, QS
         if (stateBackup.contains(d)) {
             const VmEntry &old = stateBackup[d];
             entry.state = old.state;
+            entry.startedAt = old.startedAt;
             entry.qemuProcess = old.qemuProcess;
             entry.swtpmProcess = old.swtpmProcess;
             entry.virtiofsdProcess = old.virtiofsdProcess;
@@ -306,11 +406,25 @@ void VirtualEnvironmentModel::reload(const QDir &baseDir, const QMap<QString, QS
             entry.ioPeakBytesPerSec = old.ioPeakBytesPerSec;
         }
 
+        entry.hasSavestateFile = SaveStateManager::hasSavestate(vmPath, d);
+
+        if (entry.hasSavestateFile) {
+            const QFileInfo fi(SaveStateManager::savestateFilePath(vmPath, d));
+            if (fi.exists())
+                entry.savestateTime = fi.lastModified();
+        }
+        // Reflect saved state on load, but never clobber a running/busy VM that
+        // was just restored from stateBackup above.
+        if (entry.hasSavestateFile && entry.state == VmEntry::State::Stopped)
+            entry.state = VmEntry::State::Saved;
+        recomputeIcon(entry);
+
         m_vms.append(std::move(entry));
     }
 
     rebuildTree(folderAssignments);
     endResetModel();
+    updateUptimeTimer();
 }
 
 // -- State management --
@@ -320,15 +434,33 @@ void VirtualEnvironmentModel::setVmState(const QString &name, VmEntry::State sta
     VmEntry *e = entryByName(name);
     if (!e || e->state == state)
         return;
+
+    const VmEntry::State prev = e->state;
     e->state = state;
+
+    if (state == VmEntry::State::Running && prev != VmEntry::State::Running)
+        e->startedAt = QDateTime::currentDateTime();
+    if (state == VmEntry::State::Saved) {
+        e->startedAt = QDateTime();
+        e->hasSavestateFile = true; // entering Saved implies the file exists
+        refreshSavestateTime(*e);
+    }
+
+    recomputeIcon(*e);
     emitVmChanged(name);
     Q_EMIT vmStateChanged(name, state);
+    updateUptimeTimer();
 }
 
 void VirtualEnvironmentModel::setHeadless(const QString &name, const bool headless)
 {
-    if (VmEntry *e = entryByName(name))
+    if (VmEntry *e = entryByName(name)) {
+        if (e->isHeadless == headless)
+            return;
         e->isHeadless = headless;
+        recomputeIcon(*e);
+        emitVmChanged(name);
+    }
 }
 
 void VirtualEnvironmentModel::setQemuProcess(const QString &name, KProcess *p)
@@ -379,6 +511,7 @@ void VirtualEnvironmentModel::updateConfig(const QString &name, const VMConfig &
     if (!e)
         return;
     e->config = config;
+    recomputeIcon(*e);
     emitVmChanged(name);
 }
 
@@ -413,6 +546,7 @@ void VirtualEnvironmentModel::setHasSavestate(const QString &name, bool exists)
     if (VmEntry *e = entryByName(name)) {
         if (e->hasSavestateFile != exists) {
             e->hasSavestateFile = exists;
+            refreshSavestateTime(*e);
             emitVmChanged(name);
         }
     }
@@ -448,9 +582,12 @@ void VirtualEnvironmentModel::clearRuntimeState(const QString &name)
     e->ioHistory.clear();
     e->ioPeakBytesPerSec = 0.0;
     e->attachedUsb.clear();
+    e->startedAt = {};
+    recomputeIcon(*e);
 
     emitVmChanged(name);
     Q_EMIT vmStateChanged(name, VmEntry::State::Stopped);
+    updateUptimeTimer();
 }
 
 bool VirtualEnvironmentModel::isHeadless(const QString &name) const
@@ -689,5 +826,55 @@ void VirtualEnvironmentModel::rebuildTree(const QMap<QString, QString> &folderAs
             node->parent = m_root;
             m_root->children.append(node);
         }
+    }
+}
+
+void VirtualEnvironmentModel::recomputeIcon(VmEntry &e) const
+{
+    VMConfig::VmVisualState vs = VMConfig::VmVisualState::Stopped;
+    if (e.state == VmEntry::State::Running)
+        vs = VMConfig::VmVisualState::Running;
+    else if (e.state == VmEntry::State::Saving || e.state == VmEntry::State::Saved)
+        vs = VMConfig::VmVisualState::Saved;
+
+    e.styledIcon = VMConfig::styledVmIcon(e.config.icon(KEMUConst::ListViewIconSize), vs, e.isHeadless, KEMUConst::ListViewIconSize);
+}
+
+void VirtualEnvironmentModel::refreshSavestateTime(VmEntry &e) const
+{
+    e.savestateTime = QDateTime();
+    if (!e.hasSavestateFile)
+        return;
+
+    const QString vmPath = m_baseDir.filePath(e.name);
+    const QFileInfo fi(SaveStateManager::savestateFilePath(vmPath, e.name));
+    if (fi.exists())
+        e.savestateTime = fi.lastModified();
+}
+
+void VirtualEnvironmentModel::updateUptimeTimer()
+{
+    bool anyRunning = false;
+    for (const auto &vm : std::as_const(m_vms)) {
+        if (vm.state == VmEntry::State::Running) {
+            anyRunning = true;
+            break;
+        }
+    }
+
+    if (anyRunning && !m_uptimeTimer->isActive())
+        m_uptimeTimer->start();
+    else if (!anyRunning && m_uptimeTimer->isActive())
+        m_uptimeTimer->stop();
+}
+
+void VirtualEnvironmentModel::tickUptime()
+{
+    for (const auto &vm : std::as_const(m_vms)) {
+        if (vm.state != VmEntry::State::Running)
+            continue;
+        const QModelIndex idx = indexForVm(vm.name);
+        if (idx.isValid())
+            Q_EMIT dataChanged(idx, idx, {SubtitleRole, Qt::ToolTipRole});
     }
 }
