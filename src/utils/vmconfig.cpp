@@ -100,10 +100,8 @@ int VMConfig::vgaMemMbUpperLimit(const VMSpecs::GpuType &type)
         return 16;
     case VMSpecs::GpuType::CirrusGD5446:
         return 16;
-        break;
     case VMSpecs::GpuType::Virtio:
         return 2048;
-        break;
     default:
         return 256;
     }
@@ -1553,7 +1551,7 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
     c.m_spiceUsbRedirCount = j[u"spice_usb_redir_count"_s].toInt(GlobalDefaults.spiceUsbRedirCount);
     c.m_gpuType = parseGpuType(j[u"gpu_type"_s].toString());
     c.m_gpu3dAcceleration = j[u"gpu_3d_acceleration"_s].toBool(GlobalDefaults.gpu3dAcceleration);
-    c.m_gpuMemMb = j[u"gpu_mem"_s].toInt(GlobalDefaults.GpuMemMb);
+    c.m_gpuMemMb = j[u"gpu_mem"_s].toInt(GlobalDefaults.gpuMemMb);
     c.m_displayResolution =
         QSize(j[u"display_width"_s].toInt(GlobalDefaults.displayResolution.width()), j[u"display_height"_s].toInt(GlobalDefaults.displayResolution.height()));
 

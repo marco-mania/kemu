@@ -166,7 +166,7 @@ struct Defaults {
     int diskSizeGb = 40;
     VMSpecs::MachineType machineType = VMSpecs::MachineType::Q35;
     VMSpecs::GpuType gpuType = VMSpecs::GpuType::Virtio;
-    int GpuMemMb = 64;
+    int gpuMemMb = 64;
     bool gpu3dAcceleration = true;
     VMSpecs::AudioDevice audioDevice = VMSpecs::AudioDevice::Hda;
     VMSpecs::DiskInterface diskInterface = VMSpecs::DiskInterface::Virtio;
@@ -852,7 +852,7 @@ private:
     VMSpecs::DisplayType m_displayType = GlobalDefaults.displayType;
     VMSpecs::GpuType m_gpuType = GlobalDefaults.gpuType;
     bool m_gpu3dAcceleration = GlobalDefaults.gpu3dAcceleration;
-    int m_gpuMemMb = GlobalDefaults.GpuMemMb;
+    int m_gpuMemMb = GlobalDefaults.gpuMemMb;
     QSize m_displayResolution = GlobalDefaults.displayResolution;
     VMSpecs::AudioDevice m_audioDevice = GlobalDefaults.audioDevice;
     Sb16Config m_sb16Config;

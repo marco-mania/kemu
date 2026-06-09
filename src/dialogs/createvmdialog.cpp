@@ -1139,7 +1139,6 @@ void CreateVmDialog::onGpuDisplayChanged()
     const bool isQxl = (gpu == VMSpecs::GpuType::Qxl);
     const bool isVirtio = (gpu == VMSpecs::GpuType::Virtio);
     const bool isSpice = (display == VMSpecs::DisplayType::Spice);
-    const bool isDBus = (display == VMSpecs::DisplayType::Dbus);
     const bool isWindows = (osType == VMSpecs::OsType::Windows);
 
     gpuMemSpin->setRange(VMConfig::vgaMemMbLowerLimit(gpu), VMConfig::vgaMemMbUpperLimit(gpu));
@@ -1162,7 +1161,7 @@ void CreateVmDialog::onGpuDisplayChanged()
     resolutionCombo->setEnabled(isVirtio);
     resolutionLabel->setEnabled(isVirtio);
 
-    const bool can3d = (isDBus || isVirtio) && !isSpice;
+    const bool can3d = isVirtio && !isSpice;
     accel3dCheck->setEnabled(can3d);
     if (!can3d)
         accel3dCheck->setChecked(false);
@@ -2194,7 +2193,7 @@ void CreateVmDialog::resetToFactoryDefaults()
     kvmCheck->setChecked(GlobalDefaults.useKvm);
     setCombo(machineCombo, GlobalDefaults.machineType);
     setCombo(gpuCombo, GlobalDefaults.gpuType);
-    gpuMemSpin->setValue(GlobalDefaults.GpuMemMb);
+    gpuMemSpin->setValue(GlobalDefaults.gpuMemMb);
     setCombo(audioCombo, GlobalDefaults.audioDevice);
     setCombo(diskInterfaceCombo, GlobalDefaults.diskInterface);
     setCombo(netCombo, GlobalDefaults.networkCard);
