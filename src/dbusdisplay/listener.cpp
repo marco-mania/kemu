@@ -607,13 +607,11 @@ void QemuDisplayListener::handleCursorDefine(GVariant *parameters, GDBusMethodIn
     //          << "hot:" << hot_x << "," << hot_y
     //          << "Data:" << dataLen << "bytes";
 
-    {
-        if (data && dataLen >= static_cast<gsize>(width * height * 4)) {
-            // QEMU sends ARGB32 data
-            m_cursor.image = QImage(data, width, height, width * 4, QImage::Format_ARGB32).copy();
-            m_cursor.hot_x = hot_x;
-            m_cursor.hot_y = hot_y;
-        }
+    if (data && dataLen >= static_cast<gsize>(width * height * 4)) {
+        // QEMU sends ARGB32 data
+        m_cursor.image = QImage(data, width, height, width * 4, QImage::Format_ARGB32).copy();
+        m_cursor.hot_x = hot_x;
+        m_cursor.hot_y = hot_y;
     }
 
     g_dbus_method_invocation_return_value(invocation, nullptr);

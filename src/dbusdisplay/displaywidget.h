@@ -29,6 +29,8 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 
+#include <GL/gl.h>
+
 #include "dbusdisplay/listener.h"
 
 using namespace Qt::StringLiterals;
