@@ -136,6 +136,11 @@ private:
     void saveStateVMByName(const QString &vmName, bool skipConfirm = false);
     void discardSavedStateForVm(const QString &vmName);
     void manageSnapshotsForVm(const QString &vmName);
+    void changeISOForVm(const QString &vmName);
+    void ejectISOForVm(const QString &vmName);
+    void changeFloppyForVm(const QString &vmName);
+    void ejectFloppyForVm(const QString &vmName);
+    void pushMediaStateToViewer(const QString &vmName);
 
     ImageDatabase m_imageDatabase;
 

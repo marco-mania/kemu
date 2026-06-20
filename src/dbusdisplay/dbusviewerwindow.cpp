@@ -180,6 +180,25 @@ void DbusViewerWindow::createActions()
     }
     connect(m_actAudioIn, &QAction::toggled, this, &DbusViewerWindow::onToggleAudioIn);
 
+    // --- Devices: Removable media ---
+    m_actChangeIso = new QAction(QIcon::fromTheme(u"media-optical"_s), i18n("&Change Image..."), this);
+    m_actChangeIso->setStatusTip(i18n("Insert or replace the CD/DVD image"));
+    connect(m_actChangeIso, &QAction::triggered, this, &DbusViewerWindow::changeIsoRequested);
+
+    m_actEjectIso = new QAction(QIcon::fromTheme(u"media-eject"_s), i18n("&Eject"), this);
+    m_actEjectIso->setStatusTip(i18n("Eject the current CD/DVD image"));
+    m_actEjectIso->setEnabled(false);
+    connect(m_actEjectIso, &QAction::triggered, this, &DbusViewerWindow::ejectIsoRequested);
+
+    m_actChangeFloppy = new QAction(QIcon::fromTheme(u"media-floppy"_s), i18n("&Change Image..."), this);
+    m_actChangeFloppy->setStatusTip(i18n("Insert or replace the floppy image"));
+    connect(m_actChangeFloppy, &QAction::triggered, this, &DbusViewerWindow::changeFloppyRequested);
+
+    m_actEjectFloppy = new QAction(QIcon::fromTheme(u"media-eject"_s), i18n("&Eject"), this);
+    m_actEjectFloppy->setStatusTip(i18n("Eject the current floppy image"));
+    m_actEjectFloppy->setEnabled(false);
+    connect(m_actEjectFloppy, &QAction::triggered, this, &DbusViewerWindow::ejectFloppyRequested);
+
     // --- Devices: Clipboard ---
     auto *clipGroup = new QActionGroup(this);
     clipGroup->setExclusive(true);
@@ -252,6 +271,16 @@ void DbusViewerWindow::createMenus()
     mouseMenu->addAction(m_actGrabMouse);
     devicesMenu->addSeparator();
 
+    // Removable media (CD/DVD + Floppy)
+    QMenu *cdMenu = devicesMenu->addMenu(QIcon::fromTheme(u"media-optical"_s), i18n("&CD/DVD"));
+    cdMenu->addAction(m_actChangeIso);
+    cdMenu->addAction(m_actEjectIso);
+
+    QMenu *floppyMenu = devicesMenu->addMenu(QIcon::fromTheme(u"media-floppy"_s), i18n("&Floppy"));
+    floppyMenu->addAction(m_actChangeFloppy);
+    floppyMenu->addAction(m_actEjectFloppy);
+    devicesMenu->addSeparator();
+
     // USB submenu (populated by MainWindow on aboutToShow)
     m_usbMenu = devicesMenu->addMenu(QIcon::fromTheme(u"drive-removable-media-usb"_s), i18n("&USB Devices"));
     m_usbMenu->setEnabled(m_hasUsbController);
@@ -278,6 +307,16 @@ void DbusViewerWindow::createMenus()
 
 void DbusViewerWindow::createStatusBar()
 {
+    m_lblFloppy = new QLabel;
+    m_lblFloppy->setFrameStyle(QFrame::Panel | QFrame::Sunken);
+    m_lblFloppy->setMinimumWidth(110);
+    m_lblFloppy->setAlignment(Qt::AlignCenter);
+
+    m_lblCdrom = new QLabel;
+    m_lblCdrom->setFrameStyle(QFrame::Panel | QFrame::Sunken);
+    m_lblCdrom->setMinimumWidth(110);
+    m_lblCdrom->setAlignment(Qt::AlignCenter);
+
     m_lblResolution = new QLabel(i18n("No Display"));
     m_lblResolution->setFrameStyle(QFrame::Panel | QFrame::Sunken);
     m_lblResolution->setMinimumWidth(140);
@@ -303,6 +342,8 @@ void DbusViewerWindow::createStatusBar()
     m_lblClipboard->setMinimumWidth(120);
     m_lblClipboard->setAlignment(Qt::AlignCenter);
 
+    statusBar()->addPermanentWidget(m_lblFloppy);
+    statusBar()->addPermanentWidget(m_lblCdrom);
     statusBar()->addPermanentWidget(m_lblResolution);
     statusBar()->addPermanentWidget(m_lblMouse);
     statusBar()->addPermanentWidget(m_lblAudioOut);
@@ -342,6 +383,23 @@ void DbusViewerWindow::updateStatusBar()
     } else {
         m_lblAudioIn->setText(i18n("Mic: OFF"));
         m_lblAudioIn->setToolTip(i18n("Microphone forwarding disabled"));
+    }
+
+    // Removable media
+    if (m_hasIso) {
+        m_lblCdrom->setText(i18n("CD: %1", m_isoName));
+        m_lblCdrom->setToolTip(i18n("CD/DVD image inserted: %1", m_isoName));
+    } else {
+        m_lblCdrom->setText(i18n("CD: empty"));
+        m_lblCdrom->setToolTip(i18n("No CD/DVD image inserted"));
+    }
+
+    if (m_hasFloppy) {
+        m_lblFloppy->setText(i18n("FD: %1", m_floppyName));
+        m_lblFloppy->setToolTip(i18n("Floppy image inserted: %1", m_floppyName));
+    } else {
+        m_lblFloppy->setText(i18n("FD: empty"));
+        m_lblFloppy->setToolTip(i18n("No floppy image inserted"));
     }
 
     // Clipboard
@@ -753,6 +811,21 @@ void DbusViewerWindow::audioInReady()
     updateStatusBar();
     statusBar()->showMessage(i18n("Audio input connected"), 3000);
     qCDebug(KEMU_DBUSDISPLAY) << "DbusViewerWindow: Audio input activated subsequently";
+}
+
+void DbusViewerWindow::setMediaState(bool hasIso, const QString &isoName, bool hasFloppy, const QString &floppyName)
+{
+    m_hasIso = hasIso;
+    m_isoName = isoName;
+    m_hasFloppy = hasFloppy;
+    m_floppyName = floppyName;
+
+    if (m_actEjectIso)
+        m_actEjectIso->setEnabled(hasIso);
+    if (m_actEjectFloppy)
+        m_actEjectFloppy->setEnabled(hasFloppy);
+
+    updateStatusBar();
 }
 
 void DbusViewerWindow::updateWindowAndDisplaySize()

@@ -1117,6 +1117,19 @@ bool MainWindow::startDbusViewer(const QString &vmName)
         saveViewerPrefs(vmName, p);
     });
 
+    connect(state.window, &DbusViewerWindow::changeIsoRequested, this, [this, vmName] {
+        changeISOForVm(vmName);
+    });
+    connect(state.window, &DbusViewerWindow::ejectIsoRequested, this, [this, vmName] {
+        ejectISOForVm(vmName);
+    });
+    connect(state.window, &DbusViewerWindow::changeFloppyRequested, this, [this, vmName] {
+        changeFloppyForVm(vmName);
+    });
+    connect(state.window, &DbusViewerWindow::ejectFloppyRequested, this, [this, vmName] {
+        ejectFloppyForVm(vmName);
+    });
+
     // USB submenu population: reuse the existing enumerator path.
     if (QMenu *usbMenu = state.window->usbMenu()) {
         connect(usbMenu, &QMenu::aboutToShow, this, [this, vmName, usbMenu] {
@@ -1125,6 +1138,10 @@ bool MainWindow::startDbusViewer(const QString &vmName)
     }
 
     m_dbusViewers.insert(vmName, state);
+
+    // Reflect current media state in the freshly created viewer.
+    pushMediaStateToViewer(vmName);
+
     return true;
 }
 
@@ -2100,20 +2117,46 @@ void MainWindow::tearDownVmRuntime(const QString &vmName)
 
 void MainWindow::changeISO()
 {
-    if (currentConfig.name().isEmpty())
+    if (!currentConfig.name().isEmpty())
+        changeISOForVm(currentConfig.name());
+}
+
+void MainWindow::ejectISO()
+{
+    if (!currentConfig.name().isEmpty())
+        ejectISOForVm(currentConfig.name());
+}
+
+void MainWindow::changeFloppy()
+{
+    if (!currentConfig.name().isEmpty())
+        changeFloppyForVm(currentConfig.name());
+}
+
+void MainWindow::ejectFloppy()
+{
+    if (!currentConfig.name().isEmpty())
+        ejectFloppyForVm(currentConfig.name());
+}
+
+void MainWindow::changeISOForVm(const QString &vmName)
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry)
         return;
 
-    const QDir startDir = m_lastMediaDir.value(currentConfig.name(), QDir::homePath());
-    const QString isoPath = QFileDialog::getOpenFileName(this, i18n("Select ISO Image"), startDir.absolutePath(), i18n("ISO Files (*.iso)"));
+    QWidget *parentW = dialogParentFor(vmName);
+
+    const QDir startDir = m_lastMediaDir.value(vmName, QDir::homePath());
+    const QString isoPath = QFileDialog::getOpenFileName(parentW, i18n("Select ISO Image"), startDir.absolutePath(), i18n("ISO Files (*.iso)"));
     if (isoPath.isEmpty())
         return;
 
-    m_lastMediaDir[currentConfig.name()] = QFileInfo(isoPath).absolutePath();
+    m_lastMediaDir[vmName] = QFileInfo(isoPath).absolutePath();
 
-    if (veModel->isRunning(currentConfig.name())) {
-        const VmEntry *entry = veModel->entryByName(currentConfig.name());
-        if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
-            KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+    if (veModel->isRunning(vmName)) {
+        if (!entry->qmpClient || !entry->qmpClient->isConnected()) {
+            KMessageBox::error(parentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
             return;
         }
 
@@ -2121,29 +2164,38 @@ void MainWindow::changeISO()
             entry->qmpClient->sendCommandSync(u"blockdev-change-medium"_s, {{u"id"_s, u"cdrom0"_s}, {u"filename"_s, isoPath}, {u"format"_s, u"raw"_s}});
 
         if (!result.success) {
-            KMessageBox::error(this, i18n("Changing ISO Failed"), result.errorMessage);
+            KMessageBox::error(parentW, i18n("Changing ISO Failed"), result.errorMessage);
             return;
         }
         statusBar()->showMessage(i18n("ISO changed successfully."));
     }
 
-    m_lastMediaDir[currentConfig.name()] = QFileInfo(isoPath).absolutePath();
-    currentConfig.setISOPath(isoPath);
-    veModel->updateConfig(currentConfig.name(), currentConfig);
-    saveVmConfig(getVmDir(currentConfig.name()).absolutePath(), currentConfig);
-    updateActionStates();
-    updateDetails();
+    // Base on currentConfig for the selected VM to preserve existing behaviour,
+    // otherwise take the model's stored config.
+    VMConfig cfg = (vmName == currentConfig.name()) ? currentConfig : entry->config;
+    cfg.setISOPath(isoPath);
+    veModel->updateConfig(vmName, cfg);
+    saveVmConfig(getVmDir(vmName).absolutePath(), cfg);
+
+    if (vmName == currentConfig.name()) {
+        currentConfig = cfg;
+        updateActionStates();
+        updateDetails();
+    }
+    pushMediaStateToViewer(vmName);
 }
 
-void MainWindow::ejectISO()
+void MainWindow::ejectISOForVm(const QString &vmName)
 {
-    if (currentConfig.name().isEmpty())
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry)
         return;
 
-    if (veModel->isRunning(currentConfig.name())) {
-        const VmEntry *entry = veModel->entryByName(currentConfig.name());
-        if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
-            KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+    QWidget *parentW = dialogParentFor(vmName);
+
+    if (veModel->isRunning(vmName)) {
+        if (!entry->qmpClient || !entry->qmpClient->isConnected()) {
+            KMessageBox::error(parentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
             return;
         }
 
@@ -2152,39 +2204,47 @@ void MainWindow::ejectISO()
         const QMPResult result = entry->qmpClient->sendCommandSync(u"eject"_s, ejectArgs);
 
         if (!result.success) {
-            KMessageBox::error(this, i18n("Eject Failed"), result.errorMessage);
+            KMessageBox::error(parentW, i18n("Eject Failed"), result.errorMessage);
             return;
         }
         statusBar()->showMessage(i18n("ISO ejected."));
     }
 
-    currentConfig.clearISOPath();
-    currentConfig.setBootFromIso(false);
-    veModel->updateConfig(currentConfig.name(), currentConfig);
-    saveVmConfig(getVmDir(currentConfig.name()).absolutePath(), currentConfig);
-    updateActionStates();
-    updateDetails();
+    VMConfig cfg = (vmName == currentConfig.name()) ? currentConfig : entry->config;
+    cfg.clearISOPath();
+    cfg.setBootFromIso(false);
+    veModel->updateConfig(vmName, cfg);
+    saveVmConfig(getVmDir(vmName).absolutePath(), cfg);
+
+    if (vmName == currentConfig.name()) {
+        currentConfig = cfg;
+        updateActionStates();
+        updateDetails();
+    }
+    pushMediaStateToViewer(vmName);
 }
 
-void MainWindow::changeFloppy()
+void MainWindow::changeFloppyForVm(const QString &vmName)
 {
-    if (currentConfig.name().isEmpty())
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry)
         return;
 
-    const QDir startDir = m_lastMediaDir.value(currentConfig.name(), QDir::homePath());
-    const QString imagePath = QFileDialog::getOpenFileName(this,
+    QWidget *parentW = dialogParentFor(vmName);
+
+    const QDir startDir = m_lastMediaDir.value(vmName, QDir::homePath());
+    const QString imagePath = QFileDialog::getOpenFileName(parentW,
                                                            i18n("Select Floppy Image"),
                                                            startDir.absolutePath(),
                                                            i18n("Floppy Images (*.img *.ima *.flp *.vfd);;All Files (*)"));
     if (imagePath.isEmpty())
         return;
 
-    m_lastMediaDir[currentConfig.name()] = QFileInfo(imagePath).absolutePath();
+    m_lastMediaDir[vmName] = QFileInfo(imagePath).absolutePath();
 
-    if (veModel->isRunning(currentConfig.name())) {
-        const VmEntry *entry = veModel->entryByName(currentConfig.name());
-        if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
-            KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+    if (veModel->isRunning(vmName)) {
+        if (!entry->qmpClient || !entry->qmpClient->isConnected()) {
+            KMessageBox::error(parentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
             return;
         }
 
@@ -2192,30 +2252,37 @@ void MainWindow::changeFloppy()
             entry->qmpClient->sendCommandSync(u"blockdev-change-medium"_s, {{u"id"_s, u"fda"_s}, {u"filename"_s, imagePath}, {u"format"_s, u"raw"_s}});
 
         if (!result.success) {
-            KMessageBox::error(this, i18n("Changing floppy image failed"), result.errorMessage);
+            KMessageBox::error(parentW, i18n("Changing floppy image failed"), result.errorMessage);
             return;
         }
         statusBar()->showMessage(i18n("Floppy image changed successfully."));
     }
 
-    m_lastMediaDir[currentConfig.name()] = QFileInfo(imagePath).absolutePath();
-    currentConfig.setFloppyPath(imagePath);
-    currentConfig.setBootFromFloppy(false);
-    veModel->updateConfig(currentConfig.name(), currentConfig);
-    saveVmConfig(getVmDir(currentConfig.name()).absolutePath(), currentConfig);
-    updateActionStates();
-    updateDetails();
+    VMConfig cfg = (vmName == currentConfig.name()) ? currentConfig : entry->config;
+    cfg.setFloppyPath(imagePath);
+    cfg.setBootFromFloppy(false);
+    veModel->updateConfig(vmName, cfg);
+    saveVmConfig(getVmDir(vmName).absolutePath(), cfg);
+
+    if (vmName == currentConfig.name()) {
+        currentConfig = cfg;
+        updateActionStates();
+        updateDetails();
+    }
+    pushMediaStateToViewer(vmName);
 }
 
-void MainWindow::ejectFloppy()
+void MainWindow::ejectFloppyForVm(const QString &vmName)
 {
-    if (currentConfig.name().isEmpty())
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry)
         return;
 
-    if (veModel->isRunning(currentConfig.name())) {
-        const VmEntry *entry = veModel->entryByName(currentConfig.name());
-        if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
-            KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+    QWidget *parentW = dialogParentFor(vmName);
+
+    if (veModel->isRunning(vmName)) {
+        if (!entry->qmpClient || !entry->qmpClient->isConnected()) {
+            KMessageBox::error(parentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
             return;
         }
 
@@ -2224,17 +2291,42 @@ void MainWindow::ejectFloppy()
         const QMPResult result = entry->qmpClient->sendCommandSync(u"eject"_s, ejectArgs);
 
         if (!result.success) {
-            KMessageBox::error(this, i18n("Eject floppy failed"), result.errorMessage);
+            KMessageBox::error(parentW, i18n("Eject floppy failed"), result.errorMessage);
             return;
         }
         statusBar()->showMessage(i18n("Floppy ejected."));
     }
 
-    currentConfig.clearFloppyPath();
-    veModel->updateConfig(currentConfig.name(), currentConfig);
-    saveVmConfig(getVmDir(currentConfig.name()).absolutePath(), currentConfig);
-    updateActionStates();
-    updateDetails();
+    VMConfig cfg = (vmName == currentConfig.name()) ? currentConfig : entry->config;
+    cfg.clearFloppyPath();
+    veModel->updateConfig(vmName, cfg);
+    saveVmConfig(getVmDir(vmName).absolutePath(), cfg);
+
+    if (vmName == currentConfig.name()) {
+        currentConfig = cfg;
+        updateActionStates();
+        updateDetails();
+    }
+    pushMediaStateToViewer(vmName);
+}
+
+void MainWindow::pushMediaStateToViewer(const QString &vmName)
+{
+    auto it = m_dbusViewers.find(vmName);
+    if (it == m_dbusViewers.end() || !it->window)
+        return;
+
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry)
+        return;
+
+    const QString isoPath = entry->config.isoPath();
+    const QString floppyPath = entry->config.floppyPath();
+
+    it->window->setMediaState(!isoPath.isEmpty(),
+                              isoPath.isEmpty() ? QString() : QFileInfo(isoPath).fileName(),
+                              !floppyPath.isEmpty(),
+                              floppyPath.isEmpty() ? QString() : QFileInfo(floppyPath).fileName());
 }
 
 void MainWindow::shrinkDisk()

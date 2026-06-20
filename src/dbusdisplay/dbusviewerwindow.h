@@ -79,6 +79,10 @@ public:
     void audioOutReady();
     void audioInReady();
 
+    // Reflect the VM's removable-media state in menu + status bar.
+    // Called by MainWindow on viewer creation and after every media change.
+    void setMediaState(bool hasIso, const QString &isoName, bool hasFloppy, const QString &floppyName);
+
     QMenu *usbMenu() const
     {
         return m_usbMenu;
@@ -92,6 +96,11 @@ Q_SIGNALS:
     void resetRequested();
     void powerOffRequested();
     void snapshotManagerRequested();
+
+    void changeIsoRequested();
+    void ejectIsoRequested();
+    void changeFloppyRequested();
+    void ejectFloppyRequested();
 
     void devicePrefsChanged(const ViewerDevicePrefs &prefs);
 
@@ -164,6 +173,10 @@ private:
     QAction *m_actZoomReset = nullptr;
     QAction *m_actAudioOut = nullptr;
     QAction *m_actAudioIn = nullptr;
+    QAction *m_actChangeIso = nullptr;
+    QAction *m_actEjectIso = nullptr;
+    QAction *m_actChangeFloppy = nullptr;
+    QAction *m_actEjectFloppy = nullptr;
     QAction *m_actClipOff = nullptr;
     QAction *m_actClipToHost = nullptr;
     QAction *m_actClipToGuest = nullptr;
@@ -174,6 +187,8 @@ private:
     QMenu *m_usbMenu = nullptr;
 
     // Status bar labels
+    QLabel *m_lblCdrom = nullptr;
+    QLabel *m_lblFloppy = nullptr;
     QLabel *m_lblResolution = nullptr;
     QLabel *m_lblAudioOut = nullptr;
     QLabel *m_lblAudioIn = nullptr;
@@ -182,6 +197,11 @@ private:
 
     ViewerDevicePrefs m_prefs;
     ClipboardDirection m_clipDirection;
+
+    bool m_hasIso = false;
+    bool m_hasFloppy = false;
+    QString m_isoName;
+    QString m_floppyName;
 
     QSize m_scanoutSize;
     QSize m_lastWindowSize = {1280, 720};
