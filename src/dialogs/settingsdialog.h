@@ -66,7 +66,6 @@ public:
     static QString getOvmfPath();
     static bool isPerformanceMonitorEnabled();
     static QSize getDefaultResolution();
-    static bool enableDbusDisplay();
     static bool showAllArchitectures();
     static bool cloneRegenerateMac();
     static bool importRegenerateMac();

@@ -9,7 +9,7 @@ if(POLICY CMP0175)
 endif()
 # -------------------------------------------------------------------------
 
-project(kemu VERSION 0.3.0)
+project(kemu VERSION 0.4.0)
 
 add_compile_definitions(APP_VERSION=\"${PROJECT_VERSION}\" APP_NAME=\"KEMU\"
                         TRANSLATION_DOMAIN=\"kemu\")

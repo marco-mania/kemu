@@ -403,7 +403,7 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     displayCombo->addItem(VMConfig::toUIString(VMSpecs::DisplayType::Sdl), static_cast<int>(VMSpecs::DisplayType::Sdl));
     if (ExternalTools::instance().isAvailable(ExternalTools::spiceDisplayTools()))
         displayCombo->addItem(VMConfig::toUIString(VMSpecs::DisplayType::Spice), static_cast<int>(VMSpecs::DisplayType::Spice));
-    if (ExternalTools::instance().isAvailable(ExternalTools::dbusDisplayTools()) && SettingsDialog::enableDbusDisplay())
+    if (ExternalTools::instance().isAvailable(ExternalTools::dbusDisplayTools()))
         displayCombo->addItem(VMConfig::toUIString(VMSpecs::DisplayType::Dbus), static_cast<int>(VMSpecs::DisplayType::Dbus));
     hwLayout->addRow(i18n("Display:"), displayCombo);
 
@@ -2074,7 +2074,7 @@ bool CreateVmDialog::isDisplayTypeAvailable(const VMSpecs::DisplayType type)
     case VMSpecs::DisplayType::Spice:
         return ExternalTools::instance().isAvailable(ExternalTools::spiceDisplayTools());
     case VMSpecs::DisplayType::Dbus:
-        return ExternalTools::instance().isAvailable(ExternalTools::DbusDaemon) && SettingsDialog::enableDbusDisplay();
+        return ExternalTools::instance().isAvailable(ExternalTools::DbusDaemon);
     case VMSpecs::DisplayType::Gtk:
     case VMSpecs::DisplayType::Sdl:
         return true;

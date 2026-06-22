@@ -279,13 +279,6 @@ void SettingsDialog::setupDisplayPage()
     spiceCloseActionCombo->setCurrentIndex(static_cast<int>(spiceViewerCloseAction()));
     layout->addRow(i18n("When SPICE viewer is closed:"), spiceCloseActionCombo);
 
-    dbusDisplayCheck = new QCheckBox(i18n("Enable D-Bus display support (experimental)"));
-    dbusDisplayCheck->setToolTip(
-        i18n("Allows VMs to use D-Bus as display backend. "
-             "Requires dbus-daemon and enables an embedded viewer window."));
-    dbusDisplayCheck->setChecked(enableDbusDisplay());
-    layout->addRow(dbusDisplayCheck);
-
     auto *item = addPage(page, i18n("Display"));
     item->setIcon(QIcon::fromTheme(u"preferences-desktop-display"_s));
     m_pages[Display] = item;
@@ -439,13 +432,6 @@ QSize SettingsDialog::getDefaultResolution()
     const int w = general.readEntry("DisplayWidth", KEMUConst::DefaultDisplaySize.width());
     const int h = general.readEntry("DisplayHeight", KEMUConst::DefaultDisplaySize.height());
     return QSize(w, h);
-}
-
-bool SettingsDialog::enableDbusDisplay()
-{
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
-    return general.readEntry("EnableDBusDisplay", false);
 }
 
 bool SettingsDialog::showAllArchitectures()

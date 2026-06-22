@@ -1191,7 +1191,7 @@ bool MainWindow::isDisplayTypeAvailable(const VMSpecs::DisplayType type)
     case VMSpecs::DisplayType::Spice:
         return ExternalTools::instance().isAvailable(ExternalTools::spiceDisplayTools());
     case VMSpecs::DisplayType::Dbus:
-        return ExternalTools::instance().isAvailable(ExternalTools::DbusDaemon) && SettingsDialog::enableDbusDisplay();
+        return ExternalTools::instance().isAvailable(ExternalTools::DbusDaemon);
     case VMSpecs::DisplayType::Gtk:
     case VMSpecs::DisplayType::Sdl:
         return true;

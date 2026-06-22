@@ -14,7 +14,7 @@ A traditional, direct-to-QEMU desktop frontend for Linux, built with Qt6 Widgets
 
 - Create, edit, and delete QEMU virtual machines
 - Supports display types GTK, SDL, SPICE (via `virt-viewer (remote-viewer)`)
-- Integrated D-Bus viewer with audio and clipboard sharing (**experimental**)
+- Integrated D-Bus viewer with audio and clipboard sharing
 - Automated Deploy feature (Cloud-Init support)
 - Snapshot support (QCOW2)
 - Hot-swap ISO and Floppy images
@@ -196,7 +196,7 @@ GTK and SDL are the simplest options - QEMU opens its own window directly, with 
 
 ### D-Bus Display
 
-> **Highly Experimental:** The D-Bus display backend is under active development and should be considered unstable. Expect bugs, missing features, and breaking changes between versions. Not recommended for production use.
+**Hint:** Although stable, the D-Bus display backend is under active development. Expect bugs, missing features, and breaking changes between versions. Limited recommended for production use.
 
 The D-Bus display backend embeds the VM's framebuffer directly into a KEMU-managed Qt window. It uses QEMU's `-display dbus` interface to receive video, send keyboard and mouse events, and exchange audio and clipboard data - all over a private D-Bus session per VM.
 Each D-Bus VM gets its own isolated `dbus-daemon` instance with a private socket inside the VM directory. KEMU and QEMU connect as clients to this private bus and exchange D-Bus messages directly.
