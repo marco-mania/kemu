@@ -307,6 +307,15 @@ Mounting via 9p (Example: tag `exchange` to `/mnt/shared`).
 
 > **Note:** OpenBSD/NetBSD support is limited. Check first. The virtual network mode note above applies to all Unix guests using 9p.
 
+#### Automount
+
+To automatically mount the share when your desktop environment starts, create a mount.desktop file in ~/.config/autostart/ with the following content:
+
+    [Desktop Entry]
+    Type=Application
+    Name=mount
+    Exec=sudo mount -t 9p -o trans=virtio -oversion=9p2000.L exchange /home/myuser/exchange
+
 ### Windows Guest
 
 Requires `virtio-fs`. On the host side, KEMU starts `virtiofsd` automatically.
