@@ -1614,6 +1614,13 @@ bool CreateVmDialog::isManualIsoDeployRequested() const
     return !isCloudDeployRequested();
 }
 
+void CreateVmDialog::applyGlobalDefaults()
+{
+    if (isEditMode || !m_imageDatabase)
+        return;
+    applyReleaseDefaults(m_imageDatabase->globalDefaults());
+}
+
 VMConfig CreateVmDialog::getResult() const
 {
     VMConfig c;

@@ -73,6 +73,8 @@ public:
     [[nodiscard]] CloudDeployConfig cloudConfig() const;
     [[nodiscard]] bool isManualIsoDeployRequested() const;
 
+    void applyGlobalDefaults();
+
 private Q_SLOTS:
     void browseSharedDir();
     void chooseFromIconSet();

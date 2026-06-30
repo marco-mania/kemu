@@ -3592,6 +3592,7 @@ void MainWindow::createNewVM()
 
     dialog.setExistingVmNames(existingVmNames());
     dialog.setImageDatabase(&m_imageDatabase);
+    dialog.applyGlobalDefaults();
     dialog.setNetworkManager(m_networkManager);
     dialog.setMacUsageInfo(macUsageInfo());
 

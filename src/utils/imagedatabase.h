@@ -75,6 +75,7 @@ public:
     [[nodiscard]] QList<CloudImageInfo> cloudImagesFor(const QString &tplId, const QString &version, bool allArchitectures = false) const;
 
     [[nodiscard]] VMConfig defaultsFor(const QString &tplId) const;
+    [[nodiscard]] VMConfig globalDefaults() const;
     [[nodiscard]] bool hasCloudImages(const QString &tplId) const;
     [[nodiscard]] int minDiskGbFor(const QString &tplId, const QString &version) const;
 
@@ -93,4 +94,5 @@ private:
     static VMConfig overlayConfig(const VMConfig &base, const QJsonObject &overrides);
 
     QList<TemplateInfo> m_templates;
+    VMConfig m_globalDefaults;
 };

@@ -22,6 +22,8 @@ void ImageDatabase::loadFromFile(const QString &jsonPath)
 {
     m_templates.clear();
 
+    m_globalDefaults = {};
+
     QFile file(jsonPath);
     if (!file.open(QIODevice::ReadOnly))
         return;
@@ -33,7 +35,7 @@ void ImageDatabase::loadFromFile(const QString &jsonPath)
 
     const QJsonArray arr = rootObj[u"templates"_s].toArray();
     for (const auto &val : arr)
-        m_templates.append(parseTemplate(val.toObject(), globalDefaults));
+        m_templates.append(parseTemplate(val.toObject(), m_globalDefaults));
 }
 
 QList<TemplateInfo> ImageDatabase::templates() const
@@ -101,6 +103,11 @@ VMConfig ImageDatabase::defaultsFor(const QString &tplId) const
     if (auto *d = findById(tplId))
         return d->defaults;
     return {};
+}
+
+VMConfig ImageDatabase::globalDefaults() const
+{
+    return m_globalDefaults;
 }
 
 bool ImageDatabase::hasCloudImages(const QString &tplId) const
