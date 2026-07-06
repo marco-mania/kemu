@@ -296,6 +296,30 @@
       "icon_hint": "fedora",
       "releases": [
         {
+          "version": "44",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-44-1.7-x86_64-CHECKSUM",
+              "default_user": "fedora"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-44-1.7.aarch64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/aarch64/images/Fedora-Cloud-44-1.7-aarch64-CHECKSUM",
+              "default_user": "fedora"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
           "version": "43",
           "quick_deploy": true,
           "codename": "",
@@ -303,16 +327,16 @@
           "cloud_images": [
             {
               "arch": "x86_64",
-              "url": "https://mirror.netzwerge.de/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2",
               "format": "qcow2",
-              "checksum_url": "",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-43-1.6-x86_64-CHECKSUM",
               "default_user": "fedora"
             },
             {
               "arch": "aarch64",
-              "url": "https://mirror.netzwerge.de/fedora/linux/releases/43/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-43-1.6.aarch64.qcow2",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-43-1.6.aarch64.qcow2",
               "format": "qcow2",
-              "checksum_url": "",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/aarch64/images/Fedora-Cloud-43-1.6-aarch64-CHECKSUM",
               "default_user": "fedora"
             }
           ],
@@ -327,16 +351,16 @@
           "cloud_images": [
             {
               "arch": "x86_64",
-              "url": "https://mirrors.n-ix.net/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2",
               "format": "qcow2",
-              "checksum_url": "",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-42-1.1-x86_64-CHECKSUM",
               "default_user": "fedora"
             },
             {
               "arch": "aarch64",
-              "url": "https://mirrors.n-ix.net/fedora/linux/releases/42/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-42-1.1.aarch64.qcow2",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-42-1.1.aarch64.qcow2",
               "format": "qcow2",
-              "checksum_url": "",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/aarch64/images/Fedora-Cloud-42-1.1-aarch64-CHECKSUM",
               "default_user": "fedora"
             }
           ],
@@ -351,16 +375,16 @@
           "cloud_images": [
             {
               "arch": "x86_64",
-              "url": "https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2",
               "format": "qcow2",
-              "checksum_url": "",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-41-1.4-x86_64-CHECKSUM",
               "default_user": "fedora"
             },
             {
               "arch": "aarch64",
-              "url": "https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-41-1.4.aarch64.qcow2",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-41-1.4.aarch64.qcow2",
               "format": "qcow2",
-              "checksum_url": "",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/aarch64/images/Fedora-Cloud-41-1.4-aarch64-CHECKSUM",
               "default_user": "fedora"
             }
           ],
@@ -381,6 +405,30 @@
       "homepage": "https://www.opensuse.org",
       "icon_hint": "opensuse",
       "releases": [
+        {
+          "version": "16.0",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://download.opensuse.org/repositories/openSUSE:/Leap:/16.0:/Images/images/Leap-16.0-Minimal-VM.x86_64-Cloud.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://download.opensuse.org/repositories/openSUSE:/Leap:/16.0:/Images/images/Leap-16.0-Minimal-VM.x86_64-Cloud.qcow2.sha256",
+              "default_user": "opensuse"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://download.opensuse.org/repositories/openSUSE:/Leap:/16.0:/Images/images/Leap-16.0-Minimal-VM.aarch64-Cloud.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://download.opensuse.org/repositories/openSUSE:/Leap:/16.0:/Images/images/Leap-16.0-Minimal-VM.aarch64-Cloud.qcow2.sha256",
+              "default_user": "opensuse"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
         {
           "version": "15.6",
           "quick_deploy": true,
@@ -451,6 +499,30 @@
       "icon_hint": "almalinux",
       "releases": [
         {
+          "version": "10",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/AlmaLinux-10-GenericCloud-latest.x86_64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/CHECKSUM",
+              "default_user": "almalinux"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://repo.almalinux.org/almalinux/10/cloud/aarch64/images/AlmaLinux-10-GenericCloud-latest.aarch64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://repo.almalinux.org/almalinux/10/cloud/aarch64/images/CHECKSUM",
+              "default_user": "almalinux"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
           "version": "9",
           "quick_deploy": true,
           "codename": "",
@@ -488,6 +560,30 @@
       "homepage": "https://rockylinux.org",
       "icon_hint": "rockylinux",
       "releases": [
+        {
+          "version": "10",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://dl.rockylinux.org/pub/rocky/10/images/x86_64/CHECKSUM",
+              "default_user": "rocky"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://dl.rockylinux.org/pub/rocky/10/images/aarch64/Rocky-10-GenericCloud-Base.latest.aarch64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://dl.rockylinux.org/pub/rocky/10/images/aarch64/CHECKSUM",
+              "default_user": "rocky"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
         {
           "version": "9",
           "quick_deploy": true,
@@ -527,6 +623,54 @@
       "icon_hint": "freebsd",
       "releases": [
         {
+          "version": "15.1",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/amd64/Latest/FreeBSD-15.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz",
+              "format": "qcow2",
+              "checksum_url": "https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/amd64/Latest/CHECKSUM.SHA512",
+              "default_user": "freebsd"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/aarch64/Latest/FreeBSD-15.1-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz",
+              "format": "qcow2",
+              "checksum_url": "https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/aarch64/Latest/CHECKSUM.SHA512",
+              "default_user": "freebsd"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
+          "version": "14.4",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://download.freebsd.org/releases/VM-IMAGES/14.4-RELEASE/amd64/Latest/FreeBSD-14.4-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz",
+              "format": "qcow2",
+              "checksum_url": "https://download.freebsd.org/releases/VM-IMAGES/14.4-RELEASE/amd64/Latest/CHECKSUM.SHA512",
+              "default_user": "freebsd"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://download.freebsd.org/releases/VM-IMAGES/14.4-RELEASE/aarch64/Latest/FreeBSD-14.4-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz",
+              "format": "qcow2",
+              "checksum_url": "https://download.freebsd.org/releases/VM-IMAGES/14.4-RELEASE/aarch64/Latest/CHECKSUM.SHA512",
+              "default_user": "freebsd"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
           "version": "14.2",
           "quick_deploy": true,
           "codename": "",
@@ -562,6 +706,28 @@
       "homepage": "https://www.microsoft.com/windows",
       "icon_hint": "windows",
       "releases": [
+        {
+          "version": "25H2",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "x86_64",
+              "edition": "Consumer",
+              "url": "",
+              "note": "Download from microsoft.com required"
+            },
+            {
+              "arch": "aarch64",
+              "edition": "Consumer",
+              "url": "",
+              "note": "Download from microsoft.com required (Windows on ARM)"
+            }
+          ],
+          "min_disk_gb": 60
+        },
         {
           "version": "24H2",
           "quick_deploy": true,
