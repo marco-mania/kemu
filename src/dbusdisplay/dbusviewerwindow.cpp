@@ -38,6 +38,7 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
     m_scrollArea->setWidget(m_display);
     m_scrollArea->setWidgetResizable(false);
     m_scrollArea->setAlignment(Qt::AlignCenter);
+    m_scrollArea->setFocusPolicy(Qt::NoFocus);
     setCentralWidget(m_scrollArea);
 
     createActions();

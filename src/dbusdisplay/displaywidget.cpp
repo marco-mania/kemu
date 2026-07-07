@@ -686,6 +686,18 @@ void QemuDisplayWidget::keyReleaseEvent(QKeyEvent *event)
     m_keyboard->asyncCall(u"Release"_s, evdevToQnum(evdev));
 }
 
+// Qt intercepts Tab/Shift+Tab in QWidget::event() for focus navigation
+// BEFORE keyPressEvent() is ever called. Inside the VM display, every
+// key belongs to the guest. Returning false makes QWidget::event()
+// fall through to keyPressEvent(), so Tab/Backtab are forwarded to the
+// guest like any other key instead of silently moving the focus to the
+// QScrollArea (which then swallows all subsequent keyboard input until
+// the user clicks back into the display).
+bool QemuDisplayWidget::focusNextPrevChild(bool /*next*/)
+{
+    return false;
+}
+
 // =============================================================================
 // Mouse
 // =============================================================================
