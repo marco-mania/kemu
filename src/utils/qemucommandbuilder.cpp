@@ -354,6 +354,15 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             Q_ASSERT_X(!networkContext.tapDevice.isEmpty(), "QemuCommandBuilder::build", "VirtualNetwork mode requires NetworkContext::tapDevice to be set");
 
             args << u"-netdev"_s << u"tap,id=nic0,ifname=%1,script=no,downscript=no"_s.arg(networkContext.tapDevice);
+        } else if (networkContext.useSlirp) {
+            // QEMU's built-in usermode networking. No external process, no
+            // helper socket - just port forwards on the command line.
+            QString netdev = u"user,id=nic0"_s;
+            for (const auto &rule : config.portForwards()) {
+                const QString proto = rule.protocol == PortForwardRule::Protocol::Tcp ? u"tcp"_s : u"udp"_s;
+                netdev += u",hostfwd=%1:127.0.0.1:%2-:%3"_s.arg(proto).arg(rule.hostPort).arg(rule.guestPort);
+            }
+            args << u"-netdev"_s << netdev;
         } else {
             // Passt: user-mode networking via unix stream socket.
             const QString passtSock =
@@ -511,6 +520,8 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
                 + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link set %1 master br0\n"_s.arg(tapName)
                 + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link set %1 up\n"_s.arg(tapName) + u"sleep 1\n\n"_s;
 
+        } else if (networkContext.useSlirp) {
+            // Nothing to start - QEMU's own -netdev user is already in args.
         } else {
             const QString passtPath = relativePaths ? u"passt"_s : ExternalTools::instance().path(ExternalTools::Passt);
             const QString sockArg = relativePaths ? KEMUConst::PasstSocketFileName : vmDir.absoluteFilePath(KEMUConst::PasstSocketFileName);

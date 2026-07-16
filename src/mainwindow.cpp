@@ -622,6 +622,8 @@ void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const Q
     NetworkContext netCtx;
     if (!tapDevice.isEmpty())
         netCtx.tapDevice = tapDevice;
+    else
+        netCtx.useSlirp = SettingsDialog::useSlirpNetworking();
 
     const QString savestatePath = SaveStateManager::hasSavestate(vmDirPath, vmName) ? SaveStateManager::savestateFilePath(vmDirPath, vmName) : QString{};
     const bool isResume = !savestatePath.isEmpty();
@@ -1915,6 +1917,8 @@ void MainWindow::generateShellScript(const QString &vmPath, const VMConfig &conf
     NetworkContext netCtx;
     if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         netCtx.tapDevice = u"tap0"_s;
+    else
+        netCtx.useSlirp = SettingsDialog::useSlirpNetworking();
 
     const VirtualNetwork net = (m_networkManager && config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         ? m_networkManager->network(config.virtualNetworkName())
@@ -2839,6 +2843,8 @@ void MainWindow::showCommand()
     NetworkContext netCtx;
     if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         netCtx.tapDevice = u"tap-<vm>"_s;
+    else
+        netCtx.useSlirp = SettingsDialog::useSlirpNetworking();
 
     const VirtualNetwork net = (m_networkManager && currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         ? m_networkManager->network(currentConfig.virtualNetworkName())
@@ -2938,7 +2944,7 @@ void MainWindow::startVM(bool headless)
                 tearDownVmRuntime(vmName);
                 return;
             }
-        } else {
+        } else if (!SettingsDialog::useSlirpNetworking()) {
             const auto pf = currentConfig.portForwards();
             chain->then([this, vmName, pf](auto done) {
                 startPasstAsync(vmName, pf, std::move(done));
@@ -4164,7 +4170,7 @@ void MainWindow::startDeployment(const QString &vmName, const bool disable_headl
                 abortDeployment(vmName, false);
                 return;
             }
-        } else {
+        } else if (!SettingsDialog::useSlirpNetworking()) {
             const auto pf = config.portForwards();
             chain->then([this, vmName, pf](auto done) {
                 startPasstAsync(vmName, pf, std::move(done));

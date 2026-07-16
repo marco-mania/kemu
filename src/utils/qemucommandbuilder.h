@@ -22,13 +22,15 @@ using namespace Qt::StringLiterals;
 /**
  * @brief Network context passed to QemuCommandBuilder::build().
  *
- * For NetworkMode::Passt (single-VM user-mode):
- *   - passtSocketPath is set, tapDevice is empty.
- *
  * For NetworkMode::VirtualNetwork (namespace-based):
- *   - tapDevice is set (e.g. "tap-myvm"), passtSocketPath is empty.
+ *   - tapDevice is set (e.g. "tap-myvm"), passtSocketPath is empty, useSlirp is false.
  *   - QEMU must be launched inside the namespace (via nsenter);
  *     that is handled by MainWindow, not by this builder.
+ *
+ * For NetworkMode != VirtualNetwork, exactly one of:
+ *   - useSlirp is true: QEMU's built-in usermode networking is used, no
+ *     helper process required.
+ *   - useSlirp is false (default): passt is used via passtSocketPath.
  */
 struct NetworkContext {
     /// Tap device name inside the namespace (VirtualNetwork mode).
@@ -36,6 +38,9 @@ struct NetworkContext {
 
     /// Unix socket path for passt (Passt mode).
     QString passtSocketPath;
+
+    /// Use QEMU's built-in "-netdev user" backend instead of passt.
+    bool useSlirp = false;
 };
 
 class QemuCommandBuilder

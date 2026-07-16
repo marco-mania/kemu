@@ -72,6 +72,7 @@ public:
     static bool deployHeadless();
     static bool deploySerialLog();
     static SpiceViewerCloseAction spiceViewerCloseAction();
+    static bool useSlirpNetworking();
 
     void setNetworkManager(VirtualNetworkManager *mgr);
 
@@ -120,6 +121,7 @@ private:
     QCheckBox *allArchCheck = nullptr;
     QCheckBox *cloneRegenerateMacCheck = nullptr;
     QCheckBox *importRegenerateMacCheck = nullptr;
+    QCheckBox *slirpNetworkingCheck = nullptr;
 
     VirtualNetworkManager *m_networkManager = nullptr;
     QTableWidget *networkTable = nullptr;

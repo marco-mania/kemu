@@ -76,6 +76,22 @@ void SettingsDialog::setupGeneralPage()
     importRegenerateMacCheck->setChecked(importRegenerateMac());
     layout->addWidget(importRegenerateMacCheck);
 
+    auto *netLine = new QFrame(this);
+    netLine->setFrameShape(QFrame::HLine);
+    netLine->setFrameShadow(QFrame::Sunken);
+    layout->addWidget(netLine);
+
+    slirpNetworkingCheck = new QCheckBox(i18n("Use QEMU's built-in usermode networking (SLIRP) instead of passt"));
+    slirpNetworkingCheck->setToolTip(
+        i18n("passt is used by default and is significantly faster. Enable "
+             "this only if passt is unavailable or causes problems on your "
+             "system."));
+    slirpNetworkingCheck->setChecked(useSlirpNetworking());
+    slirpNetworkingCheck->setEnabled(ExternalTools::instance().isAvailable(ExternalTools::Passt));
+    if (!ExternalTools::instance().isAvailable(ExternalTools::Passt))
+        slirpNetworkingCheck->setToolTip(i18n("passt is not available - SLIRP is used for all VMs."));
+    layout->addWidget(slirpNetworkingCheck);
+
     layout->addStretch();
 
     auto *item = addPage(page, i18n("Virtual Machines"));
@@ -397,6 +413,10 @@ void SettingsDialog::saveSettings()
     general.writeEntry("DeployHeadless", deployHeadlessCheck->isChecked());
     general.writeEntry("DeploySerialLog", deploySerialLogCheck->isChecked());
     general.writeEntry("SpiceViewerCloseAction", spiceCloseActionCombo->currentData().toInt());
+    // Only persist the user's actual choice - not the forced value, so the
+    // real preference survives once passt becomes available again.
+    if (slirpNetworkingCheck->isEnabled())
+        general.writeEntry("PreferSlirpNetworking", slirpNetworkingCheck->isChecked());
     config.sync();
     ExternalTools::instance().refresh();
     accept();
@@ -476,6 +496,15 @@ SettingsDialog::SpiceViewerCloseAction SettingsDialog::spiceViewerCloseAction()
     if (val == ShutdownVm)
         return ShutdownVm;
     return SwitchToHeadless;
+}
+
+bool SettingsDialog::useSlirpNetworking()
+{
+    if (!ExternalTools::instance().isAvailable(ExternalTools::Passt))
+        return true;
+    KConfig config(u"kemurc"_s);
+    const KConfigGroup general = config.group(u"General"_s);
+    return general.readEntry("PreferSlirpNetworking", false);
 }
 
 void SettingsDialog::setNetworkManager(VirtualNetworkManager *mgr)
