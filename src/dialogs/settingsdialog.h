@@ -116,7 +116,6 @@ private:
 
     QCheckBox *perfMonitorCheck = nullptr;
     QComboBox *resolutionCombo = nullptr;
-    QCheckBox *dbusDisplayCheck = nullptr;
 
     QCheckBox *allArchCheck = nullptr;
     QCheckBox *cloneRegenerateMacCheck = nullptr;

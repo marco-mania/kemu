@@ -391,7 +391,6 @@ void SettingsDialog::saveSettings()
     const QSize res = resolutionCombo->currentData().toSize();
     general.writeEntry("DisplayWidth", res.width());
     general.writeEntry("DisplayHeight", res.height());
-    general.writeEntry("EnableDBusDisplay", dbusDisplayCheck->isChecked());
     general.writeEntry("ShowAllArchitectures", allArchCheck->isChecked());
     general.writeEntry("CloneRegenerateMac", cloneRegenerateMacCheck->isChecked());
     general.writeEntry("ImportRegenerateMac", importRegenerateMacCheck->isChecked());
