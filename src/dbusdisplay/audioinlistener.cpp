@@ -158,14 +158,14 @@ bool QemuAudioInListener::connectListener()
 
     GDBusNodeInfo *nodeInfo = g_dbus_node_info_new_for_xml(audioInListenerXml, &error);
     if (!nodeInfo) {
-        qCCritical(KEMU_DBUSDISPLAY) << "AudioOut: XML error:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "AudioIn: XML error:" << error->message;
         g_error_free(error);
-        cleanupConnection(); // <-- vorher fehlend
+        cleanupConnection();
         return false;
     }
 
     m_registrationId = g_dbus_connection_register_object(m_conn,
-                                                         KemuDbusDisplayConst::AudioOutListenerPath.constData(),
+                                                         KemuDbusDisplayConst::AudioInListenerPath.constData(),
                                                          nodeInfo->interfaces[0],
                                                          &audioInVTable,
                                                          this,
@@ -174,9 +174,9 @@ bool QemuAudioInListener::connectListener()
     g_dbus_node_info_unref(nodeInfo);
 
     if (!m_registrationId) {
-        qCCritical(KEMU_DBUSDISPLAY) << "AudioOut: Registration failed:" << error->message;
+        qCCritical(KEMU_DBUSDISPLAY) << "AudioIn: Registration failed:" << error->message;
         g_error_free(error);
-        cleanupConnection(); // <-- vorher fehlend
+        cleanupConnection();
         return false;
     }
 
