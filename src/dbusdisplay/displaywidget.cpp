@@ -105,20 +105,6 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QDBusConnect
     connect(listener, &QemuDisplayListener::dmaBufScanout, this, &QemuDisplayWidget::onDmaBufScanout);
     connect(listener, &QemuDisplayListener::regionUpdated, this, &QemuDisplayWidget::onRegionUpdated);
     connect(listener, &QemuDisplayListener::cursorChanged, this, &QemuDisplayWidget::onCursorChanged);
-
-    // =========================================================================
-    // Optimization 1: Update coalescing via frame timer
-    // =========================================================================
-    // Instead of calling update() immediately on every Update() (-> 10-20x per
-    // frame in fast scenes), we just set a flag. The frame timer checks at
-    // ~60 FPS if a repaint is needed.
-    //
-    // Why no pure VSync? QOpenGLWidget has no direct VSync callback.
-    // 16ms timer approx 60 FPS is a good compromise.
-    m_frameTimer = new QTimer(this);
-    m_frameTimer->setTimerType(Qt::PreciseTimer);
-    m_frameTimer->setInterval(16); // ~60 FPS
-    connect(m_frameTimer, &QTimer::timeout, this, &QemuDisplayWidget::onFrameTick);
 }
 
 QemuDisplayWidget::~QemuDisplayWidget()
@@ -175,18 +161,6 @@ void QemuDisplayWidget::dispatchContext(GMainContext *ctx)
 }
 
 // =============================================================================
-// Frame timer callback
-// =============================================================================
-
-void QemuDisplayWidget::onFrameTick()
-{
-    if (m_needsRepaint) {
-        m_needsRepaint = false;
-        update(); // triggers paintGL()
-    }
-}
-
-// =============================================================================
 // Cursor
 // =============================================================================
 
@@ -231,11 +205,10 @@ void QemuDisplayWidget::onCursorChanged()
 
 void QemuDisplayWidget::scheduleRepaint()
 {
-    m_needsRepaint = true;
-    // Single-shot timer: start only if not already armed. Subsequent calls
-    // within the 16 ms window are coalesced into a single update().
-    if (!m_frameTimer->isActive())
-        m_frameTimer->start();
+    if (!m_pendingRepaint) {
+        m_pendingRepaint = true;
+        update();
+    }
 }
 
 // =============================================================================
@@ -244,6 +217,11 @@ void QemuDisplayWidget::scheduleRepaint()
 
 void QemuDisplayWidget::initializeGL()
 {
+    QSurfaceFormat fmt = format();
+    fmt.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
+    fmt.setSwapInterval(1);
+    setFormat(fmt);
+
     initializeOpenGLFunctions();
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
@@ -421,6 +399,8 @@ void QemuDisplayWidget::uploadSoftwareFrame()
 
 void QemuDisplayWidget::paintGL()
 {
+    m_pendingRepaint = false;
+
     glClear(GL_COLOR_BUFFER_BIT);
 
     if (m_dmaBufPending && m_eglAvailable) {

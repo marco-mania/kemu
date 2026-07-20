@@ -97,7 +97,6 @@ private Q_SLOTS:
     void updateCursor();
     void onCursorChanged();
     void dispatchContext(GMainContext *ctx);
-    void onFrameTick();
     void onMousePropertiesChanged(const QString &iface, const QVariantMap &changed, const QStringList &invalidated);
 
 private:
@@ -128,9 +127,7 @@ private:
     // GLib integration: event-driven instead of polling
     QList<QSocketNotifier *> m_glibNotifiers;
 
-    // Frame timer for update coalescing (~60 FPS)
-    QTimer *m_frameTimer;
-    bool m_needsRepaint = false;
+    bool m_pendingRepaint = false;
 
     // OpenGL
     QOpenGLShaderProgram *m_shader = nullptr;
