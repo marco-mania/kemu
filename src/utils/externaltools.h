@@ -95,6 +95,10 @@ public:
     [[nodiscard]] static QList<Tool> spiceDisplayTools();
     [[nodiscard]] static QList<Tool> dbusDisplayTools();
 
+    /// Tools that cannot be used in the Flatpak sandbox (namespace-based
+    /// networking). Empty in native mode.
+    [[nodiscard]] static QList<Tool> sandboxIrrelevantTools();
+
     /**
      * Probe the version string for a given tool at an arbitrary path.
      * Handles tool-specific quirks (e.g. `ip -V`, stderr output).

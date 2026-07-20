@@ -8,6 +8,8 @@
 
 #include "const.h"
 
+#include "utils/sandboxenvironment.h"
+
 // --- Singleton ---
 
 ExternalTools &ExternalTools::instance()
@@ -176,6 +178,10 @@ QList<ExternalTools::Tool> ExternalTools::coreTools()
 
 QList<ExternalTools::Tool> ExternalTools::virtualNetworkTools()
 {
+    // No pasta/dnsmasq requirement inside the sandbox - the feature is
+    // unavailable there regardless of whether the binaries exist.
+    if (SandboxEnvironment::isFlatpak())
+        return {};
     return {Pasta, Dnsmasq};
 }
 
@@ -187,6 +193,15 @@ QList<ExternalTools::Tool> ExternalTools::spiceDisplayTools()
 QList<ExternalTools::Tool> ExternalTools::dbusDisplayTools()
 {
     return {DbusDaemon};
+}
+
+QList<ExternalTools::Tool> ExternalTools::sandboxIrrelevantTools()
+{
+    if (!SandboxEnvironment::isFlatpak())
+        return {};
+    // passt: replaced by QEMU's built-in SLIRP in the sandbox.
+    // pasta/dnsmasq: virtual networking is unavailable in the sandbox.
+    return {Passt, Pasta, Dnsmasq};
 }
 
 QString ExternalTools::probeVersionString(Tool /*tool*/, const QString &path)
@@ -253,6 +268,8 @@ QList<ExternalTools::FeatureGroup> ExternalTools::missingFeatureGroups() const
 {
     QList<FeatureGroup> result;
     for (const auto &group : featureGroups()) {
+        if (group.tools.isEmpty())
+            continue; // e.g. VirtualNetwork in sandbox mode - nothing to warn about
         for (const Tool t : group.tools) {
             if (!isAvailable(t)) {
                 result.append(group);

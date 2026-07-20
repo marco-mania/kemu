@@ -10,9 +10,11 @@
 #include "dialogs/cloudconfigdialog.h"
 #include "dialogs/iconchooserdialog.h"
 #include "dialogs/settingsdialog.h"
+#include "utils/sandboxenvironment.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
-#include <kmessagebox.h>
+
+#include <KMessageBox>
 
 namespace
 {
@@ -1563,16 +1565,24 @@ void CreateVmDialog::setNetworkManager(VirtualNetworkManager *mgr)
     for (const auto &net : mgr->networks())
         virtualNetworkCombo->addItem(net.name, net.name);
 
-    if (mgr->networks().isEmpty()) {
+    const bool disableVirtualNetwork = mgr->networks().isEmpty() || SandboxEnvironment::isFlatpak();
+    if (disableVirtualNetwork) {
         auto *model = qobject_cast<QStandardItemModel *>(networkModeCombo->model());
         if (model) {
             const int idx = networkModeCombo->findData(static_cast<int>(VMSpecs::NetworkMode::VirtualNetwork));
             if (idx >= 0) {
                 QStandardItem *item = model->item(idx);
                 item->setEnabled(false);
-                item->setToolTip(i18n("Create a virtual network first in Settings"));
+                item->setToolTip(SandboxEnvironment::isFlatpak() ? i18n("Virtual networks are not available in the sandboxed (Flatpak) version")
+                                                                 : i18n("Create a virtual network first in Settings"));
             }
         }
+    }
+
+    if (SandboxEnvironment::isFlatpak() && static_cast<VMSpecs::NetworkMode>(networkModeCombo->currentData().toInt()) == VMSpecs::NetworkMode::VirtualNetwork) {
+        const int passtIdx = networkModeCombo->findData(static_cast<int>(VMSpecs::NetworkMode::Passt));
+        if (passtIdx >= 0)
+            networkModeCombo->setCurrentIndex(passtIdx);
     }
 }
 

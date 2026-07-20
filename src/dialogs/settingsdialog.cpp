@@ -7,6 +7,7 @@
 #include "settingsdialog.h"
 
 #include "const.h"
+#include "utils/sandboxenvironment.h"
 
 SettingsDialog::SettingsDialog(QWidget *parent)
     : KPageDialog(parent)
@@ -87,9 +88,9 @@ void SettingsDialog::setupGeneralPage()
              "this only if passt is unavailable or causes problems on your "
              "system."));
     slirpNetworkingCheck->setChecked(useSlirpNetworking());
-    slirpNetworkingCheck->setEnabled(ExternalTools::instance().isAvailable(ExternalTools::Passt));
-    if (!ExternalTools::instance().isAvailable(ExternalTools::Passt))
-        slirpNetworkingCheck->setToolTip(i18n("passt is not available - SLIRP is used for all VMs."));
+    slirpNetworkingCheck->setEnabled(ExternalTools::instance().isAvailable(ExternalTools::Passt) && !SandboxEnvironment::isFlatpak());
+    if (!ExternalTools::instance().isAvailable(ExternalTools::Passt) || SandboxEnvironment::isFlatpak())
+        slirpNetworkingCheck->setToolTip(i18n("passt is not available or in sandbox environment - SLIRP is used for all VMs."));
     layout->addWidget(slirpNetworkingCheck);
 
     layout->addStretch();
@@ -150,6 +151,7 @@ void SettingsDialog::setupExecutablesPage()
         const QString binary = tools.defaultBinary(tool);
         const QString description = ExternalTools::displayName(tool);
         const QString currentPath = tools.path(tool);
+        const bool sandboxIrrelevant = ExternalTools::sandboxIrrelevantTools().contains(tool);
 
         auto *headerLayout = new QHBoxLayout;
         headerLayout->setContentsMargins(0, 8, 0, 0);
@@ -173,6 +175,12 @@ void SettingsDialog::setupExecutablesPage()
 
         auto *statusLabel = new QLabel;
         layout->addWidget(statusLabel);
+
+        if (sandboxIrrelevant) {
+            pathEdit->setEnabled(false);
+            browseBtn->setEnabled(false);
+            descLabel->setText(u"<font color='%1'> (%2 - %3)</font>"_s.arg(midColor, description, i18n("not used in the sandboxed version")));
+        }
 
         ToolWidgets tw;
         tw.tool = tool;
@@ -377,6 +385,11 @@ void SettingsDialog::setupVirtualNetworksPage()
     auto *item = addPage(page, i18n("Virtual Networks"));
     item->setIcon(QIcon::fromTheme(u"network-workgroup"_s));
     m_pages[VirtualNetworks] = item;
+
+    // Virtual networking relies on user namespaces, which are blocked in
+    // the Flatpak sandbox - hide the page entirely there.
+    if (SandboxEnvironment::isFlatpak())
+        item->setEnabled(false);
 }
 
 void SettingsDialog::browseVmDir()
@@ -500,7 +513,7 @@ SettingsDialog::SpiceViewerCloseAction SettingsDialog::spiceViewerCloseAction()
 
 bool SettingsDialog::useSlirpNetworking()
 {
-    if (!ExternalTools::instance().isAvailable(ExternalTools::Passt))
+    if (!ExternalTools::instance().isAvailable(ExternalTools::Passt) || SandboxEnvironment::isFlatpak())
         return true;
     KConfig config(u"kemurc"_s);
     const KConfigGroup general = config.group(u"General"_s);
@@ -765,6 +778,10 @@ void SettingsDialog::updateToolVersion(int index)
         return;
 
     const auto &tw = m_toolWidgets[index];
+    if (ExternalTools::sandboxIrrelevantTools().contains(tw.tool)) {
+        tw.statusLabel->setText(i18n("Not used in the sandboxed version."));
+        return;
+    }
     if (!tw.pathEdit || !tw.statusLabel)
         return;
 

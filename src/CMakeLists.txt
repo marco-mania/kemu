@@ -72,6 +72,8 @@ target_sources(
           utils/asynchelperprocess.h
           utils/startupchain.cpp
           utils/startupchain.h
+          utils/sandboxenvironment.cpp
+          utils/sandboxenvironment.h
           utils/3rdparty/crypt_sha512.c
           models/virtualenvironmentmodel.cpp
           models/virtualenvironmentmodel.h

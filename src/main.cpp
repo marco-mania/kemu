@@ -12,12 +12,15 @@
 #include <KLocalizedString>
 
 #include <QApplication>
+#include <QCommandLineParser>
+
+#include "utils/sandboxenvironment.h"
 
 using namespace Qt::StringLiterals;
 
 int main(int argc, char *argv[])
 {
-    const QApplication app(argc, argv);
+    QApplication app(argc, argv);
 
     app.setDesktopFileName(u"org.kde.kemu"_s);
 
@@ -52,6 +55,24 @@ int main(int argc, char *argv[])
     aboutData.setProgramLogo(appIcon.pixmap(128, 128));
 
     KAboutData::setApplicationData(aboutData);
+
+    // --- Command line ---
+    QCommandLineParser parser;
+    aboutData.setupCommandLine(&parser);
+
+    QCommandLineOption sandboxModeOption(u"sandbox-mode"_s, i18n("Override sandbox detection: auto, native, or flatpak."), u"mode"_s, u"auto"_s);
+    parser.addOption(sandboxModeOption);
+
+    parser.process(app);
+    aboutData.processCommandLine(&parser);
+
+    // Resolve sandbox mode BEFORE constructing MainWindow, since settings
+    // read during startup may query SandboxEnvironment::isFlatpak().
+    bool modeOk = false;
+    const auto mode = SandboxEnvironment::parseMode(parser.value(sandboxModeOption), &modeOk);
+    if (!modeOk)
+        qWarning("Unknown --sandbox-mode value '%s', falling back to auto.", qUtf8Printable(parser.value(sandboxModeOption)));
+    SandboxEnvironment::setOverride(mode);
 
     QGuiApplication::setWindowIcon(appIcon);
 
