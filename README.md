@@ -271,6 +271,27 @@ nsenter -t <PID> -U --preserve-credentials -n -- /bin/bash
 
 From this shell you have full access to all VMs on the virtual network.
 
+## Sandbox Mode
+
+Linux user namespaces (the mechanism behind Virtual Network mode) may be
+blocked by sandbox environments.
+When running as a Flatpak KEMU detects the corresponding sandbox
+automatically (via `/.flatpak-info`) and adjusts itself accordingly.
+
+- **Networking:** Virtual Network mode is unavailable. User Mode still
+  works, but via QEMU's built-in usermode networking (SLIRP) instead of
+  `passt`. `passt` itself creates its own mount namespace on startup
+  regardless of mode.
+- **Settings:** The Virtual Networks page and the `passt`/`pasta`/`dnsmasq`
+  rows under Executables are greyed out rather than removed, so any
+  existing configuration is preserved if you switch to a native install
+  later.
+- Detection can be overridden for testing with CLIP option
+  `--sandbox-mode <auto|native|flatpak>` (default: `auto`).
+
+This is a deliberate scope decision, not a workaround for a bug, because
+it needs namespace capabilities most sandbox envirnoments deny by design.
+
 ## Shared Folders
 
 KEMU enables host-guest file exchange via the following protocols:
