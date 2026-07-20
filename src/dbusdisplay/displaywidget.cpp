@@ -16,6 +16,10 @@
 #define GL_BGRA_EXT 0x80E1
 #endif
 
+#ifndef DRM_FORMAT_MOD_INVALID
+#define DRM_FORMAT_MOD_INVALID 0x00ffffffffffffffULL
+#endif
+
 #include "dbusdisplay/dbusdisplayconst.h"
 #include "kemu_dbusdisplay_debug.h"
 
@@ -331,7 +335,7 @@ bool QemuDisplayWidget::importDmaBuf()
     attribs[i++] = EGL_DMA_BUF_PLANE0_PITCH_EXT;
     attribs[i++] = buf.stride;
 
-    if (buf.modifier != 0 && buf.modifier != ((1ULL << 56) - 1)) {
+    if (buf.modifier != DRM_FORMAT_MOD_INVALID) {
         attribs[i++] = EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT;
         attribs[i++] = static_cast<EGLint>(buf.modifier & 0xFFFFFFFF);
         attribs[i++] = EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT;
