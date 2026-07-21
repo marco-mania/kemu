@@ -3305,7 +3305,7 @@ void MainWindow::shutdownVMByName(const QString &vmName)
     if (!result.success) {
         m_userInitiatedShutdowns.remove(vmName);
         m_resumingFromSavestate.remove(vmName);
-        KMessageBox::error(parentW, i18n("Shutdown Failed"), result.errorMessage);
+        KMessageBox::error(parentW, result.errorMessage, i18n("Shutdown Failed"));
         return;
     }
 
@@ -3347,7 +3347,7 @@ void MainWindow::resetVMByName(const QString &vmName)
     const QMPResult result = client->sendCommandSync(u"system_reset"_s);
 
     if (!result.success) {
-        KMessageBox::error(safeParentW, i18n("Reset Failed"), result.errorMessage);
+        KMessageBox::error(safeParentW, result.errorMessage, i18n("Reset Failed"));
         return;
     }
 
