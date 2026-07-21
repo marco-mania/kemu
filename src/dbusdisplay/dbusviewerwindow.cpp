@@ -846,6 +846,8 @@ void DbusViewerWindow::updateWindowAndDisplaySize()
 
 void DbusViewerWindow::fitContentToWindow()
 {
+    if (m_scanoutSize.isEmpty())
+        return; // no scanout yet (or display disabled) - nothing to fit
     QSize availableSize = m_scrollArea->size() * devicePixelRatio();
     qreal scale = qMin(qreal(availableSize.width()) / qreal(m_scanoutSize.width()), qreal(availableSize.height()) / m_scanoutSize.height());
     qCDebug(KEMU_DBUSDISPLAY) << "DbusViewerWindow::fitContentToWindow" << availableSize << m_scanoutSize << scale;
