@@ -615,7 +615,7 @@ void QemuDisplayListener::handleCursorDefine(GVariant *parameters, GDBusMethodIn
     }
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
-    Q_EMIT cursorChanged();
+    Q_EMIT cursorImageChanged();
 }
 
 // =============================================================================
@@ -633,7 +633,7 @@ void QemuDisplayListener::handleMouseSet(GVariant *parameters, GDBusMethodInvoca
     }
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
-    Q_EMIT cursorChanged();
+    Q_EMIT cursorMoved();
 }
 
 // =============================================================================

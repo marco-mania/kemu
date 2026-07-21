@@ -95,7 +95,8 @@ private Q_SLOTS:
     void onDmaBufScanout(int width, int height);
     void onRegionUpdated(const QRect &rect);
     void updateCursor();
-    void onCursorChanged();
+    void onCursorImageChanged();
+    void onCursorMoved();
     void dispatchContext(GMainContext *ctx);
     void onMousePropertiesChanged(const QString &iface, const QVariantMap &changed, const QStringList &invalidated);
 
@@ -162,6 +163,15 @@ private:
     bool m_pointerModeProbed = false; // IsAbsolute re-checked after first scanout
 
     bool m_dimmed = false;
+
+    // Guest cursor cache - rebuilding the scaled QCursor per MouseSet is
+    // too expensive for guests that fire it on every pointer move.
+    QCursor m_cachedCursor;
+    qint64 m_cachedCursorImageKey = -1;
+    int m_cachedHotX = -1;
+    int m_cachedHotY = -1;
+    float m_cachedCursorScale = -1.0f;
+    bool m_lastCursorVisible = false;
 
     void uploadDirtyRects(const QImage &source);
     void uploadFullFrameConverted(const QImage &source);

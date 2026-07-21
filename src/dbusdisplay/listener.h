@@ -108,7 +108,8 @@ Q_SIGNALS:
     void scanoutChanged(int width, int height);
     void dmaBufScanout(int width, int height);
     void regionUpdated(const QRect &rect);
-    void cursorChanged();
+    void cursorImageChanged(); // CursorDefine: new image / hotspot
+    void cursorMoved(); // MouseSet: position and/or visibility
     void connectionLost();
 
 private:

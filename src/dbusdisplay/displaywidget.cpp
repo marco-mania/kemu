@@ -108,7 +108,8 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QDBusConnect
     connect(listener, &QemuDisplayListener::scanoutChanged, this, &QemuDisplayWidget::onScanoutChanged);
     connect(listener, &QemuDisplayListener::dmaBufScanout, this, &QemuDisplayWidget::onDmaBufScanout);
     connect(listener, &QemuDisplayListener::regionUpdated, this, &QemuDisplayWidget::onRegionUpdated);
-    connect(listener, &QemuDisplayListener::cursorChanged, this, &QemuDisplayWidget::onCursorChanged);
+    connect(listener, &QemuDisplayListener::cursorImageChanged, this, &QemuDisplayWidget::onCursorImageChanged);
+    connect(listener, &QemuDisplayListener::cursorMoved, this, &QemuDisplayWidget::onCursorMoved);
 }
 
 QemuDisplayWidget::~QemuDisplayWidget()
@@ -187,24 +188,44 @@ void QemuDisplayWidget::updateCursor()
         return;
     }
     const float submit_scale = qCeil(devicePixelRatio());
-    // Effective scaling factor from cursor pixels to Qt logical points.
-    // Must be applied identically to both the pixmap AND the hotspot.
     const float effectiveScale = m_scale * submit_scale / devicePixelRatio();
 
-    QPixmap pm = QPixmap::fromImage(ci.image);
-    pm = pm.scaled(pm.size() * effectiveScale, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    pm.setDevicePixelRatio(submit_scale);
+    // Rebuild the scaled cursor only when image, hotspot or scale changed.
+    if (ci.image.cacheKey() != m_cachedCursorImageKey || ci.hot_x != m_cachedHotX || ci.hot_y != m_cachedHotY
+        || !qFuzzyCompare(effectiveScale, m_cachedCursorScale)) {
+        QPixmap pm = QPixmap::fromImage(ci.image);
+        pm = pm.scaled(pm.size() * effectiveScale, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        pm.setDevicePixelRatio(submit_scale);
 
-    // Hotspot in the same unit as the scaled pixmap (Pixmap-DPR = submit_scale)
-    const int hotX = qRound(ci.hot_x * effectiveScale / submit_scale);
-    const int hotY = qRound(ci.hot_y * effectiveScale / submit_scale);
-    setCursor(QCursor(pm, hotX, hotY));
+        const int hotX = qRound(ci.hot_x * effectiveScale / submit_scale);
+        const int hotY = qRound(ci.hot_y * effectiveScale / submit_scale);
+
+        m_cachedCursor = QCursor(pm, hotX, hotY);
+        m_cachedCursorImageKey = ci.image.cacheKey();
+        m_cachedHotX = ci.hot_x;
+        m_cachedHotY = ci.hot_y;
+        m_cachedCursorScale = effectiveScale;
+    }
+    setCursor(m_cachedCursor);
 }
 
-void QemuDisplayWidget::onCursorChanged()
+void QemuDisplayWidget::onCursorImageChanged()
 {
+    m_cachedCursorImageKey = -1; // invalidate cache
     updateCursor();
-    scheduleRepaint();
+    if (m_relativeGrabActive)
+        scheduleRepaint(); // overlay draws the (new) image
+}
+
+void QemuDisplayWidget::onCursorMoved()
+{
+    const bool visible = m_listener->cursorInfo().visible;
+    if (visible != m_lastCursorVisible) {
+        m_lastCursorVisible = visible;
+        updateCursor(); // host cursor must show/hide
+    }
+    if (m_relativeGrabActive)
+        scheduleRepaint(); // overlay follows the guest position
 }
 
 void QemuDisplayWidget::scheduleRepaint()
