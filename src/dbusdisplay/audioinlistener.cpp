@@ -61,6 +61,35 @@ static const gchar audioInListenerXml[] =
 
 static const GDBusInterfaceVTable audioInVTable = {QemuAudioInListener::onMethodCall, nullptr, nullptr, {}};
 
+int QemuAudioInListener::AudioInStream::read(char *dst, int maxLen)
+{
+    QMutexLocker lock(&ringMutex);
+    int toRead = qMin(maxLen, bufferedBytes);
+    for (int i = 0; i < toRead; ++i) {
+        dst[i] = ringBuffer[readPos];
+        readPos = (readPos + 1) % kRingCapacity;
+        --bufferedBytes;
+    }
+    return toRead;
+}
+
+void QemuAudioInListener::AudioInStream::write(const char *src, int len)
+{
+    QMutexLocker lock(&ringMutex);
+    for (int i = 0; i < len; ++i) {
+        if (bufferedBytes >= kRingCapacity) {
+            // Drop oldest sample to make room
+            readPos = (readPos + 1) % kRingCapacity;
+            --bufferedBytes;
+        }
+        ringBuffer[writePos] = src[i];
+        writePos = (writePos + 1) % kRingCapacity;
+        ++bufferedBytes;
+    }
+    if (len > 0)
+        ringNotEmpty.wakeOne();
+}
+
 // =============================================================================
 // Constructor / Destructor
 // =============================================================================
@@ -74,9 +103,8 @@ QemuAudioInListener::~QemuAudioInListener()
 {
     m_closed = true;
 
-    cleanupConnection();
-
     for (auto *stream : m_streams) {
+        stopCaptureThread(stream);
         if (stream->source) {
             stream->source->stop();
             delete stream->source;
@@ -84,6 +112,8 @@ QemuAudioInListener::~QemuAudioInListener()
         delete stream;
     }
     m_streams.clear();
+
+    cleanupConnection();
 
     if (m_ourFd >= 0)
         close(m_ourFd);
@@ -300,6 +330,7 @@ void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation
     }
 
     stream->source = new QAudioSource(inputDevice, format);
+    stream->ringBuffer.resize(AudioInStream::kRingCapacity);
 
     m_streams.insert(id, stream);
 
@@ -314,9 +345,8 @@ void QemuAudioInListener::handleFini(GVariant *parameters, GDBusMethodInvocation
     guint64 id;
     g_variant_get(parameters, "(t)", &id);
 
-    qCDebug(KEMU_DBUSDISPLAY) << "AudioIn Fini: id=" << id;
-
     if (auto *stream = m_streams.take(id)) {
+        stopCaptureThread(stream);
         if (stream->source) {
             stream->source->stop();
             delete stream->source;
@@ -336,25 +366,20 @@ void QemuAudioInListener::handleSetEnabled(GVariant *parameters, GDBusMethodInvo
     gboolean enabled;
     g_variant_get(parameters, "(tb)", &id, &enabled);
 
-    qCDebug(KEMU_DBUSDISPLAY) << "AudioIn SetEnabled: id=" << id << "enabled=" << enabled;
-
     auto *stream = m_streams.value(id, nullptr);
     if (stream && stream->source) {
+        bool wasEnabled = stream->enabled;
         stream->enabled = enabled;
-        if (enabled) {
-            if (!stream->ioDevice) {
-                // Start recording → QIODevice for reading microphone data
-                stream->ioDevice = stream->source->start();
-                if (!stream->ioDevice) {
-                    qCWarning(KEMU_DBUSDISPLAY) << "AudioIn: start() failed:" << stream->source->error();
-                }
-            } else if (stream->source->state() == QAudio::SuspendedState) {
-                stream->source->resume();
+
+        if (enabled && !wasEnabled) {
+            stream->ioDevice = stream->source->start();
+            if (stream->ioDevice) {
+                startCaptureThread(stream);
             }
-        } else {
-            if (stream->source->state() == QAudio::ActiveState) {
-                stream->source->suspend();
-            }
+        } else if (!enabled && wasEnabled) {
+            stopCaptureThread(stream);
+            stream->source->stop();
+            stream->ioDevice = nullptr;
         }
     }
 
@@ -394,41 +419,25 @@ void QemuAudioInListener::handleSetVolume(GVariant *parameters, GDBusMethodInvoc
 // =============================================================================
 // Read – QEMU requests microphone data
 // =============================================================================
-// QEMU calls Read(id, size) and expects a byte array in return.
-// We read available data from the QAudioSource QIODevice.
-// If fewer than 'size' bytes are available, we return what is there
-// (+ zero padding so that QEMU does not report an underrun).
-
 void QemuAudioInListener::handleRead(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint64 id, size;
     g_variant_get(parameters, "(tt)", &id, &size);
 
-    const auto *stream = m_streams.value(id, nullptr);
-
+    auto *stream = m_streams.value(id, nullptr);
     QByteArray data;
+    data.resize(static_cast<int>(size));
 
-    if (stream && stream->ioDevice && stream->enabled && !m_muted) {
-        // First, read buffered data from the microphone
-        const qint64 available = stream->ioDevice->bytesAvailable();
-        if (available > 0) {
-            const qint64 toRead = qMin(static_cast<qint64>(size), available);
-            data = stream->ioDevice->read(toRead);
-        }
+    int got = 0;
+    if (stream && stream->enabled && !m_muted) {
+        got = stream->read(data.data(), static_cast<int>(size));
     }
 
-    // If we have less data than requested: fill with silence
-    if (static_cast<quint64>(data.size()) < size) {
-        const qint64 missing = static_cast<qint64>(size) - data.size();
-        if (missing > 0) {
-            // Qt6's QByteArray uses qsizetype (64-bit on 64-bit hosts), no int cast.
-            data.append(QByteArray(missing, '\0'));
-        }
+    if (got < static_cast<int>(size)) {
+        memset(data.data() + got, 0, static_cast<size_t>(size) - got);
     }
 
-    // g_variant_new_tuple consumes 'result' (floating reference rules)
     GVariant *result = g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, data.constData(), data.size(), sizeof(guint8));
-
     g_dbus_method_invocation_return_value(invocation, g_variant_new_tuple(&result, 1));
 }
 
@@ -446,5 +455,40 @@ void QemuAudioInListener::cleanupConnection()
     if (m_context) {
         g_main_context_unref(m_context);
         m_context = nullptr;
+    }
+}
+
+void QemuAudioInListener::startCaptureThread(AudioInStream *stream)
+{
+    QThread *thread = QThread::create([stream]() {
+        captureThreadFunc(stream);
+    });
+    m_captureThreads.insert(reinterpret_cast<quint64>(stream), thread);
+    thread->start();
+}
+
+void QemuAudioInListener::stopCaptureThread(AudioInStream *stream)
+{
+    QThread *thread = m_captureThreads.take(reinterpret_cast<quint64>(stream));
+    if (thread) {
+        thread->requestInterruption();
+        thread->wait(1000);
+        delete thread;
+    }
+}
+
+void QemuAudioInListener::captureThreadFunc(AudioInStream *stream)
+{
+    while (!QThread::currentThread()->isInterruptionRequested()) {
+        if (!stream->ioDevice || !stream->enabled)
+            break;
+
+        const qint64 avail = stream->ioDevice->bytesAvailable();
+        if (avail > 0) {
+            QByteArray chunk = stream->ioDevice->read(avail);
+            stream->write(chunk.constData(), chunk.size());
+        } else {
+            QThread::msleep(5);
+        }
     }
 }

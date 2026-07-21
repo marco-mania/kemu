@@ -15,8 +15,12 @@
 #include <QAudioSource>
 #include <QHash>
 #include <QIODevice>
+#include <QMutex>
 #include <QObject>
+#include <QThread>
 #include <QTimer>
+#include <QWaitCondition>
+#include <atomic>
 
 using namespace Qt::StringLiterals;
 
@@ -85,8 +89,26 @@ private:
         QAudioFormat format;
         QAudioSource *source = nullptr;
         QIODevice *ioDevice = nullptr;
-        bool enabled = false;
+        std::atomic<bool> enabled{false};
+
+        // Ringbuffer for continuous capture
+        QByteArray ringBuffer;
+        int writePos = 0;
+        int readPos = 0;
+        int bufferedBytes = 0;
+        QMutex ringMutex;
+        QWaitCondition ringNotEmpty;
+        static constexpr int kRingCapacity = 65536; // ~730ms @ 48kHz stereo 16bit
+
+        int read(char *dst, int maxLen);
+        void write(const char *src, int len);
     };
+
+    void startCaptureThread(AudioInStream *stream);
+    void stopCaptureThread(AudioInStream *stream);
+    static void captureThreadFunc(AudioInStream *stream);
+
+    QHash<quint64, QThread *> m_captureThreads;
 
     GDBusConnection *m_conn = nullptr;
     GMainContext *m_context = nullptr;
