@@ -503,6 +503,9 @@ void QemuDisplayListener::handleScanoutMap(GVariant *parameters, GDBusMethodInvo
     const uchar *pixels = static_cast<const uchar *>(mapped) + offset;
     m_image = QImage(pixels, width, height, stride, qtFormat);
 
+    // Full-frame change - force a complete texture upload.
+    m_dirtyRegion = QRegion(0, 0, int(width), int(height));
+
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT scanoutChanged(width, height);
 }
@@ -568,6 +571,10 @@ void QemuDisplayListener::handleUpdateMap(GVariant *parameters, GDBusMethodInvoc
     // see the new bytes via m_image's non-owning view.
     gint32 x, y, w, h;
     g_variant_get(parameters, "(iiii)", &x, &y, &w, &h);
+
+    // The pixels are already visible through the shared mapping, but the
+    // GPU upload still needs to know which rect changed.
+    m_dirtyRegion += QRect(x, y, w, h);
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT regionUpdated(QRect(x, y, w, h));
