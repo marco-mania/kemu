@@ -84,6 +84,13 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QDBusConnect
     : QOpenGLWidget(parent)
     , m_listener(listener)
 {
+    // Must happen before the widget is first shown - the context inherits
+    // the format at creation time; setting it in initializeGL() is a no-op.
+    QSurfaceFormat fmt = QSurfaceFormat::defaultFormat();
+    fmt.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
+    fmt.setSwapInterval(1);
+    setFormat(fmt);
+
     setMinimumSize(320, 240);
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
@@ -242,11 +249,6 @@ void QemuDisplayWidget::scheduleRepaint()
 
 void QemuDisplayWidget::initializeGL()
 {
-    QSurfaceFormat fmt = format();
-    fmt.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
-    fmt.setSwapInterval(1);
-    setFormat(fmt);
-
     initializeOpenGLFunctions();
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
