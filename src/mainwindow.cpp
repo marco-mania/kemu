@@ -2043,7 +2043,7 @@ QString MainWindow::ensureNetworkRunning(const QString &networkName, const QStri
 
     const VirtualNetwork net = m_networkManager->network(networkName);
     if (!net.isValid()) {
-        KMessageBox::error(this, i18n("Virtual network '%1' not found or invalid: %2", networkName, networkName, m_networkManager->lastError()));
+        KMessageBox::error(this, i18n("Virtual network '%1' not found or invalid: %2", networkName, m_networkManager->lastError()));
         return {};
     }
 
@@ -2054,7 +2054,7 @@ QString MainWindow::ensureNetworkRunning(const QString &networkName, const QStri
 
     const QString tapDevice = m_networkManager->attachVm(networkName, vmName);
     if (tapDevice.isEmpty()) {
-        KMessageBox::error(this, i18n("Failed to create network interface for VM '%1': %2", vmName, networkName, m_networkManager->lastError()));
+        KMessageBox::error(this, i18n("Failed to create network interface for VM '%1': %2", vmName, m_networkManager->lastError()));
         return {};
     }
 
