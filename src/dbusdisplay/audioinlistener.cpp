@@ -63,31 +63,37 @@ static const GDBusInterfaceVTable audioInVTable = {QemuAudioInListener::onMethod
 
 int QemuAudioInListener::AudioInStream::read(char *dst, int maxLen)
 {
-    QMutexLocker lock(&ringMutex);
-    int toRead = qMin(maxLen, bufferedBytes);
-    for (int i = 0; i < toRead; ++i) {
-        dst[i] = ringBuffer[readPos];
-        readPos = (readPos + 1) % kRingCapacity;
-        --bufferedBytes;
+    const int toRead = qMin(maxLen, bufferedBytes);
+    int done = 0;
+    while (done < toRead) {
+        const int chunk = qMin(toRead - done, kRingCapacity - readPos);
+        memcpy(dst + done, ringBuffer.constData() + readPos, chunk);
+        readPos = (readPos + chunk) % kRingCapacity;
+        done += chunk;
     }
+    bufferedBytes -= toRead;
     return toRead;
 }
 
 void QemuAudioInListener::AudioInStream::write(const char *src, int len)
 {
-    QMutexLocker lock(&ringMutex);
-    for (int i = 0; i < len; ++i) {
-        if (bufferedBytes >= kRingCapacity) {
-            // Drop oldest sample to make room
-            readPos = (readPos + 1) % kRingCapacity;
-            --bufferedBytes;
-        }
-        ringBuffer[writePos] = src[i];
-        writePos = (writePos + 1) % kRingCapacity;
-        ++bufferedBytes;
+    if (len >= kRingCapacity) { // keep only the newest samples
+        src += len - kRingCapacity;
+        len = kRingCapacity;
     }
-    if (len > 0)
-        ringNotEmpty.wakeOne();
+    const int overflow = bufferedBytes + len - kRingCapacity;
+    if (overflow > 0) { // drop oldest to make room
+        readPos = (readPos + overflow) % kRingCapacity;
+        bufferedBytes -= overflow;
+    }
+    int done = 0;
+    while (done < len) {
+        const int chunk = qMin(len - done, kRingCapacity - writePos);
+        memcpy(ringBuffer.data() + writePos, src + done, chunk);
+        writePos = (writePos + chunk) % kRingCapacity;
+        done += chunk;
+    }
+    bufferedBytes += len;
 }
 
 // =============================================================================
@@ -104,7 +110,6 @@ QemuAudioInListener::~QemuAudioInListener()
     m_closed = true;
 
     for (auto *stream : m_streams) {
-        stopCaptureThread(stream);
         if (stream->source) {
             stream->source->stop();
             delete stream->source;
@@ -346,7 +351,6 @@ void QemuAudioInListener::handleFini(GVariant *parameters, GDBusMethodInvocation
     g_variant_get(parameters, "(t)", &id);
 
     if (auto *stream = m_streams.take(id)) {
-        stopCaptureThread(stream);
         if (stream->source) {
             stream->source->stop();
             delete stream->source;
@@ -374,11 +378,15 @@ void QemuAudioInListener::handleSetEnabled(GVariant *parameters, GDBusMethodInvo
         if (enabled && !wasEnabled) {
             stream->ioDevice = stream->source->start();
             if (stream->ioDevice) {
-                startCaptureThread(stream);
+                // All D-Bus dispatch runs on the GUI thread (socket-notifier
+                // driven), so plain readyRead delivery is safe here.
+                connect(stream->ioDevice, &QIODevice::readyRead, this, [stream]() {
+                    const QByteArray chunk = stream->ioDevice->readAll();
+                    stream->write(chunk.constData(), chunk.size());
+                });
             }
         } else if (!enabled && wasEnabled) {
-            stopCaptureThread(stream);
-            stream->source->stop();
+            stream->source->stop(); // also invalidates ioDevice + connection
             stream->ioDevice = nullptr;
         }
     }
@@ -455,40 +463,5 @@ void QemuAudioInListener::cleanupConnection()
     if (m_context) {
         g_main_context_unref(m_context);
         m_context = nullptr;
-    }
-}
-
-void QemuAudioInListener::startCaptureThread(AudioInStream *stream)
-{
-    QThread *thread = QThread::create([stream]() {
-        captureThreadFunc(stream);
-    });
-    m_captureThreads.insert(reinterpret_cast<quint64>(stream), thread);
-    thread->start();
-}
-
-void QemuAudioInListener::stopCaptureThread(AudioInStream *stream)
-{
-    QThread *thread = m_captureThreads.take(reinterpret_cast<quint64>(stream));
-    if (thread) {
-        thread->requestInterruption();
-        thread->wait(1000);
-        delete thread;
-    }
-}
-
-void QemuAudioInListener::captureThreadFunc(AudioInStream *stream)
-{
-    while (!QThread::currentThread()->isInterruptionRequested()) {
-        if (!stream->ioDevice || !stream->enabled)
-            break;
-
-        const qint64 avail = stream->ioDevice->bytesAvailable();
-        if (avail > 0) {
-            QByteArray chunk = stream->ioDevice->read(avail);
-            stream->write(chunk.constData(), chunk.size());
-        } else {
-            QThread::msleep(5);
-        }
     }
 }
