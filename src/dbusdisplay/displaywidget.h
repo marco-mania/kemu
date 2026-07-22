@@ -144,6 +144,8 @@ private:
 
     // GL_BGRA_EXT: Avoids format conversion in the software path
     bool m_hasBGRA = false;
+    // GL_UNPACK_ROW_LENGTH: core in desktop GL and GLES3, extension on GLES2
+    bool m_hasUnpackRowLength = false;
 
     // EGL DMA-BUF
     EGLDisplay m_eglDisplay = EGL_NO_DISPLAY;

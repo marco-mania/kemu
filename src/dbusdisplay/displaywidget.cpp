@@ -288,6 +288,14 @@ void QemuDisplayWidget::initializeGL()
         }
     }
 
+    {
+        const QOpenGLContext *ctx = QOpenGLContext::currentContext();
+        if (ctx && (!ctx->isOpenGLES() || ctx->format().majorVersion() >= 3))
+            m_hasUnpackRowLength = true;
+        else
+            m_hasUnpackRowLength = extensions && strstr(extensions, "GL_EXT_unpack_subimage");
+    }
+
     // qCDebug(KEMU_DBUSDISPLAY) << "GL_BGRA:" << (m_hasBGRA ? "available (no format convert)"
     //                                       : "not available (fallback: RGBA
     //                                       convert)");
@@ -948,24 +956,27 @@ void QemuDisplayWidget::uploadDirtyRects(const QImage &source)
         return; // GPU state still matches; just re-render the quad
     }
 
-    // GL_UNPACK_ROW_LENGTH tells GL how to walk the source buffer.
-    // bytesPerLine() includes Qt's row padding (multiple of 4 bytes).
-    glPixelStorei(GL_UNPACK_ROW_LENGTH, source.bytesPerLine() / srcBpp);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    if (m_hasUnpackRowLength) {
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, source.bytesPerLine() / srcBpp);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    }
 
     const uchar *base = source.constBits();
 
-    for (const QRect &rect : dirty) {
-        // Compute pointer to top-left pixel of this rect within source.
+    for (const QRect &r : dirty) {
+        // Without ROW_LENGTH, widen the rect to the full scanline so the
+        // upload reads contiguous memory (32bpp rows carry no padding).
+        const QRect rect = m_hasUnpackRowLength ? r : QRect(0, r.y(), source.width(), r.height());
+
         const uchar *ptr = base + static_cast<size_t>(rect.y()) * source.bytesPerLine() + static_cast<size_t>(rect.x()) * srcBpp;
 
         glTexSubImage2D(GL_TEXTURE_2D, 0, rect.x(), rect.y(), rect.width(), rect.height(), GL_BGRA_EXT, GL_UNSIGNED_BYTE, ptr);
     }
 
-    // Reset GL state to defaults so we don't leak settings into
-    // other GL clients sharing this context.
-    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    if (m_hasUnpackRowLength) {
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    }
 }
 
 // Fallback path: no BGRA extension. convertToFormat() walks the whole
