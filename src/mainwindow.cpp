@@ -2850,7 +2850,7 @@ void MainWindow::showCommand()
         ? m_networkManager->network(currentConfig.virtualNetworkName())
         : VirtualNetwork{};
 
-    const QString sockPath = getVmBaseDir().absolutePath() + u'/' + KEMUConst::QemuMonitorSocketFileName;
+    const QString sockPath = monitorSocketPath(currentConfig.name());
     const QString cmd = QemuCommandBuilder::buildShellScript(currentConfig, getVmDir(currentConfig.name()), sockPath, netCtx, net);
 
     QDialog d(this);
