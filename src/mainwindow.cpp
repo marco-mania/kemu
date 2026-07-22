@@ -4372,14 +4372,31 @@ void MainWindow::scheduleQemuStartupProbe(KProcess *process, const QString &vmNa
         if (safeProcess->state() == KProcess::Running)
             return; // Past the danger zone; handleQemuExit() owns any future exit.
 
-        // QEMU died inside the probe window. Mark so handleQemuExit doesn't
-        // raise a second, duplicate dialog about the same failure.
+        // If finished() has already been delivered, handleQemuExit() has run
+        // and the entry no longer points at this process - nothing to do.
+        const VmEntry *e = veModel->entryByName(vmName);
+        if (!e || e->qemuProcess != safeProcess)
+            return;
+
         m_startupFailureShown.insert(vmName);
 
+        // Capture diagnostics BEFORE teardown clears the stderr tail.
         const int exitCode = safeProcess->exitCode();
         const auto exitStatus = safeProcess->exitStatus();
         const QByteArray tail = m_qemuStderrTails.value(vmName);
+
+        // FailedToStart never emits finished(), so handleQemuExit() will
+        // never run for this process. Clean up here instead.
+        tearDownVmRuntime(vmName);
+        veModel->setVmState(vmName, VmEntry::State::Stopped);
+        safeProcess->deleteLater();
+
         showQemuFailureDialog(vmName, /*startupFailed=*/true, exitCode, exitStatus, tail);
+
+        if (selectedVmName() == vmName) {
+            updateDetails();
+            updateActionStates();
+        }
     });
 }
 
