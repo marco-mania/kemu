@@ -3103,12 +3103,23 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
             return;
         if (!data.value(u"tray-open"_s).toBool())
             return;
-        if (currentConfig.name() != vmName || currentConfig.isoPath().isEmpty())
+
+        // Operate on the affected VM's own config, not on the selection.
+        VmEntry *e = veModel->entryByName(vmName);
+        if (!e || e->config.isoPath().isEmpty())
             return;
 
-        currentConfig.setISOPath({});
-        saveVmConfig(getVmDir(vmName).absolutePath(), currentConfig);
-        updateDetails();
+        VMConfig cfg = e->config;
+        cfg.setISOPath({});
+        saveVmConfig(getVmDir(vmName).absolutePath(), cfg);
+        veModel->updateConfig(vmName, cfg);
+        pushMediaStateToViewer(vmName);
+
+        if (currentConfig.name() == vmName) {
+            currentConfig = cfg;
+            updateDetails();
+        }
+
         statusBar()->showMessage(i18n("VM '%1' ejected the ISO.", vmName));
         return;
     }
