@@ -81,11 +81,7 @@ void ExternalTools::detectPath(ToolInfo &info)
     // Step 2b: Special case: try alternative binary names for ISO tools.
     //          Must return-on-success, otherwise step 3 overwrites our result.
     if (info.configKey == u"GenIsoImagePath"_s) {
-        // xorriso only accepts genisoimage-style options under its
-        // "xorrisofs" mask.
-        found = QStandardPaths::findExecutable(u"xorrisofs"_s);
-        if (found.isEmpty())
-            found = QStandardPaths::findExecutable(u"mkisofs"_s);
+        found = QStandardPaths::findExecutable(u"mkisofs"_s);
         if (found.isEmpty())
             found = QStandardPaths::findExecutable(u"xorriso"_s);
         if (!found.isEmpty()) {
