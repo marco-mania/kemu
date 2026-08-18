@@ -1341,6 +1341,7 @@ void MainWindow::setupActions()
     actionNetShell->setText(i18n("Open Network Shell..."));
     actionNetShell->setToolTip(i18n("Open a terminal (konsole) inside the virtual network namespace"));
     connect(actionNetShell, &QAction::triggered, this, &MainWindow::openNetworkShell);
+    actionNetShell->setVisible(!SandboxEnvironment::isFlatpak());
 
     auto *actionReconnect = ac->addAction(u"vm_reconnect"_s);
     actionReconnect->setIcon(QIcon::fromTheme(u"view-fullscreen"_s));
@@ -1426,7 +1427,7 @@ void MainWindow::updateActionStates()
 
     const bool hasActiveNamespace = hasSelection && (isRunning || isDeploying) && entry->config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
         && !entry->config.virtualNetworkName().isEmpty() && m_networkManager && m_networkManager->namespacePid(entry->config.virtualNetworkName()) > 0;
-    actionCollection()->action(u"vm_network_shell"_s)->setEnabled(hasActiveNamespace);
+    actionCollection()->action(u"vm_network_shell"_s)->setEnabled(hasActiveNamespace && !SandboxEnvironment::isFlatpak());
 }
 
 QString MainWindow::encodeThemeIcon(const QString &name, int sizePx) const
