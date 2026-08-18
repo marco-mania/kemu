@@ -2862,7 +2862,15 @@ void MainWindow::showCommand()
         : VirtualNetwork{};
 
     const QString sockPath = monitorSocketPath(currentConfig.name());
-    const QString cmd = QemuCommandBuilder::buildShellScript(currentConfig, getVmDir(currentConfig.name()), sockPath, netCtx, net);
+    const bool sandboxed = SandboxEnvironment::isFlatpak();
+    QString cmd = QemuCommandBuilder::buildShellScript(currentConfig, getVmDir(currentConfig.name()), sockPath, netCtx, net, sandboxed);
+
+    if (sandboxed) {
+        cmd.prepend(
+            i18n("# NOTE: KEMU runs sandboxed. The paths below refer to the\n"
+                 "# sandbox, not to your system. Run this script from the VM\n"
+                 "# directory with QEMU installed on the host.\n\n"));
+    }
 
     QDialog d(this);
     d.setWindowTitle(i18n("QEMU Command Line"));
