@@ -8,6 +8,7 @@
 
 #include "const.h"
 #include "utils/sandboxenvironment.h"
+#include "utils/vmconfig.h"
 
 SettingsDialog::SettingsDialog(QWidget *parent)
     : KPageDialog(parent)
@@ -135,6 +136,7 @@ void SettingsDialog::setupExecutablesPage()
 
     auto *refreshLayout = new QHBoxLayout;
     auto *refreshBtn = new QPushButton(QIcon::fromTheme(u"view-refresh"_s), i18n("Re-detect All"));
+    refreshBtn->setEnabled(!SandboxEnvironment::isFlatpak());
     connect(refreshBtn, &QPushButton::clicked, this, [this]() {
         ExternalTools::instance().refresh();
         for (int i = 0; i < m_toolWidgets.size(); ++i) {
@@ -177,8 +179,8 @@ void SettingsDialog::setupExecutablesPage()
         layout->addWidget(statusLabel);
 
         if (sandboxIrrelevant) {
-            pathEdit->setEnabled(false);
-            browseBtn->setEnabled(false);
+            pathEdit->setReadOnly(SandboxEnvironment::isFlatpak());
+            browseBtn->setEnabled(!SandboxEnvironment::isFlatpak());
             descLabel->setText(u"<font color='%1'> (%2 - %3)</font>"_s.arg(midColor, description, i18n("not used in the sandboxed version")));
         }
 
@@ -297,11 +299,13 @@ void SettingsDialog::setupDisplayPage()
 
     layout->addRow(i18n("Default resolution for new VMs:"), resolutionCombo);
 
-    spiceCloseActionCombo = new QComboBox;
-    spiceCloseActionCombo->addItem(i18n("Switch to headless mode"), SwitchToHeadless);
-    spiceCloseActionCombo->addItem(i18n("Shut down the VM"), ShutdownVm);
-    spiceCloseActionCombo->setCurrentIndex(static_cast<int>(spiceViewerCloseAction()));
-    layout->addRow(i18n("When SPICE viewer is closed:"), spiceCloseActionCombo);
+    if (VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType::Spice)) {
+        spiceCloseActionCombo = new QComboBox;
+        spiceCloseActionCombo->addItem(i18n("Switch to headless mode"), SwitchToHeadless);
+        spiceCloseActionCombo->addItem(i18n("Shut down the VM"), ShutdownVm);
+        spiceCloseActionCombo->setCurrentIndex(static_cast<int>(spiceViewerCloseAction()));
+        layout->addRow(i18n("When SPICE viewer is closed:"), spiceCloseActionCombo);
+    }
 
     auto *item = addPage(page, i18n("Display"));
     item->setIcon(QIcon::fromTheme(u"preferences-desktop-display"_s));
@@ -386,8 +390,9 @@ void SettingsDialog::setupVirtualNetworksPage()
     item->setIcon(QIcon::fromTheme(u"network-workgroup"_s));
     m_pages[VirtualNetworks] = item;
 
-    // Virtual networking relies on user namespaces, which are blocked in
-    // the Flatpak sandbox - hide the page entirely there.
+    // Virtual networking relies on user namespaces, which are blocked in the
+    // Flatpak sandbox. The page stays visible but disabled so an existing
+    // configuration remains discoverable.
     if (SandboxEnvironment::isFlatpak())
         item->setEnabled(false);
 }
@@ -412,9 +417,16 @@ void SettingsDialog::saveSettings()
     KConfigGroup general = config.group(u"General"_s);
     general.writeEntry("VmBasePath", pathEdit->text());
     general.writeEntry("OvmfPath", ovmfEdit->text());
-    for (const auto &tw : m_toolWidgets) {
-        const QString key = ExternalTools::instance().configKey(tw.tool);
-        general.writeEntry(key, tw.pathEdit->text());
+    // Never persist sandbox paths as user overrides.
+    if (!SandboxEnvironment::isFlatpak()) {
+        for (const auto &tw : m_toolWidgets) {
+            const QString key = ExternalTools::instance().configKey(tw.tool);
+            const QString text = tw.pathEdit->text().trimmed();
+            // Storing the auto-detected path would freeze detection, so only
+            // a real deviation counts as an override.
+            const bool isOverride = !text.isEmpty() && text != QStandardPaths::findExecutable(ExternalTools::instance().defaultBinary(tw.tool));
+            general.writeEntry(key, isOverride ? text : QString());
+        }
     }
     general.writeEntry("PerformanceMonitorEnabled", perfMonitorCheck->isChecked());
     const QSize res = resolutionCombo->currentData().toSize();
