@@ -436,7 +436,8 @@ void SettingsDialog::saveSettings()
     general.writeEntry("ImportRegenerateMac", importRegenerateMacCheck->isChecked());
     general.writeEntry("DeployHeadless", deployHeadlessCheck->isChecked());
     general.writeEntry("DeploySerialLog", deploySerialLogCheck->isChecked());
-    general.writeEntry("SpiceViewerCloseAction", spiceCloseActionCombo->currentData().toInt());
+    if (spiceCloseActionCombo)
+        general.writeEntry("SpiceViewerCloseAction", spiceCloseActionCombo->currentData().toInt());
     // Only persist the user's actual choice - not the forced value, so the
     // real preference survives once passt becomes available again.
     if (slirpNetworkingCheck->isEnabled())
