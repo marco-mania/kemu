@@ -23,6 +23,7 @@
 #include "utils/asynchelperprocess.h"
 #include "utils/namespacehelper.h"
 #include "utils/qemucommandbuilder.h"
+#include "utils/sandboxenvironment.h"
 #include "utils/startupchain.h"
 #include "utils/usbenumerator.h"
 #include "utils/utils.h"
@@ -407,6 +408,15 @@ void MainWindow::startVirtiofsdAsync(const QString &vmName, std::function<void(b
 
 void MainWindow::startPasstAsync(const QString &vmName, const QList<PortForwardRule> &portForwards, std::function<void(bool)> done)
 {
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (entry && !usePasstFor(entry->config)) {
+        // Not reachable via the normal start paths; the VM is on SLIRP and
+        // its command line has no passt netdev, so continuing is safe.
+        qCWarning(KEMU) << "startPasstAsync() called for" << vmName << "which does not use passt - skipping";
+        done(true);
+        return;
+    }
+
     if (!requireTool(ExternalTools::Passt)) {
         done(false);
         return;
@@ -609,6 +619,30 @@ void MainWindow::startDbusDaemonAsync(const QString &vmName, std::function<void(
     });
 }
 
+bool MainWindow::usePasstFor(const VMConfig &config) const
+{
+    if (config.networkCard() == VMSpecs::NetworkCard::None)
+        return false;
+    if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
+        return false;
+    // passt always does its own unshare()+pivot_root(), which cannot work
+    // inside a Flatpak sandbox. There is no switch to turn that off.
+    if (SandboxEnvironment::isFlatpak())
+        return false;
+    return !SettingsDialog::useSlirpNetworking();
+}
+
+NetworkContext MainWindow::networkContextFor(const VMConfig &config, const QString &tapDevice) const
+{
+    NetworkContext ctx;
+    if (!tapDevice.isEmpty()) {
+        ctx.tapDevice = tapDevice;
+        return ctx;
+    }
+    ctx.useSlirp = !usePasstFor(config);
+    return ctx;
+}
+
 void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const QString &tapDevice)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
@@ -619,11 +653,7 @@ void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const Q
     const QString vmDirPath = getVmDir(vmName).absolutePath();
     const QString sockPath = vmDirPath + u'/' + KEMUConst::QemuMonitorSocketFileName;
 
-    NetworkContext netCtx;
-    if (!tapDevice.isEmpty())
-        netCtx.tapDevice = tapDevice;
-    else
-        netCtx.useSlirp = SettingsDialog::useSlirpNetworking();
+    const NetworkContext netCtx = networkContextFor(config, tapDevice);
 
     const QString savestatePath = SaveStateManager::hasSavestate(vmDirPath, vmName) ? SaveStateManager::savestateFilePath(vmDirPath, vmName) : QString{};
     const bool isResume = !savestatePath.isEmpty();
@@ -805,9 +835,7 @@ void MainWindow::launchQemuForDeployment(const QString &vmName, bool headless, c
 
     QFile::remove(sockPath);
 
-    NetworkContext netCtx;
-    if (!tapDevice.isEmpty())
-        netCtx.tapDevice = tapDevice;
+    const NetworkContext netCtx = networkContextFor(config, tapDevice);
 
     QStringList args = QemuCommandBuilder::build(config,
                                                  getVmDir(vmName),
@@ -1914,11 +1942,8 @@ void MainWindow::generateShellScript(const QString &vmPath, const VMConfig &conf
 {
     const QString sockPath = vmPath + u'/' + KEMUConst::QemuMonitorSocketFileName;
 
-    NetworkContext netCtx;
-    if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
-        netCtx.tapDevice = u"tap0"_s;
-    else
-        netCtx.useSlirp = SettingsDialog::useSlirpNetworking();
+    const QString tap = config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork ? u"tap0"_s : QString{};
+    const NetworkContext netCtx = networkContextFor(config, tap);
 
     const VirtualNetwork net = (m_networkManager && config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         ? m_networkManager->network(config.virtualNetworkName())
@@ -2840,11 +2865,8 @@ void MainWindow::showCommand()
     if (currentConfig.name().isEmpty())
         return;
 
-    NetworkContext netCtx;
-    if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
-        netCtx.tapDevice = u"tap-<vm>"_s;
-    else
-        netCtx.useSlirp = SettingsDialog::useSlirpNetworking();
+    const QString tap = currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork ? u"tap-<vm>"_s : QString{};
+    const NetworkContext netCtx = networkContextFor(currentConfig, tap);
 
     const VirtualNetwork net = (m_networkManager && currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         ? m_networkManager->network(currentConfig.virtualNetworkName())
@@ -2944,7 +2966,7 @@ void MainWindow::startVM(bool headless)
                 tearDownVmRuntime(vmName);
                 return;
             }
-        } else if (!SettingsDialog::useSlirpNetworking()) {
+        } else if (usePasstFor(currentConfig)) {
             const auto pf = currentConfig.portForwards();
             chain->then([this, vmName, pf](auto done) {
                 startPasstAsync(vmName, pf, std::move(done));
@@ -4181,7 +4203,7 @@ void MainWindow::startDeployment(const QString &vmName, const bool disable_headl
                 abortDeployment(vmName, false);
                 return;
             }
-        } else if (!SettingsDialog::useSlirpNetworking()) {
+        } else if (usePasstFor(config)) {
             const auto pf = config.portForwards();
             chain->then([this, vmName, pf](auto done) {
                 startPasstAsync(vmName, pf, std::move(done));

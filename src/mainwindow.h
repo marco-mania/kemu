@@ -59,6 +59,7 @@
 #include "utils/cloudimagedeployer.h"
 #include "utils/externaltools.h"
 #include "utils/imagedatabase.h"
+#include "utils/qemucommandbuilder.h"
 #include "utils/savestatemanager.h"
 #include "utils/virtualnetworkmanager.h"
 #include "utils/vmconfig.h"
@@ -181,6 +182,10 @@ private:
     void startSpiceViewerAsync(const QString &vmName, std::function<void(bool ok)> done);
     void startDbusDaemonAsync(const QString &vmName, std::function<void(bool ok)> done);
     QString dbusBusAddress(const QString &vmName) const;
+
+    // Single source of truth for the user-mode networking backend.
+    bool usePasstFor(const VMConfig &config) const;
+    NetworkContext networkContextFor(const VMConfig &config, const QString &tapDevice = {}) const;
 
     void launchQemuProcess(const QString &vmName, bool headless, const QString &tapDevice);
     void launchQemuForDeployment(const QString &vmName, bool headless, const QString &tapDevice);
