@@ -789,8 +789,14 @@ void SettingsDialog::updateToolVersion(int index)
         return;
 
     const auto &tw = m_toolWidgets[index];
+    if (!tw.pathEdit || !tw.statusLabel)
+        return;
+
     if (ExternalTools::sandboxIrrelevantTools().contains(tw.tool)) {
-        tw.statusLabel->setText(i18n("Not used in the sandboxed version."));
+        // Disabled group: the muted variant of the negative colour.
+        const KColorScheme mutedScheme(QPalette::Disabled, KColorScheme::View);
+        const QString col = mutedScheme.foreground(KColorScheme::NegativeText).color().name();
+        tw.statusLabel->setText(i18n("<font color='%1'><i>Deactivated in sandbox mode.</i></font>", col));
         return;
     }
     if (!tw.pathEdit || !tw.statusLabel)
