@@ -9,7 +9,6 @@
 #include "const.h"
 #include "utils/externaltools.h"
 #include "utils/qemucapabilities.h"
-#include "utils/sandboxenvironment.h"
 #include "utils/utils.h"
 
 using namespace Qt::StringLiterals;
@@ -505,17 +504,11 @@ bool VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType type)
     // unavailable when someone extends the enum.
     switch (type) {
     case VMSpecs::DisplayType::Spice:
-        if (SandboxEnvironment::isFlatpak())
-            return false;
-        return ExternalTools::instance().isAvailable(ExternalTools::spiceDisplayTools());
+        return ExternalTools::instance().isAvailable(ExternalTools::spiceDisplayTools()) && QemuCapabilities::instance().hasDisplay(u"spice-app"_s);
     case VMSpecs::DisplayType::Dbus:
         return ExternalTools::instance().isAvailable(ExternalTools::dbusDisplayTools()) && QemuCapabilities::instance().hasDisplay(u"dbus"_s);
     case VMSpecs::DisplayType::Gtk:
     case VMSpecs::DisplayType::Sdl:
-        // The sandboxed QEMU ships without a GTK/SDL frontend; the integrated
-        // D-Bus viewer is the only supported display there.
-        if (SandboxEnvironment::isFlatpak())
-            return false;
         return QemuCapabilities::instance().hasDisplay(toQemuString(type));
     }
     return false;

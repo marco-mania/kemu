@@ -10,7 +10,7 @@
 #include "dialogs/cloudconfigdialog.h"
 #include "dialogs/iconchooserdialog.h"
 #include "dialogs/settingsdialog.h"
-#include "utils/sandboxenvironment.h"
+#include "utils/sandboxcapabilities.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
 
@@ -1570,7 +1570,9 @@ void CreateVmDialog::setNetworkManager(VirtualNetworkManager *mgr)
     for (const auto &net : mgr->networks())
         virtualNetworkCombo->addItem(net.name, net.name);
 
-    const bool disableVirtualNetwork = mgr->networks().isEmpty() || SandboxEnvironment::isFlatpak();
+    const bool virtualNetworksUsable = ExternalTools::instance().isVirtualNetworkCapable();
+    const bool disableVirtualNetwork = mgr->networks().isEmpty() || !virtualNetworksUsable;
+
     if (disableVirtualNetwork) {
         auto *model = qobject_cast<QStandardItemModel *>(networkModeCombo->model());
         if (model) {
@@ -1578,13 +1580,13 @@ void CreateVmDialog::setNetworkManager(VirtualNetworkManager *mgr)
             if (idx >= 0) {
                 QStandardItem *item = model->item(idx);
                 item->setEnabled(false);
-                item->setToolTip(SandboxEnvironment::isFlatpak() ? i18n("Virtual networks are not available in the sandboxed (Flatpak) version")
-                                                                 : i18n("Create a virtual network first in Settings"));
+                item->setToolTip(virtualNetworksUsable ? i18n("Create a virtual network first in Settings")
+                                                       : SandboxCapabilities::instance().unavailableReason(SandboxCapabilities::UserNamespaces));
             }
         }
     }
 
-    if (SandboxEnvironment::isFlatpak() && static_cast<VMSpecs::NetworkMode>(networkModeCombo->currentData().toInt()) == VMSpecs::NetworkMode::VirtualNetwork) {
+    if (disableVirtualNetwork && static_cast<VMSpecs::NetworkMode>(networkModeCombo->currentData().toInt()) == VMSpecs::NetworkMode::VirtualNetwork) {
         const int passtIdx = networkModeCombo->findData(static_cast<int>(VMSpecs::NetworkMode::Passt));
         if (passtIdx >= 0)
             networkModeCombo->setCurrentIndex(passtIdx);

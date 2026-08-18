@@ -8,10 +8,6 @@
 
 #include "kemu_debug.h"
 
-#include <algorithm>
-
-#include "utils/sandboxenvironment.h"
-
 extern "C" {
 char *__crypt_sha512(const char *key, const char *setting, char *output);
 }
@@ -108,15 +104,16 @@ QStringList ovmfSearchDirs(const QString &customDir)
     if (!customDir.isEmpty())
         dirs << customDir;
 
-    if (SandboxEnvironment::isFlatpak()) {
-        // Inside the sandbox /usr belongs to the runtime. The firmware
-        // shipped with our own QEMU build wins; the host copy is only
-        // reachable through /run/host.
-        dirs << u"/app/share/qemu"_s << u"/app/share/kemu/ovmf"_s;
+    // Firmware shipped next to our own binaries always wins.
+    const QDir prefix(QCoreApplication::applicationDirPath() + u"/.."_s);
+    dirs << prefix.absoluteFilePath(u"share/qemu"_s) << prefix.absoluteFilePath(u"share/kemu/ovmf"_s);
+
+    dirs << systemDirs;
+
+    // Only present when a host OS is mounted into the namespace.
+    if (QFileInfo::exists(u"/run/host/usr"_s)) {
         for (const QString &d : systemDirs)
             dirs << u"/run/host"_s + d;
-    } else {
-        dirs << systemDirs;
     }
 
     return dirs;

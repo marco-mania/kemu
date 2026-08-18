@@ -8,7 +8,7 @@
 
 #include "utils/cloudinittemplates.h"
 #include "utils/externaltools.h"
-#include "utils/sandboxenvironment.h"
+#include "utils/sandboxcapabilities.h"
 #include "utils/utils.h"
 
 using namespace Qt::StringLiterals;
@@ -65,14 +65,19 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage, const QDir &vm
     QProcess proc;
     const QString qemuImg = ExternalTools::instance().path(ExternalTools::QemuImg);
     if (qemuImg.isEmpty()) {
-        errorOut = u"qemu-img not found."_s;
+        errorOut = i18n("qemu-img not found.");
         return false;
     }
 
     // Detect source format
     proc.start(qemuImg, {u"info"_s, u"--output=json"_s, sourceImage});
     if (!proc.waitForFinished(10000)) {
-        errorOut = u"qemu-img info timed out."_s;
+        proc.kill();
+        errorOut = i18n("qemu-img info timed out.");
+        return false;
+    }
+    if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0) {
+        errorOut = i18n("Could not read the source image: %1", QString::fromUtf8(proc.readAllStandardError()).trimmed());
         return false;
     }
 
@@ -81,9 +86,14 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage, const QDir &vm
     if (srcFormat.isEmpty())
         srcFormat = u"qcow2"_s;
 
+    if (QFile::exists(diskPathOut) && !QFile::remove(diskPathOut)) {
+        errorOut = i18n("Could not remove the existing disk image at %1.", diskPathOut);
+        return false;
+    }
+
     if (srcFormat == u"qcow2"_s) {
         if (!QFile::copy(sourceImage, diskPathOut)) {
-            errorOut = u"Failed to copy cloud image."_s;
+            errorOut = i18n("Failed to copy cloud image.");
             return false;
         }
         // Ensure writable
@@ -91,7 +101,7 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage, const QDir &vm
     } else {
         proc.start(qemuImg, {u"convert"_s, u"-f"_s, srcFormat, u"-O"_s, u"qcow2"_s, sourceImage, diskPathOut});
         if (!proc.waitForFinished(120000) || proc.exitCode() != 0) {
-            errorOut = u"qemu-img convert failed: %1"_s.arg(QString::fromUtf8(proc.readAllStandardError()).trimmed());
+            errorOut = i18n("qemu-img convert failed: %1", QString::fromUtf8(proc.readAllStandardError()).trimmed());
             return false;
         }
     }
@@ -99,7 +109,7 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage, const QDir &vm
     // Resize to target size
     proc.start(qemuImg, {u"resize"_s, diskPathOut, u"%1G"_s.arg(diskSizeGb)});
     if (!proc.waitForFinished(30000) || proc.exitCode() != 0) {
-        errorOut = u"qemu-img resize failed: %1"_s.arg(QString::fromUtf8(proc.readAllStandardError()).trimmed());
+        errorOut = i18n("qemu-img resize failed: %1", QString::fromUtf8(proc.readAllStandardError()).trimmed());
         return false;
     }
 
@@ -112,7 +122,7 @@ QByteArray CloudImageDeployer::generateUserData(const CloudDeployConfig &config,
     const QString tpl = CloudInitTemplates::loadTemplate(templateId);
 
     if (tpl.isEmpty()) {
-        errorOut = u"Cloud-Init template '%1' not found. Please check your installation."_s.arg(templateId);
+        errorOut = i18n("Cloud-Init template '%1' not found. Please check your installation.", templateId);
         return {};
     }
 
@@ -169,7 +179,7 @@ QByteArray CloudImageDeployer::generateNetworkConfig(const CloudDeployConfig &co
     const QString tpl = CloudInitTemplates::loadTemplate(templateId);
 
     if (tpl.isEmpty()) {
-        errorOut = u"Network template '%1' not found. Please check your installation."_s.arg(templateId);
+        errorOut = i18n("Network template '%1' not found. Please check your installation.", templateId);
         return {};
     }
 
@@ -191,14 +201,14 @@ bool CloudImageDeployer::createNoCloudIso(const QDir &vmDir,
 {
     QTemporaryDir tmpDir;
     if (!tmpDir.isValid()) {
-        errorOut = u"Failed to create temp directory."_s;
+        errorOut = i18n("Failed to create temp directory.");
         return false;
     }
 
     auto writeFile = [&](const QString &name, const QByteArray &content) -> bool {
         QFile f(tmpDir.filePath(name));
         if (!f.open(QIODevice::WriteOnly)) {
-            errorOut = u"Failed to write %1."_s.arg(name);
+            errorOut = i18n("Failed to write %1.", name);
             return false;
         }
         f.write(content);
@@ -214,8 +224,9 @@ bool CloudImageDeployer::createNoCloudIso(const QDir &vmDir,
 
     const QString tool = findIsoTool();
     if (tool.isEmpty()) {
-        errorOut = SandboxEnvironment::isFlatpak() ? u"No ISO tool found. This is a packaging bug - xorriso should be part of the sandbox image."_s
-                                                   : u"No ISO tool found (install genisoimage, mkisofs, or xorriso)."_s;
+        errorOut = SandboxCapabilities::instance().has(SandboxCapabilities::ExternalToolPaths)
+            ? i18n("No ISO tool found. Please install genisoimage, mkisofs, or xorriso.")
+            : i18n("No ISO tool found. This build should ship xorriso - please report this as a packaging bug.");
         return false;
     }
 
@@ -235,28 +246,24 @@ bool CloudImageDeployer::createNoCloudIso(const QDir &vmDir,
     proc.start();
     if (!proc.waitForFinished(15000)) {
         proc.kill();
-        errorOut = u"ISO creation timed out."_s;
+        errorOut = i18n("ISO creation timed out.");
         return false;
     }
 
     if (proc.exitCode() != 0 || !QFile::exists(outputIso)) {
-        errorOut = u"ISO creation failed: %1"_s.arg(QString::fromUtf8(proc.readAllStandardError()).trimmed());
+        errorOut = i18n("ISO creation failed: %1", QString::fromUtf8(proc.readAllStandardError()).trimmed());
         return false;
     }
+
+    QFile::setPermissions(outputIso, QFile::ReadOwner | QFile::WriteOwner);
 
     return true;
 }
 
 QString CloudImageDeployer::findIsoTool()
 {
+    // ExternalTools::autoDetect() already covers genisoimage, mkisofs and
+    // xorriso, including the configured override and the fallback paths.
     const auto &tools = ExternalTools::instance();
-    if (tools.isAvailable(ExternalTools::GenIsoImage))
-        return tools.path(ExternalTools::GenIsoImage);
-
-    QString path = QStandardPaths::findExecutable(u"genisoimage"_s);
-    if (path.isEmpty())
-        path = QStandardPaths::findExecutable(u"mkisofs"_s);
-    if (path.isEmpty())
-        path = QStandardPaths::findExecutable(u"xorriso"_s);
-    return path;
+    return tools.isAvailable(ExternalTools::GenIsoImage) ? tools.path(ExternalTools::GenIsoImage) : QString();
 }

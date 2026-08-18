@@ -16,6 +16,8 @@
 #include <QTextStream>
 #include <QUuid>
 
+#include <KLocalizedString>
+
 #include <KTextTemplate/Context>
 #include <KTextTemplate/Engine>
 #include <KTextTemplate/Template>

@@ -40,8 +40,6 @@ extern "C" {
 #include <linux/netfilter/nfnetlink.h>
 }
 
-#include "utils/sandboxenvironment.h"
-
 // NL_BUF_SIZE uses sysconf() and is not a compile-time constant.
 // 8192 is the minimum guaranteed by libmnl and sufficient for all our messages.
 static constexpr size_t NL_BUF_SIZE = 8192;
@@ -238,35 +236,6 @@ qint64 NamespaceHelper::createNamespace(QString *error)
     close(syncPipe[0]);
 
     return static_cast<qint64>(child);
-}
-
-bool NamespaceHelper::isUserNamespaceSupported()
-{
-    if (SandboxEnvironment::isFlatpak())
-        return false; // Namespaces are blocked in the Flatpak sandbox;
-    // the virtual-network feature is unavailable there.
-
-    // Check sysctl
-    QFile sysctl(QStringLiteral("/proc/sys/kernel/unprivileged_userns_clone"));
-    if (sysctl.open(QIODevice::ReadOnly)) {
-        const QByteArray val = sysctl.readAll().trimmed();
-        sysctl.close();
-        if (val == "0")
-            return false;
-    }
-
-    // Try a real unshare
-    const pid_t child = fork();
-    if (child < 0)
-        return false;
-
-    if (child == 0) {
-        _exit(unshare(CLONE_NEWUSER | CLONE_NEWNET) == 0 ? 0 : 1);
-    }
-
-    int status = 0;
-    waitpid(child, &status, 0);
-    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
 // ============================================================================

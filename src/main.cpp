@@ -14,7 +14,8 @@
 #include <QApplication>
 #include <QCommandLineParser>
 
-#include "utils/sandboxenvironment.h"
+#include "utils/qemucapabilities.h"
+#include "utils/sandboxcapabilities.h"
 
 using namespace Qt::StringLiterals;
 
@@ -59,20 +60,33 @@ int main(int argc, char *argv[])
     // --- Command line ---
     QCommandLineParser parser;
     aboutData.setupCommandLine(&parser);
-
-    QCommandLineOption sandboxModeOption(u"sandbox-mode"_s, i18n("Override sandbox detection: auto, native, or flatpak."), u"mode"_s, u"auto"_s);
-    parser.addOption(sandboxModeOption);
+    QCommandLineOption disableCapabilityOption(u"disable-capability"_s,
+                                               i18n("Disable a capability for testing. May be given more than once. "
+                                                    "Known names: user-namespaces, usb-passthrough, host-terminal, "
+                                                    "pipewire-audio, pulseaudio, external-tool-paths."),
+                                               u"name"_s);
+    parser.addOption(disableCapabilityOption);
 
     parser.process(app);
     aboutData.processCommandLine(&parser);
 
-    // Resolve sandbox mode BEFORE constructing MainWindow, since settings
-    // read during startup may query SandboxEnvironment::isFlatpak().
-    bool modeOk = false;
-    const auto mode = SandboxEnvironment::parseMode(parser.value(sandboxModeOption), &modeOk);
-    if (!modeOk)
-        qWarning("Unknown --sandbox-mode value '%s', falling back to auto.", qUtf8Printable(parser.value(sandboxModeOption)));
-    SandboxEnvironment::setOverride(mode);
+    // Capabilities must be known before MainWindow is constructed; settings read
+    // during startup already query them.
+    SandboxCapabilities::instance().refresh();
+
+    for (const QString &name : parser.values(disableCapabilityOption)) {
+        SandboxCapabilities::Capability capability;
+        if (SandboxCapabilities::parseCapability(name, &capability))
+            SandboxCapabilities::instance().disable(capability, i18n("Disabled on the command line."));
+        else
+            qWarning("Unknown capability '%s'", qUtf8Printable(name));
+    }
+
+    // Only now: ExternalTools reads its configured overrides through the
+    // ExternalToolPaths capability, and QemuCapabilities needs the resolved
+    // QEMU path that ExternalTools produces.
+    ExternalTools::instance().refresh();
+    QemuCapabilities::instance().refresh();
 
     QGuiApplication::setWindowIcon(appIcon);
 

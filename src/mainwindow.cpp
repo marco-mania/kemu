@@ -24,7 +24,7 @@
 #include "utils/namespacehelper.h"
 #include "utils/qemucapabilities.h"
 #include "utils/qemucommandbuilder.h"
-#include "utils/sandboxenvironment.h"
+#include "utils/sandboxcapabilities.h"
 #include "utils/startupchain.h"
 #include "utils/usbenumerator.h"
 #include "utils/utils.h"
@@ -627,9 +627,7 @@ bool MainWindow::usePasstFor(const VMConfig &config) const
         return false;
     if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         return false;
-    // passt always does its own unshare()+pivot_root(), which cannot work
-    // inside a Flatpak sandbox. There is no switch to turn that off.
-    if (SandboxEnvironment::isFlatpak())
+    if (!ExternalTools::instance().isPasstUsable())
         return false;
     return !SettingsDialog::useSlirpNetworking();
 }
@@ -1341,7 +1339,7 @@ void MainWindow::setupActions()
     actionNetShell->setText(i18n("Open Network Shell..."));
     actionNetShell->setToolTip(i18n("Open a terminal (konsole) inside the virtual network namespace"));
     connect(actionNetShell, &QAction::triggered, this, &MainWindow::openNetworkShell);
-    actionNetShell->setVisible(!SandboxEnvironment::isFlatpak());
+    actionNetShell->setVisible(SandboxCapabilities::instance().has(SandboxCapabilities::HostTerminal));
 
     auto *actionReconnect = ac->addAction(u"vm_reconnect"_s);
     actionReconnect->setIcon(QIcon::fromTheme(u"view-fullscreen"_s));
@@ -1427,7 +1425,8 @@ void MainWindow::updateActionStates()
 
     const bool hasActiveNamespace = hasSelection && (isRunning || isDeploying) && entry->config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
         && !entry->config.virtualNetworkName().isEmpty() && m_networkManager && m_networkManager->namespacePid(entry->config.virtualNetworkName()) > 0;
-    actionCollection()->action(u"vm_network_shell"_s)->setEnabled(hasActiveNamespace && !SandboxEnvironment::isFlatpak());
+
+    actionCollection()->action(u"vm_network_shell"_s)->setEnabled(hasActiveNamespace && SandboxCapabilities::instance().has(SandboxCapabilities::HostTerminal));
 }
 
 QString MainWindow::encodeThemeIcon(const QString &name, int sizePx) const
@@ -2041,7 +2040,7 @@ bool MainWindow::vmSupportsScreendump() const
 
 QString MainWindow::ensureNetworkRunning(const QString &networkName, const QString &vmName)
 {
-    if (!VirtualNetworkManager::isUserNamespaceSupported()) {
+    if (!SandboxCapabilities::instance().has(SandboxCapabilities::UserNamespaces)) {
         KMessageBox::error(this,
                            i18n("User namespaces are not supported on this system. Virtual "
                                 "networking requires unprivileged user namespaces."));
@@ -2633,28 +2632,25 @@ void MainWindow::openNetworkShell()
         u"exec nsenter -t %2 -U --preserve-credentials -n -- /bin/bash"_s.arg(netName)
             .arg(nsPid);
 
-    // Try konsole first, then xterm as fallback
-    const QString konsole = QStandardPaths::findExecutable(u"konsole"_s);
-    const QString xterm = QStandardPaths::findExecutable(u"xterm"_s);
-
-    auto *process = new KProcess(this);
-    connect(process, &KProcess::finished, process, &KProcess::deleteLater);
-
-    if (!konsole.isEmpty()) {
-        process->setProgram(konsole);
-        process->setArguments({u"--separate"_s, u"--title"_s, i18n("KEMU Network Shell -- %1", netName), u"-e"_s, u"/bin/bash"_s, u"-c"_s, nsenterCmd});
-    } else if (!xterm.isEmpty()) {
-        process->setProgram(xterm);
-        process->setArguments({u"-title"_s, i18n("KEMU Network Shell -- %1", netName), u"-e"_s, u"/bin/bash"_s, u"-c"_s, nsenterCmd});
-    } else {
+    const QString terminal = SandboxCapabilities::instance().terminalProgram();
+    if (terminal.isEmpty()) {
         KMessageBox::error(this,
                            i18n("No terminal emulator found.\n\n"
                                 "You can enter the namespace manually:\n"
                                 "nsenter -t %1 -U --preserve-credentials -n -- /bin/bash",
                                 nsPid));
-        delete process;
         return;
     }
+
+    auto *process = new KProcess(this);
+    connect(process, &KProcess::finished, process, &KProcess::deleteLater);
+    process->setProgram(terminal);
+
+    const QString title = i18n("KEMU Network Shell -- %1", netName);
+    if (terminal.endsWith(u"/konsole"_s))
+        process->setArguments({u"--separate"_s, u"--title"_s, title, u"-e"_s, u"/bin/bash"_s, u"-c"_s, nsenterCmd});
+    else
+        process->setArguments({u"-title"_s, title, u"-e"_s, u"/bin/bash"_s, u"-c"_s, nsenterCmd});
 
     process->start();
 
@@ -2862,14 +2858,14 @@ void MainWindow::showCommand()
         : VirtualNetwork{};
 
     const QString sockPath = monitorSocketPath(currentConfig.name());
-    const bool sandboxed = SandboxEnvironment::isFlatpak();
-    QString cmd = QemuCommandBuilder::buildShellScript(currentConfig, getVmDir(currentConfig.name()), sockPath, netCtx, net, sandboxed);
+    const bool portablePaths = SandboxCapabilities::instance().has(SandboxCapabilities::ExternalToolPaths);
+    QString cmd = QemuCommandBuilder::buildShellScript(currentConfig, getVmDir(currentConfig.name()), sockPath, netCtx, net, !portablePaths);
 
-    if (sandboxed) {
+    if (!portablePaths) {
         cmd.prepend(
-            i18n("# NOTE: KEMU runs sandboxed. The paths below refer to the\n"
-                 "# sandbox, not to your system. Run this script from the VM\n"
-                 "# directory with QEMU installed on the host.\n\n"));
+            i18n("# NOTE: this build ships its own tools. The paths below are only\n"
+                 "# valid inside the application; run this script from the VM\n"
+                 "# directory with QEMU installed on your system.\n\n"));
     }
 
     QDialog d(this);
@@ -2933,6 +2929,22 @@ void MainWindow::startVM(bool headless)
     m_userInitiatedShutdowns.remove(vmName);
     m_resumingFromSavestate.remove(vmName);
     m_startupFailureShown.remove(vmName);
+
+    if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !ExternalTools::instance().isVirtualNetworkCapable()) {
+        const auto answer = KMessageBox::questionTwoActions(this,
+                                                            i18n("'%1' is configured for a virtual network, which is not available "
+                                                                 "on this system:\n%2\n\nSwitch this VM to user-mode networking?",
+                                                                 vmName,
+                                                                 SandboxCapabilities::instance().unavailableReason(SandboxCapabilities::UserNamespaces)),
+                                                            i18n("Virtual Network Unavailable"),
+                                                            KGuiItem(i18n("Switch and Start"), u"network-wired"_s),
+                                                            KStandardGuiItem::cancel());
+        if (answer != KMessageBox::PrimaryAction)
+            return;
+
+        currentConfig.setNetworkMode(VMSpecs::NetworkMode::Passt);
+        saveVmConfig(vmDirPath, currentConfig);
+    }
 
     if (!headless && !VMConfig::isDisplayTypeAvailable(currentConfig.displayType())) {
         const auto fallback = VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType::Dbus) ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Gtk;
@@ -4382,9 +4394,16 @@ void MainWindow::populateUsbMenuFor(const QString &vmName, QMenu *target)
         return;
     }
 
+    const auto &caps = SandboxCapabilities::instance();
+    if (!caps.has(SandboxCapabilities::UsbPassthrough)) {
+        auto *a = target->addAction(caps.unavailableReason(SandboxCapabilities::UsbPassthrough));
+        a->setEnabled(false);
+        return;
+    }
+
     const QList<UsbDeviceInfo> devices = UsbEnumerator::enumerate();
     if (devices.isEmpty()) {
-        auto *a = target->addAction(SandboxEnvironment::isFlatpak() ? i18n("No USB devices visible (sandbox permissions)") : i18n("No USB devices found"));
+        auto *a = target->addAction(i18n("No USB devices found"));
         a->setEnabled(false);
         return;
     }

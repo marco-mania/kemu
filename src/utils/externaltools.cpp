@@ -8,7 +8,7 @@
 
 #include "const.h"
 
-#include "utils/sandboxenvironment.h"
+#include "utils/sandboxcapabilities.h"
 
 // --- Singleton ---
 
@@ -60,10 +60,8 @@ void ExternalTools::detectPath(ToolInfo &info)
 {
     info.detectedPath = autoDetect(info);
 
-    // Inside the sandbox every tool lives in /app/bin; a host path from a
-    // previous native install would be meaningless here.
     info.configuredPath.clear();
-    if (!SandboxEnvironment::isFlatpak()) {
+    if (SandboxCapabilities::instance().has(SandboxCapabilities::ExternalToolPaths)) {
         KConfig config(u"kemurc"_s);
         const KConfigGroup general = config.group(u"General"_s);
         info.configuredPath = general.readEntry(info.configKey, QString());
@@ -183,19 +181,11 @@ QList<ExternalTools::Tool> ExternalTools::allTools()
 
 QList<ExternalTools::Tool> ExternalTools::coreTools()
 {
-    // passt is replaced by QEMU's built-in SLIRP in the sandbox, so it must
-    // not trigger the non-suppressible "Core Functionality" warning there.
-    if (SandboxEnvironment::isFlatpak())
-        return {QemuSystem, QemuImg};
-    return {QemuSystem, QemuImg, Passt};
+    return {QemuSystem, QemuImg};
 }
 
 QList<ExternalTools::Tool> ExternalTools::virtualNetworkTools()
 {
-    // No pasta/dnsmasq requirement inside the sandbox - the feature is
-    // unavailable there regardless of whether the binaries exist.
-    if (SandboxEnvironment::isFlatpak())
-        return {};
     return {Pasta, Dnsmasq};
 }
 
@@ -209,15 +199,20 @@ QList<ExternalTools::Tool> ExternalTools::dbusDisplayTools()
     return {DbusDaemon};
 }
 
-QList<ExternalTools::Tool> ExternalTools::sandboxIrrelevantTools()
+QList<ExternalTools::Tool> ExternalTools::unusedTools() const
 {
-    if (!SandboxEnvironment::isFlatpak())
-        return {};
-    // passt: replaced by QEMU's built-in SLIRP in the sandbox.
-    // pasta/dnsmasq: virtual networking is unavailable in the sandbox.
-    // remote-viewer: no SPICE client is shipped; the integrated D-Bus viewer
-    // covers the same ground.
-    return {Passt, Pasta, Dnsmasq, RemoteViewer};
+    const auto &caps = SandboxCapabilities::instance();
+    QList<Tool> result;
+
+    if (!caps.has(SandboxCapabilities::UserNamespaces))
+        result << Passt << Pasta << Dnsmasq;
+
+    // In a self-contained build a missing tool cannot be installed by the
+    // user, so there is nothing actionable to warn about.
+    if (!caps.has(SandboxCapabilities::ExternalToolPaths) && !isAvailable(RemoteViewer))
+        result << RemoteViewer;
+
+    return result;
 }
 
 QString ExternalTools::probeVersionString(Tool /*tool*/, const QString &path)
@@ -245,7 +240,7 @@ QString ExternalTools::probeVersionString(Tool /*tool*/, const QString &path)
 
 QStringList ExternalTools::missingToolNames() const
 {
-    const QList<Tool> irrelevant = sandboxIrrelevantTools();
+    const QList<Tool> irrelevant = unusedTools();
     QStringList missing;
     for (const Tool t : allTools()) {
         if (!irrelevant.contains(t) && !isAvailable(t))
@@ -256,11 +251,16 @@ QStringList ExternalTools::missingToolNames() const
 
 bool ExternalTools::isVirtualNetworkCapable() const
 {
-    for (const Tool t : virtualNetworkTools()) {
-        if (!isAvailable(t))
-            return false;
-    }
-    return true;
+    if (!SandboxCapabilities::instance().has(SandboxCapabilities::UserNamespaces))
+        return false;
+    return isAvailable(virtualNetworkTools());
+}
+
+bool ExternalTools::isPasstUsable() const
+{
+    // passt does its own unshare()+pivot_root(); without user namespaces it
+    // cannot start, and there is no switch to turn that off.
+    return SandboxCapabilities::instance().has(SandboxCapabilities::UserNamespaces) && isAvailable(Passt);
 }
 
 // --- Feature groups ---
@@ -283,11 +283,12 @@ QList<ExternalTools::FeatureGroup> ExternalTools::featureGroups()
 
 QList<ExternalTools::FeatureGroup> ExternalTools::missingFeatureGroups() const
 {
+    const QList<Tool> unused = unusedTools();
     QList<FeatureGroup> result;
     for (const auto &group : featureGroups()) {
-        if (group.tools.isEmpty())
-            continue; // e.g. VirtualNetwork in sandbox mode - nothing to warn about
         for (const Tool t : group.tools) {
+            if (unused.contains(t))
+                continue;
             if (!isAvailable(t)) {
                 result.append(group);
                 break;

@@ -6,9 +6,6 @@
 
 #pragma once
 
-#include <KProcess>
-
-#include <QFileInfo>
 #include <QSet>
 #include <QString>
 
@@ -20,7 +17,7 @@ public:
     static QemuCapabilities &instance();
 
     // Re-probes the currently resolved qemu-system binary. Call right after
-    // ExternalTools::instance().refresh()
+    // ExternalTools::instance().refresh().
     void refresh();
 
     bool hasDisplay(const QString &name) const;
@@ -33,5 +30,4 @@ private:
 
     QSet<QString> m_displays;
     QSet<QString> m_audiodevs;
-    bool m_probed = false;
 };

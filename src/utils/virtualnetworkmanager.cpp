@@ -331,15 +331,6 @@ QString VirtualNetworkManager::tapDeviceName(const QString &networkName, const Q
     return it->attachedVms.value(vmName);
 }
 
-// ============================================================================
-// Capability Check
-// ============================================================================
-
-bool VirtualNetworkManager::isUserNamespaceSupported()
-{
-    return NamespaceHelper::isUserNamespaceSupported();
-}
-
 QString VirtualNetworkManager::lastError() const
 {
     return m_lastError;

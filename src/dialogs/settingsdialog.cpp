@@ -8,7 +8,7 @@
 
 #include "const.h"
 #include "utils/qemucapabilities.h"
-#include "utils/sandboxenvironment.h"
+#include "utils/sandboxcapabilities.h"
 #include "utils/vmconfig.h"
 
 SettingsDialog::SettingsDialog(QWidget *parent)
@@ -89,10 +89,11 @@ void SettingsDialog::setupGeneralPage()
         i18n("passt is used by default and is significantly faster. Enable "
              "this only if passt is unavailable or causes problems on your "
              "system."));
+    const bool passtUsable = ExternalTools::instance().isPasstUsable();
     slirpNetworkingCheck->setChecked(useSlirpNetworking());
-    slirpNetworkingCheck->setEnabled(ExternalTools::instance().isAvailable(ExternalTools::Passt) && !SandboxEnvironment::isFlatpak());
-    if (!ExternalTools::instance().isAvailable(ExternalTools::Passt) || SandboxEnvironment::isFlatpak())
-        slirpNetworkingCheck->setToolTip(i18n("passt is not available or in sandbox environment - SLIRP is used for all VMs."));
+    slirpNetworkingCheck->setEnabled(passtUsable);
+    if (!passtUsable)
+        slirpNetworkingCheck->setToolTip(i18n("passt cannot be used on this system - SLIRP is used for all VMs."));
     layout->addWidget(slirpNetworkingCheck);
 
     layout->addStretch();
@@ -127,6 +128,8 @@ void SettingsDialog::setupFirmwarePage()
 
 void SettingsDialog::setupExecutablesPage()
 {
+    const bool editablePaths = SandboxCapabilities::instance().has(SandboxCapabilities::ExternalToolPaths);
+
     auto *page = new QWidget;
     auto *scrollArea = new QScrollArea;
     scrollArea->setWidgetResizable(true);
@@ -137,7 +140,7 @@ void SettingsDialog::setupExecutablesPage()
 
     auto *refreshLayout = new QHBoxLayout;
     auto *refreshBtn = new QPushButton(QIcon::fromTheme(u"view-refresh"_s), i18n("Re-detect All"));
-    refreshBtn->setEnabled(!SandboxEnvironment::isFlatpak());
+    refreshBtn->setEnabled(editablePaths);
     connect(refreshBtn, &QPushButton::clicked, this, [this]() {
         ExternalTools::instance().refresh();
         QemuCapabilities::instance().refresh();
@@ -156,7 +159,7 @@ void SettingsDialog::setupExecutablesPage()
     for (const ExternalTools::Tool tool : ExternalTools::allTools()) {
         const QString binary = tools.defaultBinary(tool);
         const QString description = ExternalTools::displayName(tool);
-        const bool sandboxIrrelevant = ExternalTools::sandboxIrrelevantTools().contains(tool);
+        const bool unused = ExternalTools::instance().unusedTools().contains(tool);
 
         auto *headerLayout = new QHBoxLayout;
         headerLayout->setContentsMargins(0, 8, 0, 0);
@@ -182,11 +185,10 @@ void SettingsDialog::setupExecutablesPage()
         auto *statusLabel = new QLabel;
         layout->addWidget(statusLabel);
 
-        if (sandboxIrrelevant) {
-            pathEdit->setReadOnly(SandboxEnvironment::isFlatpak());
-            browseBtn->setEnabled(!SandboxEnvironment::isFlatpak());
-            descLabel->setText(u"<font color='%1'> (%2 - %3)</font>"_s.arg(midColor, description, i18n("not used in the sandboxed version")));
-        }
+        pathEdit->setReadOnly(!editablePaths);
+        browseBtn->setEnabled(editablePaths);
+        if (unused)
+            descLabel->setText(u"<font color='%1'> (%2 - %3)</font>"_s.arg(midColor, description, i18n("not used by this build")));
 
         ToolWidgets tw;
         tw.tool = tool;
@@ -394,10 +396,7 @@ void SettingsDialog::setupVirtualNetworksPage()
     item->setIcon(QIcon::fromTheme(u"network-workgroup"_s));
     m_pages[VirtualNetworks] = item;
 
-    // Virtual networking relies on user namespaces, which are blocked in the
-    // Flatpak sandbox. The page stays visible but disabled so an existing
-    // configuration remains discoverable.
-    if (SandboxEnvironment::isFlatpak())
+    if (!ExternalTools::instance().isVirtualNetworkCapable())
         item->setEnabled(false);
 }
 
@@ -423,7 +422,7 @@ void SettingsDialog::saveSettings()
     general.writeEntry("OvmfPath", ovmfEdit->text());
     // Never persist sandbox paths as user overrides; an empty entry means
     // auto-detection stays in charge.
-    if (!SandboxEnvironment::isFlatpak()) {
+    if (SandboxCapabilities::instance().has(SandboxCapabilities::ExternalToolPaths)) {
         for (const auto &tw : m_toolWidgets) {
             const QString key = ExternalTools::instance().configKey(tw.tool);
             general.writeEntry(key, tw.pathEdit->text().trimmed());
@@ -528,7 +527,7 @@ SettingsDialog::SpiceViewerCloseAction SettingsDialog::spiceViewerCloseAction()
 
 bool SettingsDialog::useSlirpNetworking()
 {
-    if (!ExternalTools::instance().isAvailable(ExternalTools::Passt) || SandboxEnvironment::isFlatpak())
+    if (!ExternalTools::instance().isPasstUsable())
         return true;
     KConfig config(u"kemurc"_s);
     const KConfigGroup general = config.group(u"General"_s);
@@ -796,15 +795,12 @@ void SettingsDialog::updateToolVersion(int index)
     if (!tw.pathEdit || !tw.statusLabel)
         return;
 
-    if (ExternalTools::sandboxIrrelevantTools().contains(tw.tool)) {
-        // Disabled group: the muted variant of the negative colour.
+    if (ExternalTools::instance().unusedTools().contains(tw.tool)) {
         const KColorScheme mutedScheme(QPalette::Disabled, KColorScheme::View);
         const QString col = mutedScheme.foreground(KColorScheme::NegativeText).color().name();
         tw.statusLabel->setText(i18n("<font color='%1'><i>Deactivated in sandbox mode.</i></font>", col));
         return;
     }
-    if (!tw.pathEdit || !tw.statusLabel)
-        return;
 
     const QString typed = tw.pathEdit->text().trimmed();
     const QString path = typed.isEmpty() ? ExternalTools::instance().detectedPath(tw.tool) : typed;

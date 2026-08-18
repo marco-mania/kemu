@@ -8,6 +8,8 @@
 
 #include "const.h"
 #include "utils/externaltools.h"
+#include "utils/qemucapabilities.h"
+#include "utils/sandboxcapabilities.h"
 #include "utils/utils.h"
 
 using namespace Qt::StringLiterals;
@@ -323,7 +325,15 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     // --- Audio ---
     if (config.audioDevice() != VMSpecs::AudioDevice::None) {
         const bool useDbusAudio = (config.displayType() == VMSpecs::DisplayType::Dbus && !headless);
-        const QString audioBackend = useDbusAudio ? u"dbus"_s : u"pipewire"_s;
+
+        QString hostAudioBackend = u"none"_s;
+        const auto &qemu = QemuCapabilities::instance();
+        const auto &caps = SandboxCapabilities::instance();
+        if (caps.has(SandboxCapabilities::PipeWireAudio) && qemu.hasAudiodev(u"pipewire"_s))
+            hostAudioBackend = u"pipewire"_s;
+        else if (caps.has(SandboxCapabilities::PulseAudio) && qemu.hasAudiodev(u"pa"_s))
+            hostAudioBackend = u"pa"_s;
+        const QString audioBackend = useDbusAudio ? u"dbus"_s : hostAudioBackend;
 
         if (config.audioDevice() == VMSpecs::AudioDevice::Hda) {
             args << u"-audiodev"_s << u"%1,id=audio0"_s.arg(audioBackend);

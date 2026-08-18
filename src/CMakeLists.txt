@@ -72,8 +72,8 @@ target_sources(
           utils/asynchelperprocess.h
           utils/startupchain.cpp
           utils/startupchain.h
-          utils/sandboxenvironment.cpp
-          utils/sandboxenvironment.h
+          utils/sandboxcapabilities.cpp
+          utils/sandboxcapabilities.h
           utils/qemucapabilities.cpp
           utils/qemucapabilities.h
           utils/3rdparty/crypt_sha512.c

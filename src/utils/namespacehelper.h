@@ -44,11 +44,6 @@ public:
      */
     static qint64 createNamespace(QString *error = nullptr);
 
-    /**
-     * Check whether unprivileged user namespaces are supported.
-     */
-    static bool isUserNamespaceSupported();
-
     // ---- Process Launch in Namespace ----
 
     /**

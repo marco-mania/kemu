@@ -133,15 +133,6 @@ public:
      */
     [[nodiscard]] QString tapDeviceName(const QString &networkName, const QString &vmName) const;
 
-    // --- Capability Checks ---
-
-    /**
-     * Check whether the kernel supports unprivileged user namespaces.
-     * Should be called once at startup; if false, virtual networks
-     * are unavailable and the UI should disable the feature.
-     */
-    [[nodiscard]] static bool isUserNamespaceSupported();
-
     [[nodiscard]] QString lastError() const;
 
 Q_SIGNALS:

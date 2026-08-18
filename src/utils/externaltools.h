@@ -101,9 +101,7 @@ public:
     [[nodiscard]] static QList<Tool> spiceDisplayTools();
     [[nodiscard]] static QList<Tool> dbusDisplayTools();
 
-    // Tools that cannot be used in the Flatpak sandbox (namespace-based
-    // networking). Empty in native mode.
-    [[nodiscard]] static QList<Tool> sandboxIrrelevantTools();
+    [[nodiscard]] QList<Tool> unusedTools() const;
 
     /**
      * Probe the version string for a given tool at an arbitrary path.
@@ -119,6 +117,7 @@ public:
 
     // Convenience: check if all tools for virtual networking are available.
     [[nodiscard]] bool isVirtualNetworkCapable() const;
+    [[nodiscard]] bool isPasstUsable() const;
 
     [[nodiscard]] static QList<FeatureGroup> featureGroups();
     [[nodiscard]] QList<FeatureGroup> missingFeatureGroups() const;

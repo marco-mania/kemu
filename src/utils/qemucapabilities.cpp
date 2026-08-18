@@ -19,7 +19,6 @@ void QemuCapabilities::refresh()
     const QString qemu = ExternalTools::instance().path(ExternalTools::QemuSystem);
     m_displays = probe(qemu, u"-display"_s);
     m_audiodevs = probe(qemu, u"-audiodev"_s);
-    m_probed = true;
 }
 
 QSet<QString> QemuCapabilities::probe(const QString &qemuPath, const QString &helpOption)
@@ -37,11 +36,9 @@ QSet<QString> QemuCapabilities::probe(const QString &qemuPath, const QString &he
     if (!process.waitForFinished(2000))
         return result;
 
-    const QString output = QString::fromLocal8Bit(process.readAllStandardOutput());
-    const QStringList lines = output.split(u'\n', Qt::SkipEmptyParts);
+    const QStringList lines = QString::fromLocal8Bit(process.readAllStandardOutput()).split(u'\n', Qt::SkipEmptyParts);
     for (const QString &line : lines) {
         const QString trimmed = line.trimmed();
-        // Skip the "Available ...:" header and any indented option details.
         if (trimmed.isEmpty() || trimmed.endsWith(u':'))
             continue;
         result.insert(trimmed.section(u' ', 0, 0).toLower());
