@@ -58,27 +58,34 @@ void ExternalTools::refresh()
 
 void ExternalTools::detectPath(ToolInfo &info)
 {
-    // 1) User override from KConfig
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
-    const QString configured = general.readEntry(info.configKey, {});
+    // Step 1: user override from KConfig. Meaningless in the sandbox, where
+    // only /app/bin exists - a host path would silently resolve to nothing.
+    if (!SandboxEnvironment::isFlatpak()) {
+        KConfig config(u"kemurc"_s);
+        const KConfigGroup general = config.group(u"General"_s);
+        const QString configured = general.readEntry(info.configKey, {});
 
-    if (!configured.isEmpty() && QFileInfo::exists(configured)) {
-        info.resolvedPath = configured;
-        return;
+        if (!configured.isEmpty() && QFileInfo::exists(configured)) {
+            info.resolvedPath = configured;
+            return;
+        }
     }
 
-    // 2) Auto-detect via $PATH
+    // Step 2: Auto-detect via $PATH
     QString found = QStandardPaths::findExecutable(info.defaultBinary);
     if (!found.isEmpty()) {
         info.resolvedPath = found;
         return;
     }
 
-    // 2b) Special case: try alternative binary names for ISO tools.
-    //     Must return-on-success, otherwise step 3 overwrites our result.
+    // Step 2b: Special case: try alternative binary names for ISO tools.
+    //          Must return-on-success, otherwise step 3 overwrites our result.
     if (info.configKey == u"GenIsoImagePath"_s) {
-        found = QStandardPaths::findExecutable(u"mkisofs"_s);
+        // xorriso only accepts genisoimage-style options under its
+        // "xorrisofs" mask.
+        found = QStandardPaths::findExecutable(u"xorrisofs"_s);
+        if (found.isEmpty())
+            found = QStandardPaths::findExecutable(u"mkisofs"_s);
         if (found.isEmpty())
             found = QStandardPaths::findExecutable(u"xorriso"_s);
         if (!found.isEmpty()) {
@@ -173,6 +180,10 @@ QList<ExternalTools::Tool> ExternalTools::allTools()
 
 QList<ExternalTools::Tool> ExternalTools::coreTools()
 {
+    // passt is replaced by QEMU's built-in SLIRP in the sandbox, so it must
+    // not trigger the non-suppressible "Core Functionality" warning there.
+    if (SandboxEnvironment::isFlatpak())
+        return {QemuSystem, QemuImg};
     return {QemuSystem, QemuImg, Passt};
 }
 
@@ -229,9 +240,10 @@ QString ExternalTools::probeVersionString(Tool /*tool*/, const QString &path)
 
 QStringList ExternalTools::missingToolNames() const
 {
+    const QList<Tool> irrelevant = sandboxIrrelevantTools();
     QStringList missing;
     for (const Tool t : allTools()) {
-        if (!isAvailable(t))
+        if (!irrelevant.contains(t) && !isAvailable(t))
             missing << displayName(t);
     }
     return missing;
