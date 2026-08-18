@@ -273,24 +273,41 @@ From this shell you have full access to all VMs on the virtual network.
 
 ## Sandbox Mode
 
-Linux user namespaces (the mechanism behind Virtual Network mode) may be
-blocked by sandbox environments.
-When running as a Flatpak KEMU detects the corresponding sandbox
-automatically (via `/.flatpak-info`) and adjusts itself accordingly.
+Some features of KEMU rely on Linux user namespaces, which sandbox
+environments block by design. When running as a Flatpak, KEMU detects this
+automatically (via `/.flatpak-info`) and adjusts itself rather than failing
+at runtime.
 
-- **Networking:** Virtual Network mode is unavailable. User Mode still
-  works, but via QEMU's built-in usermode networking (SLIRP) instead of
-  `passt`. `passt` itself creates its own mount namespace on startup
-  regardless of mode.
-- **Settings:** The Virtual Networks page and the `passt`/`pasta`/`dnsmasq`
-  rows under Executables are greyed out rather than removed, so any
-  existing configuration is preserved if you switch to a native install
-  later.
-- Detection can be overridden for testing with CLIP option
-  `--sandbox-mode <auto|native|flatpak>` (default: `auto`).
+- **Networking:** Virtual Network mode is unavailable - it needs namespace
+  capabilities that the sandbox denies. User Mode still works, but through
+  QEMU's built-in usermode networking (SLIRP) instead of `passt`; `passt`
+  performs its own `unshare()` on startup and cannot run inside the sandbox
+  either. See [Networking](#networking) for what SLIRP does and does not
+  provide.
+- **Settings:** The Virtual Networks page is disabled, and the Executables
+  page is read-only - all helper programs are part of the Flatpak image and
+  cannot be replaced with host binaries. Existing configuration is kept, not
+  deleted, so it is still there if you switch to a native install later.
+- **Firmware:** UEFI firmware ships with the bundled QEMU build. If you need
+  a specific OVMF variant, KEMU also searches the host's firmware
+  directories, and a custom path set under Settings -> Firmware works as
+  usual.
+- **Start scripts:** The generated `qemu.sh` and the "Show QEMU command"
+  dialog reference paths inside the sandbox (`/app/bin/...`). They are meant
+  for inspection and for running via `flatpak run --command=...`, not for
+  execution on the host.
+- **File locations:** VM data and configuration live under
+  `~/.var/app/org.kde.kemu/`, not `~/.local/share/kemu`. VMs from a previous
+  native installation are not picked up automatically; point *Settings ->
+  General -> VM directory* at the old path to keep using them.
+- **USB passthrough:** In addition to the udev rule described under
+  [USB Passthrough](#usb-passthrough), the sandbox must be permitted to see
+  the device. Recent Flatpak versions ask for this per device.
 
-This is a deliberate scope decision, not a workaround for a bug, because
-it needs namespace capabilities most sandbox envirnoments deny by design.
+Detection can be overridden for testing with the CLI option
+`--sandbox-mode <auto|native|flatpak>` (default: `auto`). Note that this
+switches KEMU's *behaviour* only - it does not create a sandbox, so paths
+such as `/app/bin` will not exist in a native build.
 
 ## Shared Folders
 
