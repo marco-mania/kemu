@@ -140,7 +140,9 @@ void SettingsDialog::setupExecutablesPage()
     connect(refreshBtn, &QPushButton::clicked, this, [this]() {
         ExternalTools::instance().refresh();
         for (int i = 0; i < m_toolWidgets.size(); ++i) {
-            m_toolWidgets[i].pathEdit->setText(ExternalTools::instance().path(m_toolWidgets[i].tool));
+            const QString detected = ExternalTools::instance().detectedPath(m_toolWidgets[i].tool);
+            m_toolWidgets[i].pathEdit->setPlaceholderText(detected.isEmpty() ? i18n("Not found - enter a path manually") : detected);
+            updateToolVersion(i);
         }
     });
     refreshLayout->addWidget(refreshBtn);
@@ -152,7 +154,6 @@ void SettingsDialog::setupExecutablesPage()
     for (const ExternalTools::Tool tool : ExternalTools::allTools()) {
         const QString binary = tools.defaultBinary(tool);
         const QString description = ExternalTools::displayName(tool);
-        const QString currentPath = tools.path(tool);
         const bool sandboxIrrelevant = ExternalTools::sandboxIrrelevantTools().contains(tool);
 
         auto *headerLayout = new QHBoxLayout;
@@ -168,8 +169,9 @@ void SettingsDialog::setupExecutablesPage()
 
         auto *pathRow = new QHBoxLayout;
         auto *pathEdit = new QLineEdit;
-        pathEdit->setText(currentPath);
-        pathEdit->setPlaceholderText(i18n("Auto-detected if empty"));
+        const QString detected = tools.detectedPath(tool);
+        pathEdit->setText(tools.configuredPath(tool));
+        pathEdit->setPlaceholderText(detected.isEmpty() ? i18n("Not found - enter a path manually") : detected);
         pathRow->addWidget(pathEdit);
         auto *browseBtn = new QPushButton(QIcon::fromTheme(u"document-open"_s), {});
         pathRow->addWidget(browseBtn);
@@ -417,15 +419,12 @@ void SettingsDialog::saveSettings()
     KConfigGroup general = config.group(u"General"_s);
     general.writeEntry("VmBasePath", pathEdit->text());
     general.writeEntry("OvmfPath", ovmfEdit->text());
-    // Never persist sandbox paths as user overrides.
+    // Never persist sandbox paths as user overrides; an empty entry means
+    // auto-detection stays in charge.
     if (!SandboxEnvironment::isFlatpak()) {
         for (const auto &tw : m_toolWidgets) {
             const QString key = ExternalTools::instance().configKey(tw.tool);
-            const QString text = tw.pathEdit->text().trimmed();
-            // Storing the auto-detected path would freeze detection, so only
-            // a real deviation counts as an override.
-            const bool isOverride = !text.isEmpty() && text != QStandardPaths::findExecutable(ExternalTools::instance().defaultBinary(tw.tool));
-            general.writeEntry(key, isOverride ? text : QString());
+            general.writeEntry(key, tw.pathEdit->text().trimmed());
         }
     }
     general.writeEntry("PerformanceMonitorEnabled", perfMonitorCheck->isChecked());
@@ -797,7 +796,9 @@ void SettingsDialog::updateToolVersion(int index)
     if (!tw.pathEdit || !tw.statusLabel)
         return;
 
-    const QString path = tw.pathEdit->text();
+    const QString typed = tw.pathEdit->text().trimmed();
+    const QString path = typed.isEmpty() ? ExternalTools::instance().detectedPath(tw.tool) : typed;
+
     const KColorScheme scheme(QPalette::Active, KColorScheme::View);
 
     if (path.isEmpty() || !QFileInfo::exists(path)) {

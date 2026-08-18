@@ -80,23 +80,29 @@ public:
     [[nodiscard]] QString configKey(Tool tool) const;
     [[nodiscard]] QString defaultBinary(Tool tool) const;
 
+    // What auto-detection found, regardless of any configured override.
+    [[nodiscard]] QString detectedPath(Tool tool) const;
+
+    // The user's override from kemurc, empty when detection is in charge.
+    [[nodiscard]] QString configuredPath(Tool tool) const;
+
     // Human-readable display name, e.g. "QEMU System Emulator"
     [[nodiscard]] static QString displayName(Tool tool);
 
     // Returns all registered tool ids.
     [[nodiscard]] static QList<Tool> allTools();
 
-    /// Tools required for basic VM operation (always needed).
+    // Tools required for basic VM operation (always needed).
     [[nodiscard]] static QList<Tool> coreTools();
 
-    /// Tools required only for the virtual-network feature.
+    // Tools required only for the virtual-network feature.
     [[nodiscard]] static QList<Tool> virtualNetworkTools();
 
     [[nodiscard]] static QList<Tool> spiceDisplayTools();
     [[nodiscard]] static QList<Tool> dbusDisplayTools();
 
-    /// Tools that cannot be used in the Flatpak sandbox (namespace-based
-    /// networking). Empty in native mode.
+    // Tools that cannot be used in the Flatpak sandbox (namespace-based
+    // networking). Empty in native mode.
     [[nodiscard]] static QList<Tool> sandboxIrrelevantTools();
 
     /**
@@ -145,7 +151,9 @@ private:
     struct ToolInfo {
         QString configKey; // key in kemurc  (e.g. "QemuSystemPath")
         QString defaultBinary; // binary name for findExecutable()
-        QString resolvedPath; // absolute path after refresh()
+        QString configuredPath; // user override from kemurc, may be empty
+        QString detectedPath; // what auto-detection found, ignoring the override
+        QString resolvedPath; // configuredPath if usable, else detectedPath
         QString detectedVersion; // first line of --version output
         bool available = false; // file exists AND is executable
     };
@@ -154,5 +162,6 @@ private:
 
     void registerTool(Tool id, const QString &configKey, const QString &defaultBinary);
     void detectPath(ToolInfo &info);
+    static QString autoDetect(const ToolInfo &info);
     void probeVersion(Tool tool, ToolInfo &info);
 };

@@ -58,39 +58,36 @@ void ExternalTools::refresh()
 
 void ExternalTools::detectPath(ToolInfo &info)
 {
-    // Step 1: user override from KConfig. Meaningless in the sandbox, where
-    // only /app/bin exists - a host path would silently resolve to nothing.
+    info.detectedPath = autoDetect(info);
+
+    // Inside the sandbox every tool lives in /app/bin; a host path from a
+    // previous native install would be meaningless here.
+    info.configuredPath.clear();
     if (!SandboxEnvironment::isFlatpak()) {
         KConfig config(u"kemurc"_s);
         const KConfigGroup general = config.group(u"General"_s);
-        const QString configured = general.readEntry(info.configKey, {});
-
-        if (!configured.isEmpty() && QFileInfo::exists(configured)) {
-            info.resolvedPath = configured;
-            return;
-        }
+        info.configuredPath = general.readEntry(info.configKey, QString());
     }
 
-    // Step 2: Auto-detect via $PATH
+    info.resolvedPath = (!info.configuredPath.isEmpty() && QFileInfo::exists(info.configuredPath)) ? info.configuredPath : info.detectedPath;
+}
+
+QString ExternalTools::autoDetect(const ToolInfo &info)
+{
     QString found = QStandardPaths::findExecutable(info.defaultBinary);
-    if (!found.isEmpty()) {
-        info.resolvedPath = found;
-        return;
-    }
+    if (!found.isEmpty())
+        return found;
 
-    // Step 2b: Special case: try alternative binary names for ISO tools.
-    //          Must return-on-success, otherwise step 3 overwrites our result.
+    // Alternative binary names for the ISO tool.
     if (info.configKey == u"GenIsoImagePath"_s) {
         found = QStandardPaths::findExecutable(u"mkisofs"_s);
         if (found.isEmpty())
             found = QStandardPaths::findExecutable(u"xorriso"_s);
-        if (!found.isEmpty()) {
-            info.resolvedPath = found;
-            return;
-        }
+        if (!found.isEmpty())
+            return found;
     }
 
-    info.resolvedPath = QStandardPaths::findExecutable(info.defaultBinary, KEMUConst::FallbackPaths);
+    return QStandardPaths::findExecutable(info.defaultBinary, KEMUConst::FallbackPaths);
 }
 
 void ExternalTools::probeVersion(Tool tool, ToolInfo &info)
@@ -140,6 +137,16 @@ QString ExternalTools::configKey(Tool tool) const
 QString ExternalTools::defaultBinary(Tool tool) const
 {
     return m_tools.value(tool).defaultBinary;
+}
+
+QString ExternalTools::detectedPath(Tool tool) const
+{
+    return m_tools.value(tool).detectedPath;
+}
+
+QString ExternalTools::configuredPath(Tool tool) const
+{
+    return m_tools.value(tool).configuredPath;
 }
 
 QString ExternalTools::displayName(Tool tool)
