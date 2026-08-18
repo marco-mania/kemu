@@ -42,10 +42,10 @@ A traditional, direct-to-QEMU desktop frontend for Linux, built with Qt6 Widgets
 - KDE Frameworks 6
 - QEMU >= 7.2
 - libarchive
-- passt (for user-mode networking and virtual network NAT)
 - libmnl (minimalistic netlink library for virtual networks)
 - libnftnl (nftables netlink helpers for virtual networks)
 - libudev (for usb device passthrough)
+- Optional: `passt` (for user-mode networking; QEMU's built-in SLIRP is used when absent)
 - Optional: `edk2-ovmf` (for UEFI boot)
 - Optional: `swtpm` (for TPM 2.0 emulation)
 - Optional: `virtiofsd` (for shared folders with Windows guests)
@@ -220,6 +220,7 @@ KEMU offers two network modes, both running entirely in userspace without root p
 | Mode                  | Backend                               | VM-to-VM | DHCP             | NAT            | Port Forwarding |
 |-----------------------|---------------------------------------|----------|------------------|----------------|-----------------|
 | **User Mode (passt)** | `passt`                               | No       | N/A (host stack) | Yes            | Yes             |
+| **User Mode (SLIRP)** | QEMU built-in                         | No       | Yes (10.0.2.0/24)| Yes            | Yes             |
 | **Virtual Network**   | User namespaces + `pasta` + `dnsmasq` | Yes      | Yes (optional)   | Yes (optional) | Yes             |
 
 ### User Mode (passt) - Default
