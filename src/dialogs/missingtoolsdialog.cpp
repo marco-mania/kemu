@@ -6,6 +6,8 @@
 
 #include "missingtoolsdialog.h"
 
+#include "utils/sandboxenvironment.h"
+
 MissingToolsDialog::MissingToolsDialog(const QList<ExternalTools::FeatureGroup> &missing, QWidget *parent)
     : QDialog(parent)
 {
@@ -13,9 +15,10 @@ MissingToolsDialog::MissingToolsDialog(const QList<ExternalTools::FeatureGroup> 
 
     auto *layout = new QVBoxLayout(this);
 
-    auto *intro =
-        new QLabel(i18n("The following features are unavailable because their "
-                        "external helper programs were not found on this system:"));
+    auto *intro = new QLabel(SandboxEnvironment::isFlatpak() ? i18n("The following features are unavailable in this sandboxed build:")
+                                                             : i18n("The following features are unavailable because their "
+                                                                    "external helper programs were not found on this system:"));
+
     intro->setWordWrap(true);
     layout->addWidget(intro);
 
@@ -40,14 +43,19 @@ MissingToolsDialog::MissingToolsDialog(const QList<ExternalTools::FeatureGroup> 
         u"  .required { color: palette(mid); font-style: italic; }"
         u"</style>"_s;
 
+    const QList<ExternalTools::Tool> irrelevant = ExternalTools::sandboxIrrelevantTools();
+
     for (const auto &group : missing) {
         const QString iconSrc = group.suppressible ? u"kemu://icon-warn"_s : u"kemu://icon-err"_s;
 
         QStringList missingNames;
         for (auto t : group.tools) {
-            if (!tools.isAvailable(t))
+            if (!irrelevant.contains(t) && !tools.isAvailable(t))
                 missingNames << ExternalTools::displayName(t);
         }
+
+        if (missingNames.isEmpty())
+            continue; // nothing left to report for this group
 
         html += u"<div class='group'>"_s;
         html += u"<div class='header'><img src='%1' style='vertical-align:middle;'/>&nbsp;%2</div>"_s.arg(iconSrc, group.name.toHtmlEscaped());
@@ -85,13 +93,18 @@ MissingToolsDialog::MissingToolsDialog(const QList<ExternalTools::FeatureGroup> 
     }
 
     auto *buttons = new QDialogButtonBox(this);
-    auto *settingsBtn = buttons->addButton(i18n("Open Settings..."), QDialogButtonBox::AcceptRole);
-    settingsBtn->setIcon(QIcon::fromTheme(u"configure"_s));
+    if (!SandboxEnvironment::isFlatpak()) {
+        auto *settingsBtn = buttons->addButton(i18n("Open Settings..."), QDialogButtonBox::AcceptRole);
+        settingsBtn->setIcon(QIcon::fromTheme(u"configure"_s));
+        connect(settingsBtn, &QPushButton::clicked, this, [this]() {
+            m_openSettings = true;
+        });
+        connect(settingsBtn, &QPushButton::clicked, this, [this]() {
+            m_openSettings = true;
+        });
+    }
     buttons->addButton(QDialogButtonBox::Close);
 
-    connect(settingsBtn, &QPushButton::clicked, this, [this]() {
-        m_openSettings = true;
-    });
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
