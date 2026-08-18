@@ -2888,13 +2888,13 @@ void MainWindow::showCommand()
     if (cmd.contains("UEFI_CODE_NOT_FOUND"_L1) || cmd.contains("VM_VARS_FILE_MISSING"_L1)) {
         const QString warnText = currentConfig.useSecureBoot() ? i18n(
                                                                      "WARNING: UEFI Secure Boot firmware not found! "
-                                                                     "Make sure a Secure Boot-capable OVMF package is installed "
-                                                                     "(e.g. 'edk2-ovmf' on Arch, 'ovmf' on Debian/Ubuntu) "
-                                                                     "or set the firmware path in Settings.")
+                                                                     "Make sure a Secure Boot-capable OVMF package is "
+                                                                     "installed on the host "
+                                                                     "or set a custom path in the settings.")
                                                                : i18n(
                                                                      "WARNING: UEFI files missing! "
-                                                                     "Make sure 'edk2-ovmf' is installed or set the path in "
-                                                                     "Settings.");
+                                                                     "Make sure 'edk2-ovmf' is installed on the host "
+                                                                     "or set a custom path in the settings.");
         auto *warn = new QLabel(warnText);
         warn->setWordWrap(true);
         l->addWidget(warn);

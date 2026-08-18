@@ -8,6 +8,10 @@
 
 #include "kemu_debug.h"
 
+#include <algorithm>
+
+#include "utils/sandboxenvironment.h"
+
 extern "C" {
 char *__crypt_sha512(const char *key, const char *setting, char *output);
 }
@@ -89,73 +93,99 @@ bool waitForSocket(const QString &sockPath, int timeoutMs)
     return found;
 }
 
+namespace
+{
+
+QStringList ovmfSearchDirs(const QString &customDir)
+{
+    static const QStringList systemDirs = {u"/usr/share/edk2/x64"_s,
+                                           u"/usr/share/edk2/ovmf"_s,
+                                           u"/usr/share/OVMF"_s,
+                                           u"/usr/share/ovmf"_s,
+                                           u"/usr/share/qemu"_s};
+
+    QStringList dirs;
+    if (!customDir.isEmpty())
+        dirs << customDir;
+
+    if (SandboxEnvironment::isFlatpak()) {
+        // Inside the sandbox /usr belongs to the runtime. The firmware
+        // shipped with our own QEMU build wins; the host copy is only
+        // reachable through /run/host.
+        dirs << u"/app/share/qemu"_s << u"/app/share/kemu/ovmf"_s;
+        for (const QString &d : systemDirs)
+            dirs << u"/run/host"_s + d;
+    } else {
+        dirs << systemDirs;
+    }
+
+    return dirs;
+}
+
+QString firstExisting(const QDir &dir, const QStringList &names)
+{
+    for (const QString &n : names)
+        if (dir.exists(n))
+            return dir.filePath(n);
+    return {};
+}
+
+OvmfPaths searchDirs(const QString &customDir, const QStringList &codeNames, const QStringList &varsNames)
+{
+    for (const QString &d : ovmfSearchDirs(customDir)) {
+        const QDir dir(d);
+        const QString code = firstExisting(dir, codeNames);
+        if (code.isEmpty())
+            continue;
+
+        // A 4MB code image needs 4MB vars - mixing the two bricks the boot,
+        // so prefer candidates of the same size family.
+        const bool is4m = code.contains("4m"_L1, Qt::CaseInsensitive);
+        QStringList vars = varsNames;
+        std::stable_partition(vars.begin(), vars.end(), [is4m](const QString &n) {
+            return n.contains("4m"_L1, Qt::CaseInsensitive) == is4m;
+        });
+
+        return {code, firstExisting(dir, vars)};
+    }
+    return {};
+}
+
+} // namespace
+
 OvmfPaths findOvmfPaths(bool secureBoot, const QString &customDir)
 {
-    if (!customDir.isEmpty()) {
-        const QDir dir(customDir);
+    static const QStringList sbCode = {u"OVMF_CODE.secboot.4m.fd"_s,
+                                       u"OVMF_CODE_4M.secboot.fd"_s,
+                                       u"OVMF_CODE.secboot.fd"_s,
+                                       u"edk2-x86_64-secure-code.fd"_s,
+                                       u"ovmf-x86_64-smm-ms-code.bin"_s,
+                                       u"ovmf-x86_64-smm-code.bin"_s};
 
-        QStringList codeNames;
-        QStringList varsNames;
+    static const QStringList sbVars = {u"OVMF_VARS.4m.ms.fd"_s,
+                                       u"OVMF_VARS_4M.ms.fd"_s,
+                                       u"OVMF_VARS.ms.fd"_s,
+                                       u"OVMF_VARS.secboot.fd"_s,
+                                       u"ovmf-x86_64-smm-ms-vars.bin"_s,
+                                       u"ovmf-x86_64-smm-vars.bin"_s,
+                                       u"OVMF_VARS_4M.fd"_s,
+                                       u"OVMF_VARS.4m.fd"_s,
+                                       u"OVMF_VARS.fd"_s,
+                                       u"edk2-i386-vars.fd"_s};
 
-        if (secureBoot) {
-            codeNames = {u"OVMF_CODE.secboot.4m.fd"_s, u"OVMF_CODE_4M.secboot.fd"_s, u"OVMF_CODE.secboot.fd"_s, u"OVMF_CODE.4m.fd"_s, u"OVMF_CODE.fd"_s};
-            varsNames = {u"OVMF_VARS.4m.ms.fd"_s, u"OVMF_VARS_4M.ms.fd"_s, u"OVMF_VARS.ms.fd"_s, u"OVMF_VARS.4m.fd"_s, u"OVMF_VARS.fd"_s};
-        } else {
-            codeNames = {u"OVMF_CODE.4m.fd"_s, u"OVMF_CODE.fd"_s, u"OVMF.fd"_s};
-            varsNames = {u"OVMF_VARS.4m.fd"_s, u"OVMF_VARS.fd"_s};
-        }
+    static const QStringList code =
+        {u"OVMF_CODE.4m.fd"_s, u"OVMF_CODE_4M.fd"_s, u"OVMF_CODE.fd"_s, u"OVMF.4m.fd"_s, u"OVMF.fd"_s, u"edk2-x86_64-code.fd"_s, u"ovmf-x86_64-code.bin"_s};
 
-        QString foundCode, foundVars;
-        for (const auto &n : codeNames)
-            if (dir.exists(n)) {
-                foundCode = dir.filePath(n);
-                break;
-            }
-        for (const auto &n : varsNames)
-            if (dir.exists(n)) {
-                foundVars = dir.filePath(n);
-                break;
-            }
-        if (!foundCode.isEmpty())
-            return {foundCode, foundVars};
-    }
+    static const QStringList vars = {u"OVMF_VARS.4m.fd"_s, u"OVMF_VARS_4M.fd"_s, u"OVMF_VARS.fd"_s, u"edk2-i386-vars.fd"_s, u"ovmf-x86_64-vars.bin"_s};
 
     if (secureBoot) {
-        // Secure Boot
-        const QList<QPair<QString, QString>> sbPairs = {
-            // Arch / edk2-ovmf
-            {u"/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.4m.fd"_s},
-            {u"/usr/share/edk2/x64/OVMF_CODE.4m.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.4m.fd"_s},
-            // Fedora
-            {u"/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd"_s, u"/usr/share/edk2/ovmf/OVMF_VARS.secboot.fd"_s},
-            // Debian / Ubuntu
-            {u"/usr/share/OVMF/OVMF_CODE_4M.secboot.fd"_s, u"/usr/share/OVMF/OVMF_VARS_4M.ms.fd"_s},
-            {u"/usr/share/OVMF/OVMF_CODE.secboot.fd"_s, u"/usr/share/OVMF/OVMF_VARS.ms.fd"_s},
-            {u"/usr/share/OVMF/OVMF_CODE_4M.secboot.fd"_s, u"/usr/share/OVMF/OVMF_VARS_4M.fd"_s},
-            {u"/usr/share/OVMF/OVMF_CODE.secboot.fd"_s, u"/usr/share/OVMF/OVMF_VARS.fd"_s},
-            // openSUSE
-            {u"/usr/share/qemu/ovmf-x86_64-smm-ms-code.bin"_s, u"/usr/share/qemu/ovmf-x86_64-smm-ms-vars.bin"_s},
-            {u"/usr/share/qemu/ovmf-x86_64-smm-code.bin"_s, u"/usr/share/qemu/ovmf-x86_64-smm-vars.bin"_s},
-        };
-
-        for (const auto &pair : sbPairs)
-            if (QFile::exists(pair.first))
-                return {pair.first, pair.second};
+        const OvmfPaths sb = searchDirs(customDir, sbCode, sbVars);
+        if (!sb.codePath.isEmpty())
+            return sb;
+        // Fall through to plain OVMF, as before.
     }
 
-    const QList<QPair<QString, QString>> ovmfPairs = {{u"/usr/share/edk2/x64/OVMF_CODE.4m.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.4m.fd"_s},
-                                                      {u"/usr/share/edk2/x64/OVMF_CODE.fd"_s, u"/usr/share/edk2/x64/OVMF_VARS.fd"_s},
-                                                      {u"/usr/share/OVMF/OVMF_CODE.fd"_s, u"/usr/share/OVMF/OVMF_VARS.fd"_s},
-                                                      {u"/usr/share/OVMF/OVMF_CODE.4m.fd"_s, u"/usr/share/OVMF/OVMF_VARS.4m.fd"_s},
-                                                      {u"/usr/share/ovmf/OVMF.fd"_s, u"/usr/share/ovmf/OVMF_VARS.fd"_s},
-                                                      {u"/usr/share/ovmf/OVMF.4m.fd"_s, u"/usr/share/ovmf/OVMF_VARS.4m.fd"_s},
-                                                      {u"/usr/share/qemu/OVMF.fd"_s, u"/usr/share/qemu/OVMF_VARS.fd"_s}};
-
-    for (const auto &pair : ovmfPairs)
-        if (QFile::exists(pair.first))
-            return {pair.first, pair.second};
-
-    return {};
+    return searchDirs(customDir, code, vars);
 }
 
 QString detectHostKeyboardLayout()
