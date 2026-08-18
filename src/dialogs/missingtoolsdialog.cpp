@@ -6,14 +6,6 @@
 
 #include "missingtoolsdialog.h"
 
-/*
- * SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
- *
- * SPDX-License-Identifier: GPL-3.0-or-later
- */
-
-#include "missingtoolsdialog.h"
-
 MissingToolsDialog::MissingToolsDialog(const QList<ExternalTools::FeatureGroup> &missing, QWidget *parent)
     : QDialog(parent)
 {
