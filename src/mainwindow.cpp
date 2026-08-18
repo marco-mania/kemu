@@ -4384,7 +4384,7 @@ void MainWindow::populateUsbMenuFor(const QString &vmName, QMenu *target)
 
     const QList<UsbDeviceInfo> devices = UsbEnumerator::enumerate();
     if (devices.isEmpty()) {
-        auto *a = target->addAction(i18n("No USB devices found"));
+        auto *a = target->addAction(SandboxEnvironment::isFlatpak() ? i18n("No USB devices visible (sandbox permissions)") : i18n("No USB devices found"));
         a->setEnabled(false);
         return;
     }
