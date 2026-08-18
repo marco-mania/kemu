@@ -208,7 +208,9 @@ QList<ExternalTools::Tool> ExternalTools::sandboxIrrelevantTools()
         return {};
     // passt: replaced by QEMU's built-in SLIRP in the sandbox.
     // pasta/dnsmasq: virtual networking is unavailable in the sandbox.
-    return {Passt, Pasta, Dnsmasq};
+    // remote-viewer: no SPICE client is shipped; the integrated D-Bus viewer
+    // covers the same ground.
+    return {Passt, Pasta, Dnsmasq, RemoteViewer};
 }
 
 QString ExternalTools::probeVersionString(Tool /*tool*/, const QString &path)

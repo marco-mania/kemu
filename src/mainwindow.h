@@ -205,7 +205,6 @@ private:
     QMap<QString, DbusViewerState> m_dbusViewers;
 
     bool requireTool(const ExternalTools::Tool tool);
-    bool isDisplayTypeAvailable(const VMSpecs::DisplayType type);
 
     VirtualEnvironmentTreeView *veTreeView = nullptr;
     VirtualEnvironmentModel *veModel = nullptr;

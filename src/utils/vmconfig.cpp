@@ -7,6 +7,7 @@
 #include "vmconfig.h"
 
 #include "const.h"
+#include "utils/externaltools.h"
 #include "utils/utils.h"
 
 using namespace Qt::StringLiterals;
@@ -494,6 +495,22 @@ QString VMConfig::toQemuSystemBinary(VMSpecs::Architecture arch)
         return u"qemu-system-x86_64"_s;
     }
     return u"qemu-system-x86_64"_s;
+}
+
+bool VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType type)
+{
+    // No default case: a new display type must not silently become
+    // unavailable when someone extends the enum.
+    switch (type) {
+    case VMSpecs::DisplayType::Spice:
+        return ExternalTools::instance().isAvailable(ExternalTools::spiceDisplayTools());
+    case VMSpecs::DisplayType::Dbus:
+        return ExternalTools::instance().isAvailable(ExternalTools::dbusDisplayTools());
+    case VMSpecs::DisplayType::Gtk:
+    case VMSpecs::DisplayType::Sdl:
+        return true;
+    }
+    return false;
 }
 
 // --- QEMU Strings ---
@@ -1135,6 +1152,8 @@ VMSpecs::CpuModel VMConfig::parseCpuModel(const QString &str)
     return VMSpecs::CpuModel::Host;
 }
 
+// Availability is deliberately NOT checked here: VM directories are portable,
+// and a display type this build cannot provide must survive a round trip.
 VMSpecs::DisplayType VMConfig::parseDisplayType(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();

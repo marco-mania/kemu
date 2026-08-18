@@ -401,12 +401,10 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     hwLayout->addRow(i18n("Keyboard:"), keyboardCombo);
 
     displayCombo = new QComboBox();
-    displayCombo->addItem(VMConfig::toUIString(VMSpecs::DisplayType::Gtk), static_cast<int>(VMSpecs::DisplayType::Gtk));
-    displayCombo->addItem(VMConfig::toUIString(VMSpecs::DisplayType::Sdl), static_cast<int>(VMSpecs::DisplayType::Sdl));
-    if (ExternalTools::instance().isAvailable(ExternalTools::spiceDisplayTools()))
-        displayCombo->addItem(VMConfig::toUIString(VMSpecs::DisplayType::Spice), static_cast<int>(VMSpecs::DisplayType::Spice));
-    if (ExternalTools::instance().isAvailable(ExternalTools::dbusDisplayTools()))
-        displayCombo->addItem(VMConfig::toUIString(VMSpecs::DisplayType::Dbus), static_cast<int>(VMSpecs::DisplayType::Dbus));
+    for (const auto type : {VMSpecs::DisplayType::Gtk, VMSpecs::DisplayType::Sdl, VMSpecs::DisplayType::Spice, VMSpecs::DisplayType::Dbus}) {
+        if (VMConfig::isDisplayTypeAvailable(type))
+            displayCombo->addItem(VMConfig::toUIString(type), static_cast<int>(type));
+    }
     hwLayout->addRow(i18n("Display:"), displayCombo);
 
     gpuCombo = new QComboBox();
@@ -503,6 +501,10 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     connect(spiceUsbRedirCheck, &QCheckBox::toggled, spiceUsbRedirCountLabel, &QLabel::setEnabled);
 
     spiceGroup->setEnabled(false);
+    // Not just disabled: without a SPICE display type these options can
+    // never become reachable.
+    spiceGroup->setVisible(VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType::Spice));
+
     hwLayout->addRow(spiceGroup);
 
     tabs->addTab(hwTab, QIcon::fromTheme(u"preferences-desktop-peripherals"_s), i18n("Hardware"));
@@ -1487,15 +1489,19 @@ void CreateVmDialog::setupForEdit(const VMConfig &config)
 
     updateDeviceAvailability();
 
-    if (!isDisplayTypeAvailable(config.displayType())) {
+    if (!VMConfig::isDisplayTypeAvailable(config.displayType())) {
         const auto configuredType = config.displayType();
-        const auto fallbackType = VMSpecs::DisplayType::Gtk;
+        // Prefer the integrated viewer; GTK only if that is missing too.
+        const auto fallbackType = VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType::Dbus) ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Gtk;
         KMessageBox::information(this,
-                                 i18n("The configured display type '%1' is currently not available.\n"
-                                      "KEMU will set to '%2' instead.\n\n",
+                                 i18n("The configured display type '%1' is not available in this build.\n"
+                                      "KEMU will use '%2' instead.",
                                       VMConfig::toUIString(configuredType),
                                       VMConfig::toUIString(fallbackType)),
                                  i18n("Display Type Unavailable"));
+        setCombo(displayCombo, fallbackType);
+    } else {
+        setCombo(displayCombo, config.displayType());
     }
 
     setCombo(displayCombo, config.displayType());
@@ -2082,21 +2088,6 @@ void CreateVmDialog::updateInputDeviceAvailability()
             setCombo(mouseCombo, VMSpecs::PointerDevice::Ps2);
         if (static_cast<VMSpecs::KeyboardDevice>(keyboardCombo->currentData().toInt()) != VMSpecs::KeyboardDevice::Ps2)
             setCombo(keyboardCombo, VMSpecs::KeyboardDevice::Ps2);
-    }
-}
-
-bool CreateVmDialog::isDisplayTypeAvailable(const VMSpecs::DisplayType type)
-{
-    switch (type) {
-    case VMSpecs::DisplayType::Spice:
-        return ExternalTools::instance().isAvailable(ExternalTools::spiceDisplayTools());
-    case VMSpecs::DisplayType::Dbus:
-        return ExternalTools::instance().isAvailable(ExternalTools::DbusDaemon);
-    case VMSpecs::DisplayType::Gtk:
-    case VMSpecs::DisplayType::Sdl:
-        return true;
-    default:
-        return false;
     }
 }
 

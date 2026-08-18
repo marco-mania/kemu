@@ -754,6 +754,9 @@ public:
 
     [[nodiscard]] static QString toQemuSystemBinary(VMSpecs::Architecture arch);
 
+    /// True if this build can actually provide the given display type.
+    [[nodiscard]] static bool isDisplayTypeAvailable(VMSpecs::DisplayType type);
+
     // --- QEMU Strings ---
     [[nodiscard]] static QString toQemuString(VMSpecs::CpuModel model);
     [[nodiscard]] static QString toQemuString(VMSpecs::NetworkCard card);

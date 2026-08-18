@@ -1215,21 +1215,6 @@ bool MainWindow::requireTool(const ExternalTools::Tool tool)
     return false;
 }
 
-bool MainWindow::isDisplayTypeAvailable(const VMSpecs::DisplayType type)
-{
-    switch (type) {
-    case VMSpecs::DisplayType::Spice:
-        return ExternalTools::instance().isAvailable(ExternalTools::spiceDisplayTools());
-    case VMSpecs::DisplayType::Dbus:
-        return ExternalTools::instance().isAvailable(ExternalTools::DbusDaemon);
-    case VMSpecs::DisplayType::Gtk:
-    case VMSpecs::DisplayType::Sdl:
-        return true;
-    default:
-        return false;
-    }
-}
-
 void MainWindow::setupActions()
 {
     KActionCollection *ac = actionCollection();
@@ -2936,6 +2921,23 @@ void MainWindow::startVM(bool headless)
     m_userInitiatedShutdowns.remove(vmName);
     m_resumingFromSavestate.remove(vmName);
     m_startupFailureShown.remove(vmName);
+
+    if (!headless && !VMConfig::isDisplayTypeAvailable(currentConfig.displayType())) {
+        const auto fallback = VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType::Dbus) ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Gtk;
+        const auto answer = KMessageBox::questionTwoActions(this,
+                                                            i18n("The display type configured for '%1' is not available in this build. "
+                                                                 "Switch this VM to '%2'?",
+                                                                 vmName,
+                                                                 VMConfig::toUIString(fallback)),
+                                                            i18n("Display Type Unavailable"),
+                                                            KGuiItem(i18n("Switch and Start"), u"video-display"_s),
+                                                            KStandardGuiItem::cancel());
+        if (answer != KMessageBox::PrimaryAction)
+            return;
+
+        currentConfig.setDisplayType(fallback);
+        saveVmConfig(vmDirPath, currentConfig);
+    }
 
     auto *chain = new StartupChain(this);
 

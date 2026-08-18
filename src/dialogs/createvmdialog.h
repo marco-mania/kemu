@@ -116,8 +116,6 @@ private:
     void updateDeviceAvailability();
     void updateInputDeviceAvailability();
 
-    bool isDisplayTypeAvailable(const VMSpecs::DisplayType type);
-
     void validateForm();
 
     QStringList existingVmNames;
