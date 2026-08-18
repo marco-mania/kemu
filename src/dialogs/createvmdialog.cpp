@@ -1504,7 +1504,6 @@ void CreateVmDialog::setupForEdit(const VMConfig &config)
         setCombo(displayCombo, config.displayType());
     }
 
-    setCombo(displayCombo, config.displayType());
     spiceAgentCheck->setChecked(config.spiceAgent());
     spiceUsbRedirCheck->setChecked(config.spiceUsbRedir());
     spiceUsbRedirCountSpin->setValue(config.spiceUsbRedirCount());
