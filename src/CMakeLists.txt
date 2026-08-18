@@ -74,6 +74,8 @@ target_sources(
           utils/startupchain.h
           utils/sandboxenvironment.cpp
           utils/sandboxenvironment.h
+          utils/qemucapabilities.cpp
+          utils/qemucapabilities.h
           utils/3rdparty/crypt_sha512.c
           models/virtualenvironmentmodel.cpp
           models/virtualenvironmentmodel.h

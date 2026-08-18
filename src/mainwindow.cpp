@@ -22,6 +22,7 @@
 #include "kemu_debug.h"
 #include "utils/asynchelperprocess.h"
 #include "utils/namespacehelper.h"
+#include "utils/qemucapabilities.h"
 #include "utils/qemucommandbuilder.h"
 #include "utils/sandboxenvironment.h"
 #include "utils/startupchain.h"
@@ -51,6 +52,7 @@ MainWindow::MainWindow(QWidget *parent)
         dir.mkpath(u"."_s);
 
     ExternalTools::instance().refresh();
+    QemuCapabilities::instance().refresh();
 
     loadVmList();
 
@@ -1920,6 +1922,7 @@ void MainWindow::saveVmConfig(const QString &vmPath, const VMConfig &config)
     }
 
     ExternalTools::instance().refresh();
+    QemuCapabilities::instance().refresh();
     generateShellScript(vmPath, config);
 }
 

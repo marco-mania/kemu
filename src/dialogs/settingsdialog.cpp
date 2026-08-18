@@ -7,6 +7,7 @@
 #include "settingsdialog.h"
 
 #include "const.h"
+#include "utils/qemucapabilities.h"
 #include "utils/sandboxenvironment.h"
 #include "utils/vmconfig.h"
 
@@ -139,6 +140,7 @@ void SettingsDialog::setupExecutablesPage()
     refreshBtn->setEnabled(!SandboxEnvironment::isFlatpak());
     connect(refreshBtn, &QPushButton::clicked, this, [this]() {
         ExternalTools::instance().refresh();
+        QemuCapabilities::instance().refresh();
         for (int i = 0; i < m_toolWidgets.size(); ++i) {
             const QString detected = ExternalTools::instance().detectedPath(m_toolWidgets[i].tool);
             m_toolWidgets[i].pathEdit->setPlaceholderText(detected.isEmpty() ? i18n("Not found - enter a path manually") : detected);
@@ -444,6 +446,7 @@ void SettingsDialog::saveSettings()
         general.writeEntry("PreferSlirpNetworking", slirpNetworkingCheck->isChecked());
     config.sync();
     ExternalTools::instance().refresh();
+    QemuCapabilities::instance().refresh();
     accept();
 }
 
