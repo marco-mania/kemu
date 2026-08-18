@@ -99,9 +99,6 @@ MissingToolsDialog::MissingToolsDialog(const QList<ExternalTools::FeatureGroup> 
         connect(settingsBtn, &QPushButton::clicked, this, [this]() {
             m_openSettings = true;
         });
-        connect(settingsBtn, &QPushButton::clicked, this, [this]() {
-            m_openSettings = true;
-        });
     }
     buttons->addButton(QDialogButtonBox::Close);
 
