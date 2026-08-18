@@ -8,6 +8,7 @@
 
 #include "utils/cloudinittemplates.h"
 #include "utils/externaltools.h"
+#include "utils/sandboxenvironment.h"
 #include "utils/utils.h"
 
 using namespace Qt::StringLiterals;
@@ -213,14 +214,18 @@ bool CloudImageDeployer::createNoCloudIso(const QDir &vmDir,
 
     const QString tool = findIsoTool();
     if (tool.isEmpty()) {
-        errorOut = u"No ISO tool found (install genisoimage, mkisofs, or xorriso)."_s;
+        errorOut = SandboxEnvironment::isFlatpak() ? u"No ISO tool found. This is a packaging bug - xorriso should be part of the sandbox image."_s
+                                                   : u"No ISO tool found (install genisoimage, mkisofs, or xorriso)."_s;
         return false;
     }
 
     const QString outputIso = noCloudIsoPath(vmDir);
 
+    // xorriso needs switching into its mkisofs-compatible personality;
+    // xorrisofs already starts in it.
+    const QString binary = QFileInfo(tool).fileName();
     QStringList args;
-    if (tool.endsWith(u"xorriso"_s))
+    if (binary == "xorriso"_L1)
         args << u"-as"_s << u"genisoimage"_s;
     args << u"-output"_s << outputIso << u"-volid"_s << u"cidata"_s << u"-joliet"_s << u"-rock"_s << tmpDir.path();
 
