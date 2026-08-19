@@ -134,6 +134,9 @@ private:
     bool m_hasPendingAbs = false;
     bool m_hasPendingRel = false;
 
+    void sendWheelClick(uint button);
+    QPoint m_wheelAccum;
+
     QemuDisplayListener *m_listener;
     QDBusInterface *m_keyboard;
     QDBusInterface *m_mouse;

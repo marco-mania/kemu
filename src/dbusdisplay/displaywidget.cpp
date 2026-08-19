@@ -786,6 +786,12 @@ void QemuDisplayWidget::flushMotion()
     }
 }
 
+void QemuDisplayWidget::sendWheelClick(uint button)
+{
+    m_mouse->asyncCall(u"Press"_s, button);
+    m_mouse->asyncCall(u"Release"_s, button);
+}
+
 void QemuDisplayWidget::mouseMoveEvent(QMouseEvent *event)
 {
     if (m_dimmed)
@@ -865,22 +871,40 @@ void QemuDisplayWidget::mouseReleaseEvent(QMouseEvent *event)
 
 void QemuDisplayWidget::wheelEvent(QWheelEvent *event)
 {
-    // While dimmed (e.g.during a save-state), the guest is paused or
+    // While dimmed (e.g. during a save-state), the guest is paused or
     // about to be killed.
     if (m_dimmed)
         return;
-    const QPoint delta = event->angleDelta();
-    if (delta.y() != 0) {
-        const uint btn = (delta.y() > 0) ? 3u : 4u;
-        m_mouse->asyncCall(u"Press"_s, btn);
-        m_mouse->asyncCall(u"Release"_s, btn);
+
+    flushMotion(); // scroll target depends on the current position
+
+    // Touchpads and high-resolution mice deliver fractions of a detent.
+    // Accumulate and emit one click per full 120-unit step.
+    constexpr int kDetent = 120;
+    m_wheelAccum += event->angleDelta();
+
+    while (m_wheelAccum.y() >= kDetent) {
+        sendWheelClick(3u); // wheel up
+        m_wheelAccum.ry() -= kDetent;
     }
-    if (delta.x() != 0) {
-        // QEMU InputButton: wheel-left = 7, wheel-right = 8
-        const uint btn = (delta.x() > 0) ? 7u : 8u;
-        m_mouse->asyncCall(u"Press"_s, btn);
-        m_mouse->asyncCall(u"Release"_s, btn);
+    while (m_wheelAccum.y() <= -kDetent) {
+        sendWheelClick(4u); // wheel down
+        m_wheelAccum.ry() += kDetent;
     }
+    while (m_wheelAccum.x() >= kDetent) {
+        sendWheelClick(7u); // wheel left
+        m_wheelAccum.rx() -= kDetent;
+    }
+    while (m_wheelAccum.x() <= -kDetent) {
+        sendWheelClick(8u); // wheel right
+        m_wheelAccum.rx() += kDetent;
+    }
+
+    // Drop the remainder at the end of a gesture, so it cannot leak into
+    // the next one as a stray click.
+    if (event->phase() == Qt::ScrollEnd)
+        m_wheelAccum = {};
+
     event->accept();
 }
 
