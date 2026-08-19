@@ -63,6 +63,9 @@ static const GDBusInterfaceVTable audioInVTable = {QemuAudioInListener::onMethod
 
 int QemuAudioInListener::AudioInStream::read(char *dst, int maxLen)
 {
+    if (!dst || maxLen <= 0)
+        return 0;
+
     const int toRead = qMin(maxLen, bufferedBytes);
     int done = 0;
     while (done < toRead) {
@@ -77,6 +80,9 @@ int QemuAudioInListener::AudioInStream::read(char *dst, int maxLen)
 
 void QemuAudioInListener::AudioInStream::write(const char *src, int len)
 {
+    if (!src || len <= 0)
+        return;
+
     if (len >= kRingCapacity) { // keep only the newest samples
         src += len - kRingCapacity;
         len = kRingCapacity;
@@ -429,21 +435,24 @@ void QemuAudioInListener::handleSetVolume(GVariant *parameters, GDBusMethodInvoc
 // =============================================================================
 void QemuAudioInListener::handleRead(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
-    guint64 id, size;
+    guint64 id = 0, size = 0;
     g_variant_get(parameters, "(tt)", &id, &size);
 
+    // Guard against absurd sizes from the wire: the cast to int below would
+    // otherwise wrap to a negative value and corrupt the heap.
+    constexpr guint64 kMaxReadBytes = 1u << 20;
+    if (size > kMaxReadBytes) {
+        qCWarning(KEMU_DBUSDISPLAY) << "AudioIn: Read size out of range:" << size;
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Read size out of range");
+        return;
+    }
+
+    // Zero-filled up front, so short reads are padded with silence implicitly.
+    QByteArray data(static_cast<int>(size), '\0');
+
     auto *stream = m_streams.value(id, nullptr);
-    QByteArray data;
-    data.resize(static_cast<int>(size));
-
-    int got = 0;
-    if (stream && stream->enabled && !m_muted) {
-        got = stream->read(data.data(), static_cast<int>(size));
-    }
-
-    if (got < static_cast<int>(size)) {
-        memset(data.data() + got, 0, static_cast<size_t>(size) - got);
-    }
+    if (stream && stream->enabled && !m_muted && !data.isEmpty())
+        stream->read(data.data(), data.size());
 
     GVariant *result = g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, data.constData(), data.size(), sizeof(guint8));
     g_dbus_method_invocation_return_value(invocation, g_variant_new_tuple(&result, 1));
