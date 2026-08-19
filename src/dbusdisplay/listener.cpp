@@ -555,7 +555,7 @@ void QemuDisplayListener::handleUpdate(GVariant *parameters, GDBusMethodInvocati
                 memcpy(m_image.scanLine(dstY + row) + dstX * bpp, data + row * srcStride, rowBytes);
             }
 
-            m_dirtyRegion += QRect(dstX, dstY, copyW, copyH);
+            addDirtyRect(QRect(dstX, dstY, copyW, copyH));
         } else {
             qCWarning(KEMU_DBUSDISPLAY) << "Update: short pixel array";
         }
@@ -575,7 +575,7 @@ void QemuDisplayListener::handleUpdateMap(GVariant *parameters, GDBusMethodInvoc
 
     // The pixels are already visible through the shared mapping, but the
     // GPU upload still needs to know which rect changed.
-    m_dirtyRegion += QRect(x, y, w, h);
+    addDirtyRect(QRect(x, y, w, h));
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT regionUpdated(QRect(x, y, w, h));
@@ -658,6 +658,15 @@ void QemuDisplayListener::handleMouseSet(GVariant *parameters, GDBusMethodInvoca
 // =============================================================================
 // Helper functions
 // =============================================================================
+
+void QemuDisplayListener::addDirtyRect(const QRect &r)
+{
+    // QRegion unions are O(n) in the rect count; collapse before it degenerates.
+    constexpr int kMaxDirtyRects = 32;
+    if (m_dirtyRegion.rectCount() >= kMaxDirtyRects)
+        m_dirtyRegion = QRegion(m_dirtyRegion.boundingRect());
+    m_dirtyRegion += r;
+}
 
 void QemuDisplayListener::unmapMemory()
 {

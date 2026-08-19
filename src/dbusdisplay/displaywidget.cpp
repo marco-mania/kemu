@@ -23,6 +23,9 @@
 #include "dbusdisplay/dbusdisplayconst.h"
 #include "kemu_dbusdisplay_debug.h"
 
+// ~125 Hz - below the rate any guest input driver samples at.
+static constexpr int kMotionCoalesceMs = 8;
+
 // =============================================================================
 // Shaders
 // =============================================================================
@@ -111,6 +114,10 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QDBusConnect
     // Read IsAbsolute asynchronously. A blocking call here would deadlock the
     // display-listener handshake (its GLib FD is watched only after construction).
     queryPointerMode();
+
+    m_motionTimer.setSingleShot(true);
+    m_motionTimer.setTimerType(Qt::PreciseTimer);
+    connect(&m_motionTimer, &QTimer::timeout, this, &QemuDisplayWidget::flushMotion);
 
     connect(listener, &QemuDisplayListener::scanoutChanged, this, &QemuDisplayWidget::onScanoutChanged);
     connect(listener, &QemuDisplayListener::dmaBufScanout, this, &QemuDisplayWidget::onDmaBufScanout);
@@ -592,6 +599,7 @@ void QemuDisplayWidget::endRelativeGrab()
     m_relativeGrabActive = false;
 
     releaseMouse();
+    flushMotion(); // do not swallow the last delta
     m_suppressRelMove = false;
 
     // Release modifiers so Ctrl/Alt cannot stick in the guest.
@@ -742,6 +750,42 @@ QPointF QemuDisplayWidget::mapToFramebuffer(const QPointF &widgetPos) const
     return {fbX, fbY};
 }
 
+void QemuDisplayWidget::queueAbsMotion(uint fx, uint fy)
+{
+    m_pendingAbsX = fx;
+    m_pendingAbsY = fy;
+    m_hasPendingAbs = true;
+    if (!m_motionTimer.isActive())
+        m_motionTimer.start(kMotionCoalesceMs);
+}
+
+void QemuDisplayWidget::queueRelMotion(int dx, int dy)
+{
+    // Relative deltas are additive, so summing them is lossless.
+    m_pendingRelX += dx;
+    m_pendingRelY += dy;
+    m_hasPendingRel = true;
+    if (!m_motionTimer.isActive())
+        m_motionTimer.start(kMotionCoalesceMs);
+}
+
+void QemuDisplayWidget::flushMotion()
+{
+    m_motionTimer.stop();
+
+    if (m_hasPendingRel) {
+        if (m_pendingRelX != 0 || m_pendingRelY != 0)
+            m_mouse->asyncCall(u"RelMotion"_s, m_pendingRelX, m_pendingRelY);
+        m_pendingRelX = 0;
+        m_pendingRelY = 0;
+        m_hasPendingRel = false;
+    }
+    if (m_hasPendingAbs) {
+        m_mouse->asyncCall(u"SetAbsPosition"_s, m_pendingAbsX, m_pendingAbsY);
+        m_hasPendingAbs = false;
+    }
+}
+
 void QemuDisplayWidget::mouseMoveEvent(QMouseEvent *event)
 {
     if (m_dimmed)
@@ -764,9 +808,9 @@ void QemuDisplayWidget::mouseMoveEvent(QMouseEvent *event)
                 const QPointF fb = mapToFramebuffer(m_absVirtual);
                 const uint fx = uint(qBound(0, int(fb.x()), m_fbSize.width() - 1));
                 const uint fy = uint(qBound(0, int(fb.y()), m_fbSize.height() - 1));
-                m_mouse->asyncCall(u"SetAbsPosition"_s, fx, fy);
+                queueAbsMotion(fx, fy);
             } else {
-                m_mouse->asyncCall(u"RelMotion"_s, d.x(), d.y());
+                queueRelMotion(d.x(), d.y());
             }
             m_suppressRelMove = true;
             QCursor::setPos(mapToGlobal(center));
@@ -777,7 +821,7 @@ void QemuDisplayWidget::mouseMoveEvent(QMouseEvent *event)
     // Not captured: absolute guests track the host pointer 1:1.
     if (m_guestAbsolute) {
         const auto fb = mapToFramebuffer(event->position());
-        m_mouse->asyncCall(u"SetAbsPosition"_s, static_cast<uint>(fb.x()), static_cast<uint>(fb.y()));
+        queueAbsMotion(static_cast<uint>(fb.x()), static_cast<uint>(fb.y()));
     }
     // relative + not captured: nothing to send
 }
@@ -796,6 +840,8 @@ void QemuDisplayWidget::mousePressEvent(QMouseEvent *event)
     if (m_guestAbsolute)
         mouseMoveEvent(event); // keep absolute position in sync (unchanged)
 
+    flushMotion(); // the button event must not overtake the position
+
     const int btn = qtButtonToQemu(event->button());
     if (btn >= 0)
         m_mouse->asyncCall(u"Press"_s, static_cast<uint>(btn));
@@ -809,6 +855,8 @@ void QemuDisplayWidget::mouseReleaseEvent(QMouseEvent *event)
     // Relative + not grabbed: the press was the grab click – swallow its release.
     if (!m_guestAbsolute && !m_relativeGrabActive)
         return;
+
+    flushMotion();
 
     const int btn = qtButtonToQemu(event->button());
     if (btn >= 0)
@@ -955,6 +1003,11 @@ void QemuDisplayWidget::uploadDirtyRects(const QImage &source)
     if (dirty.isEmpty()) {
         return; // GPU state still matches; just re-render the quad
     }
+
+    // Many small rects cost more in driver overhead than the bytes they save.
+    constexpr int kMaxSubImageRects = 16;
+    if (dirty.rectCount() > kMaxSubImageRects)
+        dirty = QRegion(dirty.boundingRect());
 
     if (m_hasUnpackRowLength) {
         glPixelStorei(GL_UNPACK_ROW_LENGTH, source.bytesPerLine() / srcBpp);

@@ -123,6 +123,7 @@ private:
     void handleMouseSet(GVariant *parameters, GDBusMethodInvocation *invocation);
     void handleCursorDefine(GVariant *parameters, GDBusMethodInvocation *invocation);
 
+    void addDirtyRect(const QRect &r);
     void unmapMemory();
     void closeDmaBuf();
     static QImage::Format pixmanFormatToQt(uint32_t pixman_format);

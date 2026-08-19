@@ -121,6 +121,19 @@ private:
     static int qtButtonToQemu(Qt::MouseButton button);
     QPointF mapToFramebuffer(const QPointF &widgetPos) const;
 
+    // Motion coalescing: guests cannot consume 1000 Hz of pointer events.
+    void queueAbsMotion(uint fx, uint fy);
+    void queueRelMotion(int dx, int dy);
+    void flushMotion();
+
+    QTimer m_motionTimer;
+    uint m_pendingAbsX = 0;
+    uint m_pendingAbsY = 0;
+    int m_pendingRelX = 0;
+    int m_pendingRelY = 0;
+    bool m_hasPendingAbs = false;
+    bool m_hasPendingRel = false;
+
     QemuDisplayListener *m_listener;
     QDBusInterface *m_keyboard;
     QDBusInterface *m_mouse;
