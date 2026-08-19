@@ -705,15 +705,21 @@ void DbusViewerWindow::changeEvent(QEvent *event)
         if (this->windowState() & Qt::WindowFullScreen) {
             menuBar()->hide();
             statusBar()->hide();
-            m_actFullscreen->setChecked(true);
+            {
+                QSignalBlocker block(m_actFullscreen);
+                m_actFullscreen->setChecked(true);
+            }
             auto doResize = [this]() {
                 updateWindowAndDisplaySize();
             };
-            QTimer::singleShot(100, doResize); // 0 doesn't work
+            QTimer::singleShot(100, this, doResize); // context object: cancels on destruction
         } else {
             menuBar()->show();
             statusBar()->show();
-            m_actFullscreen->setChecked(false);
+            {
+                QSignalBlocker block(m_actFullscreen);
+                m_actFullscreen->setChecked(false);
+            }
             updateWindowAndDisplaySize();
         }
     }
