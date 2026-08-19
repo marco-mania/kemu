@@ -984,7 +984,11 @@ void QemuDisplayWidget::uploadDirtyRects(const QImage &source)
 // region (we satisfy it with a full upload) and upload the full frame.
 void QemuDisplayWidget::uploadFullFrameConverted(const QImage &source)
 {
-    m_listener->takeDirtyRegion(); // drain - we satisfy it fully below
+    const QRegion dirty = m_listener->takeDirtyRegion(); // drained: we satisfy it fully below
+
+    // Nothing changed and the texture still matches - skip the conversion.
+    if (dirty.isEmpty() && m_textureReady && m_texAllocSize == source.size())
+        return;
 
     const QImage rgba = source.convertToFormat(QImage::Format_RGBA8888);
     if (m_texAllocSize != rgba.size()) {
