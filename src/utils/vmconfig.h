@@ -724,6 +724,9 @@ public:
     [[nodiscard]] static QString defaultIconForType(VMSpecs::OsType type);
     [[nodiscard]] static QString defaultIconFor(VMSpecs::OsType type, const QString &variant);
 
+    // Single rule set for names that become directories in the VM store.
+    [[nodiscard]] static bool isValidVmName(const QString &name, QString *error = nullptr);
+
     [[nodiscard]] static QString toQemuSystemBinary(VMSpecs::Architecture arch);
 
     /// True if this build can actually provide the given display type.

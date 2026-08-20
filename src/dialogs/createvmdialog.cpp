@@ -2022,9 +2022,10 @@ void CreateVmDialog::validateForm()
     QString warning;
     bool valid = true;
 
+    QString nameError;
     const QString trimmed = nameEdit->text().trimmed();
-    if (trimmed.isEmpty()) {
-        warning = i18n("A name is required.");
+    if (!VMConfig::isValidVmName(trimmed, &nameError)) {
+        warning = nameError;
         valid = false;
     } else if (trimmed != originalName && existingVmNames.contains(trimmed, Qt::CaseSensitive)) {
         warning = i18n("A virtual machine named '%1' already exists.", trimmed);

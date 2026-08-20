@@ -483,6 +483,37 @@ QString VMConfig::defaultIconFor(VMSpecs::OsType type, const QString &variant)
     return QFile::exists(path) ? path : defaultIconForType(type);
 }
 
+bool VMConfig::isValidVmName(const QString &name, QString *error)
+{
+    const auto fail = [error](const QString &message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+
+    const QString trimmed = name.trimmed();
+
+    if (trimmed.isEmpty())
+        return fail(i18n("A name is required."));
+
+    if (trimmed.length() > 64)
+        return fail(i18n("The name must not be longer than 64 characters."));
+
+    static const QRegularExpression allowed(u"^[a-zA-Z0-9_\\-. ]+$"_s);
+    if (!allowed.match(trimmed).hasMatch())
+        return fail(i18n("Only letters, digits, spaces and the characters _ - . are allowed."));
+
+    // The name becomes a directory below the VM store. A leading dot would
+    // hide it; "." and ".." would escape the store entirely.
+    if (trimmed.startsWith(u'.'))
+        return fail(i18n("The name must not start with a dot."));
+
+    if (trimmed.endsWith(u'.'))
+        return fail(i18n("The name must not end with a dot."));
+
+    return true;
+}
+
 QString VMConfig::toQemuSystemBinary(VMSpecs::Architecture arch)
 {
     switch (arch) {

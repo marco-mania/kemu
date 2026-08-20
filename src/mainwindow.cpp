@@ -219,6 +219,18 @@ QDir MainWindow::getVmDir(const QString &vmName) const
     return getVmBaseDir().absoluteFilePath(vmName);
 }
 
+// Defence in depth: only a direct child of the VM store may ever be removed.
+bool MainWindow::isManagedVmDir(const QDir &dir) const
+{
+    const QString base = QDir::cleanPath(getVmBaseDir().absolutePath());
+    const QString path = QDir::cleanPath(dir.absolutePath());
+
+    if (base.isEmpty() || path == base)
+        return false;
+
+    return QFileInfo(path).absolutePath() == base;
+}
+
 QString MainWindow::monitorSocketPath(const QString &vmName) const
 {
     return getVmDir(vmName).absoluteFilePath(KEMUConst::QemuMonitorSocketFileName);
@@ -3553,7 +3565,12 @@ void MainWindow::createNewVM()
 
         if (imgProcess.exitCode() != 0) {
             KMessageBox::error(this, i18n("Failed to create disk image."));
-            baseDir.rmdir(newConfig.name());
+            QDir vmDir = baseDir.filePath(newConfig.name());
+            if (!isManagedVmDir(vmDir)) {
+                qCWarning(KEMU) << "Refusing to remove a directory outside the VM store:" << vmDir.absolutePath();
+                return;
+            }
+            vmDir.removeRecursively();
             return;
         }
     }
@@ -3764,7 +3781,15 @@ void MainWindow::deleteVM()
                                                         KStandardGuiItem::cancel());
 
     if (answer == KMessageBox::PrimaryAction) {
-        getVmDir(currentConfig.name()).removeRecursively();
+        {
+            QDir vmDir = getVmDir(currentConfig.name());
+            if (!isManagedVmDir(vmDir)) {
+                qCWarning(KEMU) << "Refusing to remove a directory outside the VM store:" << vmDir.absolutePath();
+                return;
+            }
+            vmDir.removeRecursively();
+        }
+
         removeViewerPrefs(currentConfig.name());
         currentConfig = VMConfig();
         loadVmList();
@@ -3796,6 +3821,12 @@ void MainWindow::cloneVM()
         return;
 
     cloneName = cloneName.trimmed();
+
+    QString nameError;
+    if (!VMConfig::isValidVmName(cloneName, &nameError)) {
+        KMessageBox::error(this, nameError, i18n("Invalid Name"));
+        return;
+    }
 
     if (existingVmNames().contains(cloneName)) {
         KMessageBox::error(this, i18n("A VM named '%1' already exists.", cloneName), i18n("Error"));
@@ -4187,7 +4218,14 @@ void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
     releaseNetwork(entry->config);
 
     if (deleteVm) {
-        getVmDir(vmName).removeRecursively();
+        {
+            QDir vmDir = getVmDir(vmName);
+            if (!isManagedVmDir(vmDir)) {
+                qCWarning(KEMU) << "Refusing to remove a directory outside the VM store:" << vmDir.absolutePath();
+            } else {
+                vmDir.removeRecursively();
+            }
+        }
         loadVmList();
         onVmSelectionChanged();
         statusBar()->showMessage(i18n("Deployment of '%1' cancelled. VM deleted.", vmName));
@@ -4220,7 +4258,14 @@ void MainWindow::deployCloudImage(const QString &vmName)
             currentConfig = VMConfig();
         }
 
-        vmDir.removeRecursively();
+        {
+            if (!isManagedVmDir(vmDir)) {
+                qCWarning(KEMU) << "Refusing to remove a directory outside the VM store:" << vmDir.absolutePath();
+                return;
+            } else {
+                vmDir.removeRecursively();
+            }
+        }
         loadVmList();
         updateDetails();
         updateActionStates();
