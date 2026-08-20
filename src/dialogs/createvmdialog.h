@@ -170,11 +170,7 @@ private:
     QCheckBox *bootFromFloppyCheck = nullptr;
     QLineEdit *extraArgsEdit = nullptr;
     QComboBox *displayCombo = nullptr;
-    QCheckBox *spiceAgentCheck = nullptr;
-    QCheckBox *spiceUsbRedirCheck = nullptr;
-    QSpinBox *spiceUsbRedirCountSpin = nullptr;
-    QLabel *spiceUsbRedirCountLabel = nullptr;
-    QGroupBox *spiceGroup = nullptr;
+
     QComboBox *gpuCombo = nullptr;
     QSpinBox *gpuMemSpin = nullptr;
     QCheckBox *accel3dCheck = nullptr;

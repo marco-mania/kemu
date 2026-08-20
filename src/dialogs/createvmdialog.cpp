@@ -401,7 +401,7 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     hwLayout->addRow(i18n("Keyboard:"), keyboardCombo);
 
     displayCombo = new QComboBox();
-    for (const auto type : {VMSpecs::DisplayType::Gtk, VMSpecs::DisplayType::Sdl, VMSpecs::DisplayType::Spice, VMSpecs::DisplayType::Dbus}) {
+    for (const auto type : {VMSpecs::DisplayType::Gtk, VMSpecs::DisplayType::Sdl, VMSpecs::DisplayType::Dbus}) {
         if (VMConfig::isDisplayTypeAvailable(type))
             displayCombo->addItem(VMConfig::toUIString(type), static_cast<int>(type));
     }
@@ -410,7 +410,7 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     gpuCombo = new QComboBox();
     gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::Vga), static_cast<int>(VMSpecs::GpuType::Vga));
     gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::Virtio), static_cast<int>(VMSpecs::GpuType::Virtio));
-    gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::Qxl) + i18n(" (SPICE optimized)"), static_cast<int>(VMSpecs::GpuType::Qxl));
+    gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::Qxl), static_cast<int>(VMSpecs::GpuType::Qxl));
     gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::CirrusGD5446), static_cast<int>(VMSpecs::GpuType::CirrusGD5446));
     gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::CirrusGD5430), static_cast<int>(VMSpecs::GpuType::CirrusGD5430));
     gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::VgaISA), static_cast<int>(VMSpecs::GpuType::VgaISA));
@@ -426,7 +426,7 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     accel3dCheck->setToolTip(
         i18n("Enables GPU-accelerated 3D rendering via virtio-vga-gl.\n"
              "Requires VirtIO GPU with GTK or SDL display.\n"
-             "Not available with SPICE or Standard VGA/QXL."));
+             "Not available with Standard VGA/QXL."));
     accel3dCheck->setChecked(false);
     hwLayout->addRow(u""_s, accel3dCheck);
 
@@ -475,37 +475,6 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     audioRow->addStretch();
 
     hwLayout->addRow(i18n("Audio:"), audioRow);
-
-    // --- SPICE Options (end of hardware tab) ---
-    spiceGroup = new QGroupBox(i18n("SPICE Options"));
-    auto *spiceLayout = new QFormLayout(spiceGroup);
-
-    spiceAgentCheck = new QCheckBox(i18n("Clipboard sharing and resolution sync"));
-    spiceAgentCheck->setChecked(true);
-    spiceAgentCheck->setToolTip(i18n("Requires spice-vdagent in the guest."));
-    spiceLayout->addRow(spiceAgentCheck);
-
-    spiceUsbRedirCheck = new QCheckBox(i18n("USB device redirection"));
-    spiceUsbRedirCheck->setChecked(false);
-    spiceLayout->addRow(spiceUsbRedirCheck);
-
-    spiceUsbRedirCountSpin = new QSpinBox;
-    spiceUsbRedirCountSpin->setRange(1, 4);
-    spiceUsbRedirCountSpin->setValue(2);
-    spiceUsbRedirCountSpin->setEnabled(false);
-    spiceLayout->addRow(i18n("Redirect channels:"), spiceUsbRedirCountSpin);
-    spiceUsbRedirCountLabel = qobject_cast<QLabel *>(spiceLayout->labelForField(spiceUsbRedirCountSpin));
-    spiceUsbRedirCountLabel->setEnabled(false);
-
-    connect(spiceUsbRedirCheck, &QCheckBox::toggled, spiceUsbRedirCountSpin, &QSpinBox::setEnabled);
-    connect(spiceUsbRedirCheck, &QCheckBox::toggled, spiceUsbRedirCountLabel, &QLabel::setEnabled);
-
-    spiceGroup->setEnabled(false);
-    // Not just disabled: without a SPICE display type these options can
-    // never become reachable.
-    spiceGroup->setVisible(VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType::Spice));
-
-    hwLayout->addRow(spiceGroup);
 
     tabs->addTab(hwTab, QIcon::fromTheme(u"preferences-desktop-peripherals"_s), i18n("Hardware"));
 
@@ -738,16 +707,7 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CreateVmDialog::onMachineTypeChanged);
 
     connect(usbCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
-        const bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
         updateInputDeviceAvailability();
-
-        // SPICE USB redirection requires an USB controller
-        spiceUsbRedirCheck->setEnabled(hasUsb);
-        if (!hasUsb)
-            spiceUsbRedirCheck->setChecked(false);
-
-        const QString tip = hasUsb ? QString() : i18n("Requires a USB controller.");
-        spiceUsbRedirCheck->setToolTip(tip);
     });
 
     auto updateSecureBootState = [this]() {
@@ -857,14 +817,6 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     updateIconDisplay();
     updateDiskInterfaceHint();
     updateDeviceAvailability();
-
-    // Sync SPICE USB redir with the initial USB controller state.
-    {
-        const bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
-        spiceUsbRedirCheck->setEnabled(hasUsb);
-        if (!hasUsb)
-            spiceUsbRedirCheck->setChecked(false);
-    }
 
     updateRamSlider(GlobalDefaults.ramMb);
 }
@@ -1137,12 +1089,9 @@ void CreateVmDialog::onOsNameChanged(int /*index*/)
 void CreateVmDialog::onGpuDisplayChanged()
 {
     const auto gpu = static_cast<VMSpecs::GpuType>(gpuCombo->currentData().toInt());
-    const auto display = static_cast<VMSpecs::DisplayType>(displayCombo->currentData().toInt());
     const auto osType = static_cast<VMSpecs::OsType>(osTypeCombo->currentData().toInt());
 
-    const bool isQxl = (gpu == VMSpecs::GpuType::Qxl);
     const bool isVirtio = (gpu == VMSpecs::GpuType::Virtio);
-    const bool isSpice = (display == VMSpecs::DisplayType::Spice);
     const bool isWindows = (osType == VMSpecs::OsType::Windows);
 
     gpuMemSpin->setRange(VMConfig::vgaMemMbLowerLimit(gpu), VMConfig::vgaMemMbUpperLimit(gpu));
@@ -1165,30 +1114,16 @@ void CreateVmDialog::onGpuDisplayChanged()
     resolutionCombo->setEnabled(isVirtio);
     resolutionLabel->setEnabled(isVirtio);
 
-    const bool can3d = isVirtio && !isSpice;
+    const bool can3d = isVirtio;
     accel3dCheck->setEnabled(can3d);
     if (!can3d)
         accel3dCheck->setChecked(false);
 
-    // Hints (mutually exclusive, priority order)
-    if (isSpice && !isQxl) {
-        gpuHintLabel->setText(u"<i>"_s
-                              + i18n("Tip: QXL is optimized for SPICE and offers "
-                                     "better 2D performance.")
-                              + u"</i>"_s);
-    } else if (isQxl && !isSpice) {
-        gpuHintLabel->setText(u"<i>"_s + i18n("Tip: QXL works best with the SPICE display.") + u"</i>"_s);
-    } else if (can3d && isWindows && accel3dCheck->isChecked()) {
-        gpuHintLabel->setText(u"<i>"_s
-                              + i18n("Note: VirtIO 3D acceleration is not supported "
-                                     "on Windows guests.")
-                              + u"</i>"_s);
+    if (can3d && isWindows && accel3dCheck->isChecked()) {
+        gpuHintLabel->setText(u"<i>"_s + i18n("Note: VirtIO 3D acceleration is not supported on Windows guests.") + u"</i>"_s);
     } else {
         gpuHintLabel->clear();
     }
-
-    if (spiceGroup)
-        spiceGroup->setEnabled(isSpice);
 }
 
 void CreateVmDialog::onVersionChanged(int /*index*/)
@@ -1504,10 +1439,6 @@ void CreateVmDialog::setupForEdit(const VMConfig &config)
         setCombo(displayCombo, config.displayType());
     }
 
-    spiceAgentCheck->setChecked(config.spiceAgent());
-    spiceUsbRedirCheck->setChecked(config.spiceUsbRedir());
-    spiceUsbRedirCountSpin->setValue(config.spiceUsbRedirCount());
-    spiceGroup->setEnabled(config.displayType() == VMSpecs::DisplayType::Spice);
     setCombo(gpuCombo, config.gpuType());
     accel3dCheck->setChecked(config.gpu3dAcceleration());
     setCombo(audioCombo, config.audioDevice());
@@ -1701,9 +1632,6 @@ VMConfig CreateVmDialog::getResult() const
     c.setSharedPath(sharedPathEdit->text());
     c.setSharedName(sharedNameEdit->text());
     c.setDisplayType(static_cast<VMSpecs::DisplayType>(displayCombo->currentData().toInt()));
-    c.setSpiceAgent(spiceAgentCheck->isChecked());
-    c.setSpiceUsbRedir(spiceUsbRedirCheck->isChecked());
-    c.setSpiceUsbRedirCount(spiceUsbRedirCountSpin->value());
     c.setGpuType(static_cast<VMSpecs::GpuType>(gpuCombo->currentData().toInt()));
     c.setGpu3dAcceleration(accel3dCheck->isChecked());
     c.setGpuMemMb(gpuMemSpin->value());
@@ -1759,9 +1687,6 @@ void CreateVmDialog::applyReleaseDefaults(const VMConfig &defaults)
     gpuMemSpin->setValue(defaults.gpuMemMb());
     setCombo(mouseCombo, defaults.pointerDevice());
     setCombo(keyboardCombo, defaults.keyboardDevice());
-    spiceAgentCheck->setChecked(defaults.spiceAgent());
-    spiceUsbRedirCheck->setChecked(defaults.spiceUsbRedir());
-    spiceUsbRedirCountSpin->setValue(defaults.spiceUsbRedirCount());
     acpiCheck->setChecked(defaults.useAcpi());
 
     uefiCheck->setChecked(defaults.useUefi());
@@ -2220,11 +2145,6 @@ void CreateVmDialog::resetToFactoryDefaults()
     }
 
     accel3dCheck->setChecked(GlobalDefaults.gpu3dAcceleration);
-
-    spiceAgentCheck->setChecked(GlobalDefaults.spiceAgent);
-    spiceUsbRedirCheck->setChecked(GlobalDefaults.spiceUsbRedir);
-    spiceUsbRedirCountSpin->setValue(GlobalDefaults.spiceUsbRedirCount);
-    spiceGroup->setEnabled(GlobalDefaults.displayType == VMSpecs::DisplayType::Spice);
 
     uefiCheck->setChecked(GlobalDefaults.useUefi);
     tpmCheck->setChecked(GlobalDefaults.useTpm);

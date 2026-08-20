@@ -398,7 +398,6 @@ void VirtualEnvironmentModel::reload(const QDir &baseDir, const QMap<QString, QS
             entry.swtpmProcess = old.swtpmProcess;
             entry.virtiofsdProcess = old.virtiofsdProcess;
             entry.passtProcess = old.passtProcess;
-            entry.spiceViewerProcess = old.spiceViewerProcess;
             entry.qmpClient = old.qmpClient;
             entry.cpuHistory = old.cpuHistory;
             entry.ramHistory = old.ramHistory;
@@ -487,12 +486,6 @@ void VirtualEnvironmentModel::setPasstProcess(const QString &name, KProcess *pro
         e->passtProcess = process;
 }
 
-void VirtualEnvironmentModel::setSpiceViewerProcess(const QString &name, KProcess *process)
-{
-    if (VmEntry *e = entryByName(name))
-        e->spiceViewerProcess = process;
-}
-
 void VirtualEnvironmentModel::setDBusDaemonProcess(const QString &name, KProcess *process)
 {
     if (VmEntry *e = entryByName(name))
@@ -575,7 +568,6 @@ void VirtualEnvironmentModel::clearRuntimeState(const QString &name)
     e->swtpmProcess = nullptr;
     e->virtiofsdProcess = nullptr;
     e->passtProcess = nullptr;
-    e->spiceViewerProcess = nullptr;
     e->qmpClient = nullptr;
     e->cpuHistory.clear();
     e->ramHistory.clear();

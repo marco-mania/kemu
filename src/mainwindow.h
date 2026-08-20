@@ -179,7 +179,6 @@ private:
     void startSwtpmAsync(const QString &vmName, std::function<void(bool ok)> done);
     void startVirtiofsdAsync(const QString &vmName, std::function<void(bool ok)> done);
     void startPasstAsync(const QString &vmName, const QList<PortForwardRule> &portForwards, std::function<void(bool ok)> done);
-    void startSpiceViewerAsync(const QString &vmName, std::function<void(bool ok)> done);
     void startDbusDaemonAsync(const QString &vmName, std::function<void(bool ok)> done);
     QString dbusBusAddress(const QString &vmName) const;
 

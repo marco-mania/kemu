@@ -31,7 +31,6 @@ ExternalTools::ExternalTools(QObject *parent)
     registerTool(Passt, u"PasstPath"_s, u"passt"_s);
     registerTool(Pasta, u"PastaPath"_s, u"pasta"_s);
     registerTool(Dnsmasq, u"DnsmasqPath"_s, u"dnsmasq"_s);
-    registerTool(RemoteViewer, u"RemoteViewerPath"_s, u"remote-viewer"_s);
     registerTool(DbusDaemon, u"DbusDaemonPath"_s, u"dbus-daemon"_s);
 }
 
@@ -166,8 +165,6 @@ QString ExternalTools::displayName(Tool tool)
         return i18n("pasta Namespace Network Connector");
     case Dnsmasq:
         return i18n("dnsmasq DHCP/DNS Server");
-    case RemoteViewer:
-        return i18n("SPICE Remote Viewer");
     case DbusDaemon:
         return i18n("D-Bus Daemon");
     }
@@ -176,7 +173,7 @@ QString ExternalTools::displayName(Tool tool)
 
 QList<ExternalTools::Tool> ExternalTools::allTools()
 {
-    return {QemuSystem, QemuImg, Swtpm, Virtiofsd, GenIsoImage, Passt, Pasta, Dnsmasq, RemoteViewer, DbusDaemon};
+    return {QemuSystem, QemuImg, Swtpm, Virtiofsd, GenIsoImage, Passt, Pasta, Dnsmasq, DbusDaemon};
 }
 
 QList<ExternalTools::Tool> ExternalTools::coreTools()
@@ -187,11 +184,6 @@ QList<ExternalTools::Tool> ExternalTools::coreTools()
 QList<ExternalTools::Tool> ExternalTools::virtualNetworkTools()
 {
     return {Pasta, Dnsmasq};
-}
-
-QList<ExternalTools::Tool> ExternalTools::spiceDisplayTools()
-{
-    return {RemoteViewer};
 }
 
 QList<ExternalTools::Tool> ExternalTools::dbusDisplayTools()
@@ -206,11 +198,6 @@ QList<ExternalTools::Tool> ExternalTools::unusedTools() const
 
     if (!caps.has(SandboxCapabilities::UserNamespaces))
         result << Passt << Pasta << Dnsmasq;
-
-    // In a self-contained build a missing tool cannot be installed by the
-    // user, so there is nothing actionable to warn about.
-    if (!caps.has(SandboxCapabilities::ExternalToolPaths) && !isAvailable(RemoteViewer))
-        result << RemoteViewer;
 
     return result;
 }
@@ -269,7 +256,6 @@ QList<ExternalTools::FeatureGroup> ExternalTools::featureGroups()
 {
     return {{Core, i18n("Core Functionality"), i18n("Required for basic VM operation. This warning cannot be disabled."), coreTools(), false},
             {VirtualNetwork, i18n("Virtual Networks"), i18n("User-defined isolated networks with built-in DHCP and DNS."), virtualNetworkTools(), true},
-            {SpiceDisplay, i18n("SPICE Display"), i18n("External SPICE viewer for VM consoles."), spiceDisplayTools(), true},
             {DbusDisplay, i18n("D-Bus Integrated Display"), i18n("Embedded display via a per-VM D-Bus session."), dbusDisplayTools(), true},
             {TpmEmulation,
              i18n("TPM Emulation"),
@@ -305,8 +291,6 @@ QString ExternalTools::suppressionConfigKey(FeatureGroupId id)
         return u"IgnoreMissing_Core"_s;
     case VirtualNetwork:
         return u"IgnoreMissing_VirtualNetwork"_s;
-    case SpiceDisplay:
-        return u"IgnoreMissing_SpiceDisplay"_s;
     case DbusDisplay:
         return u"IgnoreMissing_DbusDisplay"_s;
     case TpmEmulation:

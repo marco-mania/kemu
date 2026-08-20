@@ -242,9 +242,8 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
 
     // --- Graphics ---
     // 3D acceleration requires a GL display backend (GTK or SDL).
-    // Disable it for headless mode and SPICE.
-    const bool effective3d =
-        config.gpu3dAcceleration() && config.gpuType() == VMSpecs::GpuType::Virtio && !headless && config.displayType() != VMSpecs::DisplayType::Spice;
+    // Disable it for headless mode.
+    const bool effective3d = config.gpu3dAcceleration() && config.gpuType() == VMSpecs::GpuType::Virtio && !headless;
 
     const int mem = qBound(VMConfig::vgaMemMbLowerLimit(config.gpuType()), config.gpuMemMb(), VMConfig::vgaMemMbUpperLimit(config.gpuType()));
 
@@ -265,26 +264,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     }
 
     // --- Display Frontend ---
-    if (config.displayType() == VMSpecs::DisplayType::Spice) {
-        const QString spiceSock = vmDir.absoluteFilePath(KEMUConst::SpiceSocketFileName);
-        args << u"-spice"_s << u"unix=on,addr=%1,disable-ticketing=on"_s.arg(relativePaths ? QFileInfo(spiceSock).fileName() : spiceSock);
-        args << u"-display"_s << u"none"_s;
-
-        if (config.spiceAgent()) {
-            args << u"-device"_s << u"virtio-serial-pci"_s;
-            args << u"-chardev"_s << u"spicevmc,id=vdagent,name=vdagent"_s;
-            args << u"-device"_s << u"virtserialport,chardev=vdagent,name=com.redhat.spice.0"_s;
-        }
-
-        // Only emit chardevs if a USB controller exists; otherwise the
-        // matching usb-redir devices below are skipped and these would dangle.
-        if (config.spiceUsbRedir() && config.usbController() != VMSpecs::UsbController::None) {
-            for (int i = 0; i < config.spiceUsbRedirCount(); ++i) {
-                const QString id = u"usbredir%1"_s.arg(i);
-                args << u"-chardev"_s << u"spicevmc,id=%1,name=usbredir"_s.arg(id);
-            }
-        }
-    } else if (config.displayType() == VMSpecs::DisplayType::Dbus) {
+    if (config.displayType() == VMSpecs::DisplayType::Dbus) {
         if (headless) {
             args << u"-display"_s << u"none"_s;
         } else {
@@ -302,7 +282,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             // ---- Guest agent for clipboard (clipboard only; pointing is
             //      handled by the selected pointer device) ----
             // For -display dbus, the in-guest spice-vdagent talks to QEMU's
-            // qemu-vdagent chardev (NOT spicevmc, which is SPICE-only). QEMU
+            // qemu-vdagent chardev. QEMU
             // bridges that to /org/qemu/Display1/Clipboard on its D-Bus bus.
             // Without this block, the Clipboard D-Bus object exists but has
             // no peer on the guest side -- Grab/Request calls go nowhere.
@@ -411,13 +391,6 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     // --- Keyboard device ---
     if (config.keyboardDevice() == VMSpecs::KeyboardDevice::Usb && !usbBus.isEmpty())
         args << u"-device"_s << u"usb-kbd,bus=%1"_s.arg(usbBus);
-
-    // usb-redir devices must come after the USB controller
-    if (config.displayType() == VMSpecs::DisplayType::Spice && config.spiceUsbRedir() && config.usbController() != VMSpecs::UsbController::None) {
-        for (int i = 0; i < config.spiceUsbRedirCount(); ++i) {
-            args << u"-device"_s << u"usb-redir,chardev=usbredir%1"_s.arg(i);
-        }
-    }
 
     // --- Monitor / QMP ---
     args << u"-qmp"_s << u"unix:%1,server,nowait"_s.arg(relativePaths ? QFileInfo(monitorSocketPath).fileName() : monitorSocketPath);
@@ -561,16 +534,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
 
     const QString qemuPath = relativePaths ? u"qemu-system-x86_64"_s : ExternalTools::instance().path(ExternalTools::QemuSystem);
 
-    if (config.displayType() == VMSpecs::DisplayType::Spice) {
-        const QString spiceSock = relativePaths ? KEMUConst::SpiceSocketFileName : vmDir.absoluteFilePath(KEMUConst::SpiceSocketFileName);
-        const QString vvFile = relativePaths ? KEMUConst::SpiceVVFileName : vmDir.absoluteFilePath(KEMUConst::SpiceVVFileName);
-        const QString viewerPath = relativePaths ? u"remote-viewer"_s : ExternalTools::instance().path(ExternalTools::RemoteViewer);
-
-        script += u"# Write SPICE connection file\n"_s + u"cat > %1 << EOF\n"_s.arg(vvFile) + u"[virt-viewer]\n"_s + u"type=spice\n"_s
-            + u"unix-path=%1\n"_s.arg(spiceSock) + u"EOF\n\n"_s;
-
-        script += u"# Start SPICE viewer (will connect once QEMU is ready)\n"_s + u"( sleep 2 && %1 %2 ) &\n\n"_s.arg(viewerPath, vvFile);
-    } else if (config.displayType() == VMSpecs::DisplayType::Dbus) {
+    if (config.displayType() == VMSpecs::DisplayType::Dbus) {
         const QString sockArg = relativePaths ? KEMUConst::DBUSSocketFileName : vmDir.absoluteFilePath(KEMUConst::DBUSSocketFileName);
         script += u"# D-Bus display: QEMU listens on a private Unix socket.\n"_s;
         script += u"# Inside KEMU, the integrated viewer connects automatically.\n"_s;

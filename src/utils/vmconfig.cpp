@@ -503,8 +503,6 @@ bool VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType type)
     // No default case: a new display type must not silently become
     // unavailable when someone extends the enum.
     switch (type) {
-    case VMSpecs::DisplayType::Spice:
-        return ExternalTools::instance().isAvailable(ExternalTools::spiceDisplayTools()) && QemuCapabilities::instance().hasDisplay(u"spice-app"_s);
     case VMSpecs::DisplayType::Dbus:
         return ExternalTools::instance().isAvailable(ExternalTools::dbusDisplayTools()) && QemuCapabilities::instance().hasDisplay(u"dbus"_s);
     case VMSpecs::DisplayType::Gtk:
@@ -603,8 +601,6 @@ QString VMConfig::toQemuString(VMSpecs::DisplayType type)
         return u"gtk"_s;
     case VMSpecs::DisplayType::Sdl:
         return u"sdl"_s;
-    case VMSpecs::DisplayType::Spice:
-        return u"none"_s; // SPICE uses -display none; the viewer is separate
     case VMSpecs::DisplayType::Dbus:
         return u"dbus"_s;
     }
@@ -761,8 +757,6 @@ QString VMConfig::toUIString(VMSpecs::DisplayType type)
         return i18n("GTK");
     case VMSpecs::DisplayType::Sdl:
         return i18n("SDL");
-    case VMSpecs::DisplayType::Spice:
-        return i18n("SPICE (Remote Viewer)");
     case VMSpecs::DisplayType::Dbus:
         return i18n("D-Bus (Integrated Viewer)");
     }
@@ -914,8 +908,6 @@ QString VMConfig::toString(VMSpecs::DisplayType type)
     switch (type) {
     case VMSpecs::DisplayType::Sdl:
         return u"sdl"_s;
-    case VMSpecs::DisplayType::Spice:
-        return u"spice"_s;
     case VMSpecs::DisplayType::Dbus:
         return u"dbus"_s;
     default:
@@ -1160,16 +1152,14 @@ VMSpecs::DisplayType VMConfig::parseDisplayType(const QString &str)
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == u"sdl"_s)
         return VMSpecs::DisplayType::Sdl;
+    // Legacy: VMs configured for the removed external SPICE viewer are
+    // migrated to the integrated D-Bus display.
     if (str_l_t == u"spice"_s)
-        return VMSpecs::DisplayType::Spice;
+        return VMSpecs::DisplayType::Dbus;
     if (str_l_t == u"dbus"_s)
         return VMSpecs::DisplayType::Dbus;
     if (str_l_t == u"gtk"_s)
         return VMSpecs::DisplayType::Gtk;
-
-    if (str_l_t == KEMUConst::DefaultDisplayType) {
-        return VMSpecs::DisplayType::Gtk;
-    }
 
     return parseDisplayType(KEMUConst::DefaultDisplayType);
 }
@@ -1483,9 +1473,6 @@ QJsonObject VMConfig::toJson() const
     j[u"display_width"_s] = m_displayResolution.width();
     j[u"display_height"_s] = m_displayResolution.height();
     j[u"display_type"_s] = toString(m_displayType);
-    j[u"spice_agent"_s] = m_spiceAgent;
-    j[u"spice_usb_redir"_s] = m_spiceUsbRedir;
-    j[u"spice_usb_redir_count"_s] = m_spiceUsbRedirCount;
     j[u"machine_type"_s] = toString(m_machineType);
     j[u"gpu_type"_s] = toString(m_gpuType);
     j[u"gpu_3d_acceleration"_s] = m_gpu3dAcceleration;
@@ -1566,9 +1553,6 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
     c.m_diskPath = j[u"disk_file"_s].toString(KEMUConst::VMDiskFileName);
 
     c.m_displayType = parseDisplayType(j[u"display_type"_s].toString());
-    c.m_spiceAgent = j[u"spice_agent"_s].toBool(GlobalDefaults.spiceAgent);
-    c.m_spiceUsbRedir = j[u"spice_usb_redir"_s].toBool(GlobalDefaults.spiceUsbRedir);
-    c.m_spiceUsbRedirCount = j[u"spice_usb_redir_count"_s].toInt(GlobalDefaults.spiceUsbRedirCount);
     c.m_gpuType = parseGpuType(j[u"gpu_type"_s].toString());
     c.m_gpu3dAcceleration = j[u"gpu_3d_acceleration"_s].toBool(GlobalDefaults.gpu3dAcceleration);
     c.m_gpuMemMb = j[u"gpu_mem"_s].toInt(GlobalDefaults.gpuMemMb);

@@ -37,7 +37,6 @@ Q_NAMESPACE
 enum class DisplayType {
     Gtk,
     Sdl,
-    Spice,
     Dbus
 };
 
@@ -185,9 +184,6 @@ struct Defaults {
     VMSpecs::Architecture architecture = VMSpecs::Architecture::X86_64;
     VMSpecs::NetworkMode networkMode = VMSpecs::NetworkMode::Passt;
     QString macAddress = u"52:54:00:12:34:56"_s;
-    bool spiceAgent = true;
-    bool spiceUsbRedir = false;
-    int spiceUsbRedirCount = 2;
 };
 
 } // namespace VMSpecs
@@ -392,18 +388,6 @@ public:
     [[nodiscard]] VMSpecs::KeyboardDevice keyboardDevice() const
     {
         return m_keyboardDevice;
-    }
-    [[nodiscard]] bool spiceAgent() const
-    {
-        return m_spiceAgent;
-    }
-    [[nodiscard]] bool spiceUsbRedir() const
-    {
-        return m_spiceUsbRedir;
-    }
-    [[nodiscard]] int spiceUsbRedirCount() const
-    {
-        return m_spiceUsbRedirCount;
     }
 
     [[nodiscard]] VMSpecs::MachineType machineType() const
@@ -625,18 +609,6 @@ public:
     void setKeyboardDevice(const VMSpecs::KeyboardDevice dev)
     {
         m_keyboardDevice = dev;
-    }
-    void setSpiceAgent(bool enabled)
-    {
-        m_spiceAgent = enabled;
-    }
-    void setSpiceUsbRedir(bool enabled)
-    {
-        m_spiceUsbRedir = enabled;
-    }
-    void setSpiceUsbRedirCount(int count)
-    {
-        m_spiceUsbRedirCount = count;
     }
 
     void setMachineType(VMSpecs::MachineType type)
@@ -863,9 +835,6 @@ private:
     VMSpecs::UsbController m_usbController = GlobalDefaults.usbController;
     VMSpecs::PointerDevice m_pointerDevice = GlobalDefaults.pointerDevice;
     VMSpecs::KeyboardDevice m_keyboardDevice = GlobalDefaults.keyboardDevice;
-    bool m_spiceAgent = GlobalDefaults.spiceAgent;
-    bool m_spiceUsbRedir = GlobalDefaults.spiceUsbRedir;
-    int m_spiceUsbRedirCount = GlobalDefaults.spiceUsbRedirCount;
 
     VMSpecs::MachineType m_machineType = GlobalDefaults.machineType;
     bool m_useUefi = GlobalDefaults.useUefi;

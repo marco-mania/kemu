@@ -305,14 +305,6 @@ void SettingsDialog::setupDisplayPage()
 
     layout->addRow(i18n("Default resolution for new VMs:"), resolutionCombo);
 
-    if (VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType::Spice)) {
-        spiceCloseActionCombo = new QComboBox;
-        spiceCloseActionCombo->addItem(i18n("Switch to headless mode"), SwitchToHeadless);
-        spiceCloseActionCombo->addItem(i18n("Shut down the VM"), ShutdownVm);
-        spiceCloseActionCombo->setCurrentIndex(static_cast<int>(spiceViewerCloseAction()));
-        layout->addRow(i18n("When SPICE viewer is closed:"), spiceCloseActionCombo);
-    }
-
     auto *item = addPage(page, i18n("Display"));
     item->setIcon(QIcon::fromTheme(u"preferences-desktop-display"_s));
     m_pages[Display] = item;
@@ -437,8 +429,7 @@ void SettingsDialog::saveSettings()
     general.writeEntry("ImportRegenerateMac", importRegenerateMacCheck->isChecked());
     general.writeEntry("DeployHeadless", deployHeadlessCheck->isChecked());
     general.writeEntry("DeploySerialLog", deploySerialLogCheck->isChecked());
-    if (spiceCloseActionCombo)
-        general.writeEntry("SpiceViewerCloseAction", spiceCloseActionCombo->currentData().toInt());
+
     // Only persist the user's actual choice - not the forced value, so the
     // real preference survives once passt becomes available again.
     if (slirpNetworkingCheck->isEnabled())
@@ -513,16 +504,6 @@ bool SettingsDialog::deploySerialLog()
     KConfig config(u"kemurc"_s);
     const KConfigGroup general = config.group(u"General"_s);
     return general.readEntry("DeploySerialLog", false);
-}
-
-SettingsDialog::SpiceViewerCloseAction SettingsDialog::spiceViewerCloseAction()
-{
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
-    const int val = general.readEntry("SpiceViewerCloseAction", static_cast<int>(SwitchToHeadless));
-    if (val == ShutdownVm)
-        return ShutdownVm;
-    return SwitchToHeadless;
 }
 
 bool SettingsDialog::useSlirpNetworking()

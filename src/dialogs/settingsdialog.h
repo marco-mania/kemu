@@ -57,11 +57,6 @@ public:
     };
     void setPage(Page page);
 
-    enum SpiceViewerCloseAction {
-        SwitchToHeadless,
-        ShutdownVm
-    };
-
     static QString getVmBasePath();
     static QString getOvmfPath();
     static bool isPerformanceMonitorEnabled();
@@ -71,7 +66,6 @@ public:
     static bool importRegenerateMac();
     static bool deployHeadless();
     static bool deploySerialLog();
-    static SpiceViewerCloseAction spiceViewerCloseAction();
     static bool useSlirpNetworking();
 
     void setNetworkManager(VirtualNetworkManager *mgr);
@@ -113,7 +107,6 @@ private:
 
     QCheckBox *deployHeadlessCheck = nullptr;
     QCheckBox *deploySerialLogCheck = nullptr;
-    QComboBox *spiceCloseActionCombo = nullptr;
 
     QCheckBox *perfMonitorCheck = nullptr;
     QComboBox *resolutionCombo = nullptr;

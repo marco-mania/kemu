@@ -47,7 +47,6 @@ public:
         Passt, // passt -- single-VM user-mode networking (unchanged)
         Pasta, // pasta -- namespace-to-host NAT connector (from passt project)
         Dnsmasq, // dnsmasq -- lightweight DHCP/DNS for virtual networks
-        RemoteViewer, // remote-viewer (virt-viewer, for SPICE display)
         DbusDaemon // dbus-daemon for per-VM private bus
     };
     Q_ENUM(Tool)
@@ -55,7 +54,6 @@ public:
     enum FeatureGroupId {
         Core,
         VirtualNetwork,
-        SpiceDisplay,
         DbusDisplay,
         TpmEmulation,
         SharedFolders,
@@ -98,7 +96,6 @@ public:
     // Tools required only for the virtual-network feature.
     [[nodiscard]] static QList<Tool> virtualNetworkTools();
 
-    [[nodiscard]] static QList<Tool> spiceDisplayTools();
     [[nodiscard]] static QList<Tool> dbusDisplayTools();
 
     [[nodiscard]] QList<Tool> unusedTools() const;

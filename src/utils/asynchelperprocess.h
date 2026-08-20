@@ -78,7 +78,7 @@ public:
     /**
      * Standalone async wait for a Unix-domain socket to exist on disk.
      * Useful when waiting for a socket created by another process (e.g.
-     * QEMU's SPICE socket) before launching a client. The callback fires
+     * QEMU's QMP socket) before connecting a client. The callback fires
      * exactly once, on the parent's thread.
      */
     static void waitForSocket(QObject *parent, const QString &path, int timeoutMs, int pollIntervalMs, std::function<void(bool ok)> done);

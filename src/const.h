@@ -45,8 +45,6 @@ inline constexpr auto PasstSocketFileName = "passt.sock"_L1;
 inline constexpr auto SwtpmSocketFileName = "swtpm.sock"_L1;
 inline constexpr auto VirtiofsdSocketFileName = "virtiofsd.sock"_L1;
 inline constexpr auto VirtiofsdPidFileName = "virtiofsd.sock.pid"_L1;
-inline constexpr auto SpiceSocketFileName = "spice.sock"_L1;
-inline constexpr auto SpiceVVFileName = "spice.vv"_L1;
 inline constexpr auto QemuMonitorSocketFileName = "qemu-monitor.sock"_L1;
 inline constexpr auto DeploySerialLogFileName = "deploy-serial.log"_L1;
 

@@ -459,97 +459,6 @@ void MainWindow::startPasstAsync(const QString &vmName, const QList<PortForwardR
     });
 }
 
-void MainWindow::startSpiceViewerAsync(const QString &vmName, std::function<void(bool)> done)
-{
-    if (!requireTool(ExternalTools::RemoteViewer)) {
-        done(false);
-        return;
-    }
-
-    const QString vmPath = getVmDir(vmName).absolutePath();
-    const QString spiceSockPath = vmPath + u'/' + KEMUConst::SpiceSocketFileName;
-    const QString vvFile = vmPath + u'/' + KEMUConst::SpiceVVFileName;
-
-    // First: wait for QEMU to create the SPICE socket.
-    AsyncHelperProcess::waitForSocket(this, spiceSockPath, 3000, 50, [this, vmName, vvFile, spiceSockPath, done = std::move(done)](bool socketOk) mutable {
-        if (!socketOk) {
-            KMessageBox::error(this, i18n("SPICE socket was not created in time."), i18n("Viewer Error"));
-            done(false);
-            return;
-        }
-
-        // Write the .vv connection file -- avoids all URI encoding issues
-        // we would otherwise hit when passing the unix socket on the
-        // remote-viewer command line.
-        QFile f(vvFile);
-        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            KMessageBox::error(this, i18n("Failed to write SPICE connection file."), i18n("Viewer Error"));
-            done(false);
-            return;
-        }
-        f.write("[virt-viewer]\n");
-        f.write("type=spice\n");
-        f.write(u"unix-path=%1\n"_s.arg(spiceSockPath).toUtf8());
-        f.close();
-
-        // Then: launch remote-viewer with the .vv file. opts.socketPath
-        // stays empty -- success here just means "process started".
-        AsyncHelperProcess::Options opts;
-        opts.program = ExternalTools::instance().path(ExternalTools::RemoteViewer);
-        opts.arguments = {vvFile};
-
-        AsyncHelperProcess::run(this, opts, [this, vmName, vvFile, done = std::move(done)](KProcess *viewer, bool ok, const QString &err) {
-            if (!ok) {
-                KMessageBox::error(this, i18n("Failed to start SPICE viewer: %1", err), i18n("Viewer Error"));
-                QFile::remove(vvFile);
-                done(false);
-                return;
-            }
-
-            // Register the viewer process BEFORE attaching the close
-            // handler so the handler's identity check
-            // (entry->spiceViewerProcess == viewer) works.
-            veModel->setSpiceViewerProcess(vmName, viewer);
-
-            // Viewer-close handler -- same behaviour as the original
-            // startSpiceViewer():
-            //   * remove the leftover .vv file
-            //   * drop the model's pointer
-            //   * honour the user's "viewer closed" preference
-            //     (Shutdown VM, or continue headless)
-            connect(viewer, &QProcess::finished, viewer, [this, vmName, viewer, vvFile]() {
-                QFile::remove(vvFile);
-
-                VmEntry *entry = veModel->entryByName(vmName);
-                if (entry && entry->spiceViewerProcess == viewer)
-                    entry->spiceViewerProcess = nullptr;
-                viewer->deleteLater();
-
-                if (!entry || entry->state != VmEntry::State::Running)
-                    return;
-
-                const auto action = SettingsDialog::spiceViewerCloseAction();
-                if (action == SettingsDialog::ShutdownVm) {
-                    if (entry->qmpClient && entry->qmpClient->isConnected()) {
-                        entry->qmpClient->sendCommand(u"system_powerdown"_s);
-                        statusBar()->showMessage(i18n("SPICE viewer closed - shutting down '%1'.", vmName));
-                    }
-                    return;
-                }
-                // SwitchToHeadless (default)
-                veModel->setHeadless(vmName, true);
-                statusBar()->showMessage(i18n("SPICE viewer closed - '%1' continues headless.", vmName));
-                if (selectedVmName() == vmName) {
-                    updateDetails();
-                    updateActionStates();
-                }
-            });
-
-            done(true);
-        });
-    });
-}
-
 void MainWindow::startDbusDaemonAsync(const QString &vmName, std::function<void(bool)> done)
 {
     if (!requireTool(ExternalTools::DbusDaemon)) {
@@ -724,10 +633,8 @@ void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const Q
 
     scheduleQemuStartupProbe(process, vmName);
 
-    // SPICE / D-Bus viewer (now async).
-    if (!headless && config.displayType() == VMSpecs::DisplayType::Spice) {
-        startSpiceViewerAsync(vmName, [](bool) { /* errors already surfaced by helper */ });
-    } else if (!headless && config.displayType() == VMSpecs::DisplayType::Dbus) {
+    // D-Bus viewer
+    if (!headless && config.displayType() == VMSpecs::DisplayType::Dbus) {
         QTimer::singleShot(500, this, [this, vmName]() {
             startDbusViewer(vmName);
         });
@@ -908,12 +815,6 @@ void MainWindow::launchQemuForDeployment(const QString &vmName, bool headless, c
     statusBar()->showMessage(i18n("Deploying '%1' - unattended installation running...", vmName));
     updateDetails();
     updateActionStates();
-
-    // Optional SPICE viewer for interactive deployments. Errors are
-    // surfaced inside the helper, so we ignore the result here.
-    if (!headless && config.displayType() == VMSpecs::DisplayType::Spice) {
-        startSpiceViewerAsync(vmName, [](bool) { });
-    }
 
     // QMP client for monitoring the deployment's shutdown signal.
     QMPClient *client = new QMPClient(this);
@@ -1099,9 +1000,9 @@ bool MainWindow::startDbusViewer(const QString &vmName)
         stopDbusViewer(vmName);
     });
 
-    // Mirror SPICE behaviour: when the user closes the viewer window,
-    // keep QEMU running, mark the VM as headless and tear down the
-    // per-viewer D-Bus listeners so the user can reconnect later.
+    // When the user closes the viewer window, keep QEMU running, mark the VM
+    // as headless and tear down the per-viewer D-Bus listeners so the user can
+    // reconnect later.
     //
     // QueuedConnection: the slot must run AFTER closeEvent() has fully
     // returned, otherwise stopDbusViewer() would delete the window from
@@ -1418,10 +1319,9 @@ void MainWindow::updateActionStates()
     const bool hasUsbController = hasSelection && entry && entry->config.usbController() != VMSpecs::UsbController::None;
     usbActionMenu->setEnabled(hasUsbController && isRunning);
 
-    const bool canReconnectSpice = isRunning && entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Spice && !entry->spiceViewerProcess;
-    const bool canReconnectDbus =
+    const bool canReconnect =
         isRunning && entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !m_dbusViewers.contains(entry->config.name());
-    actionCollection()->action(u"vm_reconnect"_s)->setEnabled(hasSelection && (canReconnectSpice || canReconnectDbus));
+    actionCollection()->action(u"vm_reconnect"_s)->setEnabled(hasSelection && canReconnect);
 
     const bool hasActiveNamespace = hasSelection && (isRunning || isDeploying) && entry->config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
         && !entry->config.virtualNetworkName().isEmpty() && m_networkManager && m_networkManager->namespacePid(entry->config.virtualNetworkName()) > 0;
@@ -1658,12 +1558,8 @@ void MainWindow::updateDetails()
         auto pid = entry->qemuProcess ? entry->qemuProcess->processId() : 0;
         statusDot = u"&#x25CF;"_s;
         statusText = i18n("Powered On");
-        if (isHeadless) {
-            if (entry->config.displayType() == VMSpecs::DisplayType::Spice)
-                statusText += i18n(" <b>Headless</b> (SPICE viewer disconnected)");
-            else
-                statusText += i18n(" <b>Headless</b>");
-        }
+        if (isHeadless)
+            statusText += i18n(" <b>Headless</b>");
         statusText += u"  <span class='pid'>[<a href='copy-pid:%1' title='%2'>PID %1</a>]</span>"_s.arg(QString::number(pid), i18n("Click to copy PID"));
         statusColor = colPositive;
     } else if (isShrinking) {
@@ -1803,23 +1699,18 @@ void MainWindow::updateDetails()
         bool muted = false;
     };
 
-    QList<HwRow> rows = {
-        {u"preferences-system"_s, i18n("Firmware"), firmwareVal, false, false},
-        {u"computer"_s, i18n("Chipset"), chipsetVal, false, false},
-        {u"security-high"_s, i18n("TPM"), currentConfig.useTpm() ? i18n("TPM 2.0 (swtpm)") : i18n("None"), false, !currentConfig.useTpm()},
-        {u"clock"_s, i18n("Clock"), currentConfig.useLocalTime() ? i18n("Localtime") : i18n("UTC"), false, false},
-        {u"media-flash"_s, i18n("Memory"), memVal, true, false},
-        {u"cpu"_s, i18n("Processors"), cpuVal, false, false},
-        {u"drive-harddisk"_s, i18n("Hard Disk"), diskVal, true, false},
-        {u"media-optical"_s, i18n("CD/DVD"), cdVal, false, currentConfig.isoPath().isEmpty()},
-        {u"media-floppy"_s, i18n("Floppy"), floppyVal, false, currentConfig.floppyPath().isEmpty()},
-        {u"video-display"_s,
-         i18n("Display"),
-         gpuVal + u", "_s + displayVal + (currentConfig.displayType() != VMSpecs::DisplayType::Spice ? u" (%1)"_s.arg(resolutionVal) : QString()),
-         true,
-         false},
-        {u"audio-card"_s, i18n("Sound Card"), audioVal, true, currentConfig.audioDevice() == VMSpecs::AudioDevice::None},
-        {u"network-wired"_s, i18n("Network Adapter"), netVal, true, currentConfig.networkCard() == VMSpecs::NetworkCard::None}};
+    QList<HwRow> rows = {{u"preferences-system"_s, i18n("Firmware"), firmwareVal, false, false},
+                         {u"computer"_s, i18n("Chipset"), chipsetVal, false, false},
+                         {u"security-high"_s, i18n("TPM"), currentConfig.useTpm() ? i18n("TPM 2.0 (swtpm)") : i18n("None"), false, !currentConfig.useTpm()},
+                         {u"clock"_s, i18n("Clock"), currentConfig.useLocalTime() ? i18n("Localtime") : i18n("UTC"), false, false},
+                         {u"media-flash"_s, i18n("Memory"), memVal, true, false},
+                         {u"cpu"_s, i18n("Processors"), cpuVal, false, false},
+                         {u"drive-harddisk"_s, i18n("Hard Disk"), diskVal, true, false},
+                         {u"media-optical"_s, i18n("CD/DVD"), cdVal, false, currentConfig.isoPath().isEmpty()},
+                         {u"media-floppy"_s, i18n("Floppy"), floppyVal, false, currentConfig.floppyPath().isEmpty()},
+                         {u"video-display"_s, i18n("Display"), gpuVal + u", "_s + displayVal + u" (%1)"_s.arg(resolutionVal), true, false},
+                         {u"audio-card"_s, i18n("Sound Card"), audioVal, true, currentConfig.audioDevice() == VMSpecs::AudioDevice::None},
+                         {u"network-wired"_s, i18n("Network Adapter"), netVal, true, currentConfig.networkCard() == VMSpecs::NetworkCard::None}};
 
     if (!portFwdVal.isEmpty())
         rows.append({u"network-connect"_s, i18n("Port Forwarding"), portFwdVal, false, false});
@@ -2115,7 +2006,6 @@ void MainWindow::tearDownVmRuntime(const QString &vmName)
     stopHelper(entry->swtpmProcess, 3000);
     stopHelper(entry->virtiofsdProcess, 3000);
     stopHelper(entry->passtProcess, 3000);
-    stopHelper(entry->spiceViewerProcess, 2000);
     stopHelper(entry->dbusDaemonProcess, 2000);
 
     const QDir vmDir = getVmDir(vmName);
@@ -2670,22 +2560,6 @@ void MainWindow::reconnectViewer()
     if (!entry || entry->state != VmEntry::State::Running)
         return;
 
-    if (entry->config.displayType() == VMSpecs::DisplayType::Spice) {
-        if (entry->spiceViewerProcess) {
-            statusBar()->showMessage(i18n("Viewer is already running for '%1'.", vmName));
-            return;
-        }
-        startSpiceViewerAsync(vmName, [this, vmName](bool ok) {
-            if (!ok)
-                return;
-            veModel->setHeadless(vmName, false);
-            statusBar()->showMessage(i18n("Viewer reconnected to '%1'.", vmName));
-            updateDetails();
-            updateActionStates();
-        });
-        return;
-    }
-
     if (entry->config.displayType() == VMSpecs::DisplayType::Dbus) {
         if (m_dbusViewers.contains(vmName)) {
             statusBar()->showMessage(i18n("Viewer is already running for '%1'.", vmName));
@@ -2737,20 +2611,8 @@ void MainWindow::onTreeDoubleClicked(const QModelIndex &index)
         }
     }
 
-    // VM is running and an external SPICE viewer process already exists:
-    // an external window cannot be reliably brought to the foreground,
-    // so just display a status message (behavior as previously in reconnectViewer()).
-    if (entry->config.displayType() == VMSpecs::DisplayType::Spice && entry->spiceViewerProcess) {
-        statusBar()->showMessage(i18n("Viewer is already running for '%1'.", vmName));
-        return;
-    }
-
     // VM is running headless: reconnect viewer
-    const bool spiceReconnect = entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Spice && !entry->spiceViewerProcess;
-
-    const bool dbusReconnect = entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !m_dbusViewers.contains(vmName);
-
-    if (spiceReconnect || dbusReconnect)
+    if (entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !m_dbusViewers.contains(vmName))
         reconnectViewer();
 }
 
@@ -4318,13 +4180,6 @@ void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
             entry->passtProcess->kill();
         delete entry->passtProcess;
         QFile::remove(getVmBaseDir().filePath(vmName) + u'/' + KEMUConst::PasstSocketFileName);
-    }
-
-    if (entry->spiceViewerProcess) {
-        entry->spiceViewerProcess->terminate();
-        if (!entry->spiceViewerProcess->waitForFinished(2000))
-            entry->spiceViewerProcess->kill();
-        delete entry->spiceViewerProcess;
     }
 
     QFile::remove(monitorSocketPath(vmName));

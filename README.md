@@ -13,8 +13,8 @@ A traditional, direct-to-QEMU desktop frontend for Linux, built with Qt6 Widgets
 ## Features
 
 - Create, edit, and delete QEMU virtual machines
-- Supports display types GTK, SDL, SPICE (via `virt-viewer (remote-viewer)`)
 - Integrated D-Bus viewer with audio and clipboard sharing
+- Supports display types GTK, SDL
 - Automated Deploy feature (Cloud-Init support)
 - Snapshot support (QCOW2)
 - Hot-swap ISO and Floppy images
@@ -50,7 +50,6 @@ A traditional, direct-to-QEMU desktop frontend for Linux, built with Qt6 Widgets
 - Optional: `swtpm` (for TPM 2.0 emulation)
 - Optional: `virtiofsd` (for shared folders with Windows guests)
 - Optional: `dnsmasq` (for DHCP in virtual networks)
-- Optional: `virt-viewer (remote-viewer)` (for SPICE support)
 - Optional: `dbus-daemon` (for the integrated D-Bus display viewer)
 
 ### Arch Linux
@@ -189,10 +188,9 @@ KEMU supports four display backends, selectable per VM in the VM settings:
 |------------------|------------------|-----------------|--------------------|-------------------|------------------|
 | **GTK**          | QEMU built-in    | Yes (Virtio)    | System (PipeWire)  | No                | None             |
 | **SDL**          | QEMU built-in    | Yes (Virtio)    | System (PipeWire)  | No                | None             |
-| **SPICE**        | `remote-viewer`  | No              | System (PipeWire)  | Via SPICE agent   | `virt-viewer`    |
 | **D-Bus**        | KEMU integrated  | Yes (Virtio)    | Routed via D-Bus   | Yes (built-in)    | `dbus-daemon`    |
 
-GTK and SDL are the simplest options - QEMU opens its own window directly, with optional OpenGL passthrough for hardware-accelerated graphics. SPICE adds remote-display capability and SPICE-agent integration but requires the external `virt-viewer` package and offers no 3D acceleration. The D-Bus backend combines the strengths of both: hardware-accelerated rendering inside a viewer window managed by KEMU itself, with audio and clipboard sharing built in.
+GTK and SDL are the simplest options - QEMU opens its own window directly, with optional OpenGL passthrough for hardware-accelerated graphics. The D-Bus backend combines hardware-accelerated rendering inside a viewer window managed by KEMU itself with audio and clipboard sharing built in.
 
 ### D-Bus Display
 
@@ -211,7 +209,7 @@ Each D-Bus VM gets its own isolated `dbus-daemon` instance with a private socket
 **Requirements:**
 
 - `dbus-daemon` must be installed on the host. KEMU detects this at startup and disables the D-Bus display option if missing.
-- The guest needs no special drivers for video or input - QEMU handles everything on its side. For clipboard and SPICE-agent features, install the standard SPICE vdagent in the guest.
+- The guest needs no special drivers for video or input - QEMU handles everything on its side. For clipboard features, install the standard SPICE vdagent in the guest.
 
 ## Networking
 

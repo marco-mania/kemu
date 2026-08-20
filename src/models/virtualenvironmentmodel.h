@@ -49,7 +49,6 @@ struct VmEntry {
     QPointer<KProcess> swtpmProcess;
     QPointer<KProcess> virtiofsdProcess;
     QPointer<KProcess> passtProcess;
-    QPointer<KProcess> spiceViewerProcess;
     QPointer<KProcess> dbusDaemonProcess;
 
     QVector<double> cpuHistory;
@@ -128,7 +127,6 @@ public:
     void setSwtpmProcess(const QString &name, KProcess *process);
     void setVirtiofsdProcess(const QString &name, KProcess *process);
     void setPasstProcess(const QString &name, KProcess *process);
-    void setSpiceViewerProcess(const QString &name, KProcess *process);
     void setDBusDaemonProcess(const QString &name, KProcess *process);
     void setQmpClient(const QString &name, QMPClient *client);
     void updateConfig(const QString &name, const VMConfig &config);
