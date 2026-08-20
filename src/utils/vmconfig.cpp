@@ -1152,16 +1152,16 @@ VMSpecs::DisplayType VMConfig::parseDisplayType(const QString &str)
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == u"sdl"_s)
         return VMSpecs::DisplayType::Sdl;
-    // Legacy: VMs configured for the removed external SPICE viewer are
-    // migrated to the integrated D-Bus display.
-    if (str_l_t == u"spice"_s)
-        return VMSpecs::DisplayType::Dbus;
     if (str_l_t == u"dbus"_s)
         return VMSpecs::DisplayType::Dbus;
     if (str_l_t == u"gtk"_s)
         return VMSpecs::DisplayType::Gtk;
+    // Legacy: the external SPICE viewer was removed; migrate to the
+    // integrated D-Bus display.
+    if (str_l_t == u"spice"_s)
+        return VMSpecs::DisplayType::Dbus;
 
-    return parseDisplayType(KEMUConst::DefaultDisplayType);
+    return GlobalDefaults.displayType;
 }
 
 VMSpecs::MachineType VMConfig::parseMachineType(const QString &str)
