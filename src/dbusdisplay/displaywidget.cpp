@@ -233,13 +233,22 @@ void QemuDisplayWidget::onCursorImageChanged()
 
 void QemuDisplayWidget::onCursorMoved()
 {
-    const bool visible = m_listener->cursorInfo().visible;
-    if (visible != m_lastCursorVisible) {
-        m_lastCursorVisible = visible;
+    const CursorInfo ci = m_listener->cursorInfo();
+
+    if (ci.visible != m_lastCursorVisible) {
+        m_lastCursorVisible = ci.visible;
         updateCursor(); // host cursor must show/hide
     }
-    if (m_relativeGrabActive)
-        scheduleRepaint(); // overlay follows the guest position
+
+    if (!m_relativeGrabActive)
+        return; // no overlay drawn, nothing to repaint
+
+    const QPoint pos(ci.pos_x, ci.pos_y);
+    if (pos == m_lastCursorPos)
+        return;
+    m_lastCursorPos = pos;
+
+    scheduleRepaint(); // overlay follows the guest position
 }
 
 void QemuDisplayWidget::scheduleRepaint()
@@ -511,21 +520,27 @@ void QemuDisplayWidget::drawGuestCursorOverlay()
 
     const qreal dpr = devicePixelRatio();
 
-    // Same centring/scale as renderQuad()/mapToFramebuffer() (device pixels).
-    const float drawW = m_fbSize.width() * m_scale;
-    const float drawH = m_fbSize.height() * m_scale;
-    const float offX = (width() * dpr - drawW) / 2.0f;
-    const float offY = (height() * dpr - drawH) / 2.0f;
+    // Rescale only when the image or the zoom level actually changed.
+    if (ci.image.cacheKey() != m_overlayCursorKey || !qFuzzyCompare(m_overlayScale, m_scale)) {
+        const QSize target = (QSizeF(ci.image.size()) * m_scale).toSize();
+        m_overlayPixmap = QPixmap::fromImage(ci.image).scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        m_overlayPixmap.setDevicePixelRatio(dpr);
+        m_overlayCursorKey = ci.image.cacheKey();
+        m_overlayScale = m_scale;
+    }
 
-    const float devX = offX + (ci.pos_x - ci.hot_x) * m_scale;
-    const float devY = offY + (ci.pos_y - ci.hot_y) * m_scale;
+    // Same centring/scale as renderQuad()/mapToFramebuffer() (device pixels).
+    const qreal drawW = m_fbSize.width() * m_scale;
+    const qreal drawH = m_fbSize.height() * m_scale;
+    const qreal offX = (width() * dpr - drawW) / 2.0;
+    const qreal offY = (height() * dpr - drawH) / 2.0;
+
+    const qreal devX = offX + (ci.pos_x - ci.hot_x) * m_scale;
+    const qreal devY = offY + (ci.pos_y - ci.hot_y) * m_scale;
 
     // QPainter on a QOpenGLWidget works in logical coordinates.
-    const QRectF target(devX / dpr, devY / dpr, ci.image.width() * m_scale / dpr, ci.image.height() * m_scale / dpr);
-
     QPainter p(this);
-    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    p.drawImage(target, ci.image);
+    p.drawPixmap(QPointF(devX / dpr, devY / dpr), m_overlayPixmap);
     p.end();
 }
 

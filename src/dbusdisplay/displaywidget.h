@@ -191,6 +191,12 @@ private:
     float m_cachedCursorScale = -1.0f;
     bool m_lastCursorVisible = false;
 
+    // Overlay cache (drawn while the pointer is captured)
+    QPixmap m_overlayPixmap;
+    qint64 m_overlayCursorKey = -1;
+    qreal m_overlayScale = -1.0;
+    QPoint m_lastCursorPos = {-1, -1};
+
     void uploadDirtyRects(const QImage &source);
     void uploadFullFrameConverted(const QImage &source);
 };
