@@ -22,8 +22,6 @@ void ImageDatabase::loadFromFile(const QString &jsonPath)
 {
     m_templates.clear();
 
-    m_globalDefaults = {};
-
     QFile file(jsonPath);
     if (!file.open(QIODevice::ReadOnly))
         return;
@@ -31,7 +29,7 @@ void ImageDatabase::loadFromFile(const QString &jsonPath)
     const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
     const QJsonObject rootObj = doc.object();
 
-    const VMConfig globalDefaults = VMConfig::fromJson(rootObj[u"global_qemu_defaults"_s].toObject());
+    m_globalDefaults = VMConfig::fromJson(rootObj[u"global_qemu_defaults"_s].toObject());
 
     const QJsonArray arr = rootObj[u"templates"_s].toArray();
     for (const auto &val : arr)
