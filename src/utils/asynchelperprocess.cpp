@@ -32,10 +32,9 @@ void AsyncHelperProcess::run(QObject *parent, const Options &options, FinishedCa
 void AsyncHelperProcess::waitForSocket(QObject *parent, const QString &path, int timeoutMs, int pollIntervalMs, std::function<void(bool)> done)
 {
     Q_ASSERT(parent);
-
-    // Fast path: socket may already be there.
-    if (QFile::exists(path)) {
-        done(true);
+    if (!parent) {
+        if (done)
+            done(false);
         return;
     }
 
@@ -44,21 +43,39 @@ void AsyncHelperProcess::waitForSocket(QObject *parent, const QString &path, int
     auto *deadline = new QTimer(holder);
     deadline->setSingleShot(true);
 
-    auto fire = [holder, done = std::move(done)](bool ok) mutable {
-        // Ensure single-fire even if both timers race.
-        auto cb = std::move(done);
+    // One shared slot rather than a copy per lambda: moving out of it is
+    // what makes the single-fire guarantee hold when both timers race.
+    auto slot = std::make_shared<std::function<void(bool)>>(std::move(done));
+
+    auto fire = [holder, poll, deadline, slot](bool ok) {
+        if (!*slot)
+            return;
+        auto cb = std::move(*slot);
+        *slot = nullptr;
+        // Stop before deleteLater(): deletion is deferred, the timers are
+        // not, so a queued timeout would still be delivered.
+        poll->stop();
+        deadline->stop();
         holder->deleteLater();
-        if (cb)
-            cb(ok);
+        cb(ok);
     };
 
-    QObject::connect(poll, &QTimer::timeout, holder, [path, fire]() mutable {
+    QObject::connect(poll, &QTimer::timeout, holder, [path, fire]() {
         if (QFile::exists(path))
             fire(true);
     });
-    QObject::connect(deadline, &QTimer::timeout, holder, [fire]() mutable {
+    QObject::connect(deadline, &QTimer::timeout, holder, [fire]() {
         fire(false);
     });
+
+    // Socket may already be there. Deliver through the event loop anyway so
+    // the callback never runs before this function returns.
+    if (QFile::exists(path)) {
+        QTimer::singleShot(0, holder, [fire]() {
+            fire(true);
+        });
+        return;
+    }
 
     poll->start(pollIntervalMs);
     deadline->start(timeoutMs);
