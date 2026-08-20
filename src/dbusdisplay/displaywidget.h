@@ -107,7 +107,10 @@ private:
     void uploadSoftwareFrame();
     void setupQuad();
     void renderQuad();
-    void drawGuestCursorOverlay();
+
+    void renderCursorQuad();
+    bool ensureCursorTexture(const QImage &img);
+    void drawUnitQuad(QOpenGLShaderProgram *program);
 
     void queryPointerMode();
     void setGuestAbsolute(bool absolute);
@@ -151,6 +154,12 @@ private:
     GLuint m_textureId = 0;
     GLuint m_vbo = 0;
 
+    // Guest cursor, drawn as a second quad while the pointer is captured
+    QOpenGLShaderProgram *m_cursorShader = nullptr;
+    GLuint m_cursorTextureId = 0;
+    qint64 m_cursorTexKey = -1;
+    QSize m_cursorTexSize;
+
     QSize m_fbSize;
     QSize m_texAllocSize;
     bool m_flipY = false;
@@ -191,10 +200,6 @@ private:
     float m_cachedCursorScale = -1.0f;
     bool m_lastCursorVisible = false;
 
-    // Overlay cache (drawn while the pointer is captured)
-    QPixmap m_overlayPixmap;
-    qint64 m_overlayCursorKey = -1;
-    qreal m_overlayScale = -1.0;
     QPoint m_lastCursorPos = {-1, -1};
 
     void uploadDirtyRects(const QImage &source);

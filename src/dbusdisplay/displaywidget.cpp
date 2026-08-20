@@ -60,6 +60,22 @@ static const char *fragmentShaderSource = R"(
     }
 )";
 
+// The main shader forces alpha to 1.0 (the QEMU framebuffer has no usable
+// alpha channel and the widget FBO must stay opaque). The cursor needs the
+// opposite, so it gets its own program.
+static const char *cursorFragmentShaderSource = R"(
+    #ifdef GL_ES
+    precision mediump float;
+    #endif
+    varying vec2 vTexCoord;
+    uniform sampler2D uTexture;
+    uniform float uDim;
+    void main() {
+        vec4 c = texture2D(uTexture, vTexCoord);   // premultiplied
+        gl_FragColor = c * mix(1.0, 0.35, uDim);
+    }
+)";
+
 static const float quadVertices[] = {
     -1.0f,
     -1.0f,
@@ -133,7 +149,10 @@ QemuDisplayWidget::~QemuDisplayWidget()
     destroyEglImage();
     if (m_textureId)
         glDeleteTextures(1, &m_textureId);
+    if (m_cursorTextureId)
+        glDeleteTextures(1, &m_cursorTextureId);
     delete m_shader;
+    delete m_cursorShader;
     doneCurrent();
 }
 
@@ -225,7 +244,8 @@ void QemuDisplayWidget::updateCursor()
 
 void QemuDisplayWidget::onCursorImageChanged()
 {
-    m_cachedCursorImageKey = -1; // invalidate cache
+    m_cachedCursorImageKey = -1; // host cursor cache
+    m_cursorTexKey = -1; // GPU overlay cache
     updateCursor();
     if (m_relativeGrabActive)
         scheduleRepaint(); // overlay draws the (new) image
@@ -271,7 +291,14 @@ void QemuDisplayWidget::initializeGL()
     m_shader = new QOpenGLShaderProgram(this);
     m_shader->addShaderFromSourceCode(QOpenGLShader::Vertex, vertexShaderSource);
     m_shader->addShaderFromSourceCode(QOpenGLShader::Fragment, fragmentShaderSource);
-    m_shader->link();
+    if (!m_shader->link())
+        qCWarning(KEMU_DBUSDISPLAY) << "Display shader link failed:" << m_shader->log();
+
+    m_cursorShader = new QOpenGLShaderProgram(this);
+    m_cursorShader->addShaderFromSourceCode(QOpenGLShader::Vertex, vertexShaderSource);
+    m_cursorShader->addShaderFromSourceCode(QOpenGLShader::Fragment, cursorFragmentShaderSource);
+    if (!m_cursorShader->link())
+        qCWarning(KEMU_DBUSDISPLAY) << "Cursor shader link failed:" << m_cursorShader->log();
 
     setupQuad();
 
@@ -466,7 +493,7 @@ void QemuDisplayWidget::paintGL()
     if (!m_textureReady)
         return;
     renderQuad();
-    drawGuestCursorOverlay();
+    renderCursorQuad();
 }
 
 void QemuDisplayWidget::renderQuad()
@@ -493,9 +520,51 @@ void QemuDisplayWidget::renderQuad()
     m_shader->setUniformValue("uFlipY", m_flipY ? 1.0f : 0.0f);
     m_shader->setUniformValue("uDim", m_dimmed ? 1.0f : 0.0f);
 
+    drawUnitQuad(m_shader);
+    m_shader->release();
+}
+
+bool QemuDisplayWidget::ensureCursorTexture(const QImage &img)
+{
+    if (m_cursorTextureId != 0 && img.cacheKey() == m_cursorTexKey)
+        return true;
+
+    if (m_cursorTextureId == 0) {
+        glGenTextures(1, &m_cursorTextureId);
+        if (m_cursorTextureId == 0)
+            return false;
+        glBindTexture(GL_TEXTURE_2D, m_cursorTextureId);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, m_cursorTextureId);
+    }
+
+    // Premultiplied alpha: GL_LINEAR must not bleed colour out of fully
+    // transparent texels when the cursor is scaled.
+    const QImage rgba = img.convertToFormat(QImage::Format_RGBA8888_Premultiplied);
+    if (rgba.isNull())
+        return false;
+
+    // 32bpp QImage scanlines are always packed, so the default unpack state
+    // (alignment 4, row length 0) is correct here.
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rgba.width(), rgba.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.constBits());
+
+    m_cursorTexKey = img.cacheKey();
+    m_cursorTexSize = rgba.size();
+    return true;
+}
+
+void QemuDisplayWidget::drawUnitQuad(QOpenGLShaderProgram *program)
+{
+    const int posLoc = program->attributeLocation("aPos");
+    const int texLoc = program->attributeLocation("aTexCoord");
+    if (posLoc < 0 || texLoc < 0)
+        return; // link failed; enabling attribute -1 would be a GL error
+
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    const int posLoc = m_shader->attributeLocation("aPos");
-    const int texLoc = m_shader->attributeLocation("aTexCoord");
     glEnableVertexAttribArray(posLoc);
     glEnableVertexAttribArray(texLoc);
     glVertexAttribPointer(posLoc, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), nullptr);
@@ -505,43 +574,58 @@ void QemuDisplayWidget::renderQuad()
 
     glDisableVertexAttribArray(posLoc);
     glDisableVertexAttribArray(texLoc);
-    m_shader->release();
 }
 
-void QemuDisplayWidget::drawGuestCursorOverlay()
+void QemuDisplayWidget::renderCursorQuad()
 {
-    // Whenever captured, the host cursor is hidden -> draw the guest cursor.
+    // While captured, the host cursor is hidden -> draw the guest cursor.
     if (!m_relativeGrabActive || m_fbSize.isEmpty())
+        return;
+    if (!m_cursorShader || !m_cursorShader->isLinked())
         return;
 
     const CursorInfo ci = m_listener->cursorInfo();
     if (!ci.visible || ci.image.isNull())
         return;
 
+    glActiveTexture(GL_TEXTURE0);
+    if (!ensureCursorTexture(ci.image))
+        return;
+
     const qreal dpr = devicePixelRatio();
+    const int vpW = static_cast<int>(width() * dpr);
+    const int vpH = static_cast<int>(height() * dpr);
 
-    // Rescale only when the image or the zoom level actually changed.
-    if (ci.image.cacheKey() != m_overlayCursorKey || !qFuzzyCompare(m_overlayScale, m_scale)) {
-        const QSize target = (QSizeF(ci.image.size()) * m_scale).toSize();
-        m_overlayPixmap = QPixmap::fromImage(ci.image).scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        m_overlayPixmap.setDevicePixelRatio(dpr);
-        m_overlayCursorKey = ci.image.cacheKey();
-        m_overlayScale = m_scale;
-    }
+    // Same centring as renderQuad()/mapToFramebuffer(), in device pixels.
+    const int drawW = static_cast<int>(m_fbSize.width() * m_scale);
+    const int drawH = static_cast<int>(m_fbSize.height() * m_scale);
+    const int offX = (vpW - drawW) / 2;
+    const int offY = (vpH - drawH) / 2;
 
-    // Same centring/scale as renderQuad()/mapToFramebuffer() (device pixels).
-    const qreal drawW = m_fbSize.width() * m_scale;
-    const qreal drawH = m_fbSize.height() * m_scale;
-    const qreal offX = (width() * dpr - drawW) / 2.0;
-    const qreal offY = (height() * dpr - drawH) / 2.0;
+    const int curW = qMax(1, qRound(m_cursorTexSize.width() * m_scale));
+    const int curH = qMax(1, qRound(m_cursorTexSize.height() * m_scale));
 
-    const qreal devX = offX + (ci.pos_x - ci.hot_x) * m_scale;
-    const qreal devY = offY + (ci.pos_y - ci.hot_y) * m_scale;
+    const int fromLeft = offX + qRound((ci.pos_x - ci.hot_x) * m_scale);
+    const int fromTop = offY + qRound((ci.pos_y - ci.hot_y) * m_scale);
 
-    // QPainter on a QOpenGLWidget works in logical coordinates.
-    QPainter p(this);
-    p.drawPixmap(QPointF(devX / dpr, devY / dpr), m_overlayPixmap);
-    p.end();
+    // Viewport origin is bottom-left; a viewport may extend past the
+    // framebuffer, rasterisation clips it. That handles edge-clipped cursors.
+    glViewport(fromLeft, vpH - fromTop - curH, curW, curH);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); // source is premultiplied
+
+    m_cursorShader->bind();
+    glBindTexture(GL_TEXTURE_2D, m_cursorTextureId);
+    m_cursorShader->setUniformValue("uTexture", 0);
+    m_cursorShader->setUniformValue("uFlipX", 0.0f);
+    m_cursorShader->setUniformValue("uFlipY", 0.0f);
+    m_cursorShader->setUniformValue("uDim", m_dimmed ? 1.0f : 0.0f);
+    drawUnitQuad(m_cursorShader);
+    m_cursorShader->release();
+
+    glDisable(GL_BLEND);
+    glViewport(0, 0, vpW, vpH); // hand a sane state back to Qt's composition
 }
 
 void QemuDisplayWidget::queryPointerMode()
