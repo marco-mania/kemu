@@ -6,6 +6,7 @@
 
 #include "dialogs/cloudconfigdialog.h"
 
+#include "utils/guestlocales.h"
 #include "utils/utils.h"
 
 using namespace Qt::StringLiterals;

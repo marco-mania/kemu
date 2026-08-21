@@ -118,4 +118,8 @@ bool isValidMacAddress(const QString &mac);
 
 QString quoteShellArg(const QString &arg);
 
+// Derives an RFC-1123 style host name from a VM name. VM names allow spaces,
+// dots and underscores, host names do not.
+QString vmNameToHostname(const QString &vmName);
+
 } // namespace Utils

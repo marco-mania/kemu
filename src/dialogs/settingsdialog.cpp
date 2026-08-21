@@ -7,6 +7,7 @@
 #include "settingsdialog.h"
 
 #include "const.h"
+#include "utils/guestlocales.h"
 #include "utils/qemucapabilities.h"
 #include "utils/sandboxcapabilities.h"
 #include "utils/vmconfig.h"
@@ -316,10 +317,72 @@ void SettingsDialog::setupDisplayPage()
 void SettingsDialog::setupAutomatedDeployPage()
 {
     auto *page = new QWidget;
-    auto *layout = new QFormLayout(page);
+    auto *layout = new QVBoxLayout(page);
+
+    // --- Guest Defaults ---
+    auto *guestGroup = new QGroupBox(i18n("Guest Defaults"));
+    auto *guestLayout = new QFormLayout(guestGroup);
+
+    const CloudDeployConfig defaults = deploymentDefaults();
+
+    deployUserEdit = new QLineEdit(defaults.username);
+    deployUserEdit->setToolTip(i18n("Login name created inside new guests."));
+    guestLayout->addRow(i18n("User name:"), deployUserEdit);
+
+    deploySshKeysEdit = new QPlainTextEdit();
+    deploySshKeysEdit->setPlaceholderText(i18n("One key per line (ssh-ed25519 AAAA...)"));
+    deploySshKeysEdit->setMaximumHeight(80);
+    deploySshKeysEdit->setPlainText(defaults.sshKeys.join(u"\n"_s));
+    guestLayout->addRow(i18n("SSH keys:"), deploySshKeysEdit);
+
+    deployPasswordLoginCheck = new QCheckBox(i18n("Allow password login over SSH"));
+    deployPasswordLoginCheck->setToolTip(i18n("The guest password itself is set per virtual machine, not here."));
+    deployPasswordLoginCheck->setChecked(defaults.passwordLogin);
+    guestLayout->addRow({}, deployPasswordLoginCheck);
+
+    deployTimezoneCombo = new QComboBox();
+    deployTimezoneCombo->setEditable(true);
+    for (const QByteArray &tzId : QTimeZone::availableTimeZoneIds())
+        deployTimezoneCombo->addItem(QString::fromUtf8(tzId));
+    deployTimezoneCombo->setCurrentText(defaults.timezone);
+    guestLayout->addRow(i18n("Time zone:"), deployTimezoneCombo);
+
+    deployLocaleCombo = new QComboBox();
+    deployLocaleCombo->setEditable(true);
+    deployLocaleCombo->completer()->setFilterMode(Qt::MatchContains);
+    for (const auto &loc : availableLocales())
+        deployLocaleCombo->addItem(loc.displayName, loc.code);
+    if (const int idx = deployLocaleCombo->findData(defaults.locale); idx >= 0)
+        deployLocaleCombo->setCurrentIndex(idx);
+    else
+        deployLocaleCombo->setCurrentText(defaults.locale);
+    guestLayout->addRow(i18n("Language (locale):"), deployLocaleCombo);
+
+    deployKbCombo = new QComboBox();
+    const auto keyboards = availableKeyboards();
+    for (int i = 0; i < keyboards.size(); ++i) {
+        QString label = keyboards[i].displayName;
+        if (!keyboards[i].variant.isEmpty())
+            label += u" -- %1"_s.arg(keyboards[i].variant);
+        deployKbCombo->addItem(label, i);
+        if (keyboards[i].layout == defaults.kbLayout && keyboards[i].variant == defaults.kbVariant)
+            deployKbCombo->setCurrentIndex(deployKbCombo->count() - 1);
+    }
+    guestLayout->addRow(i18n("Keyboard layout:"), deployKbCombo);
+
+    deployInstallDesktopCheck = new QCheckBox(i18n("Install the default desktop environment (if available)"));
+    deployInstallDesktopCheck->setToolTip(i18n("Each cloud-init template resolves this to the packages its distribution uses."));
+    deployInstallDesktopCheck->setChecked(defaults.installDesktop);
+    guestLayout->addRow({}, deployInstallDesktopCheck);
+
+    layout->addWidget(guestGroup);
+
+    // --- Behaviour ---
+    auto *behaviourGroup = new QGroupBox(i18n("Behaviour"));
+    auto *behaviourLayout = new QFormLayout(behaviourGroup);
 
     auto *archInfoLabel = new QLabel(i18n("Detected host architecture: <b>%1</b>", QSysInfo::currentCpuArchitecture()));
-    layout->addRow(archInfoLabel);
+    behaviourLayout->addRow(archInfoLabel);
 
     allArchCheck = new QCheckBox(i18n("Show all CPU architectures in edition list"));
     allArchCheck->setToolTip(
@@ -327,14 +390,14 @@ void SettingsDialog::setupAutomatedDeployPage()
              "Enable this to see all architectures (note: non-native architectures "
              "use slow TCG emulation instead of KVM)."));
     allArchCheck->setChecked(showAllArchitectures());
-    layout->addRow(allArchCheck);
+    behaviourLayout->addRow(allArchCheck);
 
     deployHeadlessCheck = new QCheckBox(i18n("Run deployment in background (headless)"));
     deployHeadlessCheck->setToolTip(
         i18n("When disabled, the QEMU window is visible during deployment, "
              "which can be useful for diagnosing installation issues."));
     deployHeadlessCheck->setChecked(deployHeadless());
-    layout->addRow(deployHeadlessCheck);
+    behaviourLayout->addRow(deployHeadlessCheck);
 
     deploySerialLogCheck = new QCheckBox(i18n("Write serial console log during deployment"));
     deploySerialLogCheck->setToolTip(
@@ -344,9 +407,12 @@ void SettingsDialog::setupAutomatedDeployPage()
              "serial console when enabled, making the QEMU window appear blank.",
              KEMUConst::DeploySerialLogFileName));
     deploySerialLogCheck->setChecked(deploySerialLog());
-    layout->addRow(deploySerialLogCheck);
+    behaviourLayout->addRow(deploySerialLogCheck);
 
-    auto *item = addPage(page, i18n("Automated Deploy"));
+    layout->addWidget(behaviourGroup);
+    layout->addStretch();
+
+    auto *item = addPage(page, i18n("Deployment"));
     item->setIcon(QIcon::fromTheme(u"system-run"_s));
     m_pages[AutomatedDeploy] = item;
 }
@@ -433,13 +499,32 @@ void SettingsDialog::saveSettings()
     general.writeEntry("DeployHeadless", deployHeadlessCheck->isChecked());
     general.writeEntry("DeploySerialLog", deploySerialLogCheck->isChecked());
 
+    general.writeEntry("DeployUser", deployUserEdit->text().trimmed());
+    general.writeEntry("DeploySshKeys", deploySshKeysEdit->toPlainText().trimmed());
+    general.writeEntry("DeployPasswordLogin", deployPasswordLoginCheck->isChecked());
+    general.writeEntry("DeployTimezone", deployTimezoneCombo->currentText());
+
+    const QVariant localeData = deployLocaleCombo->currentData();
+    general.writeEntry("DeployLocale", localeData.isValid() ? localeData.toString() : deployLocaleCombo->currentText().trimmed());
+
+    const auto keyboards = availableKeyboards();
+    if (const int kbIdx = deployKbCombo->currentData().toInt(); kbIdx >= 0 && kbIdx < keyboards.size()) {
+        general.writeEntry("DeployKbLayout", keyboards[kbIdx].layout);
+        general.writeEntry("DeployKbVariant", keyboards[kbIdx].variant);
+    }
+
+    general.writeEntry("DeployInstallDesktop", deployInstallDesktopCheck->isChecked());
+
     // Only persist the user's actual choice - not the forced value, so the
     // real preference survives once passt becomes available again.
     if (slirpNetworkingCheck->isEnabled())
         general.writeEntry("PreferSlirpNetworking", slirpNetworkingCheck->isChecked());
+
     config.sync();
+
     ExternalTools::instance().refresh();
     QemuCapabilities::instance().refresh();
+
     accept();
 }
 
@@ -516,6 +601,30 @@ bool SettingsDialog::useSlirpNetworking()
     KConfig config(u"kemurc"_s);
     const KConfigGroup general = config.group(u"General"_s);
     return general.readEntry("PreferSlirpNetworking", false);
+}
+
+CloudDeployConfig SettingsDialog::deploymentDefaults()
+{
+    KConfig config(u"kemurc"_s);
+    const KConfigGroup general = config.group(u"General"_s);
+
+    CloudDeployConfig cfg;
+    cfg.username = general.readEntry("DeployUser", KUser().loginName());
+    cfg.passwordLogin = general.readEntry("DeployPasswordLogin", false);
+    cfg.timezone = general.readEntry("DeployTimezone", defaultTimezone());
+    cfg.locale = general.readEntry("DeployLocale", defaultLocaleCode());
+    cfg.installDesktop = general.readEntry("DeployInstallDesktop", false);
+
+    const QString keys = general.readEntry("DeploySshKeys", QString());
+    cfg.sshKeys = keys.isEmpty() ? detectHostSshKeys() : keys.split(u'\n', Qt::SkipEmptyParts);
+
+    const auto keyboards = availableKeyboards();
+    const int kbIdx = defaultKeyboardIndex();
+    cfg.kbLayout = general.readEntry("DeployKbLayout", kbIdx >= 0 ? keyboards[kbIdx].layout : u"us"_s);
+    cfg.kbVariant = general.readEntry("DeployKbVariant", QString());
+
+    // hostname, templateId and networkTemplateId are the caller's job.
+    return cfg;
 }
 
 void SettingsDialog::setNetworkManager(VirtualNetworkManager *mgr)
@@ -812,4 +921,22 @@ void SettingsDialog::updateToolVersion(int index)
             tw.statusLabel->setText(i18n("<font color='%1'><b>File exists but is not executable.</b></font>", col));
         }
     }
+}
+
+QStringList SettingsDialog::detectHostSshKeys()
+{
+    const QDir sshDir(QDir::homePath() + u"/.ssh"_s);
+    QStringList keys;
+
+    // Preference order matches what ssh-keygen produces by default today.
+    for (const auto &name : {u"id_ed25519.pub"_s, u"id_ecdsa.pub"_s, u"id_rsa.pub"_s}) {
+        QFile file(sshDir.absoluteFilePath(name));
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            continue;
+        const QString key = QString::fromUtf8(file.readAll()).trimmed();
+        if (!key.isEmpty())
+            keys.append(key);
+    }
+
+    return keys;
 }

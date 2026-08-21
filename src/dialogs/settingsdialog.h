@@ -8,6 +8,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCompleter>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFontDatabase>
@@ -17,6 +18,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QProcess>
 #include <QPushButton>
 #include <QScrollArea>
@@ -24,6 +26,7 @@
 #include <QStandardPaths>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QTimeZone>
 #include <QVBoxLayout>
 
 #include <KColorScheme>
@@ -33,7 +36,9 @@
 #include <KMessageBox>
 #include <KPageDialog>
 #include <KPageWidgetItem>
+#include <KUser>
 
+#include "utils/cloudimagedeployer.h"
 #include "utils/externaltools.h"
 #include "utils/virtualnetworkmanager.h"
 
@@ -67,6 +72,10 @@ public:
     static bool deployHeadless();
     static bool deploySerialLog();
     static bool useSlirpNetworking();
+
+    // Guest defaults for a new deployment. hostname, templateId and
+    // networkTemplateId are left empty; the caller fills them in.
+    [[nodiscard]] static CloudDeployConfig deploymentDefaults();
 
     void setNetworkManager(VirtualNetworkManager *mgr);
 
@@ -107,6 +116,16 @@ private:
 
     QCheckBox *deployHeadlessCheck = nullptr;
     QCheckBox *deploySerialLogCheck = nullptr;
+
+    QLineEdit *deployUserEdit = nullptr;
+    QPlainTextEdit *deploySshKeysEdit = nullptr;
+    QCheckBox *deployPasswordLoginCheck = nullptr;
+    QComboBox *deployTimezoneCombo = nullptr;
+    QComboBox *deployLocaleCombo = nullptr;
+    QComboBox *deployKbCombo = nullptr;
+    QCheckBox *deployInstallDesktopCheck = nullptr;
+
+    static QStringList detectHostSshKeys();
 
     QCheckBox *perfMonitorCheck = nullptr;
     QComboBox *resolutionCombo = nullptr;

@@ -235,4 +235,22 @@ QString quoteShellArg(const QString &arg)
     return u"'"_s + escaped + u"'"_s;
 }
 
+QString vmNameToHostname(const QString &vmName)
+{
+    QString host;
+    host.reserve(vmName.size());
+
+    for (const QChar c : vmName.toLower()) {
+        if (c.isLetterOrNumber() && c.unicode() < 128)
+            host.append(c);
+        else if (!host.isEmpty() && !host.endsWith(u'-'))
+            host.append(u'-');
+    }
+
+    while (host.endsWith(u'-'))
+        host.chop(1);
+
+    return host.isEmpty() ? u"kemu-vm"_s : host.left(63);
+}
+
 } // namespace Utils
