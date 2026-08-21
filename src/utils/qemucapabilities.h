@@ -6,8 +6,14 @@
 
 #pragma once
 
+#include <QElapsedTimer>
+#include <QFileInfo>
 #include <QSet>
 #include <QString>
+
+#include <KProcess>
+
+class KProcess;
 
 using namespace Qt::StringLiterals;
 
@@ -26,7 +32,10 @@ public:
 private:
     QemuCapabilities() = default;
 
-    static QSet<QString> probe(const QString &qemuPath, const QString &helpOption);
+    static constexpr int kProbeTimeoutMs = 2000;
+
+    static void startProbe(KProcess &process, const QString &qemuPath, const QString &helpOption);
+    static QSet<QString> collectProbe(KProcess &process, int remainingMs);
 
     QSet<QString> m_displays;
     QSet<QString> m_audiodevs;
