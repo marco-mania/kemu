@@ -319,6 +319,40 @@ void SettingsDialog::setupAutomatedDeployPage()
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
 
+    // --- Behaviour ---
+    auto *behaviourGroup = new QGroupBox(i18n("Behaviour"));
+    auto *behaviourLayout = new QFormLayout(behaviourGroup);
+
+    auto *archInfoLabel = new QLabel(i18n("Detected host architecture: <b>%1</b>", QSysInfo::currentCpuArchitecture()));
+    behaviourLayout->addRow(archInfoLabel);
+
+    allArchCheck = new QCheckBox(i18n("Show all CPU architectures in edition list"));
+    allArchCheck->setToolTip(
+        i18n("By default only editions matching your host architecture are shown. "
+             "Enable this to see all architectures (note: non-native architectures "
+             "use slow TCG emulation instead of KVM)."));
+    allArchCheck->setChecked(showAllArchitectures());
+    behaviourLayout->addRow(allArchCheck);
+
+    deployHeadlessCheck = new QCheckBox(i18n("Run deployment in background (headless)"));
+    deployHeadlessCheck->setToolTip(
+        i18n("When disabled, the QEMU window is visible during deployment, "
+             "which can be useful for diagnosing installation issues."));
+    deployHeadlessCheck->setChecked(deployHeadless());
+    behaviourLayout->addRow(deployHeadlessCheck);
+
+    deploySerialLogCheck = new QCheckBox(i18n("Write serial console log during deployment"));
+    deploySerialLogCheck->setToolTip(
+        i18n("Writes kernel and installer output to '%1' "
+             "in the VM directory. Useful for diagnosing failed installations.\n"
+             "Note: some installers (e.g. Debian) redirect their UI to the "
+             "serial console when enabled, making the QEMU window appear blank.",
+             KEMUConst::DeploySerialLogFileName));
+    deploySerialLogCheck->setChecked(deploySerialLog());
+    behaviourLayout->addRow(deploySerialLogCheck);
+
+    layout->addWidget(behaviourGroup);
+
     // --- Guest Defaults ---
     auto *guestGroup = new QGroupBox(i18n("Guest Defaults"));
     auto *guestLayout = new QFormLayout(guestGroup);
@@ -377,39 +411,6 @@ void SettingsDialog::setupAutomatedDeployPage()
 
     layout->addWidget(guestGroup);
 
-    // --- Behaviour ---
-    auto *behaviourGroup = new QGroupBox(i18n("Behaviour"));
-    auto *behaviourLayout = new QFormLayout(behaviourGroup);
-
-    auto *archInfoLabel = new QLabel(i18n("Detected host architecture: <b>%1</b>", QSysInfo::currentCpuArchitecture()));
-    behaviourLayout->addRow(archInfoLabel);
-
-    allArchCheck = new QCheckBox(i18n("Show all CPU architectures in edition list"));
-    allArchCheck->setToolTip(
-        i18n("By default only editions matching your host architecture are shown. "
-             "Enable this to see all architectures (note: non-native architectures "
-             "use slow TCG emulation instead of KVM)."));
-    allArchCheck->setChecked(showAllArchitectures());
-    behaviourLayout->addRow(allArchCheck);
-
-    deployHeadlessCheck = new QCheckBox(i18n("Run deployment in background (headless)"));
-    deployHeadlessCheck->setToolTip(
-        i18n("When disabled, the QEMU window is visible during deployment, "
-             "which can be useful for diagnosing installation issues."));
-    deployHeadlessCheck->setChecked(deployHeadless());
-    behaviourLayout->addRow(deployHeadlessCheck);
-
-    deploySerialLogCheck = new QCheckBox(i18n("Write serial console log during deployment"));
-    deploySerialLogCheck->setToolTip(
-        i18n("Writes kernel and installer output to '%1' "
-             "in the VM directory. Useful for diagnosing failed installations.\n"
-             "Note: some installers (e.g. Debian) redirect their UI to the "
-             "serial console when enabled, making the QEMU window appear blank.",
-             KEMUConst::DeploySerialLogFileName));
-    deploySerialLogCheck->setChecked(deploySerialLog());
-    behaviourLayout->addRow(deploySerialLogCheck);
-
-    layout->addWidget(behaviourGroup);
     layout->addStretch();
 
     auto *item = addPage(page, i18n("Deployment"));
