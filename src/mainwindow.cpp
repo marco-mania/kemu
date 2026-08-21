@@ -51,9 +51,6 @@ MainWindow::MainWindow(QWidget *parent)
     if (!dir.exists())
         dir.mkpath(u"."_s);
 
-    ExternalTools::instance().refresh();
-    QemuCapabilities::instance().refresh();
-
     loadVmList();
 
     // preselect first VM
@@ -1834,8 +1831,6 @@ void MainWindow::saveVmConfig(const QString &vmPath, const VMConfig &config)
         }
     }
 
-    ExternalTools::instance().refresh();
-    QemuCapabilities::instance().refresh();
     generateShellScript(vmPath, config);
 }
 
