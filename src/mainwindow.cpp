@@ -1710,6 +1710,10 @@ void MainWindow::updateDetails()
         "  <div class='vm-os'>%5</div>"
         "</td></tr></table>"_s.arg(iconImgTag, currentConfig.name(), statusDot, statusText, osVal);
 
+    const QString displayStr = (currentConfig.displayType() == VMSpecs::DisplayType::Dbus)
+        ? QString(gpuVal + u" (%1)"_s.arg(resolutionVal))
+        : QString(gpuVal + u", "_s + displayVal + u" (%1)"_s.arg(resolutionVal));
+
     struct HwRow {
         QString iconName; // freedesktop / Breeze theme icon name
         QString label;
@@ -1727,7 +1731,7 @@ void MainWindow::updateDetails()
                          {u"drive-harddisk"_s, i18n("Hard Disk"), diskVal, true, false},
                          {u"media-optical"_s, i18n("CD/DVD"), cdVal, false, currentConfig.isoPath().isEmpty()},
                          {u"media-floppy"_s, i18n("Floppy"), floppyVal, false, currentConfig.floppyPath().isEmpty()},
-                         {u"video-display"_s, i18n("Display"), gpuVal + u", "_s + displayVal + u" (%1)"_s.arg(resolutionVal), true, false},
+                         {u"video-display"_s, i18n("Display"), displayStr, true, false},
                          {u"audio-card"_s, i18n("Sound Card"), audioVal, true, currentConfig.audioDevice() == VMSpecs::AudioDevice::None},
                          {u"network-wired"_s, i18n("Network Adapter"), netVal, true, currentConfig.networkCard() == VMSpecs::NetworkCard::None}};
 
