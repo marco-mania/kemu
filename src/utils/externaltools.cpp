@@ -48,24 +48,26 @@ void ExternalTools::registerTool(Tool id, const QString &configKey, const QStrin
 
 void ExternalTools::refresh()
 {
-    for (auto it = m_tools.begin(); it != m_tools.end(); ++it) {
-        detectPath(it.value());
-        probeVersion(it.key(), it.value());
-    }
+    // Read the overrides once instead of reopening kemurc per tool. An
+    // invalid group means "no overrides", which is what a self-contained
+    // build without the ExternalToolPaths capability wants.
+    KConfig config(u"kemurc"_s);
+    KConfigGroup overrides;
+    if (SandboxCapabilities::instance().has(SandboxCapabilities::ExternalToolPaths))
+        overrides = config.group(u"General"_s);
+
+    for (auto it = m_tools.begin(); it != m_tools.end(); ++it)
+        detectPath(it.value(), overrides);
+
+    probeVersionsParallel();
+
     Q_EMIT toolsRefreshed();
 }
 
-void ExternalTools::detectPath(ToolInfo &info)
+void ExternalTools::detectPath(ToolInfo &info, const KConfigGroup &overrides)
 {
     info.detectedPath = autoDetect(info);
-
-    info.configuredPath.clear();
-    if (SandboxCapabilities::instance().has(SandboxCapabilities::ExternalToolPaths)) {
-        KConfig config(u"kemurc"_s);
-        const KConfigGroup general = config.group(u"General"_s);
-        info.configuredPath = general.readEntry(info.configKey, QString());
-    }
-
+    info.configuredPath = overrides.isValid() ? overrides.readEntry(info.configKey, QString()) : QString();
     info.resolvedPath = (!info.configuredPath.isEmpty() && QFileInfo::exists(info.configuredPath)) ? info.configuredPath : info.detectedPath;
 }
 
@@ -87,18 +89,51 @@ QString ExternalTools::autoDetect(const ToolInfo &info)
     return QStandardPaths::findExecutable(info.defaultBinary, KEMUConst::FallbackPaths);
 }
 
-void ExternalTools::probeVersion(Tool tool, ToolInfo &info)
+QString ExternalTools::firstVersionLine(QProcess &process)
 {
-    info.detectedVersion.clear();
-    info.available = false;
+    // The exit code is deliberately ignored: some tools return non-zero for
+    // --version but still print a usable banner.
+    QString output = QString::fromLocal8Bit(process.readAllStandardOutput()).trimmed();
+    if (output.isEmpty())
+        output = QString::fromLocal8Bit(process.readAllStandardError()).trimmed();
+    return output.split(u'\n').value(0).trimmed();
+}
 
-    if (info.resolvedPath.isEmpty() || !QFileInfo::exists(info.resolvedPath))
-        return;
+void ExternalTools::probeVersionsParallel()
+{
+    std::vector<std::pair<Tool, std::unique_ptr<KProcess>>> probes;
+    probes.reserve(m_tools.size());
 
-    info.detectedVersion = probeVersionString(tool, info.resolvedPath);
+    for (auto it = m_tools.begin(); it != m_tools.end(); ++it) {
+        ToolInfo &info = it.value();
+        info.detectedVersion.clear();
 
-    const QFileInfo fi(info.resolvedPath);
-    info.available = fi.exists() && fi.isExecutable();
+        const QFileInfo fi(info.resolvedPath);
+        info.available = !info.resolvedPath.isEmpty() && fi.exists() && fi.isExecutable();
+        if (!info.available)
+            continue;
+
+        auto process = std::make_unique<KProcess>();
+        process->setOutputChannelMode(KProcess::SeparateChannels);
+        process->setProgram(info.resolvedPath);
+        process->setArguments({u"--version"_s});
+        process->start();
+        probes.emplace_back(it.key(), std::move(process));
+    }
+
+    // One shared deadline for all probes rather than one per tool.
+    QElapsedTimer elapsed;
+    elapsed.start();
+
+    for (auto &[tool, process] : probes) {
+        const int remaining = kVersionProbeTimeoutMs - static_cast<int>(elapsed.elapsed());
+        if (remaining <= 0 || !process->waitForFinished(remaining)) {
+            process->kill();
+            process->waitForFinished(200);
+            continue;
+        }
+        m_tools[tool].detectedVersion = firstVersionLine(*process);
+    }
 }
 
 // --- Queries ---
@@ -207,22 +242,19 @@ QString ExternalTools::probeVersionString(Tool /*tool*/, const QString &path)
     if (path.isEmpty() || !QFileInfo::exists(path))
         return {};
 
-    const QStringList versionArgs = {u"--version"_s};
-
     KProcess process;
-    process.setOutputChannelMode(KProcess::MergedChannels);
+    process.setOutputChannelMode(KProcess::SeparateChannels);
     process.setProgram(path);
-    process.setArguments(versionArgs);
+    process.setArguments({u"--version"_s});
     process.start();
 
-    if (!process.waitForFinished(2000) || process.exitCode() != 0)
+    if (!process.waitForFinished(kVersionProbeTimeoutMs)) {
+        process.kill();
+        process.waitForFinished(200);
         return {};
+    }
 
-    QString output = QString::fromLocal8Bit(process.readAllStandardOutput()).trimmed();
-    if (output.isEmpty())
-        output = QString::fromLocal8Bit(process.readAllStandardError()).trimmed();
-
-    return output.split(u'\n').value(0).trimmed();
+    return firstVersionLine(process);
 }
 
 QStringList ExternalTools::missingToolNames() const

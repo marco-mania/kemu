@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QHash>
 #include <QObject>
@@ -156,8 +157,11 @@ private:
 
     QHash<Tool, ToolInfo> m_tools;
 
+    static constexpr int kVersionProbeTimeoutMs = 2000;
+
     void registerTool(Tool id, const QString &configKey, const QString &defaultBinary);
-    void detectPath(ToolInfo &info);
+    void detectPath(ToolInfo &info, const KConfigGroup &overrides);
     static QString autoDetect(const ToolInfo &info);
-    void probeVersion(Tool tool, ToolInfo &info);
+    void probeVersionsParallel();
+    static QString firstVersionLine(QProcess &process);
 };
