@@ -7,6 +7,8 @@
 #include "imagedatabase.h"
 #include "const.h"
 
+#include "kemu_debug.h"
+
 using namespace Qt::StringLiterals;
 
 QString ReleaseInfo::displayString() const
@@ -18,22 +20,42 @@ QString ReleaseInfo::displayString() const
 
 ImageDatabase::ImageDatabase() = default;
 
-void ImageDatabase::loadFromFile(const QString &jsonPath)
+bool ImageDatabase::loadFromFile(const QString &jsonPath)
 {
     m_templates.clear();
+    m_globalDefaults = {};
+
+    if (jsonPath.isEmpty()) {
+        qCWarning(KEMU) << "Template database not found in the application data directories.";
+        return false;
+    }
 
     QFile file(jsonPath);
-    if (!file.open(QIODevice::ReadOnly))
-        return;
+    if (!file.open(QIODevice::ReadOnly)) {
+        qCWarning(KEMU) << "Cannot read template database" << jsonPath << ":" << file.errorString();
+        return false;
+    }
 
-    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError) {
+        qCWarning(KEMU) << "Malformed template database" << jsonPath << "at offset" << parseError.offset << ":" << parseError.errorString();
+        return false;
+    }
+
     const QJsonObject rootObj = doc.object();
-
     m_globalDefaults = VMConfig::fromJson(rootObj[u"global_qemu_defaults"_s].toObject());
 
     const QJsonArray arr = rootObj[u"templates"_s].toArray();
     for (const auto &val : arr)
         m_templates.append(parseTemplate(val.toObject(), m_globalDefaults));
+
+    if (m_templates.isEmpty()) {
+        qCWarning(KEMU) << "Template database" << jsonPath << "contains no templates.";
+        return false;
+    }
+
+    return true;
 }
 
 QList<TemplateInfo> ImageDatabase::templates() const

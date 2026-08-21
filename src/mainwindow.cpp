@@ -81,7 +81,17 @@ MainWindow::MainWindow(QWidget *parent)
         saveFolderStructure();
     });
 
-    m_imageDatabase.loadFromFile(QStandardPaths::locate(QStandardPaths::AppDataLocation, u"data/templates.json"_s));
+    const QString templatesPath = QStandardPaths::locate(QStandardPaths::AppDataLocation, u"data/templates.json"_s);
+    if (!m_imageDatabase.loadFromFile(templatesPath)) {
+        // Non-fatal: VMs can still be created manually, only the OS presets
+        // and automated deployment are unavailable.
+        KMessageBox::information(this,
+                                 i18n("The operating system template database could not be loaded.\n"
+                                      "Creating virtual machines still works, but OS presets and "
+                                      "automated deployment are unavailable."),
+                                 i18n("Template Database Unavailable"),
+                                 u"TemplateDbMissingWarning"_s);
+    }
 
     m_networkManager = new VirtualNetworkManager(this);
     m_networkManager->load();

@@ -64,7 +64,7 @@ class ImageDatabase
 public:
     ImageDatabase();
 
-    void loadFromFile(const QString &jsonPath);
+    bool loadFromFile(const QString &jsonPath);
 
     [[nodiscard]] QList<TemplateInfo> templates() const;
     [[nodiscard]] QList<TemplateInfo> templatesForType(VMSpecs::OsType type) const;
