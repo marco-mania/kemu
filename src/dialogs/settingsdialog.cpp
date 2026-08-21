@@ -302,6 +302,9 @@ void SettingsDialog::setupDisplayPage()
             break;
         }
     }
+    // Fall back to the first entry when the stored size is not offered
+    if (resolutionCombo->currentIndex() < 0)
+        resolutionCombo->setCurrentIndex(0);
 
     layout->addRow(i18n("Default resolution for new VMs:"), resolutionCombo);
 
