@@ -38,6 +38,9 @@ CloudConfigDialog::CloudConfigDialog(QWidget *parent)
     passwordConfirmEdit->setEchoMode(QLineEdit::Password);
     form->addRow(i18n("Confirm Password:"), passwordConfirmEdit);
 
+    passwordLoginCheck = new QCheckBox(i18n("Allow password login over SSH"));
+    form->addRow({}, passwordLoginCheck);
+
     const KColorScheme scheme(QPalette::Active, KColorScheme::View);
     passwordMismatchLabel = new QLabel();
     passwordMismatchLabel->setStyleSheet(u"color: %1; font-size: 11px;"_s.arg(scheme.foreground(KColorScheme::NegativeText).color().name()));
@@ -128,6 +131,8 @@ CloudConfigDialog::CloudConfigDialog(QWidget *parent)
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     layout->addWidget(buttonBox);
 
+    connect(hostnameEdit, &QLineEdit::textChanged, this, &CloudConfigDialog::validate);
+
     connect(passwordEdit, &QLineEdit::textChanged, this, &CloudConfigDialog::validate);
     connect(passwordConfirmEdit, &QLineEdit::textChanged, this, &CloudConfigDialog::validate);
 }
@@ -138,6 +143,11 @@ void CloudConfigDialog::setConfig(const CloudDeployConfig &cfg)
     usernameEdit->setText(cfg.username);
     passwordEdit->setText(cfg.password);
     passwordConfirmEdit->setText(cfg.password);
+
+    passwordLoginCheck->setChecked(cfg.passwordLogin);
+
+    if (!cfg.timezone.isEmpty())
+        timezoneCombo->setCurrentText(cfg.timezone);
 
     // Locale
     if (!cfg.locale.isEmpty()) {
@@ -194,7 +204,7 @@ CloudDeployConfig CloudConfigDialog::getResult() const
         cfg.kbLayout = kbLayoutCombo->currentText().trimmed();
     }
 
-    cfg.passwordLogin = true;
+    cfg.passwordLogin = passwordLoginCheck->isChecked();
     cfg.installDesktop = installDesktopCheck->isChecked();
 
     const QString pkgText = extraPackagesEdit->text().trimmed();
@@ -236,5 +246,7 @@ void CloudConfigDialog::validate()
         passwordMismatchLabel->setText(i18n("Passwords do not match."));
     else
         passwordMismatchLabel->clear();
-    buttonBox->button(QDialogButtonBox::Ok)->setEnabled(pwMatch);
+
+    const bool hasHostname = !hostnameEdit->text().trimmed().isEmpty();
+    buttonBox->button(QDialogButtonBox::Ok)->setEnabled(pwMatch && hasHostname);
 }

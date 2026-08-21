@@ -142,6 +142,7 @@ private:
     QLineEdit *passwordEdit = nullptr;
     QLineEdit *passwordConfirmEdit = nullptr;
     QLabel *passwordMismatchLabel = nullptr;
+    QCheckBox *passwordLoginCheck = nullptr;
     QComboBox *timezoneCombo = nullptr;
     QComboBox *localeCombo = nullptr;
     QComboBox *kbLayoutCombo = nullptr;
