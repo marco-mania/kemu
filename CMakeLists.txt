@@ -9,7 +9,7 @@ if(POLICY CMP0175)
 endif()
 # -------------------------------------------------------------------------
 
-project(kemu VERSION 0.4.0)
+project(kemu VERSION 0.5.0)
 
 option(KEMU_SELF_CONTAINED "Application ships its own external tools" OFF)
 if(KEMU_SELF_CONTAINED)
