@@ -788,7 +788,7 @@
         "ram": 4096,
         "cpu_cores": 2,
         "disk_size_gb": 100,
-        "gpu_type": "qxl",
+        "gpu_type": "virtio",
         "gpu_3d_acceleration": false,
         "disk_interface": "sataide",
         "net_card": "e1000",
@@ -1118,6 +1118,68 @@
         "use_localtime": true,
         "display_type": "gtk"
       }
+    },
+        {
+      "id": "other-linux",
+      "display_name": "Other Linux",
+      "os_type": "linux",
+      "icon_hint": "computer",
+      "releases": [{ "version": "", "quick_deploy": false, "min_disk_gb": 16 }]
+    },
+    {
+      "id": "other-bsd",
+      "display_name": "Other BSD",
+      "os_type": "bsd",
+      "icon_hint": "computer",
+      "releases": [{ "version": "", "quick_deploy": false, "min_disk_gb": 16 }],
+      "qemu_defaults": { "disk_size_gb": 30 }
+    },
+    {
+      "id": "other-windows",
+      "display_name": "Other Windows",
+      "os_type": "windows",
+      "icon_hint": "computer",
+      "releases": [{ "version": "", "quick_deploy": false, "min_disk_gb": 32 }],
+      "qemu_defaults": {
+        "use_balloon": false,
+        "disk_size_gb": 64,
+        "use_localtime": true
+      }
+    },
+    {
+      "id": "other-dos",
+      "display_name": "Other DOS",
+      "os_type": "dos",
+      "icon_hint": "computer",
+      "releases": [{ "version": "", "quick_deploy": false, "min_disk_gb": 1 }],
+      "qemu_defaults": {
+        "use_kvm": false,
+        "ram": 64,
+        "use_balloon": false,
+        "cpu_model": "qemu32",
+        "cpu_cores": 1,
+        "disk_size_gb": 1,
+        "machine_type": "pc_isa",
+        "gpu_type": "isa-vga",
+        "gpu_3d_acceleration": false,
+        "gpu_mem": 1,
+        "audio_device": "sb16",
+        "disk_interface": "sataide",
+        "net_card": "ne2000",
+        "usb_controller": "none",
+        "pointer_device": "ps2",
+        "use_uefi": false,
+        "use_acpi": false,
+        "use_localtime": true,
+        "display_type": "gtk"
+      }
+    },
+    {
+      "id": "other",
+      "display_name": "Other operating system",
+      "os_type": "other",
+      "icon_hint": "computer",
+      "releases": [{ "version": "", "quick_deploy": false }]
     }
   ]
 }

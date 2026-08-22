@@ -96,8 +96,10 @@ target_sources(
           jobs/downloadjob.h
           jobs/clonejob.h
           jobs/clonejob.cpp
-          dialogs/createvmdialog.cpp
-          dialogs/createvmdialog.h
+          dialogs/editvmdialog.cpp
+          dialogs/editvmdialog.h
+          dialogs/newvmdialog.cpp
+          dialogs/newvmdialog.h
           dialogs/settingsdialog.cpp
           dialogs/settingsdialog.h
           dialogs/iconchooserdialog.cpp
@@ -115,6 +117,8 @@ target_sources(
           widgets/virtualenvironmenttreeview.h
           widgets/performancemonitorwidget.h
           widgets/performancemonitorwidget.cpp
+          widgets/vmiconselector.h
+          widgets/vmiconselector.cpp
           widgets/ramspinbox.h
           dbusdisplay/dbusviewerwindow.cpp
           dbusdisplay/dbusviewerwindow.h

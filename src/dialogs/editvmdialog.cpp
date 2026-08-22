@@ -4,11 +4,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#include "createvmdialog.h"
+#include "editvmdialog.h"
 
 #include "const.h"
-#include "dialogs/cloudconfigdialog.h"
-#include "dialogs/iconchooserdialog.h"
 #include "dialogs/settingsdialog.h"
 #include "utils/sandboxcapabilities.h"
 #include "utils/utils.h"
@@ -28,10 +26,11 @@ void setCombo(QComboBox *combo, E enumValue)
 }
 } // namespace
 
-CreateVmDialog::CreateVmDialog(QWidget *parent)
+EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     : QDialog(parent)
+    , m_mode(mode)
 {
-    setWindowTitle(i18n("VM Configuration"));
+    setWindowTitle(mode == Mode::Edit ? i18n("Edit Virtual Machine") : i18n("Customise Virtual Machine"));
     resize(640, 560);
 
     KColorScheme scheme(QPalette::Active, KColorScheme::View);
@@ -79,16 +78,8 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
 
     topLayout->addSpacing(12);
 
-    // Icon button
-    iconDisplayButton = new QPushButton();
-    iconDisplayButton->setFixedSize(132, 132);
-    iconDisplayButton->setIconSize(QSize(112, 112));
-    iconDisplayButton->setIcon(QIcon::fromTheme(u"computer"_s));
-    iconDisplayButton->setCursor(Qt::PointingHandCursor);
-    iconDisplayButton->setToolTip(i18n("Click: Choose system theme icon\nRight-click: More options"));
-    iconDisplayButton->setContextMenuPolicy(Qt::CustomContextMenu);
-
-    topLayout->addWidget(iconDisplayButton, 0, Qt::AlignTop);
+    iconSelector = new VmIconSelector();
+    topLayout->addWidget(iconSelector, 0, Qt::AlignTop);
 
     // Remaining form fields
     auto *genLayout = new QFormLayout();
@@ -121,86 +112,12 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     osNameCombo->completer()->setModel(osNameCombo->model());
     osNameCombo->setInsertPolicy(QComboBox::NoInsert);
 
-    applyDefaultsButton = new QPushButton(QIcon::fromTheme(u"document-import"_s), {});
-    applyDefaultsButton->setToolTip(i18n("Apply recommended RAM, CPU, disk and device settings for this OS"));
-    applyDefaultsButton->setEnabled(false);
-    applyDefaultsButton->setFixedWidth(applyDefaultsButton->sizeHint().height());
-
     auto *nameLayout = new QHBoxLayout();
-    nameLayout->addWidget(osNameCombo, 1);
-    nameLayout->addWidget(applyDefaultsButton);
+    nameLayout->addWidget(osNameCombo);
 
     genLayout->addRow(i18n("OS Name:"), nameLayout);
 
     osNameLabel = qobject_cast<QLabel *>(genLayout->labelForField(nameLayout));
-
-    // --- Automated Deploy Container ---
-    adContainer = new QWidget();
-    {
-        const KColorScheme qdcontainerscheme(QPalette::Active, KColorScheme::Header);
-        const QColor bg = qdcontainerscheme.background(KColorScheme::NormalBackground).color();
-        adContainer->setStyleSheet(
-            u"QWidget#adContainer {"
-            "  background-color: %1;"
-            "  border-radius: 6px;"
-            "}"_s.arg(bg.name(QColor::HexArgb)));
-    }
-    adContainer->setObjectName(u"adContainer"_s);
-
-    auto *adFormLayout = new QFormLayout(adContainer);
-    adFormLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
-    adFormLayout->setContentsMargins(8, 8, 8, 8);
-
-    automatedDeployCheck = new QCheckBox(i18n("Automated Deploy"));
-    automatedDeployCheck->setToolTip(i18n("Deploy from a pre-built cloud image with cloud-init configuration."));
-    automatedDeployCheck->setEnabled(false);
-    adFormLayout->addRow({}, automatedDeployCheck);
-
-    versionCombo = new QComboBox();
-    versionCombo->addItem(i18n("(no version data available)"));
-    versionCombo->setEnabled(false);
-    versionCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-    adFormLayout->addRow(i18n("Version:"), versionCombo);
-    versionLabel = qobject_cast<QLabel *>(adFormLayout->labelForField(versionCombo));
-
-    cloudImageCombo = new QComboBox();
-    cloudImageCombo->addItem(i18n("(select a version first)"));
-    cloudImageCombo->setEnabled(false);
-    cloudImageCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-    adFormLayout->addRow(i18n("Image:"), cloudImageCombo);
-    cloudImageLabel = qobject_cast<QLabel *>(adFormLayout->labelForField(cloudImageCombo));
-
-    cloudImageStatusLabel = new QLabel();
-    cloudImageStatusLabel->setStyleSheet(infoStyle(KColorScheme::NeutralText));
-    cloudImageStatusLabel->setFixedHeight(cloudImageStatusLabel->fontMetrics().height() + 2);
-    adFormLayout->addRow({}, cloudImageStatusLabel);
-
-    // Manual ISO path (for distros without cloud images, e.g. Windows)
-    auto *adIsoLayout = new QHBoxLayout();
-    adIsoPathRequester = new KUrlRequester();
-    adIsoPathRequester->setEnabled(false);
-    adIsoPathRequester->lineEdit()->setPlaceholderText(i18n("Select the ISO file"));
-    adIsoPathRequester->lineEdit()->setClearButtonEnabled(true);
-    adIsoPathRequester->setMode(KFile::File | KFile::ExistingOnly | KFile::LocalOnly);
-    adIsoPathRequester->setNameFilter(i18n("ISO Images (*.iso)"));
-    adIsoLayout->addWidget(adIsoPathRequester);
-    adFormLayout->addRow(i18n("ISO Image:"), adIsoLayout);
-    adIsoLabel = qobject_cast<QLabel *>(adFormLayout->labelForField(adIsoLayout));
-    if (adIsoLabel)
-        adIsoLabel->setEnabled(false);
-
-    // Cloud Config Button
-    cloudInitButton = new QPushButton(QIcon::fromTheme(u"preferences-system"_s), i18n("Cloud Image Settings..."));
-    cloudInitButton->setToolTip(i18n("Configure hostname, user, password, SSH keys and more."));
-    cloudInitButton->setEnabled(false);
-    cloudInitButton->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-
-    auto *cloudInitLayout = new QHBoxLayout();
-    cloudInitLayout->addStretch();
-    cloudInitLayout->addWidget(cloudInitButton);
-    adFormLayout->addRow(cloudInitLayout);
-
-    genLayout->addRow(adContainer);
 
     diskSpin = new QSpinBox();
     diskSpin->setRange(KEMUConst::DefaultMinDiskSizeGB, 32000);
@@ -577,33 +494,14 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
 
     mainLayout->addWidget(tabs);
 
-    connect(nameEdit, &QLineEdit::textChanged, this, &CreateVmDialog::onNameChanged);
-    connect(iconDisplayButton, &QPushButton::clicked, this, &CreateVmDialog::chooseFromIconSet);
-    connect(iconDisplayButton, &QPushButton::customContextMenuRequested, this, &CreateVmDialog::showIconContextMenu);
-    connect(osTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CreateVmDialog::onOsTypeChanged);
-    connect(applyDefaultsButton, &QPushButton::clicked, this, [this]() {
-        if (!m_imageDatabase)
-            return;
-        const QString tplId = osNameCombo->currentData().toString();
-        if (tplId.isEmpty() || tplId == u"other"_s)
-            return;
-        applyReleaseDefaults(m_imageDatabase->defaultsFor(tplId));
-    });
-    connect(osNameCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CreateVmDialog::onOsNameChanged);
+    connect(nameEdit, &QLineEdit::textChanged, this, &EditVmDialog::onNameChanged);
+    connect(osTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::onOsTypeChanged);
+    connect(osNameCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::onOsNameChanged);
     connect(osNameCombo, &QComboBox::editTextChanged, this, [this]() {
-        autoSetIconFromOS();
+        updateIconForOs();
         validateForm();
     });
-    connect(automatedDeployCheck, &QCheckBox::toggled, this, &CreateVmDialog::onAutomatedDeployToggled);
-    connect(versionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CreateVmDialog::onVersionChanged);
-    connect(cloudImageCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
-        updateCloudImageStatus();
-        updateAutomatedDeployWidgets();
-    });
-    connect(adIsoPathRequester, &KUrlRequester::textChanged, this, [this]() {
-        validateForm();
-    });
-    connect(cloudInitButton, &QPushButton::clicked, this, &CreateVmDialog::openCloudConfigDialog);
+
     connect(isoPathRequester, &KUrlRequester::textChanged, this, [this](const QString &text) {
         const bool hasIso = !text.trimmed().isEmpty();
         bootFromIsoCheck->setEnabled(hasIso);
@@ -629,7 +527,7 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
             bootFromFloppyCheck->setChecked(false);
     });
 
-    connect(btnBrowseShare, &QPushButton::clicked, this, &CreateVmDialog::browseSharedDir);
+    connect(btnBrowseShare, &QPushButton::clicked, this, &EditVmDialog::browseSharedDir);
     connect(sharedPathEdit, &QLineEdit::textChanged, this, [this](const QString &text) {
         sharedNameEdit->setEnabled(!text.isEmpty());
         if (!text.isEmpty() && sharedNameEdit->text().isEmpty()) {
@@ -701,10 +599,10 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     };
     connect(ramSpin, &RamSpinBox::valueChanged, this, updateRamSlider);
 
-    connect(diskInterfaceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CreateVmDialog::updateDiskInterfaceHint);
+    connect(diskInterfaceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::updateDiskInterfaceHint);
 
-    connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CreateVmDialog::updateDiskInterfaceHint);
-    connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CreateVmDialog::onMachineTypeChanged);
+    connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::updateDiskInterfaceHint);
+    connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::onMachineTypeChanged);
 
     connect(usbCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
         updateInputDeviceAvailability();
@@ -720,9 +618,9 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     };
     connect(uefiCheck, &QCheckBox::toggled, this, updateSecureBootState);
     connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, updateSecureBootState);
-    connect(gpuCombo, &QComboBox::currentIndexChanged, this, &CreateVmDialog::onGpuDisplayChanged);
-    connect(displayCombo, &QComboBox::currentIndexChanged, this, &CreateVmDialog::onGpuDisplayChanged);
-    connect(accel3dCheck, &QCheckBox::toggled, this, &CreateVmDialog::onGpuDisplayChanged);
+    connect(gpuCombo, &QComboBox::currentIndexChanged, this, &EditVmDialog::onGpuDisplayChanged);
+    connect(displayCombo, &QComboBox::currentIndexChanged, this, &EditVmDialog::onGpuDisplayChanged);
+    connect(accel3dCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
     connect(audioCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
         sb16ConfigButton->setEnabled(static_cast<VMSpecs::AudioDevice>(audioCombo->currentData().toInt()) == VMSpecs::AudioDevice::Sb16);
     });
@@ -768,8 +666,8 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
             m_sb16Config.iobase = iobaseCombo->currentData().toInt();
         }
     });
-    connect(addPortFwdButton, &QPushButton::clicked, this, &CreateVmDialog::addPortForwardRow);
-    connect(removePortFwdButton, &QPushButton::clicked, this, &CreateVmDialog::removePortForwardRow);
+    connect(addPortFwdButton, &QPushButton::clicked, this, &EditVmDialog::addPortForwardRow);
+    connect(removePortFwdButton, &QPushButton::clicked, this, &EditVmDialog::removePortForwardRow);
     connect(portForwardTable, &QTableWidget::itemSelectionChanged, this, [this]() {
         removePortFwdButton->setEnabled(portForwardTable->currentRow() >= 0);
     });
@@ -806,7 +704,7 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     buttonBox = new QDialogButtonBox(QDialogButtonBox::RestoreDefaults | QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    connect(buttonBox->button(QDialogButtonBox::RestoreDefaults), &QPushButton::clicked, this, &CreateVmDialog::resetToFactoryDefaults);
+    connect(buttonBox->button(QDialogButtonBox::RestoreDefaults), &QPushButton::clicked, this, &EditVmDialog::resetToFactoryDefaults);
     mainLayout->addWidget(buttonBox);
 
     if (macEdit->text().isEmpty() && netCombo->currentData().toInt() != static_cast<int>(VMSpecs::NetworkCard::None)) {
@@ -814,533 +712,22 @@ CreateVmDialog::CreateVmDialog(QWidget *parent)
     }
 
     onGpuDisplayChanged();
-    updateIconDisplay();
     updateDiskInterfaceHint();
     updateDeviceAvailability();
 
     updateRamSlider(GlobalDefaults.ramMb);
 }
 
-// --- Icon handling ---
-
-void CreateVmDialog::chooseFromIconSet()
+void EditVmDialog::setConfig(const VMConfig &config)
 {
-    IconChooserDialog dlg(this);
-    if (dlg.exec() != QDialog::Accepted)
-        return;
+    m_original = config;
 
-    const QString path = dlg.selectedIconPath();
-    if (path.isEmpty())
-        return;
+    if (m_mode == Mode::Edit)
+        setWindowTitle(i18n("Edit VM: %1", config.name()));
 
-    const QDir baseDir(VMConfig::osIconDir());
-    selectedIconSetFilename = baseDir.relativeFilePath(path);
-
-    customIcon = {};
-    selectedIconName.clear();
-    iconManuallySet = true;
-    updateIconDisplay();
-}
-
-void CreateVmDialog::chooseThemeIcon()
-{
-    const QString icon = KIconDialog::getIcon(KIconLoader::Desktop, KIconLoader::Application, false, 0, false, this, i18n("Choose Icon"));
-    if (icon.isEmpty())
-        return;
-
-    selectedIconName = icon;
-    selectedIconSetFilename.clear();
-    customIcon = {};
-    iconManuallySet = true;
-    updateIconDisplay();
-}
-
-void CreateVmDialog::browseCustomIcon()
-{
-    const QString path =
-        QFileDialog::getOpenFileName(this, i18n("Select Icon Image"), QDir::homePath(), i18n("Images (*.png *.svg *.svgz *.xpm *.ico *.jpg *.jpeg *.bmp)"));
-
-    if (path.isEmpty())
-        return;
-
-    // Load as QIcon directly - handles all formats including SVG
-    const QIcon icon(path);
-    if (icon.isNull()) {
-        KMessageBox::error(this, i18n("Failed to load icon from: %1", path));
-        return;
-    }
-
-    customIcon = icon;
-    selectedIconName.clear();
-    selectedIconSetFilename.clear();
-    iconManuallySet = true;
-    updateIconDisplay();
-}
-
-void CreateVmDialog::clearIcon()
-{
-    selectedIconName.clear();
-    selectedIconSetFilename.clear();
-    customIcon = {};
-    iconManuallySet = false;
-
-    updateIconDisplay();
-}
-
-void CreateVmDialog::showIconContextMenu(const QPoint &pos)
-{
-    QMenu menu(this);
-    menu.addAction(QIcon::fromTheme(u"preferences-desktop-icons"_s), i18n("Choose Icon..."), this, &CreateVmDialog::chooseFromIconSet);
-    menu.addAction(QIcon::fromTheme(u"preferences-desktop-icons"_s), i18n("Choose System Theme Icon..."), this, &CreateVmDialog::chooseThemeIcon);
-    menu.addAction(QIcon::fromTheme(u"document-open"_s), i18n("Load Custom Image..."), this, &CreateVmDialog::browseCustomIcon);
-    menu.addSeparator();
-    menu.addAction(QIcon::fromTheme(u"edit-clear"_s), i18n("Reset Icon"), this, &CreateVmDialog::clearIcon);
-    menu.exec(iconDisplayButton->mapToGlobal(pos));
-}
-
-void CreateVmDialog::openCloudConfigDialog()
-{
-    CloudConfigDialog dlg(this);
-    dlg.setConfig(m_cloudConfig);
-
-    if (dlg.exec() == QDialog::Accepted) {
-        m_cloudConfig = dlg.getResult();
-
-        // Set templateId based on selected distro (not managed by the dialog)
-        if (m_imageDatabase) {
-            const QString tplId = osNameCombo->currentData().toString();
-            if (auto *d = m_imageDatabase->findById(tplId)) {
-                m_cloudConfig.templateId = d->cloudInitTemplate;
-                m_cloudConfig.networkTemplateId = d->networkTemplate;
-            }
-        }
-    }
-}
-
-void CreateVmDialog::browseQdIso()
-{
-    const QString path = QFileDialog::getOpenFileName(this, i18n("Select ISO Image"), QDir::homePath(), i18n("ISO Files (*.iso);;All Files (*)"));
-    if (!path.isEmpty())
-        adIsoPathRequester->setText(path);
-    validateForm();
-}
-
-void CreateVmDialog::updateIconDisplay()
-{
-    const QSize targetSize = iconDisplayButton->iconSize(); // 112x112
-
-    // Custom Icon
-    if (!customIcon.isNull()) {
-        iconDisplayButton->setIcon(customIcon);
-        return;
-    }
-
-    // Icon-Set File
-    if (!selectedIconSetFilename.isEmpty()) {
-        QString dir = VMConfig::osIconDir();
-        if (!dir.isEmpty()) {
-            const QString fullPath = dir + u"/"_s + selectedIconSetFilename;
-            if (QFile::exists(fullPath)) {
-                // Handle SVG icons from icon set
-                if (fullPath.endsWith(u".svg", Qt::CaseInsensitive)) {
-                    iconDisplayButton->setIcon(QIcon(fullPath));
-                    return;
-                }
-                // Fallback for non-SVG
-                QPixmap pix(fullPath);
-                if (!pix.isNull()) {
-                    pix = pix.scaled(targetSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                    iconDisplayButton->setIcon(QIcon(pix));
-                    return;
-                }
-            }
-        }
-        iconDisplayButton->setIcon(QIcon::fromTheme(KEMUConst::VMDefaultIcon));
-        return;
-    }
-
-    // System Theme Icon
-    if (!selectedIconName.isEmpty()) {
-        // Get themed icon at appropriate size
-        const QIcon themedIcon = QIcon::fromTheme(selectedIconName);
-        if (!themedIcon.isNull()) {
-            const QPixmap scaled = themedIcon.pixmap(targetSize);
-            if (!scaled.isNull()) {
-                iconDisplayButton->setIcon(QIcon(scaled));
-            } else {
-                iconDisplayButton->setIcon(themedIcon);
-            }
-        } else {
-            iconDisplayButton->setIcon(QIcon::fromTheme(KEMUConst::VMDefaultIcon));
-        }
-        return;
-    }
-
-    // Default
-    iconDisplayButton->setIcon(QIcon::fromTheme(KEMUConst::VMDefaultIcon));
-}
-
-void CreateVmDialog::onMachineTypeChanged(int /*index*/)
-{
-    updateDeviceAvailability();
-}
-
-void CreateVmDialog::onRamSliderChanged(int gb)
-{
-    const QSignalBlocker blockRAMSpin(ramSpin);
-    ramSpin->setValue(gb * 1024);
-}
-
-void CreateVmDialog::onRamSpinChanged(int mb)
-{
-    const QSignalBlocker blockRAMSlider(ramSlider);
-    ramSlider->setValue(mb / 1024);
-}
-
-void CreateVmDialog::browseSharedDir()
-{
-    const QString dir = QFileDialog::getExistingDirectory(this, i18n("Select shared folder"), QDir::homePath());
-    if (!dir.isEmpty())
-        sharedPathEdit->setText(dir);
-}
-
-void CreateVmDialog::onOsTypeChanged(int /*index*/)
-{
-    const int typeVal = osTypeCombo->currentData().toInt();
-
-    if (typeVal == -1) {
-        // Placeholder
-        osNameCombo->clear();
-        osNameCombo->addItem(i18n("-- Please select --"), {});
-        osNameCombo->setCurrentIndex(0);
-        osNameCombo->setEnabled(false);
-        osNameLabel->setEnabled(false);
-        applyDefaultsButton->setEnabled(false);
-
-    } else if (static_cast<VMSpecs::OsType>(typeVal) == VMSpecs::OsType::Other) {
-        // special case "Other"
-        osNameCombo->clear();
-        osNameCombo->addItem(i18n("Other"), u"other"_s);
-        osNameCombo->setCurrentIndex(0);
-        osNameCombo->setEnabled(false);
-        osNameLabel->setEnabled(false);
-        applyDefaultsButton->setEnabled(false);
-
-    } else {
-        osNameCombo->setEnabled(true);
-        osNameLabel->setEnabled(true);
-        auto osType = static_cast<VMSpecs::OsType>(typeVal);
-        filterOsVariants(osType);
-    }
-
-    autoSetIconFromOS();
-    validateForm();
-    updateDiskInterfaceHint();
-}
-
-void CreateVmDialog::onOsNameChanged(int /*index*/)
-{
-    autoSetIconFromOS();
-
-    const QString distroId = osNameCombo->currentData().toString();
-    bool hasReleases = false;
-    bool quickDeployAllowed = true;
-
-    if (m_imageDatabase && !distroId.isEmpty() && distroId != u"other"_s) {
-        const auto *d = m_imageDatabase->findById(distroId);
-        hasReleases = d && !d->releases.isEmpty();
-
-        if (d) {
-            quickDeployAllowed = false;
-            for (const auto &r : d->releases) {
-                if (r.quickDeploy) {
-                    quickDeployAllowed = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    automatedDeployCheck->setEnabled(hasReleases && quickDeployAllowed);
-    if (!hasReleases || !quickDeployAllowed) {
-        automatedDeployCheck->setChecked(false);
-        versionCombo->setEnabled(false);
-        versionLabel->setEnabled(false);
-        cloudImageCombo->setEnabled(false);
-        cloudImageLabel->setEnabled(false);
-        cloudImageStatusLabel->clear();
-        int minDiskGb = KEMUConst::DefaultMinDiskSizeGB;
-        if (m_imageDatabase) {
-            const int templateMin = m_imageDatabase->minDiskGbFor(distroId, {});
-            minDiskGb = qMin(minDiskGb, templateMin);
-        }
-        diskSpin->setMinimum(minDiskGb);
-        updateAutomatedDeployWidgets();
-    }
-
-    if (automatedDeployCheck->isChecked())
-        populateVersions();
-
-    applyDefaultsButton->setEnabled(m_imageDatabase && !distroId.isEmpty() && distroId != u"other"_s);
-
-    validateForm();
-}
-
-void CreateVmDialog::onGpuDisplayChanged()
-{
-    const auto gpu = static_cast<VMSpecs::GpuType>(gpuCombo->currentData().toInt());
-    const auto osType = static_cast<VMSpecs::OsType>(osTypeCombo->currentData().toInt());
-
-    const bool isVirtio = (gpu == VMSpecs::GpuType::Virtio);
-    const bool isWindows = (osType == VMSpecs::OsType::Windows);
-
-    gpuMemSpin->setRange(VMConfig::vgaMemMbLowerLimit(gpu), VMConfig::vgaMemMbUpperLimit(gpu));
-    if (gpu == VMSpecs::GpuType::CirrusGD5430 || gpu == VMSpecs::GpuType::CirrusGD5446) {
-        gpuMemSpin->setSingleStep(4);
-        // Snap to nearest valid value
-        const int val = gpuMemSpin->value();
-        if (val <= 4)
-            gpuMemSpin->setValue(4);
-        else if (val <= 8)
-            gpuMemSpin->setValue(8);
-        else
-            gpuMemSpin->setValue(16);
-    } else {
-        gpuMemSpin->setSingleStep(1);
-    }
-    gpuMemSpin->setEnabled(true);
-    vgaMemLabel->setEnabled(true);
-
-    resolutionCombo->setEnabled(isVirtio);
-    resolutionLabel->setEnabled(isVirtio);
-
-    const bool can3d = isVirtio;
-    accel3dCheck->setEnabled(can3d);
-    if (!can3d)
-        accel3dCheck->setChecked(false);
-
-    if (can3d && isWindows && accel3dCheck->isChecked()) {
-        gpuHintLabel->setText(u"<i>"_s + i18n("Note: VirtIO 3D acceleration is not supported on Windows guests.") + u"</i>"_s);
-    } else {
-        gpuHintLabel->clear();
-    }
-}
-
-void CreateVmDialog::onVersionChanged(int /*index*/)
-{
-    cloudImageCombo->clear();
-    cloudImageStatusLabel->clear();
-
-    const QString tplId = osNameCombo->currentData().toString();
-    const QString version = versionCombo->currentData().toString();
-
-    if (tplId.isEmpty() || version.isEmpty() || !m_imageDatabase) {
-        cloudImageCombo->addItem(i18n("(select a version first)"));
-        cloudImageCombo->setEnabled(false);
-        updateAutomatedDeployWidgets();
-        return;
-    }
-
-    const bool qdEnabled = m_imageDatabase->isQuickDeployEnabled(tplId, version);
-
-    if (!qdEnabled) {
-        automatedDeployCheck->setChecked(false);
-        automatedDeployCheck->setEnabled(false);
-        cloudImageCombo->addItem(i18n("(not available for this release)"));
-        cloudImageCombo->setEnabled(false);
-        updateAutomatedDeployWidgets();
-        return;
-    }
-
-    auto images = m_imageDatabase->cloudImagesFor(tplId, version, SettingsDialog::showAllArchitectures());
-    for (const auto &img : images) {
-        const QString label = u"%1 (%2)"_s.arg(img.arch, img.format);
-        cloudImageCombo->addItem(label);
-    }
-
-    if (m_imageDatabase && automatedDeployCheck->isChecked()) {
-        const int minGb = m_imageDatabase->minDiskGbFor(tplId, version);
-        diskSpin->setMinimum(minGb);
-        if (diskSpin->value() < minGb)
-            diskSpin->setValue(minGb);
-    }
-
-    if (images.isEmpty()) {
-        cloudImageCombo->addItem(i18n("(no cloud image available)"));
-        cloudImageCombo->setEnabled(false);
-    } else {
-        cloudImageCombo->setEnabled(automatedDeployCheck->isChecked());
-    }
-
-    updateCloudImageStatus();
-    updateAutomatedDeployWidgets();
-}
-
-void CreateVmDialog::onAutomatedDeployToggled(bool checked)
-{
-    if (checked) {
-        populateVersions();
-    } else {
-        diskSpin->setMinimum(KEMUConst::DefaultMinDiskSizeGB);
-    }
-    updateAutomatedDeployWidgets();
-    validateForm();
-}
-
-void CreateVmDialog::onNameChanged(const QString &text)
-{
-    // OS guessing
-    bool found;
-    auto [type, variantId] = VMConfig::guessOSFromText(text, &found);
-    if (found) {
-        const int typeIndex = osTypeCombo->findData(static_cast<int>(type));
-        if (typeIndex >= 0 && osTypeCombo->currentIndex() != typeIndex)
-            osTypeCombo->setCurrentIndex(typeIndex);
-        const int variantIndex = osNameCombo->findData(variantId);
-        if (variantIndex >= 0 && osNameCombo->currentIndex() != variantIndex)
-            osNameCombo->setCurrentIndex(variantIndex);
-        autoSetIconFromOS();
-    }
-
-    validateForm();
-}
-
-void CreateVmDialog::addPortForwardRow()
-{
-    const int row = portForwardTable->rowCount();
-    portForwardTable->insertRow(row);
-
-    auto *protocolCombo = new QComboBox();
-    protocolCombo->addItem(u"TCP"_s, static_cast<int>(PortForwardRule::Protocol::Tcp));
-    protocolCombo->addItem(u"UDP"_s, static_cast<int>(PortForwardRule::Protocol::Udp));
-    portForwardTable->setCellWidget(row, 0, protocolCombo);
-
-    auto *hostPortSpin = new QSpinBox();
-    hostPortSpin->setRange(1, 65535);
-    hostPortSpin->setValue(8080);
-    hostPortSpin->setFrame(false);
-    portForwardTable->setCellWidget(row, 1, hostPortSpin);
-
-    auto *guestPortSpin = new QSpinBox();
-    guestPortSpin->setRange(1, 65535);
-    guestPortSpin->setValue(8080);
-    guestPortSpin->setFrame(false);
-    portForwardTable->setCellWidget(row, 2, guestPortSpin);
-
-    portForwardTable->setCurrentCell(row, 0);
-    removePortFwdButton->setEnabled(true);
-}
-
-void CreateVmDialog::removePortForwardRow()
-{
-    const int row = portForwardTable->currentRow();
-    if (row >= 0)
-        portForwardTable->removeRow(row);
-    removePortFwdButton->setEnabled(portForwardTable->rowCount() > 0);
-}
-
-void CreateVmDialog::filterOsVariants(VMSpecs::OsType osType)
-{
-    osNameCombo->clear();
-    osNameCombo->setCurrentIndex(-1);
-
-    if (osNameCombo->lineEdit() && osNameCombo->lineEdit()->actions().isEmpty())
-        osNameCombo->lineEdit()->addAction(QIcon::fromTheme(u"edit-find"_s), QLineEdit::LeadingPosition);
-
-    if (osNameCombo->lineEdit()) {
-        osNameCombo->lineEdit()->setPlaceholderText(i18n("Type or select"));
-        osNameCombo->lineEdit()->clear();
-    }
-
-    if (m_imageDatabase) {
-        for (const auto &d : m_imageDatabase->templatesForType(osType))
-            osNameCombo->addItem(d.displayName, d.id);
-    }
-
-    if (auto *comp = osNameCombo->completer())
-        comp->setCompletionMode(QCompleter::PopupCompletion);
-
-    if (osNameCombo->count() > 0)
-        osNameCombo->insertSeparator(osNameCombo->count());
-    osNameCombo->addItem(i18n("Other"), u"other"_s);
-
-    osNameCombo->setCurrentIndex(-1);
-}
-
-void CreateVmDialog::autoSetIconFromOS()
-{
-    if (iconManuallySet)
-        return;
-
-    auto osType = static_cast<VMSpecs::OsType>(osTypeCombo->currentData().toInt());
-    QString variantId = osNameCombo->currentData().toString();
-    if (variantId.isEmpty())
-        variantId = osNameCombo->currentText().trimmed();
-    const QString path = VMConfig::defaultIconFor(osType, variantId);
-
-    selectedIconName.clear();
-    selectedIconSetFilename.clear();
-    customIcon = {};
-
-    if (!path.isEmpty() && QFile::exists(path)) {
-        const QDir baseDir(VMConfig::osIconDir());
-        selectedIconSetFilename = baseDir.relativeFilePath(path);
-    }
-
-    updateIconDisplay();
-}
-
-void CreateVmDialog::populateVersions()
-{
-    versionCombo->clear();
-
-    const QString distroId = osNameCombo->currentData().toString();
-    if (distroId.isEmpty() || !m_imageDatabase) {
-        versionCombo->addItem(i18n("(no releases available)"));
-        versionCombo->setEnabled(false);
-        versionLabel->setEnabled(false);
-        cloudImageLabel->setEnabled(false);
-        return;
-    }
-
-    for (const auto &r : m_imageDatabase->releasesFor(distroId)) {
-        QString label = r.displayString();
-        if (r.lts)
-            label += u" (LTS)"_s;
-        versionCombo->addItem(label, r.version);
-    }
-
-    if (versionCombo->count() == 0) {
-        versionCombo->addItem(i18n("(no releases available)"));
-        versionCombo->setEnabled(false);
-        versionLabel->setEnabled(false);
-        cloudImageLabel->setEnabled(false);
-        return;
-    }
-
-    versionCombo->setCurrentIndex(0);
-
-    const bool active = automatedDeployCheck->isChecked();
-    versionCombo->setEnabled(active);
-    versionLabel->setEnabled(active);
-    cloudImageLabel->setEnabled(active);
-}
-
-void CreateVmDialog::setupForEdit(const VMConfig &config)
-{
-    isEditMode = true;
-    setWindowTitle(i18n("Edit VM: %1", config.name()));
-
-    originalName = config.name();
     nameEdit->setText(config.name());
 
-    originalMac = config.macAddress();
-
-    m_originalArchitecture = config.architecture();
-
     diskSpin->setValue(config.diskSizeGb());
-    diskSpin->setDisabled(true);
-    diskLabel->setDisabled(true);
 
     commentEdit->setPlainText(config.comment());
 
@@ -1357,35 +744,9 @@ void CreateVmDialog::setupForEdit(const VMConfig &config)
             osNameLabel->setEnabled(true);
     }
 
-    // Icon - based on source type
-    switch (config.iconSource()) {
-    case VMConfig::IconSource::Custom:
-        customIcon = config.customIcon();
-        selectedIconName.clear();
-        selectedIconSetFilename.clear();
-        break;
-    case VMConfig::IconSource::IconSet:
-        selectedIconSetFilename = config.iconIdentifier();
-        selectedIconName.clear();
-        customIcon = {};
-        break;
-    case VMConfig::IconSource::SystemTheme:
-        selectedIconName = config.iconIdentifier();
-        selectedIconSetFilename.clear();
-        customIcon = {};
-        break;
-    case VMConfig::IconSource::None:
-    default:
-        selectedIconName.clear();
-        selectedIconSetFilename.clear();
-        customIcon = {};
-        break;
-    }
-
-    // Check if VM has any saved icon data
-    iconManuallySet = !customIcon.isNull() || !selectedIconSetFilename.isEmpty() || !selectedIconName.isEmpty();
-
-    updateIconDisplay();
+    // In PreCreate the icon was derived by NewVmDialog, so it should keep
+    // following the operating system until the user picks one.
+    iconSelector->loadFrom(config, m_mode == Mode::Edit);
 
     setCombo(cpuCombo, config.cpuModel());
     kvmCheck->setChecked(config.useKvm());
@@ -1472,21 +833,215 @@ void CreateVmDialog::setupForEdit(const VMConfig &config)
     if (resolutionCombo->currentIndex() < 0)
         resolutionCombo->setCurrentIndex(0);
 
-    adContainer->setVisible(false);
+    applyModeConstraints();
 }
 
-void CreateVmDialog::setExistingVmNames(const QStringList &names)
+void EditVmDialog::onMachineTypeChanged(int /*index*/)
+{
+    updateDeviceAvailability();
+}
+
+void EditVmDialog::onRamSliderChanged(int gb)
+{
+    const QSignalBlocker blockRAMSpin(ramSpin);
+    ramSpin->setValue(gb * 1024);
+}
+
+void EditVmDialog::onRamSpinChanged(int mb)
+{
+    const QSignalBlocker blockRAMSlider(ramSlider);
+    ramSlider->setValue(mb / 1024);
+}
+
+void EditVmDialog::browseSharedDir()
+{
+    const QString dir = QFileDialog::getExistingDirectory(this, i18n("Select shared folder"), QDir::homePath());
+    if (!dir.isEmpty())
+        sharedPathEdit->setText(dir);
+}
+
+void EditVmDialog::onOsTypeChanged(int /*index*/)
+{
+    const int typeVal = osTypeCombo->currentData().toInt();
+
+    if (typeVal == -1) {
+        // Placeholder
+        osNameCombo->clear();
+        osNameCombo->addItem(i18n("-- Please select --"), {});
+        osNameCombo->setCurrentIndex(0);
+        osNameCombo->setEnabled(false);
+        osNameLabel->setEnabled(false);
+
+    } else if (static_cast<VMSpecs::OsType>(typeVal) == VMSpecs::OsType::Other) {
+        // special case "Other"
+        osNameCombo->clear();
+        osNameCombo->addItem(i18n("Other"), u"other"_s);
+        osNameCombo->setCurrentIndex(0);
+        osNameCombo->setEnabled(false);
+        osNameLabel->setEnabled(false);
+
+    } else {
+        osNameCombo->setEnabled(true);
+        osNameLabel->setEnabled(true);
+        auto osType = static_cast<VMSpecs::OsType>(typeVal);
+        filterOsVariants(osType);
+    }
+
+    updateIconForOs();
+    validateForm();
+    updateDiskInterfaceHint();
+}
+
+void EditVmDialog::onOsNameChanged(int /*index*/)
+{
+    updateIconForOs();
+
+    const QString distroId = osNameCombo->currentData().toString();
+
+    validateForm();
+}
+
+void EditVmDialog::onGpuDisplayChanged()
+{
+    const auto gpu = static_cast<VMSpecs::GpuType>(gpuCombo->currentData().toInt());
+    const auto osType = static_cast<VMSpecs::OsType>(osTypeCombo->currentData().toInt());
+
+    const bool isVirtio = (gpu == VMSpecs::GpuType::Virtio);
+    const bool isWindows = (osType == VMSpecs::OsType::Windows);
+
+    gpuMemSpin->setRange(VMConfig::vgaMemMbLowerLimit(gpu), VMConfig::vgaMemMbUpperLimit(gpu));
+    if (gpu == VMSpecs::GpuType::CirrusGD5430 || gpu == VMSpecs::GpuType::CirrusGD5446) {
+        gpuMemSpin->setSingleStep(4);
+        // Snap to nearest valid value
+        const int val = gpuMemSpin->value();
+        if (val <= 4)
+            gpuMemSpin->setValue(4);
+        else if (val <= 8)
+            gpuMemSpin->setValue(8);
+        else
+            gpuMemSpin->setValue(16);
+    } else {
+        gpuMemSpin->setSingleStep(1);
+    }
+    gpuMemSpin->setEnabled(true);
+    vgaMemLabel->setEnabled(true);
+
+    resolutionCombo->setEnabled(isVirtio);
+    resolutionLabel->setEnabled(isVirtio);
+
+    const bool can3d = isVirtio;
+    accel3dCheck->setEnabled(can3d);
+    if (!can3d)
+        accel3dCheck->setChecked(false);
+
+    if (can3d && isWindows && accel3dCheck->isChecked()) {
+        gpuHintLabel->setText(u"<i>"_s + i18n("Note: VirtIO 3D acceleration is not supported on Windows guests.") + u"</i>"_s);
+    } else {
+        gpuHintLabel->clear();
+    }
+}
+
+void EditVmDialog::onNameChanged(const QString &text)
+{
+    // OS guessing
+    bool found;
+    auto [type, variantId] = VMConfig::guessOSFromText(text, &found);
+    if (found) {
+        const int typeIndex = osTypeCombo->findData(static_cast<int>(type));
+        if (typeIndex >= 0 && osTypeCombo->currentIndex() != typeIndex)
+            osTypeCombo->setCurrentIndex(typeIndex);
+        const int variantIndex = osNameCombo->findData(variantId);
+        if (variantIndex >= 0 && osNameCombo->currentIndex() != variantIndex)
+            osNameCombo->setCurrentIndex(variantIndex);
+        updateIconForOs();
+    }
+
+    validateForm();
+}
+
+void EditVmDialog::addPortForwardRow()
+{
+    const int row = portForwardTable->rowCount();
+    portForwardTable->insertRow(row);
+
+    auto *protocolCombo = new QComboBox();
+    protocolCombo->addItem(u"TCP"_s, static_cast<int>(PortForwardRule::Protocol::Tcp));
+    protocolCombo->addItem(u"UDP"_s, static_cast<int>(PortForwardRule::Protocol::Udp));
+    portForwardTable->setCellWidget(row, 0, protocolCombo);
+
+    auto *hostPortSpin = new QSpinBox();
+    hostPortSpin->setRange(1, 65535);
+    hostPortSpin->setValue(8080);
+    hostPortSpin->setFrame(false);
+    portForwardTable->setCellWidget(row, 1, hostPortSpin);
+
+    auto *guestPortSpin = new QSpinBox();
+    guestPortSpin->setRange(1, 65535);
+    guestPortSpin->setValue(8080);
+    guestPortSpin->setFrame(false);
+    portForwardTable->setCellWidget(row, 2, guestPortSpin);
+
+    portForwardTable->setCurrentCell(row, 0);
+    removePortFwdButton->setEnabled(true);
+}
+
+void EditVmDialog::removePortForwardRow()
+{
+    const int row = portForwardTable->currentRow();
+    if (row >= 0)
+        portForwardTable->removeRow(row);
+    removePortFwdButton->setEnabled(portForwardTable->rowCount() > 0);
+}
+
+void EditVmDialog::filterOsVariants(VMSpecs::OsType osType)
+{
+    osNameCombo->clear();
+    osNameCombo->setCurrentIndex(-1);
+
+    if (osNameCombo->lineEdit() && osNameCombo->lineEdit()->actions().isEmpty())
+        osNameCombo->lineEdit()->addAction(QIcon::fromTheme(u"edit-find"_s), QLineEdit::LeadingPosition);
+
+    if (osNameCombo->lineEdit()) {
+        osNameCombo->lineEdit()->setPlaceholderText(i18n("Type or select"));
+        osNameCombo->lineEdit()->clear();
+    }
+
+    if (m_imageDatabase) {
+        for (const auto &d : m_imageDatabase->templatesForType(osType))
+            osNameCombo->addItem(d.displayName, d.id);
+    }
+
+    if (auto *comp = osNameCombo->completer())
+        comp->setCompletionMode(QCompleter::PopupCompletion);
+
+    if (osNameCombo->count() > 0)
+        osNameCombo->insertSeparator(osNameCombo->count());
+    osNameCombo->addItem(i18n("Other"), u"other"_s);
+
+    osNameCombo->setCurrentIndex(-1);
+}
+
+void EditVmDialog::updateIconForOs()
+{
+    QString distroId = osNameCombo->currentData().toString();
+    if (distroId.isEmpty())
+        distroId = osNameCombo->currentText().trimmed();
+
+    iconSelector->followOs(static_cast<VMSpecs::OsType>(osTypeCombo->currentData().toInt()), distroId);
+}
+
+void EditVmDialog::setExistingVmNames(const QStringList &names)
 {
     existingVmNames = names;
     onNameChanged(nameEdit->text());
 }
 
-void CreateVmDialog::setMacUsageInfo(const QList<MacUsageInfo> &info)
+void EditVmDialog::setMacUsageInfo(const QList<MacUsageInfo> &info)
 {
     m_macUsageInfo = info;
 }
 
-void CreateVmDialog::setImageDatabase(ImageDatabase *db)
+void EditVmDialog::setImageDatabase(ImageDatabase *db)
 {
     m_imageDatabase = db;
 
@@ -1495,7 +1050,7 @@ void CreateVmDialog::setImageDatabase(ImageDatabase *db)
         filterOsVariants(static_cast<VMSpecs::OsType>(typeVal));
 }
 
-void CreateVmDialog::setNetworkManager(VirtualNetworkManager *mgr)
+void EditVmDialog::setNetworkManager(VirtualNetworkManager *mgr)
 {
     m_networkManager = mgr;
     virtualNetworkCombo->clear();
@@ -1527,52 +1082,12 @@ void CreateVmDialog::setNetworkManager(VirtualNetworkManager *mgr)
     }
 }
 
-bool CreateVmDialog::isCloudDeployRequested() const
+bool EditVmDialog::iconManuallySet() const
 {
-    if (!automatedDeployCheck || !automatedDeployCheck->isChecked())
-        return false;
-    const QString distroId = osNameCombo->currentData().toString();
-    return m_imageDatabase && m_imageDatabase->hasCloudImages(distroId);
+    return iconSelector->isManuallySet();
 }
 
-CloudImageInfo CreateVmDialog::selectedCloudImage() const
-{
-    const QString distroId = osNameCombo->currentData().toString();
-    const QString version = versionCombo->currentData().toString();
-    const auto images = m_imageDatabase->cloudImagesFor(distroId, version, SettingsDialog::showAllArchitectures());
-    const int idx = cloudImageCombo->currentIndex();
-    if (idx >= 0 && idx < images.size())
-        return images[idx];
-    return {};
-}
-
-VMConfig CreateVmDialog::selectedDefaults() const
-{
-    if (!m_imageDatabase)
-        return {};
-    return m_imageDatabase->defaultsFor(osNameCombo->currentData().toString());
-}
-
-CloudDeployConfig CreateVmDialog::cloudConfig() const
-{
-    return m_cloudConfig;
-}
-
-bool CreateVmDialog::isManualIsoDeployRequested() const
-{
-    if (!automatedDeployCheck || !automatedDeployCheck->isChecked())
-        return false;
-    return !isCloudDeployRequested();
-}
-
-void CreateVmDialog::applyGlobalDefaults()
-{
-    if (isEditMode || !m_imageDatabase)
-        return;
-    applyReleaseDefaults(m_imageDatabase->globalDefaults());
-}
-
-VMConfig CreateVmDialog::getResult() const
+VMConfig EditVmDialog::getResult() const
 {
     VMConfig c;
     c.setName(nameEdit->text().trimmed());
@@ -1583,37 +1098,16 @@ VMConfig CreateVmDialog::getResult() const
         distroId = osNameCombo->currentText().trimmed();
     c.setDistroId(distroId);
 
-    if (!customIcon.isNull()) {
-        c.setIconSource(VMConfig::IconSource::Custom);
-        c.setCustomIcon(customIcon);
-    } else if (!selectedIconSetFilename.isEmpty()) {
-        c.setIconSource(VMConfig::IconSource::IconSet);
-        c.setIconIdentifier(selectedIconSetFilename);
-    } else if (!selectedIconName.isEmpty()) {
-        c.setIconSource(VMConfig::IconSource::SystemTheme);
-        c.setIconIdentifier(selectedIconName);
-    } else {
-        c.setIconSource(VMConfig::IconSource::None);
-        c.setIconIdentifier({});
-    }
+    iconSelector->applyTo(c);
 
     c.setCpuModel(static_cast<VMSpecs::CpuModel>(cpuCombo->currentData().toInt()));
 
     // Architecture: no dedicated selector yet -- currently only x86 vs x86_64.
-    //   - Cloud Deploy: architecture of the selected image
-    //   - Edit Mode:     keep existing value (never silently overwrite)
-    //   - New VM:        host architecture as fallback
-    const QString imgArch = isCloudDeployRequested() ? selectedCloudImage().arch : QString();
-    if (!imgArch.isEmpty())
-        c.setArchitecture(VMConfig::parseArchitecture(imgArch));
-    else if (isEditMode)
-        c.setArchitecture(m_originalArchitecture);
-    else {
-        QString hint = VMConfig::x86ArchHint(c.cpuModel());
-        if (hint.isEmpty())
-            hint = ImageDatabase::hostArch();
-        c.setArchitecture(VMConfig::parseArchitecture(hint));
-    }
+    // The CPU model decides when it implies one (i486 and friends); otherwise
+    // keep what the caller supplied, so an existing value is never silently
+    // overwritten.
+    const QString archHint = VMConfig::x86ArchHint(c.cpuModel());
+    c.setArchitecture(archHint.isEmpty() ? m_original.architecture() : VMConfig::parseArchitecture(archHint));
 
     c.setUseKvm(kvmCheck->isChecked());
     c.setRamMb(ramSpin->value());
@@ -1667,111 +1161,7 @@ VMConfig CreateVmDialog::getResult() const
     return c;
 }
 
-void CreateVmDialog::applyReleaseDefaults(const VMConfig &defaults)
-{
-    ramSpin->setValue(defaults.ramMb());
-    cpuSpin->setValue(defaults.cpuCoreCount());
-    if (!isEditMode)
-        diskSpin->setValue(defaults.diskSizeGb());
-
-    setCombo(cpuCombo, defaults.cpuModel());
-    setCombo(machineCombo, defaults.machineType());
-    setCombo(gpuCombo, defaults.gpuType());
-    setCombo(audioCombo, defaults.audioDevice());
-    setCombo(diskInterfaceCombo, defaults.diskInterface());
-    setCombo(netCombo, defaults.networkCard());
-    setCombo(displayCombo, defaults.displayType());
-    setCombo(usbCombo, defaults.usbController());
-
-    kvmCheck->setChecked(defaults.useKvm());
-    balloonCheck->setChecked(defaults.useMemoryBallooning());
-    preallocCheck->setChecked(defaults.preallocMemory());
-    accel3dCheck->setChecked(defaults.gpu3dAcceleration());
-    gpuMemSpin->setValue(defaults.gpuMemMb());
-    setCombo(mouseCombo, defaults.pointerDevice());
-    setCombo(keyboardCombo, defaults.keyboardDevice());
-    acpiCheck->setChecked(defaults.useAcpi());
-
-    uefiCheck->setChecked(defaults.useUefi());
-    tpmCheck->setChecked(defaults.useTpm());
-    secureBootCheck->setChecked(defaults.useSecureBoot());
-    localTimeCheck->setChecked(defaults.useLocalTime());
-
-    m_sb16Config = defaults.sb16Config();
-    extraArgsEdit->setText(defaults.extraArgs());
-
-    const QSize res = defaults.displayResolution();
-    for (int i = 0; i < resolutionCombo->count(); ++i) {
-        if (resolutionCombo->itemData(i).toSize() == res) {
-            resolutionCombo->setCurrentIndex(i);
-            break;
-        }
-    }
-}
-
-void CreateVmDialog::updateAutomatedDeployWidgets()
-{
-    const QString distroId = osNameCombo->currentData().toString();
-    const bool hasCloud = m_imageDatabase && m_imageDatabase->hasCloudImages(distroId);
-    const bool qdActive = automatedDeployCheck->isEnabled() && automatedDeployCheck->isChecked();
-
-    versionCombo->setEnabled(qdActive);
-    versionLabel->setEnabled(qdActive);
-    cloudImageCombo->setEnabled(qdActive && hasCloud);
-    cloudImageLabel->setEnabled(qdActive);
-    cloudImageStatusLabel->setVisible(qdActive && hasCloud);
-
-    // ISO path: visible only for distros without cloud images (e.g. Windows)
-    adIsoPathRequester->setEnabled(qdActive && !hasCloud);
-    adIsoPathRequester->setVisible(!hasCloud);
-    if (adIsoLabel) {
-        adIsoLabel->setEnabled(qdActive && !hasCloud);
-        adIsoLabel->setVisible(!hasCloud);
-    }
-
-    cloudInitButton->setEnabled(qdActive);
-
-    isoPathRequester->setEnabled(!qdActive);
-    if (isoPathLabel)
-        isoPathLabel->setEnabled(!qdActive);
-    bootFromIsoCheck->setEnabled(!qdActive && !isoPathRequester->text().trimmed().isEmpty());
-
-    floppyPathRequester->setEnabled(!qdActive);
-    if (floppyPathLabel)
-        floppyPathLabel->setEnabled(!qdActive);
-    bootFromFloppyCheck->setEnabled(!qdActive && !floppyPathRequester->text().trimmed().isEmpty());
-}
-
-void CreateVmDialog::updateCloudImageStatus()
-{
-    cloudImageStatusLabel->clear();
-
-    const QString distroId = osNameCombo->currentData().toString();
-    const QString version = versionCombo->currentData().toString();
-    if (distroId.isEmpty() || version.isEmpty() || !m_imageDatabase)
-        return;
-
-    const bool showAll = SettingsDialog::showAllArchitectures();
-    const auto images = m_imageDatabase->cloudImagesFor(distroId, version, showAll);
-
-    const int idx = cloudImageCombo->currentIndex();
-    if (idx < 0 || idx >= images.size())
-        return;
-
-    const auto &img = images[idx];
-
-    if (!ImageDatabase::isArchCompatible(img.arch)) {
-        cloudImageStatusLabel->setText(i18n("! Foreign architecture -- emulation not yet supported"));
-    } else if (ImageDatabase::isImageCached(img.url)) {
-        cloudImageStatusLabel->setText(i18n("Cached"));
-    } else {
-        cloudImageStatusLabel->setText(i18n("Will be downloaded"));
-    }
-
-    validateForm();
-}
-
-void CreateVmDialog::updateDiskInterfaceHint()
+void EditVmDialog::updateDiskInterfaceHint()
 {
     const auto disk = static_cast<VMSpecs::DiskInterface>(diskInterfaceCombo->currentData().toInt());
     const auto machine = static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt());
@@ -1797,7 +1187,7 @@ void CreateVmDialog::updateDiskInterfaceHint()
     diskHintLabel->clear();
 };
 
-void CreateVmDialog::updateDeviceAvailability()
+void EditVmDialog::updateDeviceAvailability()
 {
     const auto machine = static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt());
     const bool supportsIsa = VMConfig::supportsIsaBus(machine);
@@ -1991,7 +1381,7 @@ void CreateVmDialog::updateDeviceAvailability()
     onGpuDisplayChanged();
 }
 
-void CreateVmDialog::updateInputDeviceAvailability()
+void EditVmDialog::updateInputDeviceAvailability()
 {
     const bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
     const QString tip = hasUsb ? QString() : i18n("Requires a USB controller.");
@@ -2020,7 +1410,7 @@ void CreateVmDialog::updateInputDeviceAvailability()
     }
 }
 
-void CreateVmDialog::validateForm()
+void EditVmDialog::validateForm()
 {
     QString warning;
     bool valid = true;
@@ -2030,17 +1420,9 @@ void CreateVmDialog::validateForm()
     if (!VMConfig::isValidVmName(trimmed, &nameError)) {
         warning = nameError;
         valid = false;
-    } else if (trimmed != originalName && existingVmNames.contains(trimmed, Qt::CaseSensitive)) {
+    } else if (trimmed != m_original.name() && existingVmNames.contains(trimmed, Qt::CaseSensitive)) {
         warning = i18n("A virtual machine named '%1' already exists.", trimmed);
         valid = false;
-    }
-
-    if (isCloudDeployRequested()) {
-        const auto img = selectedCloudImage();
-        if (!ImageDatabase::isArchCompatible(img.arch)) {
-            cloudImageStatusLabel->setText(i18n("Foreign architecture. Emulation support is not yet available."));
-            valid = false;
-        }
     }
 
     // OS Type Placeholder?
@@ -2059,13 +1441,6 @@ void CreateVmDialog::validateForm()
         nameWarningLabel->setText(warning);
     }
 
-    // Cloud Deploy Validation
-    if (valid && isCloudDeployRequested()) {
-        const auto img = selectedCloudImage();
-        if (!img.arch.isEmpty() && !ImageDatabase::isArchCompatible(img.arch))
-            valid = false;
-    }
-
     // Shared folder requires a mount tag
     if (valid && !sharedPathEdit->text().trimmed().isEmpty() && sharedNameEdit->text().trimmed().isEmpty()) {
         valid = false;
@@ -2082,7 +1457,7 @@ void CreateVmDialog::validateForm()
         const QString netName = virtualNetworkCombo->currentData().toString();
 
         for (const auto &info : m_macUsageInfo) {
-            if (isEditMode && info.vmName == originalName)
+            if (m_mode == Mode::Edit && info.vmName == m_original.name())
                 continue;
 
             if (info.mac.compare(mac, Qt::CaseInsensitive) != 0)
@@ -2108,7 +1483,27 @@ void CreateVmDialog::validateForm()
         buttonBox->button(QDialogButtonBox::Ok)->setEnabled(valid);
 }
 
-void CreateVmDialog::resetToFactoryDefaults()
+void EditVmDialog::applyModeConstraints()
+{
+    if (m_mode != Mode::Edit)
+        return;
+
+    // The disk is resized through the dedicated actions in the main window,
+    // which know how to talk to qemu-img.
+    diskSpin->setEnabled(false);
+    // ... unverändert weiter ...
+    if (diskLabel)
+        diskLabel->setEnabled(false);
+    diskSpin->setToolTip(i18n("Use the disk actions in the main window to resize this disk."));
+
+    // Changing these on an installed guest usually makes it unbootable.
+    const QString warning = i18n("Changing this on an installed guest can make it unbootable.");
+    machineCombo->setToolTip(warning);
+    uefiCheck->setToolTip(warning);
+    secureBootCheck->setToolTip(warning);
+}
+
+void EditVmDialog::resetToFactoryDefaults()
 {
     const auto result = KMessageBox::questionTwoActions(this,
                                                         i18n("Are you sure you want to reset all settings to their default "
@@ -2124,7 +1519,7 @@ void CreateVmDialog::resetToFactoryDefaults()
     // VMConfig defaults from vmconfig.h
     ramSpin->setValue(GlobalDefaults.ramMb);
     cpuSpin->setValue(GlobalDefaults.cpuCoreCount);
-    if (!isEditMode)
+    if (m_mode != Mode::Edit)
         diskSpin->setValue(GlobalDefaults.diskSizeGb);
 
     setCombo(cpuCombo, GlobalDefaults.cpuModel);
@@ -2161,7 +1556,7 @@ void CreateVmDialog::resetToFactoryDefaults()
     extraArgsEdit->clear();
 }
 
-QStringList CreateVmDialog::usedMacAddresses() const
+QStringList EditVmDialog::usedMacAddresses() const
 {
     QStringList macs;
     for (const auto &info : m_macUsageInfo)

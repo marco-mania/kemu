@@ -8,8 +8,9 @@
 
 #include "const.h"
 #include "dbusdisplay/dbusdisplayconst.h"
-#include "dialogs/createvmdialog.h"
+#include "dialogs/editvmdialog.h"
 #include "dialogs/missingtoolsdialog.h"
+#include "dialogs/newvmdialog.h"
 #include "dialogs/settingsdialog.h"
 #include "dialogs/snapshotdialog.h"
 #include "jobs/clonejob.h"
@@ -3536,11 +3537,9 @@ void MainWindow::manageSnapshotsForVm(const QString &vmName)
 
 void MainWindow::createNewVM()
 {
-    CreateVmDialog dialog(this);
-
+    NewVmDialog dialog(this);
     dialog.setExistingVmNames(existingVmNames());
     dialog.setImageDatabase(&m_imageDatabase);
-    dialog.applyGlobalDefaults();
     dialog.setNetworkManager(m_networkManager);
     dialog.setMacUsageInfo(macUsageInfo());
 
@@ -3548,6 +3547,9 @@ void MainWindow::createNewVM()
         return;
 
     VMConfig newConfig = dialog.getResult();
+    const NewVmDialog::Source source = dialog.source();
+    const CloudDeployConfig cloudCfg = dialog.cloudConfig();
+
     const QDir baseDir = getVmBaseDir();
 
     if (newConfig.name().isEmpty() || baseDir.exists(newConfig.name())) {
@@ -3564,7 +3566,7 @@ void MainWindow::createNewVM()
     const QString vmPath = baseDir.filePath(newConfig.name());
     const QString diskPath = QDir(vmPath).filePath(KEMUConst::VMDiskFileName);
 
-    if (!dialog.isCloudDeployRequested()) {
+    if (source != NewVmDialog::Source::CloudImage) {
         KProcess imgProcess;
         imgProcess.setOutputChannelMode(KProcess::SeparateChannels);
         imgProcess.setProgram(ExternalTools::instance().path(ExternalTools::QemuImg));
@@ -3611,9 +3613,8 @@ void MainWindow::createNewVM()
     }
 
     // ======== CLOUD DEPLOY ========
-    if (dialog.isCloudDeployRequested()) {
+    if (source == NewVmDialog::Source::CloudImage) {
         const CloudImageInfo image = dialog.selectedCloudImage();
-        const CloudDeployConfig cloudCfg = dialog.cloudConfig();
 
         const QString imageLocalPath = ImageDatabase::localImagePath(image.url);
         const bool needsDownload = !ImageDatabase::isImageCached(image.url);
@@ -3670,7 +3671,7 @@ void MainWindow::createNewVM()
     }
 
     // ======== MANUAL ISO DEPLOY ========
-    if (dialog.isManualIsoDeployRequested()) {
+    if (source == NewVmDialog::Source::InstallerIso) {
         newConfig.setImageType(VMConfig::ImageType::InstallerIso);
         newConfig.setDeployState(VMConfig::DeployState::Deploying);
         newConfig.setBootFromIso(true);
@@ -3708,14 +3709,14 @@ void MainWindow::editVM()
     if (dInfo.isValid)
         currentConfig.setDiskSizeGb(qRound(dInfo.virtualSizeGb));
 
-    CreateVmDialog dialog(this);
+    EditVmDialog dialog(EditVmDialog::Mode::Edit, this);
 
     dialog.setExistingVmNames(existingVmNames());
     dialog.setImageDatabase(&m_imageDatabase);
     dialog.setNetworkManager(m_networkManager);
     dialog.setMacUsageInfo(macUsageInfo());
 
-    dialog.setupForEdit(currentConfig);
+    dialog.setConfig(currentConfig);
 
     if (dialog.exec() == QDialog::Accepted) {
         VMConfig newConfig = dialog.getResult();

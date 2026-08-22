@@ -6,7 +6,6 @@
 
 #pragma once
 
-#include <QBuffer>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCompleter>
@@ -24,9 +23,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
-#include <QMenu>
 #include <QMetaEnum>
-#include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSlider>
@@ -37,29 +34,33 @@
 #include <QVBoxLayout>
 
 #include <KColorScheme>
-#include <KIconDialog>
 #include <KLineEdit>
 #include <KLocalizedString>
 #include <KUrlRequester>
 
-#include "utils/cloudimagedeployer.h"
 #include "utils/imagedatabase.h"
 #include "utils/virtualnetworkmanager.h"
 #include "utils/vmconfig.h"
 #include "widgets/ramspinbox.h"
+#include "widgets/vmiconselector.h"
 
 using namespace Qt::StringLiterals;
 
-class CreateVmDialog : public QDialog
+class EditVmDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit CreateVmDialog(QWidget *parent = nullptr);
+    enum class Mode {
+        PreCreate, // VM does not exist yet: everything is still negotiable
+        Edit // VM exists on disk: some choices are already baked in
+    };
+
+    explicit EditVmDialog(Mode mode, QWidget *parent = nullptr);
 
     VMConfig getResult() const;
 
-    void setupForEdit(const VMConfig &config);
+    void setConfig(const VMConfig &config);
 
     void setExistingVmNames(const QStringList &names);
     void setMacUsageInfo(const QList<MacUsageInfo> &info);
@@ -67,25 +68,10 @@ public:
     void setImageDatabase(ImageDatabase *db);
     void setNetworkManager(VirtualNetworkManager *mgr);
 
-    [[nodiscard]] bool isCloudDeployRequested() const;
-    [[nodiscard]] CloudImageInfo selectedCloudImage() const;
-    [[nodiscard]] VMConfig selectedDefaults() const;
-    [[nodiscard]] CloudDeployConfig cloudConfig() const;
-    [[nodiscard]] bool isManualIsoDeployRequested() const;
-
-    void applyGlobalDefaults();
+    [[nodiscard]] bool iconManuallySet() const;
 
 private Q_SLOTS:
     void browseSharedDir();
-    void chooseFromIconSet();
-    void chooseThemeIcon();
-    void browseCustomIcon();
-    void clearIcon();
-    void showIconContextMenu(const QPoint &pos);
-
-    void openCloudConfigDialog();
-    void browseQdIso();
-
     void onMachineTypeChanged(int index);
     void onRamSliderChanged(int gb);
     void onRamSpinChanged(int mb);
@@ -93,25 +79,14 @@ private Q_SLOTS:
     void onOsNameChanged(int index);
     void onGpuDisplayChanged();
 
-    void onVersionChanged(int index);
-    void onAutomatedDeployToggled(bool checked);
-
     void onNameChanged(const QString &text);
 
     void addPortForwardRow();
     void removePortForwardRow();
 
 private:
-    void updateIconDisplay();
     void filterOsVariants(VMSpecs::OsType osType); // e.g. Distributions for Linux
-    void autoSetIconFromOS();
-
-    void populateVersions();
-    void populateEditions();
-    void applyReleaseDefaults(const VMConfig &defaults);
-
-    void updateAutomatedDeployWidgets();
-    void updateCloudImageStatus();
+    void updateIconForOs();
     void updateDiskInterfaceHint();
     void updateDeviceAvailability();
     void updateInputDeviceAvailability();
@@ -119,39 +94,14 @@ private:
     void validateForm();
 
     QStringList existingVmNames;
-    QString originalName;
 
-    QString originalMac;
-
-    VMSpecs::Architecture m_originalArchitecture = VMSpecs::Architecture::X86_64;
+    VmIconSelector *iconSelector = nullptr;
 
     QLineEdit *nameEdit = nullptr;
     QPlainTextEdit *commentEdit = nullptr;
     QComboBox *osTypeCombo = nullptr;
     QComboBox *osNameCombo = nullptr;
     QLabel *osNameLabel = nullptr;
-    QPushButton *applyDefaultsButton = nullptr;
-
-    QComboBox *versionCombo = nullptr;
-    QLabel *versionLabel = nullptr;
-    QCheckBox *automatedDeployCheck = nullptr;
-    QComboBox *cloudImageCombo = nullptr;
-    QLabel *cloudImageLabel = nullptr;
-    QLabel *cloudImageStatusLabel = nullptr;
-
-    // Automated Deploy Section
-    QWidget *adContainer = nullptr;
-    KUrlRequester *adIsoPathRequester = nullptr;
-    QLabel *adIsoLabel = nullptr;
-    QPushButton *cloudInitButton = nullptr;
-    QLabel *cloudInitLabel = nullptr;
-
-    CloudDeployConfig m_cloudConfig;
-
-    QPushButton *iconDisplayButton = nullptr;
-    QString selectedIconName;
-    QString selectedIconSetFilename;
-    QIcon customIcon;
 
     QComboBox *cpuCombo = nullptr;
     QCheckBox *kvmCheck = nullptr;
@@ -216,9 +166,10 @@ private:
     QList<MacUsageInfo> m_macUsageInfo;
     QStringList usedMacAddresses() const;
 
-    bool isEditMode = false;
+    Mode m_mode = Mode::Edit;
+    VMConfig m_original;
 
-    bool iconManuallySet = false;
+    void applyModeConstraints();
 
     void resetToFactoryDefaults();
 
