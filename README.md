@@ -32,7 +32,8 @@ A traditional, direct-to-QEMU desktop frontend for Linux, built with Qt 6 Widget
 
 ![image](screenshots/fullview.png)
 ![image](screenshots/mainwindow.png)
-![image](screenshots/vmsettings1.png)
+![image](screenshots/newvm.png)
+![image](screenshots/vmsettings.png)
 ![image](screenshots/vmsettings2.png)
 ![image](screenshots/snapshotdialog.png)
 
