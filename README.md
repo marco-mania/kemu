@@ -311,10 +311,7 @@ sudo mount -t 9p -o trans=virtio exchange /mnt/shared
 > **Virtual Network Mode:** VMs on a virtual network run inside a user namespace where QEMU perceives itself as root (UID 0). KEMU automatically switches to `security_model=mapped-xattr` for these VMs, storing guest file ownership in extended attributes on the host. This process is generally transparent. If you encounter permission issues in the guest, mount with `access=any`:
 > ```bash
 > sudo mount -t 9p -o trans=virtio,version=9p2000.L,access=any exchange /mnt/shared
-> 
 > ```
-> 
-> 
 
 * **FreeBSD (13+):**
 ```bash
