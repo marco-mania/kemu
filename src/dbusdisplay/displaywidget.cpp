@@ -135,6 +135,16 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QDBusConnect
     m_motionTimer.setTimerType(Qt::PreciseTimer);
     connect(&m_motionTimer, &QTimer::timeout, this, &QemuDisplayWidget::flushMotion);
 
+    // GDBus reads the sockets in its shared worker thread. If that read wins
+    // the race against Qt's poll, the QSocketNotifier never fires and
+    // dispatches queued in the private GMainContext stall until the next
+    // message arrives. Drain all watched contexts periodically as a safety net.
+    m_glibFallbackTimer.setInterval(25);
+    connect(&m_glibFallbackTimer, &QTimer::timeout, this, [this]() {
+        for (GMainContext *ctx : std::as_const(m_glibContexts))
+            dispatchContext(ctx);
+    });
+
     connect(listener, &QemuDisplayListener::scanoutChanged, this, &QemuDisplayWidget::onScanoutChanged);
     connect(listener, &QemuDisplayListener::dmaBufScanout, this, &QemuDisplayWidget::onDmaBufScanout);
     connect(listener, &QemuDisplayListener::regionUpdated, this, &QemuDisplayWidget::onRegionUpdated);
@@ -174,11 +184,19 @@ void QemuDisplayWidget::watchGLibFd(int fd, GMainContext *ctx)
     });
 
     m_glibNotifiers.append(notifier);
+
+    m_glibContexts.append(ctx);
+    if (!m_glibFallbackTimer.isActive())
+        m_glibFallbackTimer.start();
+
     qCDebug(KEMU_DBUSDISPLAY) << "Monitoring GLib socket: FD" << fd << "ctx" << ctx;
 }
 
 void QemuDisplayWidget::stopAllGLibWatching()
 {
+    m_glibFallbackTimer.stop();
+    m_glibContexts.clear();
+
     // ONLY deactivate, DO NOT delete! We might be inside an activated()
     // handler here. The notifiers are automatically cleaned up as children
     // of the widget during the widget destructor.

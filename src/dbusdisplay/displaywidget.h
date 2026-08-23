@@ -147,6 +147,9 @@ private:
     // GLib integration: event-driven instead of polling
     QList<QSocketNotifier *> m_glibNotifiers;
 
+    QList<GMainContext *> m_glibContexts;
+    QTimer m_glibFallbackTimer;
+
     bool m_pendingRepaint = false;
 
     // OpenGL
