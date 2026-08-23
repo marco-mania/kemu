@@ -94,6 +94,7 @@ private:
         QAudioSink *sink = nullptr;
         QIODevice *ioDevice = nullptr; // returned by QAudioSink::start()
         bool enabled = false;
+        QByteArray pendingData; // PCM the sink could not accept yet
     };
 
     GDBusConnection *m_conn = nullptr;

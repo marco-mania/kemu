@@ -233,6 +233,12 @@ void QemuAudioListener::handleInit(GVariant *parameters, GDBusMethodInvocation *
     qCDebug(KEMU_DBUSDISPLAY) << "Audio Init: id=" << id << "bits=" << bits << "signed=" << is_signed << "float=" << is_float << "freq=" << freq
                               << "channels=" << nchannels << "be=" << be;
 
+    // QAudioFormat assumes native (little-endian) sample order.
+    if (be && (is_float || bits > 8)) {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_NOT_SUPPORTED, "Big-endian samples are not supported");
+        return;
+    }
+
     // Clean up existing stream if present
     if (m_streams.contains(id)) {
         auto *old = m_streams.take(id);
@@ -257,7 +263,7 @@ void QemuAudioListener::handleInit(GVariant *parameters, GDBusMethodInvocation *
                 g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_NOT_SUPPORTED, "Signed 8-bit PCM is not supported");
                 return;
             }
-            format.setSampleFormat(is_signed ? QAudioFormat::Unknown : QAudioFormat::UInt8);
+            format.setSampleFormat(QAudioFormat::UInt8);
             break;
         case 16:
             format.setSampleFormat(QAudioFormat::Int16);
@@ -335,9 +341,23 @@ void QemuAudioListener::handleWrite(GVariant *parameters, GDBusMethodInvocation 
         gsize dataLen = 0;
         const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
 
-        if (data && dataLen > 0) {
-            stream->ioDevice->write(reinterpret_cast<const char *>(data), static_cast<qint64>(dataLen));
+        if (data && dataLen > 0)
+            stream->pendingData.append(reinterpret_cast<const char *>(data), static_cast<qsizetype>(dataLen));
+
+        // The sink accepts only as much as its buffer has free; retry the
+        // remainder on the next Write instead of dropping it.
+        if (!stream->pendingData.isEmpty()) {
+            const qint64 written = stream->ioDevice->write(stream->pendingData);
+            if (written > 0)
+                stream->pendingData.remove(0, written);
         }
+
+        // Bound the backlog to ~200 ms; drop oldest samples beyond that.
+        const qsizetype maxPending = qMax<qsizetype>(16384, stream->format.bytesForDuration(200000));
+        if (stream->pendingData.size() > maxPending)
+            stream->pendingData.remove(0, stream->pendingData.size() - maxPending);
+    } else if (stream) {
+        stream->pendingData.clear(); // muted/disabled: discard, don't replay later
     }
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
