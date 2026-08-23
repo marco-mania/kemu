@@ -327,35 +327,19 @@ void QemuDisplayWidget::initializeGL()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    // =========================================================================
-    // Optimization 2: Check GL_BGRA_EXT
-    // =========================================================================
-    // QEMU almost always sends PIXMAN_x8r8g8b8 -> QImage::Format_RGB32 = BGRA
-    // in CPU byte order. Without GL_BGRA_EXT, we have to convert every frame via
-    // convertToFormat(RGBA8888) (= full pixel copy).
-    //
-    // With GL_BGRA_EXT, glTexImage2D can take the BGRA data directly.
-    // The extension is available on practically all desktop GPUs.
-    const char *extensions = reinterpret_cast<const char *>(glGetString(GL_EXTENSIONS));
-    m_hasBGRA = extensions
-        && (strstr(extensions, "GL_EXT_texture_format_BGRA8888") || strstr(extensions, "GL_APPLE_texture_format_BGRA8888")
-            || strstr(extensions, "GL_EXT_bgra"));
+    const QOpenGLContext *ctx = QOpenGLContext::currentContext();
+    const bool isGLES = ctx && ctx->isOpenGLES();
 
-    // On Desktop GL (not GLES), GL_BGRA is always available
-    if (!m_hasBGRA) {
-        const QOpenGLContext *ctx = QOpenGLContext::currentContext();
-        if (ctx && !ctx->isOpenGLES()) {
-            m_hasBGRA = true;
-        }
-    }
+    // Desktop GL always accepts BGRA uploads; GLES needs the extension.
+    // hasExtension() also works on core profiles, where
+    // glGetString(GL_EXTENSIONS) returns NULL.
+    m_hasBGRA = !isGLES || ctx->hasExtension(QByteArrayLiteral("GL_EXT_texture_format_BGRA8888"))
+        || ctx->hasExtension(QByteArrayLiteral("GL_APPLE_texture_format_BGRA8888"));
 
-    {
-        const QOpenGLContext *ctx = QOpenGLContext::currentContext();
-        if (ctx && (!ctx->isOpenGLES() || ctx->format().majorVersion() >= 3))
-            m_hasUnpackRowLength = true;
-        else
-            m_hasUnpackRowLength = extensions && strstr(extensions, "GL_EXT_unpack_subimage");
-    }
+    // EXT_texture_format_BGRA8888 requires internalformat == format on ES.
+    m_bgraInternalFormat = isGLES ? GL_BGRA_EXT : GL_RGBA;
+
+    m_hasUnpackRowLength = !isGLES || (ctx && ctx->format().majorVersion() >= 3) || (ctx && ctx->hasExtension(QByteArrayLiteral("GL_EXT_unpack_subimage")));
 
     // qCDebug(KEMU_DBUSDISPLAY) << "GL_BGRA:" << (m_hasBGRA ? "available (no format convert)"
     //                                       : "not available (fallback: RGBA
@@ -1132,7 +1116,7 @@ void QemuDisplayWidget::uploadDirtyRects(const QImage &source)
     // the dirty region.
     bool forceFullUpload = false;
     if (m_texAllocSize != source.size()) {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, source.width(), source.height(), 0, GL_BGRA_EXT, GL_UNSIGNED_BYTE, nullptr);
+        glTexImage2D(GL_TEXTURE_2D, 0, m_bgraInternalFormat, source.width(), source.height(), 0, GL_BGRA_EXT, GL_UNSIGNED_BYTE, nullptr);
         m_texAllocSize = source.size();
         forceFullUpload = true;
     }

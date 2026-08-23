@@ -175,6 +175,8 @@ private:
     // GL_UNPACK_ROW_LENGTH: core in desktop GL and GLES3, extension on GLES2
     bool m_hasUnpackRowLength = false;
 
+    GLenum m_bgraInternalFormat = GL_RGBA;
+
     // EGL DMA-BUF
     EGLDisplay m_eglDisplay = EGL_NO_DISPLAY;
     EGLImageKHR m_eglImage = EGL_NO_IMAGE_KHR;
