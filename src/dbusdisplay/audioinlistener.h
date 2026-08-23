@@ -97,6 +97,12 @@ private:
 
         int read(char *dst, int maxLen);
         void write(const char *src, int len);
+        void clear()
+        {
+            readPos = 0;
+            writePos = 0;
+            bufferedBytes = 0;
+        }
     };
 
     GDBusConnection *m_conn = nullptr;

@@ -285,6 +285,12 @@ void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation
     qCDebug(KEMU_DBUSDISPLAY) << "AudioIn Init: id=" << id << "bits=" << bits << "signed=" << is_signed << "float=" << is_float << "freq=" << freq
                               << "channels=" << nchannels;
 
+    // QAudioFormat assumes native (little-endian) sample order.
+    if (be && (is_float || bits > 8)) {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_NOT_SUPPORTED, "Big-endian samples are not supported");
+        return;
+    }
+
     // Clean up old stream
     if (m_streams.contains(id)) {
         auto *old = m_streams.take(id);
@@ -451,8 +457,15 @@ void QemuAudioInListener::handleRead(GVariant *parameters, GDBusMethodInvocation
     QByteArray data(static_cast<int>(size), '\0');
 
     auto *stream = m_streams.value(id, nullptr);
-    if (stream && stream->enabled && !m_muted && !data.isEmpty())
-        stream->read(data.data(), data.size());
+    if (stream) {
+        if (stream->enabled && !m_muted && !data.isEmpty()) {
+            stream->read(data.data(), data.size());
+        } else {
+            // Return silence AND drop the backlog, so unmuting does not
+            // replay up to ~341 ms of stale microphone audio.
+            stream->clear();
+        }
+    }
 
     GVariant *result = g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, data.constData(), data.size(), sizeof(guint8));
     g_dbus_method_invocation_return_value(invocation, g_variant_new_tuple(&result, 1));
