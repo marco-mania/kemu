@@ -492,10 +492,15 @@ void QemuDisplayWidget::paintGL()
         uploadSoftwareFrame();
     }
 
-    if (!m_textureReady)
-        return;
-    renderQuad();
-    renderCursorQuad();
+    if (m_textureReady) {
+        renderQuad();
+        renderCursorQuad();
+    }
+
+    if (m_usingDmaBuf)
+        glFlush(); // submit our reads before QEMU may write into the buffer again
+
+    m_listener->ackPendingFrame();
 }
 
 void QemuDisplayWidget::renderQuad()
@@ -750,6 +755,11 @@ void QemuDisplayWidget::onDmaBufScanout(int w, int h)
 
 void QemuDisplayWidget::onRegionUpdated(const QRect &)
 {
+    if (!isVisible()) {
+        // A hidden widget never paints; do not let QEMU wait forever.
+        m_listener->ackPendingFrame();
+        return;
+    }
     scheduleRepaint();
 }
 

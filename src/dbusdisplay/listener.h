@@ -83,6 +83,10 @@ public:
     bool isDmaBuf() const;
     CursorInfo cursorInfo() const;
 
+    // Acknowledge a pending Update reply. Called by the display widget once
+    // the frame content has actually been consumed (uploaded/rendered).
+    void ackPendingFrame();
+
     // FD of the GDBus socket (for QSocketNotifier-based event integration)
     int socketFd() const
     {
@@ -127,6 +131,9 @@ private:
     void unmapMemory();
     void closeDmaBuf();
     static QImage::Format pixmanFormatToQt(uint32_t pixman_format);
+
+    void deferFrameAck(GDBusMethodInvocation *invocation);
+    GDBusMethodInvocation *m_pendingFrameAck = nullptr;
 
     void cleanupConnection();
 

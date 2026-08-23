@@ -161,6 +161,14 @@ CursorInfo QemuDisplayListener::cursorInfo() const
     return m_cursor;
 }
 
+void QemuDisplayListener::ackPendingFrame()
+{
+    if (!m_pendingFrameAck)
+        return;
+    g_dbus_method_invocation_return_value(m_pendingFrameAck, nullptr);
+    m_pendingFrameAck = nullptr;
+}
+
 bool QemuDisplayListener::takeDmaBufScanout(DmaBufScanout &out)
 {
     if (!isDmaBuf() || !m_dmaBuf.fd.isValid())
@@ -350,6 +358,7 @@ void QemuDisplayListener::onMethodCall(GDBusConnection *,
 // =============================================================================
 void QemuDisplayListener::handleScanoutDMABUF(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
+    ackPendingFrame();
     guint32 fdIndex, width, height, stride, fourcc;
     guint64 modifier;
     gboolean y0_top;
@@ -396,7 +405,7 @@ void QemuDisplayListener::handleUpdateDMABUF(GVariant *parameters, GDBusMethodIn
 {
     gint32 x, y, w, h;
     g_variant_get(parameters, "(iiii)", &x, &y, &w, &h);
-    g_dbus_method_invocation_return_value(invocation, nullptr);
+    deferFrameAck(invocation);
     Q_EMIT regionUpdated(QRect(x, y, w, h));
 }
 
@@ -405,6 +414,7 @@ void QemuDisplayListener::handleUpdateDMABUF(GVariant *parameters, GDBusMethodIn
 // =============================================================================
 void QemuDisplayListener::handleScanout(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
+    ackPendingFrame();
     guint32 width, height, stride, pixman_format;
     GVariant *rawData = nullptr;
     g_variant_get(parameters, "(uuuu@ay)", &width, &height, &stride, &pixman_format, &rawData);
@@ -460,6 +470,7 @@ void QemuDisplayListener::handleScanout(GVariant *parameters, GDBusMethodInvocat
 
 void QemuDisplayListener::handleScanoutMap(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
+    ackPendingFrame();
     guint32 fdIndex, offset, width, height, stride, pixman_format;
     g_variant_get(parameters, "(huuuuu)", &fdIndex, &offset, &width, &height, &stride, &pixman_format);
     GDBusMessage *msg = g_dbus_method_invocation_get_message(invocation);
@@ -577,7 +588,7 @@ void QemuDisplayListener::handleUpdateMap(GVariant *parameters, GDBusMethodInvoc
     // GPU upload still needs to know which rect changed.
     addDirtyRect(QRect(x, y, w, h));
 
-    g_dbus_method_invocation_return_value(invocation, nullptr);
+    deferFrameAck(invocation);
     Q_EMIT regionUpdated(QRect(x, y, w, h));
 }
 
@@ -586,6 +597,7 @@ void QemuDisplayListener::handleUpdateMap(GVariant *parameters, GDBusMethodInvoc
 // =============================================================================
 void QemuDisplayListener::handleDisable(GDBusMethodInvocation *invocation)
 {
+    ackPendingFrame();
     closeDmaBuf();
     unmapMemory();
     m_image = {}; // no framebuffer at all until the next Scanout
@@ -685,6 +697,14 @@ void QemuDisplayListener::closeDmaBuf()
     m_dmaBuf.fd.reset();
 }
 
+void QemuDisplayListener::deferFrameAck(GDBusMethodInvocation *invocation)
+{
+    // QEMU throttles on the reply, so at most one frame is in flight.
+    // Release a stale one first, just in case.
+    ackPendingFrame();
+    m_pendingFrameAck = invocation;
+}
+
 QImage::Format QemuDisplayListener::pixmanFormatToQt(uint32_t pf)
 {
     // Pixman names refer to bit positions (high-to-low). Qt formats refer to
@@ -717,6 +737,7 @@ QImage::Format QemuDisplayListener::pixmanFormatToQt(uint32_t pf)
 
 void QemuDisplayListener::cleanupConnection()
 {
+    ackPendingFrame();
     if (m_registrationIdUnix && m_listenerConn) {
         g_dbus_connection_unregister_object(m_listenerConn, m_registrationIdUnix);
         m_registrationIdUnix = 0;
