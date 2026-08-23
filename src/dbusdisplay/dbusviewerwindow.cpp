@@ -811,8 +811,7 @@ void DbusViewerWindow::audioInReady()
     m_actAudioIn->setStatusTip(i18n("Toggle audio input (microphone)"));
 
     if (m_audioIn) {
-        m_display->watchGLibFd(m_audioIn->socketFd(),
-                               m_audioIn->mainContext()); // NEU
+        m_display->watchGLibFd(m_audioIn->socketFd(), m_audioIn->mainContext());
     }
 
     updateStatusBar();
