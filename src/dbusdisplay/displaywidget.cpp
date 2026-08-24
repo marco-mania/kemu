@@ -867,7 +867,7 @@ void QemuDisplayWidget::queueAbsMotion(uint fx, uint fy)
     m_pendingAbsY = fy;
     m_hasPendingAbs = true;
     if (!m_motionTimer.isActive())
-        m_motionTimer.start(kMotionCoalesceMs);
+        flushMotion(); // leading edge: send now, gate followers
 }
 
 void QemuDisplayWidget::queueRelMotion(int dx, int dy)
@@ -877,16 +877,19 @@ void QemuDisplayWidget::queueRelMotion(int dx, int dy)
     m_pendingRelY += dy;
     m_hasPendingRel = true;
     if (!m_motionTimer.isActive())
-        m_motionTimer.start(kMotionCoalesceMs);
+        flushMotion();
 }
 
 void QemuDisplayWidget::flushMotion()
 {
     m_motionTimer.stop();
 
+    bool sent = false;
     if (m_hasPendingRel) {
-        if (m_pendingRelX != 0 || m_pendingRelY != 0)
+        if (m_pendingRelX != 0 || m_pendingRelY != 0) {
             m_mouse->asyncCall(u"RelMotion"_s, m_pendingRelX, m_pendingRelY);
+            sent = true;
+        }
         m_pendingRelX = 0;
         m_pendingRelY = 0;
         m_hasPendingRel = false;
@@ -894,7 +897,12 @@ void QemuDisplayWidget::flushMotion()
     if (m_hasPendingAbs) {
         m_mouse->asyncCall(u"SetAbsPosition"_s, m_pendingAbsX, m_pendingAbsY);
         m_hasPendingAbs = false;
+        sent = true;
     }
+
+    // Re-arm the gate so followers within the window keep coalescing.
+    if (sent)
+        m_motionTimer.start(kMotionCoalesceMs);
 }
 
 void QemuDisplayWidget::sendWheelClick(uint button)
