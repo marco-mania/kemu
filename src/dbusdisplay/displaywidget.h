@@ -31,6 +31,7 @@
 
 #include <GL/gl.h>
 
+#include "dbusdisplay/glibeventbridge.h"
 #include "dbusdisplay/listener.h"
 
 using namespace Qt::StringLiterals;
@@ -97,7 +98,6 @@ private Q_SLOTS:
     void updateCursor();
     void onCursorImageChanged();
     void onCursorMoved();
-    void dispatchContext(GMainContext *ctx);
     void onMousePropertiesChanged(const QString &iface, const QVariantMap &changed, const QStringList &invalidated);
 
 private:
@@ -144,11 +144,7 @@ private:
     QDBusInterface *m_keyboard;
     QDBusInterface *m_mouse;
 
-    // GLib integration: event-driven instead of polling
-    QList<QSocketNotifier *> m_glibNotifiers;
-
-    QList<GMainContext *> m_glibContexts;
-    QTimer m_glibFallbackTimer;
+    QList<GLibEventBridge *> m_glibBridges;
 
     bool m_pendingRepaint = false;
 

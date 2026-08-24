@@ -132,6 +132,8 @@ target_sources(
           dbusdisplay/audioinlistener.h
           dbusdisplay/clipboard.cpp
           dbusdisplay/clipboard.h
+          dbusdisplay/glibeventbridge.h
+          dbusdisplay/glibeventbridge.cpp
           dbusdisplay/uniquefd.h
           dbusdisplay/gvariantptr.h)
 
