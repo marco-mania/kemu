@@ -103,6 +103,9 @@ private Q_SLOTS:
 private:
     bool initEglFunctions();
     bool importDmaBuf();
+    bool ensureDmaBufImported();
+    void blitImportToPresent();
+    void presentDmaBufFrame();
     void destroyEglImage();
     void uploadSoftwareFrame();
     void setupQuad();
@@ -152,6 +155,12 @@ private:
     QOpenGLShaderProgram *m_shader = nullptr;
     GLuint m_textureId = 0;
     GLuint m_vbo = 0;
+
+    // Mailbox model: the EGLImage is bound to m_importTexture; each Update
+    // is copied into m_textureId (the presented texture) and acked
+    // immediately, decoupling QEMU from our paint/vsync cycle.
+    GLuint m_importTexture = 0;
+    GLuint m_blitFbo = 0;
 
     // Guest cursor, drawn as a second quad while the pointer is captured
     QOpenGLShaderProgram *m_cursorShader = nullptr;

@@ -147,6 +147,10 @@ QemuDisplayWidget::~QemuDisplayWidget()
     stopAllGLibWatching();
     makeCurrent();
     destroyEglImage();
+    if (m_importTexture)
+        glDeleteTextures(1, &m_importTexture);
+    if (m_blitFbo)
+        glDeleteFramebuffers(1, &m_blitFbo);
     if (m_textureId)
         glDeleteTextures(1, &m_textureId);
     if (m_cursorTextureId)
@@ -385,16 +389,88 @@ bool QemuDisplayWidget::importDmaBuf()
         return false;
     }
 
-    glBindTexture(GL_TEXTURE_2D, m_textureId);
+    if (m_importTexture == 0) {
+        glGenTextures(1, &m_importTexture);
+        glBindTexture(GL_TEXTURE_2D, m_importTexture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, m_importTexture);
+    }
     m_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, m_eglImage);
 
     m_fbSize = QSize(buf.width, buf.height);
-    m_texAllocSize = QSize();
-    m_textureReady = true;
+    m_texAllocSize = QSize(); // force present-texture realloc on next blit
     m_usingDmaBuf = true;
     m_flipY = buf.y0_top;
+    // m_textureReady is set by the first blit into the present texture.
 
     return true;
+}
+
+bool QemuDisplayWidget::ensureDmaBufImported()
+{
+    if (m_dmaBufPending) {
+        m_dmaBufPending = false;
+        importDmaBuf();
+    }
+    return m_usingDmaBuf && m_eglImage != EGL_NO_IMAGE_KHR;
+}
+
+void QemuDisplayWidget::blitImportToPresent()
+{
+    if (!m_shader || !m_shader->isLinked() || m_fbSize.isEmpty())
+        return;
+
+    if (m_blitFbo == 0)
+        glGenFramebuffers(1, &m_blitFbo);
+
+    // (Re-)allocate the present texture on size change.
+    glBindTexture(GL_TEXTURE_2D, m_textureId);
+    if (m_texAllocSize != m_fbSize) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbSize.width(), m_fbSize.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        m_texAllocSize = m_fbSize;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, m_blitFbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_textureId, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
+        return;
+    }
+
+    glViewport(0, 0, m_fbSize.width(), m_fbSize.height());
+
+    m_shader->bind();
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_importTexture);
+    m_shader->setUniformValue("uTexture", 0);
+    m_shader->setUniformValue("uFlipX", 0.0f);
+    // Rendering into an FBO lands NDC y=-1 on texture row 0, which inverts
+    // the row order relative to sampling. Flip once here so the present
+    // texture matches the import texture's orientation; m_flipY at present
+    // time stays the only y0_top-dependent flip.
+    m_shader->setUniformValue("uFlipY", 1.0f);
+    m_shader->setUniformValue("uDim", 0.0f);
+    drawUnitQuad(m_shader);
+    m_shader->release();
+
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
+    m_textureReady = true;
+}
+
+void QemuDisplayWidget::presentDmaBufFrame()
+{
+    makeCurrent();
+    if (ensureDmaBufImported())
+        blitImportToPresent();
+    glFlush(); // submit the copy before QEMU may write into the buffer again
+    doneCurrent();
+
+    m_listener->ackPendingFrame();
+    scheduleRepaint();
 }
 
 void QemuDisplayWidget::destroyEglImage()
@@ -446,6 +522,12 @@ void QemuDisplayWidget::paintGL()
         importDmaBuf();
     }
 
+    if (m_dmaBufPending && m_eglAvailable) {
+        // First frame after ScanoutDMABUF, before any Update arrived.
+        if (ensureDmaBufImported())
+            blitImportToPresent();
+    }
+
     if (!m_usingDmaBuf) {
         uploadSoftwareFrame();
     }
@@ -455,9 +537,8 @@ void QemuDisplayWidget::paintGL()
         renderCursorQuad();
     }
 
-    if (m_usingDmaBuf)
-        glFlush(); // submit our reads before QEMU may write into the buffer again
-
+    // Releases pending UpdateMap replies; a no-op on the DMA-BUF path,
+    // where presentDmaBufFrame() has already acked.
     m_listener->ackPendingFrame();
 }
 
@@ -689,6 +770,7 @@ void QemuDisplayWidget::onScanoutChanged(int w, int h)
         queryPointerMode();
     }
     m_usingDmaBuf = false;
+    m_texAllocSize = QSize(); // present texture was blit-allocated; force realloc
     scheduleRepaint();
     if (m_fbSize != QSize(w, h)) {
         m_fbSize = QSize(w, h);
@@ -713,6 +795,13 @@ void QemuDisplayWidget::onDmaBufScanout(int w, int h)
 
 void QemuDisplayWidget::onRegionUpdated(const QRect &)
 {
+    // DMA-BUF path: copy the frame now and release QEMU immediately,
+    // instead of making it wait for our paint/vsync cycle.
+    if ((m_usingDmaBuf || m_dmaBufPending) && m_eglAvailable && isValid()) {
+        presentDmaBufFrame();
+        return;
+    }
+
     if (!isVisible()) {
         // A hidden widget never paints; do not let QEMU wait forever.
         m_listener->ackPendingFrame();
