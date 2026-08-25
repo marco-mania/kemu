@@ -51,7 +51,6 @@ A traditional, direct-to-QEMU desktop frontend for Linux, built with Qt 6 Widget
 - **Optional:** `swtpm` (for TPM 2.0 emulation)
 - **Optional:** `virtiofsd` (for shared folders with Windows guests)
 - **Optional:** `dnsmasq` (for DHCP in virtual networks)
-- **Optional:** `dbus-daemon` (for the integrated D-Bus display viewer)
 
 ### Arch Linux
 
@@ -64,7 +63,7 @@ sudo pacman -S qt6-base qt6-declarative extra-cmake-modules \
 Optional:
 
 ```bash
-sudo pacman -S swtpm virtiofsd dnsmasq dbus cdrtools
+sudo pacman -S swtpm virtiofsd dnsmasq cdrtools
 ```
 
 ### Debian 13+ / (K)Ubuntu 26.04+ / KDE neon
@@ -81,7 +80,7 @@ sudo apt install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-multimedia-dev
 Optional:
 
 ```bash
-sudo apt install ovmf swtpm virtiofsd dnsmasq dbus-daemon genisoimage
+sudo apt install ovmf swtpm virtiofsd dnsmasq genisoimage
 ```
 
 ### Fedora 40+
@@ -98,7 +97,7 @@ sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
 Optional:
 
 ```bash
-sudo dnf install edk2-ovmf swtpm virtiofsd dnsmasq dbus-daemon genisoimage
+sudo dnf install edk2-ovmf swtpm virtiofsd dnsmasq genisoimage
 ```
 
 ## Building and Running
@@ -189,7 +188,7 @@ KEMU supports three display backends, which can be selected per VM in the VM set
 | --- | --- | --- | --- | --- | --- |
 | **GTK** | QEMU built-in | Yes (Virtio) | System (PipeWire) | No | None |
 | **SDL** | QEMU built-in | Yes (Virtio) | System (PipeWire) | No | None |
-| **D-Bus** | KEMU integrated | Yes (Virtio) | Routed via D-Bus | Yes (built-in) | `dbus-daemon` |
+| **D-Bus** | KEMU integrated | Yes (Virtio) | Routed via D-Bus | Yes (built-in) | None |
 
 **GTK** and **SDL** are the simplest options: QEMU opens its own window directly, with optional OpenGL passthrough for hardware-accelerated graphics. The **D-Bus** backend combines hardware-accelerated rendering inside a viewer window managed by KEMU itself, featuring built-in audio and clipboard sharing.
 
@@ -197,8 +196,8 @@ KEMU supports three display backends, which can be selected per VM in the VM set
 
 **Hint:** Although stable, the D-Bus display backend is under active development. Expect bugs, missing features, and potential breaking changes between versions. It is not fully recommended for production use.
 
-The D-Bus display backend embeds the VM's framebuffer directly into a KEMU-managed Qt window. It uses QEMU's `-display dbus` interface to receive video, send keyboard and mouse events, and exchange audio and clipboard data—all over a private D-Bus session per VM.
-Each VM utilizing the D-Bus backend gets its own isolated `dbus-daemon` instance with a private socket inside the VM directory. KEMU and QEMU connect as clients to this private bus and exchange D-Bus messages directly.
+The D-Bus display backend embeds the VM's framebuffer directly into a KEMU-managed Qt window. It uses QEMU's `-display dbus` interface to receive video, send keyboard and mouse events, and exchange audio and clipboard data.
+KEMU starts QEMU with `-display dbus,p2p=on` and hands it one end of a Unix socket pair via QMP's `add_client` command. This establishes a direct, peer-to-peer D-Bus connection between KEMU and QEMU.
 
 **Features:**
 
@@ -209,7 +208,7 @@ Each VM utilizing the D-Bus backend gets its own isolated `dbus-daemon` instance
 
 **Requirements:**
 
-* `dbus-daemon` must be installed on the host. KEMU detects this at startup and disables the D-Bus display option if it is missing.
+* QEMU must support peer-to-peer D-Bus display connections (`-display dbus,p2p=on`), available since QEMU 7.0 and covered by the general dependency requirement above.
 * The guest requires no special drivers for video or input; QEMU handles everything on its side. For clipboard features, simply install the standard SPICE vdagent in the guest.
 
 ## Networking
