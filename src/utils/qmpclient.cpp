@@ -114,6 +114,57 @@ QMPResult QMPClient::sendCommandSync(const QString &command, const QJsonObject &
     return finalResult;
 }
 
+void QMPClient::sendFileDescriptor(const QString &fdname, int fd, std::function<void(QMPResult)> callback)
+{
+    if (!m_socket.isOpen() || fd < 0) {
+        ::close(fd);
+        if (callback)
+            callback({false, u"Socket is not connected."_s, {}, QJsonArray()});
+        return;
+    }
+
+    // The fd must ride on the same message as the getfd command, so this
+    // bypasses QLocalSocket's buffer. Drain it first to keep byte order.
+    m_socket.flush();
+    while (m_socket.bytesToWrite() > 0)
+        m_socket.waitForBytesWritten(1000);
+
+    const QString cmdId = u"cmd_%1"_s.arg(++m_commandCounter);
+    QJsonObject cmdObj;
+    cmdObj.insert(u"execute"_s, u"getfd"_s);
+    cmdObj.insert(u"id"_s, cmdId);
+    cmdObj.insert(u"arguments"_s, QJsonObject{{u"fdname"_s, fdname}});
+    const QByteArray payload = QJsonDocument(cmdObj).toJson(QJsonDocument::Compact) + "\n";
+
+    struct iovec iov;
+    iov.iov_base = const_cast<char *>(payload.constData());
+    iov.iov_len = static_cast<size_t>(payload.size());
+
+    char cmsgBuf[CMSG_SPACE(sizeof(int))] = {};
+    struct msghdr msg = {};
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = cmsgBuf;
+    msg.msg_controllen = sizeof(cmsgBuf);
+
+    struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_RIGHTS;
+    cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+    memcpy(CMSG_DATA(cmsg), &fd, sizeof(int));
+
+    const ssize_t sent = ::sendmsg(static_cast<int>(m_socket.socketDescriptor()), &msg, MSG_NOSIGNAL);
+    ::close(fd); // kernel holds its own reference while the message is in flight
+
+    if (sent < 0) {
+        if (callback)
+            callback({false, u"sendmsg failed: %1"_s.arg(QString::fromLocal8Bit(strerror(errno))), {}, QJsonArray()});
+        return;
+    }
+    if (callback)
+        m_pendingRequests.insert(cmdId, callback);
+}
+
 // ---------------------------------------------------------------------------
 // Screenshot
 // ---------------------------------------------------------------------------

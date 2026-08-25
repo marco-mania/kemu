@@ -7,6 +7,7 @@
 #pragma once
 
 #include <functional>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include <QElapsedTimer>
@@ -99,6 +100,11 @@ public:
 
     void sendCommand(const QString &command, const QJsonObject &args = QJsonObject(), std::function<void(QMPResult)> callback = nullptr);
     QMPResult sendCommandSync(const QString &command, const QJsonObject &args = QJsonObject(), int timeoutMs = 2000);
+
+    // Send a file descriptor to QEMU via SCM_RIGHTS, named for later use
+    // (e.g. by add_client). Takes ownership of fd and closes it after
+    // sending. Callback fires with the getfd command result.
+    void sendFileDescriptor(const QString &fdname, int fd, std::function<void(QMPResult)> callback = nullptr);
 
     // Screenshot
     void startScreenshotTimer(const QString &dumpPath, int intervalMs = 20000);
