@@ -134,6 +134,8 @@ target_sources(
           dbusdisplay/clipboard.h
           dbusdisplay/glibeventbridge.h
           dbusdisplay/glibeventbridge.cpp
+          dbusdisplay/controlconnection.h
+          dbusdisplay/controlconnection.cpp
           dbusdisplay/uniquefd.h
           dbusdisplay/gvariantptr.h)
 
