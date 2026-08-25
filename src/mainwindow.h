@@ -11,11 +11,6 @@
 #include <QClipboard>
 #include <QCloseEvent>
 #include <QCursor>
-#include <QDBusConnection>
-#include <QDBusInterface>
-#include <QDBusPendingCall>
-#include <QDBusPendingCallWatcher>
-#include <QDBusPendingReply>
 #include <QDBusReply>
 #include <QDBusUnixFileDescriptor>
 #include <QDateTime>
@@ -180,8 +175,6 @@ private:
     void startSwtpmAsync(const QString &vmName, std::function<void(bool ok)> done);
     void startVirtiofsdAsync(const QString &vmName, std::function<void(bool ok)> done);
     void startPasstAsync(const QString &vmName, const QList<PortForwardRule> &portForwards, std::function<void(bool ok)> done);
-    void startDbusDaemonAsync(const QString &vmName, std::function<void(bool ok)> done);
-    QString dbusBusAddress(const QString &vmName) const;
 
     // Single source of truth for the user-mode networking backend.
     bool usePasstFor(const VMConfig &config) const;
@@ -193,6 +186,7 @@ private:
     // D-Bus integrated viewer lifecycle
     bool startDbusViewer(const QString &vmName);
     void stopDbusViewer(const QString &vmName);
+    void finishDbusViewer(const QString &vmName, QemuControlConnection *ctrl);
     void cleanupDbusSocket(const QString &vmName);
 
     struct DbusViewerState {
@@ -200,9 +194,11 @@ private:
         QemuDisplayListener *displayListener = nullptr;
         QemuAudioListener *audioOut = nullptr;
         QemuAudioInListener *audioIn = nullptr;
-        QString connectionName;
+        QPointer<QemuControlConnection> ctrl;
     };
     QMap<QString, DbusViewerState> m_dbusViewers;
+
+    QMap<QString, int> m_viewerConnectAttempts;
 
     bool requireTool(const ExternalTools::Tool tool);
 
@@ -267,6 +263,9 @@ private:
 
     void scheduleQemuStartupProbe(KProcess *process, const QString &vmName);
     static constexpr int kQemuStartupProbeMs = 750;
+    static constexpr int kViewerConnectMaxAttempts = 20;
+    static constexpr int kViewerConnectRetryMs = 250;
+    static constexpr int kViewerHandshakeTimeoutMs = 5000;
     QSet<QString> m_startupFailureShown;
 
     QWidget *dialogParentFor(const QString &vmName);

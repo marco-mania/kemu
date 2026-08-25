@@ -58,6 +58,13 @@ void GLibEventBridge::runPass()
         if (!m_active)
             return; // a dispatched handler stopped us (connection lost)
     }
+    // QPointer<GLibEventBridge> guard(this);
+    // for (;;) {
+    //     if (!g_main_context_iteration(m_ctx, FALSE))
+    //         break;
+    //     if (!guard || !m_active)
+    //         return; // a dispatched handler stopped or destroyed us
+    // }
 
     // Ask the context which fds to wait on next. The set includes its
     // internal wakeup fd, signalled when another thread queues a dispatch.

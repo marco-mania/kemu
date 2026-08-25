@@ -268,9 +268,8 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         if (headless) {
             args << u"-display"_s << u"none"_s;
         } else {
-            const QString sockArg = relativePaths ? KEMUConst::DBUSSocketFileName : vmDir.absoluteFilePath(KEMUConst::DBUSSocketFileName);
-
-            QString displayOpt = u"dbus,addr=unix:path=%1"_s.arg(sockArg);
+            // p2p: the connection is handed to QEMU via QMP add_client.
+            QString displayOpt = u"dbus,p2p=on"_s;
             if (effective3d)
                 displayOpt += u",gl=on"_s;
             if (config.audioDevice() != VMSpecs::AudioDevice::None) {
@@ -415,7 +414,13 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
                                              const VirtualNetwork &network,
                                              const bool relativePaths)
 {
-    const QStringList args = build(config, vmDir, monitorSocketPath, networkContext, relativePaths);
+    // A standalone script has no QMP peer to add_client the p2p display;
+    // fall back to a self-contained display backend.
+    VMConfig scriptConfig = config;
+    if (scriptConfig.displayType() == VMSpecs::DisplayType::Dbus)
+        scriptConfig.setDisplayType(VMSpecs::DisplayType::Gtk);
+
+    const QStringList args = build(scriptConfig, vmDir, monitorSocketPath, networkContext, relativePaths);
 
     QString script;
 
