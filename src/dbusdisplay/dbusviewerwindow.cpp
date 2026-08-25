@@ -11,7 +11,7 @@
 // =============================================================================
 
 DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
-                                   QDBusConnection &bus,
+                                   QemuControlConnection *ctrl,
                                    const QString &consolePath,
                                    QemuAudioListener *audioOut,
                                    QemuAudioInListener *audioIn,
@@ -21,7 +21,7 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
                                    const ViewerDevicePrefs &prefs,
                                    QWidget *parent)
     : QMainWindow(parent)
-    , m_bus(bus)
+    , m_ctrl(ctrl)
     , m_consolePath(consolePath)
     , m_listener(listener)
     , m_audioOut(audioOut)
@@ -33,7 +33,7 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
     , m_clipDirection(ClipboardDirection::Off)
 {
     // Display widget as the central widget
-    m_display = new QemuDisplayWidget(listener, bus, consolePath, this);
+    m_display = new QemuDisplayWidget(listener, ctrl, consolePath, this);
     m_scrollArea = new QScrollArea(this);
     m_scrollArea->setWidget(m_display);
     m_scrollArea->setWidgetResizable(false);
@@ -576,7 +576,7 @@ void DbusViewerWindow::setupClipboard(ClipboardDirection dir)
     m_prefs.clipboard = dir; // intended state (persisted)
     Q_EMIT devicePrefsChanged(m_prefs);
 
-    m_clipboard = new QemuClipboardManager(m_bus, dir, this);
+    m_clipboard = new QemuClipboardManager(m_ctrl, dir, this);
     if (!m_clipboard->setup()) {
         statusBar()->showMessage(i18n("Clipboard registration failed – QEMU needs a clipboard agent in the guest"), 5000);
         delete m_clipboard;

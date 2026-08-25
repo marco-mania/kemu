@@ -99,7 +99,7 @@ static const float quadVertices[] = {
 // Constructor / Destructor
 // =============================================================================
 
-QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QDBusConnection &conn, const QString &consolePath, QWidget *parent)
+QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QemuControlConnection *ctrl, const QString &consolePath, QWidget *parent)
     : QOpenGLWidget(parent)
     , m_listener(listener)
 {
@@ -115,17 +115,22 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QDBusConnect
     setMouseTracking(true);
     setCursor(Qt::BlankCursor);
 
-    m_keyboard = new QDBusInterface(KemuDbusDisplayConst::ServiceName, consolePath, KemuDbusDisplayConst::KeyboardIface, conn, this);
-    m_mouse = new QDBusInterface(KemuDbusDisplayConst::ServiceName, consolePath, KemuDbusDisplayConst::MouseIface, conn, this);
+    m_ctrl = ctrl;
+    m_consolePath = consolePath;
 
-    // React to later changes (guest loads/unloads a tablet driver, console
-    // switch). Non-blocking: AddMatch goes to the bus daemon.
-    conn.connect(KemuDbusDisplayConst::ServiceName,
-                 consolePath,
-                 u"org.freedesktop.DBus.Properties"_s,
-                 u"PropertiesChanged"_s,
-                 this,
-                 SLOT(onMousePropertiesChanged(QString, QVariantMap, QStringList)));
+    m_propsSubscription = m_ctrl->subscribeSignal(consolePath, u"org.freedesktop.DBus.Properties"_s, u"PropertiesChanged"_s, [this](GVariant *parameters) {
+        const gchar *iface = nullptr;
+        GVariant *changed = nullptr;
+        g_variant_get(parameters, "(&s@a{sv}as)", &iface, &changed, nullptr);
+        if (g_strcmp0(iface, "org.qemu.Display1.Mouse") == 0) {
+            GVariant *v = g_variant_lookup_value(changed, "IsAbsolute", G_VARIANT_TYPE_BOOLEAN);
+            if (v) {
+                setGuestAbsolute(g_variant_get_boolean(v));
+                g_variant_unref(v);
+            }
+        }
+        g_variant_unref(changed);
+    });
 
     // Read IsAbsolute asynchronously. A blocking call here would deadlock the
     // display-listener handshake (its GLib FD is watched only after construction).
@@ -144,6 +149,7 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QDBusConnect
 
 QemuDisplayWidget::~QemuDisplayWidget()
 {
+    m_ctrl->unsubscribeSignal(m_propsSubscription);
     stopAllGLibWatching();
     makeCurrent();
     destroyEglImage();
@@ -676,33 +682,20 @@ void QemuDisplayWidget::renderCursorQuad()
 
 void QemuDisplayWidget::queryPointerMode()
 {
-    // Use the Mouse interface's own service/path/connection; read IsAbsolute
-    // via a raw async Properties.Get (no QDBusInterface introspection, no block).
-    QDBusMessage get = QDBusMessage::createMethodCall(m_mouse->service(), m_mouse->path(), u"org.freedesktop.DBus.Properties"_s, u"Get"_s);
-    get << QString(KemuDbusDisplayConst::MouseIface) << u"IsAbsolute"_s;
-
-    auto *watcher = new QDBusPendingCallWatcher(m_mouse->connection().asyncCall(get), this);
-    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
-        w->deleteLater();
-        const QDBusPendingReply<QDBusVariant> reply = *w;
-        if (reply.isValid()) {
-            const bool abs = reply.value().variant().toBool();
-            qCDebug(KEMU_DBUSDISPLAY) << "IsAbsolute read:" << abs; // raw value, every probe
-            setGuestAbsolute(abs);
-        } else {
-            qCWarning(KEMU_DBUSDISPLAY) << "IsAbsolute read failed:" << reply.error().message();
-        }
-        // On error: stay absolute (no regression).
-    });
-}
-
-void QemuDisplayWidget::onMousePropertiesChanged(const QString &iface, const QVariantMap &changed, const QStringList &)
-{
-    if (iface != KemuDbusDisplayConst::MouseIface)
-        return;
-    const auto it = changed.find(u"IsAbsolute"_s);
-    if (it != changed.end())
-        setGuestAbsolute(it.value().toBool());
+    m_ctrl->callWithReply(m_consolePath,
+                          u"org.freedesktop.DBus.Properties"_s,
+                          u"Get"_s,
+                          g_variant_new("(ss)", "org.qemu.Display1.Mouse", "IsAbsolute"),
+                          [this](GVariant *reply, const GError *error) {
+                              if (error || !reply) {
+                                  qCWarning(KEMU_DBUSDISPLAY) << "IsAbsolute read failed:" << (error ? error->message : "no reply");
+                                  return; // on error: stay absolute (no regression)
+                              }
+                              GVariant *inner = nullptr;
+                              g_variant_get(reply, "(v)", &inner);
+                              setGuestAbsolute(g_variant_get_boolean(inner));
+                              g_variant_unref(inner);
+                          });
 }
 
 void QemuDisplayWidget::setGuestAbsolute(bool absolute)
@@ -749,7 +742,7 @@ void QemuDisplayWidget::endRelativeGrab()
 
     // Release modifiers so Ctrl/Alt cannot stick in the guest.
     for (uint32_t evdev : {29u /*LCtrl*/, 97u /*RCtrl*/, 56u /*LAlt*/, 100u /*RAlt*/})
-        m_keyboard->asyncCall(u"Release"_s, evdevToQnum(evdev));
+        m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, u"Release"_s, g_variant_new("(u)", evdevToQnum(evdev)));
 
     updateCursor();
     Q_EMIT relativeGrabChanged(false);
@@ -844,7 +837,7 @@ void QemuDisplayWidget::keyPressEvent(QKeyEvent *event)
     uint32_t evdev = event->nativeScanCode();
     if (evdev >= 8)
         evdev -= 8;
-    m_keyboard->asyncCall(u"Press"_s, evdevToQnum(evdev));
+    m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, u"Press"_s, g_variant_new("(u)", evdevToQnum(evdev)));
 }
 
 void QemuDisplayWidget::keyReleaseEvent(QKeyEvent *event)
@@ -864,7 +857,7 @@ void QemuDisplayWidget::keyReleaseEvent(QKeyEvent *event)
     uint32_t evdev = event->nativeScanCode();
     if (evdev >= 8)
         evdev -= 8;
-    m_keyboard->asyncCall(u"Release"_s, evdevToQnum(evdev));
+    m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, u"Press"_s, g_variant_new("(u)", evdevToQnum(evdev)));
 }
 
 // Qt intercepts Tab/Shift+Tab in QWidget::event() for focus navigation
@@ -934,7 +927,7 @@ void QemuDisplayWidget::flushMotion()
     bool sent = false;
     if (m_hasPendingRel) {
         if (m_pendingRelX != 0 || m_pendingRelY != 0) {
-            m_mouse->asyncCall(u"RelMotion"_s, m_pendingRelX, m_pendingRelY);
+            m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::MouseIface, u"RelMotion"_s, g_variant_new("(ii)", m_pendingRelX, m_pendingRelY));
             sent = true;
         }
         m_pendingRelX = 0;
@@ -942,7 +935,7 @@ void QemuDisplayWidget::flushMotion()
         m_hasPendingRel = false;
     }
     if (m_hasPendingAbs) {
-        m_mouse->asyncCall(u"SetAbsPosition"_s, m_pendingAbsX, m_pendingAbsY);
+        m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::MouseIface, u"SetAbsPosition"_s, g_variant_new("(uu)", m_pendingAbsX, m_pendingAbsY));
         m_hasPendingAbs = false;
         sent = true;
     }
@@ -954,8 +947,8 @@ void QemuDisplayWidget::flushMotion()
 
 void QemuDisplayWidget::sendWheelClick(uint button)
 {
-    m_mouse->asyncCall(u"Press"_s, button);
-    m_mouse->asyncCall(u"Release"_s, button);
+    m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::MouseIface, u"Press"_s, g_variant_new("(u)", button));
+    m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::MouseIface, u"Release"_s, g_variant_new("(u)", button));
 }
 
 void QemuDisplayWidget::mouseMoveEvent(QMouseEvent *event)
@@ -1016,7 +1009,7 @@ void QemuDisplayWidget::mousePressEvent(QMouseEvent *event)
 
     const int btn = qtButtonToQemu(event->button());
     if (btn >= 0)
-        m_mouse->asyncCall(u"Press"_s, static_cast<uint>(btn));
+        m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::MouseIface, u"Press"_s, g_variant_new("(u)", static_cast<uint>(btn)));
 }
 
 void QemuDisplayWidget::mouseReleaseEvent(QMouseEvent *event)
@@ -1032,7 +1025,7 @@ void QemuDisplayWidget::mouseReleaseEvent(QMouseEvent *event)
 
     const int btn = qtButtonToQemu(event->button());
     if (btn >= 0)
-        m_mouse->asyncCall(u"Release"_s, static_cast<uint>(btn));
+        m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::MouseIface, u"Release"_s, g_variant_new("(u)", static_cast<uint>(btn)));
 }
 
 void QemuDisplayWidget::wheelEvent(QWheelEvent *event)
@@ -1147,9 +1140,9 @@ void QemuDisplayWidget::sendCtrlAltDel()
     // Inject Ctrl+Alt+Del directly to the guest; the host normally
     // intercepts the real key combination.
     for (uint32_t evdev : {29u /*LCtrl*/, 56u /*LAlt*/, 111u /*Delete*/})
-        m_keyboard->asyncCall(u"Press"_s, evdevToQnum(evdev));
+        m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, u"Press"_s, g_variant_new("(u)", evdevToQnum(evdev)));
     for (uint32_t evdev : {111u /*Delete*/, 56u /*LAlt*/, 29u /*LCtrl*/})
-        m_keyboard->asyncCall(u"Release"_s, evdevToQnum(evdev));
+        m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, u"Release"_s, g_variant_new("(u)", evdevToQnum(evdev)));
 }
 
 void QemuDisplayWidget::setPointerCaptured(bool capture)

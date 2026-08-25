@@ -6,13 +6,6 @@
 
 #pragma once
 
-#include <QDBusConnection>
-#include <QDBusInterface>
-#include <QDBusMessage>
-#include <QDBusPendingCall>
-#include <QDBusPendingCallWatcher>
-#include <QDBusPendingReply>
-#include <QDBusVariant>
 #include <QKeyEvent>
 #include <QList>
 #include <QMouseEvent>
@@ -31,6 +24,7 @@
 
 #include <GL/gl.h>
 
+#include "dbusdisplay/controlconnection.h"
 #include "dbusdisplay/glibeventbridge.h"
 #include "dbusdisplay/listener.h"
 
@@ -41,7 +35,7 @@ class QemuDisplayWidget : public QOpenGLWidget, protected QOpenGLFunctions
     Q_OBJECT
 
 public:
-    QemuDisplayWidget(QemuDisplayListener *listener, QDBusConnection &conn, const QString &consolePath, QWidget *parent = nullptr);
+    QemuDisplayWidget(QemuDisplayListener *listener, QemuControlConnection *ctrl, const QString &consolePath, QWidget *parent = nullptr);
     ~QemuDisplayWidget() override;
 
     // Monitor GLib socket FD (instead of polling timer).
@@ -98,7 +92,6 @@ private Q_SLOTS:
     void updateCursor();
     void onCursorImageChanged();
     void onCursorMoved();
-    void onMousePropertiesChanged(const QString &iface, const QVariantMap &changed, const QStringList &invalidated);
 
 private:
     bool initEglFunctions();
@@ -144,8 +137,9 @@ private:
     QPoint m_wheelAccum;
 
     QemuDisplayListener *m_listener;
-    QDBusInterface *m_keyboard;
-    QDBusInterface *m_mouse;
+    QemuControlConnection *m_ctrl = nullptr;
+    QString m_consolePath;
+    guint m_propsSubscription = 0;
 
     QList<GLibEventBridge *> m_glibBridges;
 

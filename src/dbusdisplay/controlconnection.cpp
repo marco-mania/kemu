@@ -100,7 +100,7 @@ void QemuControlConnection::onClosed(GDBusConnection *, gboolean, GError *, gpoi
     Q_EMIT self->connectionLost();
 }
 
-void QemuControlConnection::callAsync(const QString &path, const QString &iface, const QString &method, GVariant *params)
+void QemuControlConnection::callAsync(const QString &path, const QLatin1StringView &iface, const QString &method, GVariant *params)
 {
     // bus_name is NULL on peer-to-peer connections.
     g_dbus_connection_call(m_conn,

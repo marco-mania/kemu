@@ -29,6 +29,7 @@
 #include "dbusdisplay/audioinlistener.h"
 #include "dbusdisplay/audiolistener.h"
 #include "dbusdisplay/clipboard.h"
+#include "dbusdisplay/controlconnection.h"
 #include "dbusdisplay/displaywidget.h"
 #include "dbusdisplay/listener.h"
 
@@ -55,7 +56,7 @@ class DbusViewerWindow : public QMainWindow
 
 public:
     DbusViewerWindow(QemuDisplayListener *listener,
-                     QDBusConnection &bus,
+                     QemuControlConnection *ctrl,
                      const QString &consolePath,
                      QemuAudioListener *audioOut,
                      QemuAudioInListener *audioIn,
@@ -139,7 +140,7 @@ private:
     void fitContentToWindow();
     void fitWindowToContent(bool force);
 
-    QDBusConnection m_bus;
+    QemuControlConnection *m_ctrl;
     QString m_consolePath;
 
     // Core components

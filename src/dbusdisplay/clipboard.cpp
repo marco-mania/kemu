@@ -36,181 +36,48 @@ ClipboardDirection clipboardDirFromString(const QString &s)
 }
 
 // =============================================================================
-// ClipboardDBusHandler – receives and dispatches all D-Bus calls from QEMU
+// D-Bus interface XML - same interface QEMU exposes; we export it back for
+// QEMU's callbacks after Register.
 // =============================================================================
+static const gchar clipboardXml[] =
+    R"XML(
+<node>
+  <interface name="org.qemu.Display1.Clipboard">
+    <method name="Register"/>
+    <method name="UnRegister"/>
+    <method name="Grab">
+      <arg type="u" name="selection" direction="in"/>
+      <arg type="u" name="serial" direction="in"/>
+      <arg type="as" name="mimes" direction="in"/>
+    </method>
+    <method name="Release">
+      <arg type="u" name="selection" direction="in"/>
+    </method>
+    <method name="Request">
+      <arg type="u" name="selection" direction="in"/>
+      <arg type="as" name="mimes" direction="in"/>
+      <arg type="s" name="mime" direction="out"/>
+      <arg type="ay" name="data" direction="out"/>
+    </method>
+  </interface>
+</node>
+)XML";
 
-ClipboardDBusHandler::ClipboardDBusHandler(QemuClipboardManager *manager, QObject *parent)
-    : QDBusVirtualObject(parent)
-    , m_manager(manager)
+static const GDBusInterfaceVTable clipboardVTable = {QemuClipboardManager::onMethodCall, nullptr, nullptr, {}};
+
+// Floating "as" variant from a QStringList (consumed by @as in g_variant_new).
+static GVariant *mimesToVariant(const QStringList &mimes)
 {
+    GVariantBuilder b;
+    g_variant_builder_init(&b, G_VARIANT_TYPE("as"));
+    for (const QString &m : mimes)
+        g_variant_builder_add(&b, "s", m.toUtf8().constData());
+    return g_variant_builder_end(&b);
 }
 
-QString ClipboardDBusHandler::introspect(const QString & /*path*/) const
-{
-    return u"  <interface name=\""_s + KemuDbusDisplayConst::ClipboardIface + u"\">\n"_s + u"    <method name=\"Register\"/>\n"_s
-        + u"    <method name=\"UnRegister\"/>\n"_s + u"    <method name=\"Grab\">\n"_s + u"      <arg type=\"u\" name=\"selection\" direction=\"in\"/>\n"_s
-        + u"      <arg type=\"u\" name=\"serial\" direction=\"in\"/>\n"_s + u"      <arg type=\"as\" name=\"mimes\" direction=\"in\"/>\n"_s
-        + u"    </method>\n"_s + u"    <method name=\"Release\">\n"_s + u"      <arg type=\"u\" name=\"selection\" direction=\"in\"/>\n"_s
-        + u"    </method>\n"_s + u"    <method name=\"Request\">\n"_s + u"      <arg type=\"u\" name=\"selection\" direction=\"in\"/>\n"_s
-        + u"      <arg type=\"as\" name=\"mimes\" direction=\"in\"/>\n"_s + u"      <arg type=\"s\" name=\"mime\" direction=\"out\"/>\n"_s
-        + u"      <arg type=\"ay\" name=\"data\" direction=\"out\"/>\n"_s + u"    </method>\n"_s + u"  </interface>\n"_s;
-}
-
-bool ClipboardDBusHandler::handleMessage(const QDBusMessage &message, const QDBusConnection &connection)
-{
-    const QString iface = message.interface();
-    const QString method = message.member();
-    QList<QVariant> args = message.arguments();
-
-    // ---- Logging ----
-    QStringList argStrings;
-    for (const QVariant &a : args) {
-        if (a.typeId() == QMetaType::UInt)
-            argStrings << u"uint:%1"_s.arg(a.toUInt());
-        else if (a.typeId() == QMetaType::QString)
-            argStrings << u"str:\"%1\""_s.arg(a.toString());
-        else if (a.typeId() == QMetaType::QStringList)
-            argStrings << u"as:[%1]"_s.arg(a.toStringList().join(u", "_s));
-        else if (a.typeId() == QMetaType::QByteArray)
-            argStrings << u"ay:%1B"_s.arg(a.toByteArray().size());
-        else
-            argStrings << u"%1"_s.arg(QLatin1StringView(a.typeName()));
-    }
-    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard D-Bus ←" << iface << "::" << method << "sig:" << message.signature() << "args:" << argStrings.join(u"; "_s);
-
-    // ================================================================
-    // Standard D-Bus Interfaces
-    // ================================================================
-
-    if (iface == u"org.freedesktop.DBus.Properties"_s) {
-        if (method == u"GetAll"_s) {
-            auto reply = message.createReply();
-            reply << QVariant::fromValue(QVariantMap{});
-            connection.send(reply);
-            return true;
-        }
-        if (method == u"Get"_s) {
-            auto error = message.createErrorReply(u"org.freedesktop.DBus.Error.UnknownProperty"_s, u"No properties"_s);
-            connection.send(error);
-            return true;
-        }
-        if (method == u"Set"_s) {
-            auto error = message.createErrorReply(u"org.freedesktop.DBus.Error.UnknownProperty"_s, u"No writable properties"_s);
-            connection.send(error);
-            return true;
-        }
-    }
-
-    if (iface == u"org.freedesktop.DBus.Peer"_s) {
-        if (method == u"Ping"_s) {
-            connection.send(message.createReply());
-            return true;
-        }
-        if (method == u"GetMachineId"_s) {
-            auto reply = message.createReply();
-            reply << u"0"_s;
-            connection.send(reply);
-            return true;
-        }
-    }
-
-    // ================================================================
-    // Display1.Clipboard
-    // ================================================================
-
-    if (method == u"Register"_s || method == u"UnRegister"_s) {
-        connection.send(message.createReply());
-        return true;
-    }
-
-    if (method == u"Grab"_s) {
-        uint selection = 0, serial = 0;
-        QStringList mimes;
-
-        if (args.size() >= 1)
-            selection = args[0].toUInt();
-        if (args.size() >= 2)
-            serial = args[1].toUInt();
-        if (args.size() >= 3) {
-            const QVariant v = args[2];
-            if (v.canConvert<QStringList>()) {
-                mimes = v.toStringList();
-            } else if (v.canConvert<QDBusArgument>()) {
-                QDBusArgument dbusArg = v.value<QDBusArgument>();
-                dbusArg.beginArray();
-                while (!dbusArg.atEnd()) {
-                    QString s;
-                    dbusArg >> s;
-                    mimes << s;
-                }
-                dbusArg.endArray();
-            }
-        }
-
-        m_manager->handleGrab(selection, serial, mimes);
-        connection.send(message.createReply());
-        return true;
-    }
-
-    if (method == u"Release"_s) {
-        const uint selection = args.size() >= 1 ? args[0].toUInt() : 0;
-        m_manager->handleRelease(selection);
-        connection.send(message.createReply());
-        return true;
-    }
-
-    if (method == u"Request"_s) {
-        uint selection = 0;
-        QStringList mimes;
-
-        if (args.size() >= 1)
-            selection = args[0].toUInt();
-        if (args.size() >= 2) {
-            const QVariant v = args[1];
-            if (v.canConvert<QStringList>()) {
-                mimes = v.toStringList();
-            } else if (v.canConvert<QString>()) {
-                mimes << v.toString();
-            } else if (v.canConvert<QDBusArgument>()) {
-                QDBusArgument dbusArg = v.value<QDBusArgument>();
-                dbusArg.beginArray();
-                while (!dbusArg.atEnd()) {
-                    QString s;
-                    dbusArg >> s;
-                    mimes << s;
-                }
-                dbusArg.endArray();
-            }
-        }
-
-        const auto result = m_manager->handleRequest(selection, mimes);
-        if (result.empty()) {
-            // Spec: return an error when the request cannot be satisfied.
-            auto err = message.createErrorReply(u"org.qemu.Display1.Clipboard.Empty"_s, u"Host clipboard cannot satisfy the request"_s);
-            connection.send(err);
-            return true;
-        }
-
-        QDBusMessage reply = message.createReply();
-        reply << result.mime << QVariant::fromValue(result.data);
-
-        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard D-Bus -> Request reply:" << result.data.size() << "bytes, mime:" << result.mime;
-
-        connection.send(reply);
-        return true;
-    }
-
-    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: unhandled:" << iface << "::" << method;
-    return false;
-}
-
-// =============================================================================
-// QemuClipboardManager
-// =============================================================================
-
-QemuClipboardManager::QemuClipboardManager(QDBusConnection &bus, ClipboardDirection direction, QObject *parent)
+QemuClipboardManager::QemuClipboardManager(QemuControlConnection *ctrl, ClipboardDirection direction, QObject *parent)
     : QObject(parent)
-    , m_bus(bus)
+    , m_ctrl(ctrl)
     , m_direction(direction)
 {
     m_hostClipboard = QApplication::clipboard();
@@ -222,28 +89,22 @@ QemuClipboardManager::QemuClipboardManager(QDBusConnection &bus, ClipboardDirect
 
 QemuClipboardManager::~QemuClipboardManager()
 {
-    if (m_qemuClipboard && m_qemuClipboard->isValid() && m_registered) {
-        m_qemuClipboard->asyncCall(u"UnRegister"_s);
+    if (m_ctrl) {
+        if (m_registered)
+            m_ctrl->callAsync(KemuDbusDisplayConst::ClipboardPath, KemuDbusDisplayConst::ClipboardIface, u"UnRegister"_s, nullptr);
+        m_ctrl->unregisterObject(m_registrationId);
     }
-    m_bus.unregisterObject(KemuDbusDisplayConst::ClipboardPath);
 }
 
 bool QemuClipboardManager::setup()
 {
-    m_handler = new ClipboardDBusHandler(this, this);
-
-    const bool ok = m_bus.registerVirtualObject(KemuDbusDisplayConst::ClipboardPath, m_handler, QDBusConnection::VirtualObjectRegisterOption::SubPath);
-    if (!ok) {
-        qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: registerVirtualObject failed:" << m_bus.lastError().message();
+    if (!m_ctrl)
         return false;
-    }
 
-    m_qemuClipboard =
-        new QDBusInterface(KemuDbusDisplayConst::ServiceName, KemuDbusDisplayConst::ClipboardPath, KemuDbusDisplayConst::ClipboardIface, m_bus, this);
-
-    if (!m_qemuClipboard->isValid()) {
-        qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: QEMU interface not available:" << m_qemuClipboard->lastError().message();
-        m_bus.unregisterObject(KemuDbusDisplayConst::ClipboardPath);
+    QString err;
+    m_registrationId = m_ctrl->registerObject(KemuDbusDisplayConst::ClipboardPath, clipboardXml, &clipboardVTable, this, &err);
+    if (!m_registrationId) {
+        qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: object registration failed:" << err;
         return false;
     }
 
@@ -252,29 +113,92 @@ bool QemuClipboardManager::setup()
     return true;
 }
 
-void QemuClipboardManager::doRegister()
+void QemuClipboardManager::onMethodCall(GDBusConnection *,
+                                        const gchar *,
+                                        const gchar *,
+                                        const gchar *,
+                                        const gchar *method_name,
+                                        GVariant *parameters,
+                                        GDBusMethodInvocation *invocation,
+                                        gpointer user_data)
 {
-    if (!m_qemuClipboard)
-        return;
+    auto *self = static_cast<QemuClipboardManager *>(user_data);
 
-    const QDBusPendingCall pending = m_qemuClipboard->asyncCall(u"Register"_s);
-    auto *watcher = new QDBusPendingCallWatcher(pending, this);
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard D-Bus <-" << method_name;
 
-    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
-        w->deleteLater();
-        const QDBusPendingReply<> reply = *w;
-        if (reply.isError()) {
-            qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Register() failed:" << reply.error().name() << reply.error().message();
-            m_registered = false;
+    if (g_strcmp0(method_name, "Grab") == 0) {
+        guint32 selection = 0, serial = 0;
+        gchar **mimesRaw = nullptr;
+        g_variant_get(parameters, "(uu^as)", &selection, &serial, &mimesRaw);
+
+        QStringList mimes;
+        for (gchar **p = mimesRaw; p && *p; ++p)
+            mimes << QString::fromUtf8(*p);
+        g_strfreev(mimesRaw);
+
+        self->handleGrab(selection, serial, mimes);
+        g_dbus_method_invocation_return_value(invocation, nullptr);
+
+    } else if (g_strcmp0(method_name, "Release") == 0) {
+        guint32 selection = 0;
+        g_variant_get(parameters, "(u)", &selection);
+        self->handleRelease(selection);
+        g_dbus_method_invocation_return_value(invocation, nullptr);
+
+    } else if (g_strcmp0(method_name, "Request") == 0) {
+        guint32 selection = 0;
+        gchar **mimesRaw = nullptr;
+        g_variant_get(parameters, "(u^as)", &selection, &mimesRaw);
+
+        QStringList mimes;
+        for (gchar **p = mimesRaw; p && *p; ++p)
+            mimes << QString::fromUtf8(*p);
+        g_strfreev(mimesRaw);
+
+        const auto result = self->handleRequest(selection, mimes);
+        if (result.empty()) {
+            // Spec: return an error when the request cannot be satisfied.
+            g_dbus_method_invocation_return_dbus_error(invocation, "org.qemu.Display1.Clipboard.Empty", "Host clipboard cannot satisfy the request");
             return;
         }
 
-        // Spec: serial counter is reset on (re-)registration.
-        m_currentSerial = 0;
-        m_weAreOwner = false;
-        m_registered = true;
-        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Register() acknowledged, serial reset to 0";
-    });
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard D-Bus -> Request reply:" << result.data.size() << "bytes, mime:" << result.mime;
+
+        // g_variant_new_fixed_array copies; result.data need not outlive this.
+        GVariant *data = g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, result.data.constData(), result.data.size(), sizeof(guint8));
+        g_dbus_method_invocation_return_value(invocation, g_variant_new("(s@ay)", result.mime.toUtf8().constData(), data));
+
+    } else if (g_strcmp0(method_name, "Register") == 0 || g_strcmp0(method_name, "UnRegister") == 0) {
+        // QEMU never calls these on us, but the interface declares them.
+        g_dbus_method_invocation_return_value(invocation, nullptr);
+
+    } else {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "Unknown method: %s", method_name);
+    }
+}
+
+void QemuClipboardManager::doRegister()
+{
+    if (!m_ctrl)
+        return;
+
+    m_ctrl->callWithReply(KemuDbusDisplayConst::ClipboardPath,
+                          KemuDbusDisplayConst::ClipboardIface,
+                          u"Register"_s,
+                          nullptr,
+                          [this](GVariant *, const GError *error) {
+                              if (error) {
+                                  qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Register() failed:" << error->message;
+                                  m_registered = false;
+                                  return;
+                              }
+
+                              // Spec: serial counter is reset on (re-)registration.
+                              m_currentSerial = 0;
+                              m_weAreOwner = false;
+                              m_registered = true;
+                              qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Register() acknowledged, serial reset to 0";
+                          });
 }
 
 // =============================================================================
@@ -323,51 +247,54 @@ void QemuClipboardManager::handleGrab(uint selection, uint serial, const QString
     }
     if (selectedMime.isEmpty() && !mimes.isEmpty())
         selectedMime = mimes.first();
-    if (selectedMime.isEmpty() || !m_qemuClipboard)
+    if (selectedMime.isEmpty() || !m_ctrl)
         return;
 
-    const QDBusPendingCall pending = m_qemuClipboard->asyncCall(u"Request"_s, static_cast<uint>(selection), QStringList{selectedMime});
+    m_ctrl->callWithReply(KemuDbusDisplayConst::ClipboardPath,
+                          KemuDbusDisplayConst::ClipboardIface,
+                          u"Request"_s,
+                          g_variant_new("(u@as)", static_cast<guint32>(selection), mimesToVariant({selectedMime})),
+                          [this](GVariant *reply, const GError *error) {
+                              if (error || !reply) {
+                                  qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Request reply error:" << (error ? error->message : "no reply");
+                                  return;
+                              }
 
-    auto *watcher = new QDBusPendingCallWatcher(pending, this);
-    connect(watcher, &QDBusPendingCallWatcher::finished, this, &QemuClipboardManager::onRequestFinished);
-}
+                              const gchar *mimeRaw = nullptr;
+                              GVariant *dataV = nullptr;
+                              g_variant_get(reply, "(&s@ay)", &mimeRaw, &dataV);
 
-void QemuClipboardManager::onRequestFinished(QDBusPendingCallWatcher *watcher)
-{
-    watcher->deleteLater();
+                              const QString mime = QString::fromUtf8(mimeRaw);
+                              gsize dataLen = 0;
+                              const guint8 *raw = static_cast<const guint8 *>(g_variant_get_fixed_array(dataV, &dataLen, sizeof(guint8)));
+                              const QByteArray data(reinterpret_cast<const char *>(raw), static_cast<qsizetype>(dataLen));
+                              g_variant_unref(dataV);
 
-    const QDBusPendingReply<QString, QByteArray> reply = *watcher;
-    if (reply.isError()) {
-        qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Request reply error:" << reply.error().name() << reply.error().message();
-        return;
-    }
+                              qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: guest data received:" << data.size() << "bytes, mime:" << mime;
 
-    const QString mime = reply.argumentAt<0>();
-    const QByteArray data = reply.argumentAt<1>();
+                              if (data.isEmpty())
+                                  return;
 
-    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: guest data received:" << data.size() << "bytes, mime:" << mime;
+                              auto *newMimeData = new QMimeData();
+                              if (mime.startsWith(u"text/"_s) || mime == u"UTF8_STRING"_s) {
+                                  const QString text = QString::fromUtf8(data);
+                                  newMimeData->setText(text);
+                                  m_lastTextFromGuest = text;
+                              } else {
+                                  newMimeData->setData(mime, data);
+                                  m_lastTextFromGuest.clear();
+                              }
 
-    if (data.isEmpty())
-        return;
+                              // Arm the echo guard, then place the data on the host clipboard.
+                              m_settingFromGuest = true;
+                              m_hostClipboard->setMimeData(newMimeData);
 
-    auto *newMimeData = new QMimeData();
-    if (mime.startsWith(u"text/"_s) || mime == u"UTF8_STRING"_s) {
-        newMimeData->setText(QString::fromUtf8(data));
-    } else {
-        newMimeData->setData(mime, data);
-    }
+                              QTimer::singleShot(150, this, [this] {
+                                  m_settingFromGuest = false;
+                              });
 
-    // Arm the echo guard, then place the data on the host clipboard.
-    // Wayland in particular fires dataChanged multiple times; the 150 ms
-    // window absorbs the storm without delaying real user actions much.
-    m_settingFromGuest = true;
-    m_hostClipboard->setMimeData(newMimeData);
-
-    QTimer::singleShot(150, this, [this] {
-        m_settingFromGuest = false;
-    });
-
-    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Guest -> Host transfer complete";
+                              qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Guest -> Host transfer complete";
+                          });
 }
 
 // =============================================================================
@@ -418,7 +345,7 @@ void QemuClipboardManager::onHostClipboardChanged()
     if (m_direction != ClipboardDirection::ToGuest && m_direction != ClipboardDirection::Both) {
         return;
     }
-    if (!m_qemuClipboard || !m_qemuClipboard->isValid() || !m_registered)
+    if (!m_ctrl || !m_registered)
         return;
 
     // Suppress self-induced dataChanged: when we mirror guest data onto the
@@ -445,17 +372,16 @@ void QemuClipboardManager::onHostClipboardChanged()
 
     qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Host->Guest Grab (serial:" << m_currentSerial << ")";
 
-    const QDBusPendingCall grabPending = m_qemuClipboard->asyncCall(u"Grab"_s, 0u, m_currentSerial, mimesToSend);
-
-    auto *grabWatcher = new QDBusPendingCallWatcher(grabPending, this);
-    connect(grabWatcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
-        w->deleteLater();
-        const QDBusPendingReply<> reply = *w;
-        if (reply.isError()) {
-            qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Grab to QEMU failed:" << reply.error().message();
-            m_weAreOwner = false;
-        }
-        // Do NOT proactively call Request() from here. QEMU pulls the data
-        // itself when the guest pastes, by invoking our handleRequest().
-    });
+    m_ctrl->callWithReply(KemuDbusDisplayConst::ClipboardPath,
+                          KemuDbusDisplayConst::ClipboardIface,
+                          u"Grab"_s,
+                          g_variant_new("(uu@as)", 0u, static_cast<guint32>(m_currentSerial), mimesToVariant(mimesToSend)),
+                          [this](GVariant *, const GError *error) {
+                              if (error) {
+                                  qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Grab to QEMU failed:" << error->message;
+                                  m_weAreOwner = false;
+                              }
+                              // Do NOT proactively call Request() from here. QEMU pulls the data
+                              // itself when the guest pastes, by invoking our Request handler.
+                          });
 }

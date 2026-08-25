@@ -6,20 +6,20 @@
 
 #pragma once
 
+#pragma push_macro("signals")
+#undef signals
+#include <gio/gio.h>
+#pragma pop_macro("signals")
+
 #include <QApplication>
 #include <QClipboard>
-#include <QDBusArgument>
-#include <QDBusConnection>
-#include <QDBusInterface>
-#include <QDBusMessage>
-#include <QDBusPendingCallWatcher>
-#include <QDBusPendingReply>
-#include <QDBusVirtualObject>
 #include <QMimeData>
 #include <QObject>
 #include <QPointer>
 #include <QStringList>
 #include <QTimer>
+
+#include "dbusdisplay/controlconnection.h"
 
 using namespace Qt::StringLiterals;
 
@@ -34,32 +34,12 @@ const QString clipboardDirToString(ClipboardDirection dir);
 ClipboardDirection clipboardDirFromString(const QString &s);
 
 // =============================================================================
-// ClipboardDBusHandler – receives ALL D-Bus calls from QEMU
-// =============================================================================
-// QDBusVirtualObject instead of QDBusAbstractAdaptor, because:
-//   - No signature matching necessary (QtDBus drops calls on mismatch)
-//   - Every call is logged -> easy debugging
-//   - Arguments are manually read from QDBusMessage -> robust
-// =============================================================================
-
-class QemuClipboardManager;
-
-class ClipboardDBusHandler : public QDBusVirtualObject
-{
-    Q_OBJECT
-
-public:
-    ClipboardDBusHandler(QemuClipboardManager *manager, QObject *parent = nullptr);
-
-    QString introspect(const QString &path) const override;
-    bool handleMessage(const QDBusMessage &message, const QDBusConnection &connection) override;
-
-private:
-    QemuClipboardManager *m_manager;
-};
-
-// =============================================================================
 // QemuClipboardManager
+// =============================================================================
+// Bridges the host clipboard and QEMU's org.qemu.Display1.Clipboard over the
+// p2p control connection. We export the same interface back to QEMU for its
+// callbacks (Grab/Release/Request), matching the listener classes' pattern.
+// All D-Bus dispatch arrives on the GUI thread via GLibEventBridge.
 // =============================================================================
 
 class QemuClipboardManager : public QObject
@@ -67,7 +47,7 @@ class QemuClipboardManager : public QObject
     Q_OBJECT
 
 public:
-    QemuClipboardManager(QDBusConnection &bus, ClipboardDirection direction, QObject *parent = nullptr);
+    QemuClipboardManager(QemuControlConnection *ctrl, ClipboardDirection direction, QObject *parent = nullptr);
     ~QemuClipboardManager() override;
 
     bool setup();
@@ -81,7 +61,16 @@ public:
         }
     };
 
-    // Called by ClipboardDBusHandler:
+    static void onMethodCall(GDBusConnection *connection,
+                             const gchar *sender,
+                             const gchar *object_path,
+                             const gchar *interface_name,
+                             const gchar *method_name,
+                             GVariant *parameters,
+                             GDBusMethodInvocation *invocation,
+                             gpointer user_data);
+
+    // Called by onMethodCall:
     void handleGrab(uint selection, uint serial, const QStringList &mimes);
     void handleRelease(uint selection);
     ClipboardData handleRequest(uint selection, const QStringList &mimes);
@@ -89,14 +78,13 @@ public:
 private Q_SLOTS:
     void onHostClipboardChanged();
     void doRegister();
-    void onRequestFinished(QDBusPendingCallWatcher *watcher);
 
 private:
-    QDBusConnection m_bus;
-    QDBusInterface *m_qemuClipboard = nullptr;
-    ClipboardDBusHandler *m_handler = nullptr;
+    QPointer<QemuControlConnection> m_ctrl;
     QClipboard *m_hostClipboard;
     ClipboardDirection m_direction;
+
+    guint m_registrationId = 0;
 
     uint m_currentSerial = 0;
     bool m_weAreOwner = false;
@@ -107,10 +95,8 @@ private:
     // (especially under Wayland, where setMimeData fires multiple signals).
     bool m_settingFromGuest = false;
 
-    // Feedback loop prevention:
-    // Under Wayland, setText() triggers MULTIPLE dataChanged signals.
-    // A boolean is not enough – we remember the text we
-    // last received from the guest and set on the host.
-    // Every dataChanged with identical text is ignored.
+    // Second guard (content-based): remember the last text received from the
+    // guest; identical dataChanged content is never bounced back. Catches
+    // late echoes from clipboard managers (Klipper) outside the time window.
     QString m_lastTextFromGuest;
 };

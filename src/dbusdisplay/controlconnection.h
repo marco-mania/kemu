@@ -48,7 +48,7 @@ public:
     }
 
     // Fire-and-forget method call (hot path: input events).
-    void callAsync(const QString &path, const QString &iface, const QString &method, GVariant *params);
+    void callAsync(const QString &path, const QLatin1StringView &iface, const QString &method, GVariant *params);
 
     // Method call with reply. reply is owned by the callback (unref'd after);
     // error is set instead on failure.
