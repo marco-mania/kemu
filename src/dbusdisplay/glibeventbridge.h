@@ -14,6 +14,7 @@
 #include <QList>
 #include <QObject>
 #include <QPair>
+#include <QPointer>
 #include <QSocketNotifier>
 #include <QTimer>
 #include <QVector>

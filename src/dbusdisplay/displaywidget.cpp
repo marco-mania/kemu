@@ -149,7 +149,8 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QemuControlC
 
 QemuDisplayWidget::~QemuDisplayWidget()
 {
-    m_ctrl->unsubscribeSignal(m_propsSubscription);
+    if (m_ctrl)
+        m_ctrl->unsubscribeSignal(m_propsSubscription);
     stopAllGLibWatching();
     makeCurrent();
     destroyEglImage();
@@ -857,7 +858,7 @@ void QemuDisplayWidget::keyReleaseEvent(QKeyEvent *event)
     uint32_t evdev = event->nativeScanCode();
     if (evdev >= 8)
         evdev -= 8;
-    m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, u"Press"_s, g_variant_new("(u)", evdevToQnum(evdev)));
+    m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, u"Release"_s, g_variant_new("(u)", evdevToQnum(evdev)));
 }
 
 // Qt intercepts Tab/Shift+Tab in QWidget::event() for focus navigation

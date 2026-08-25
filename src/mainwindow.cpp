@@ -886,169 +886,160 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
 {
     const QString consolePath = KemuDbusDisplayConst::ConsolePathPrefix + u"0"_s;
 
-    DbusViewerState state;
-    state.ctrl = ctrl;
-
     // --- Display listener ---
-    state.displayListener = new QemuDisplayListener(this);
-    const int listenerFd = state.displayListener->createSocketPair();
+    auto *displayListener = new QemuDisplayListener(this);
+    const int listenerFd = displayListener->createSocketPair();
     if (listenerFd < 0) {
-        delete state.displayListener;
+        delete displayListener;
         ctrl->deleteLater();
         return;
     }
 
-    // Synchronous is fine here: the connection is established and QEMU
-    // answers in milliseconds; callWithFdSync carries its own 5 s timeout.
-    QString err;
-    const bool regOk = ctrl->callWithFdSync(consolePath, KemuDbusDisplayConst::ConsoleIface, u"RegisterListener"_s, listenerFd, &err);
-    ::close(listenerFd); // QEMU received its own duplicate via the fd list
-    if (!regOk) {
-        qCWarning(KEMU) << "RegisterListener failed:" << err;
-        KMessageBox::error(this, i18n("Display registration for '%1' failed: %2", vmName, err), i18n("Viewer Error"));
-        delete state.displayListener;
-        ctrl->deleteLater();
-        return;
-    }
+    // Asynchronous on purpose: QEMU issues synchronous counter-queries
+    // (proxy GetAll) on the fresh listener connection that only our running
+    // event loop can answer. Never wait synchronously on this connection.
+    ctrl->callWithFd(consolePath,
+                     KemuDbusDisplayConst::ConsoleIface,
+                     u"RegisterListener"_s,
+                     listenerFd,
+                     [this, vmName, ctrl, displayListener, consolePath, listenerFd](bool ok, const QString &err) {
+                         ::close(listenerFd); // QEMU received its own duplicate via the fd list
 
-    if (!state.displayListener->connectListener()) {
-        delete state.displayListener;
-        ctrl->deleteLater();
-        return;
-    }
+                         // The reply went through the event loop; re-validate the world.
+                         const VmEntry *e = veModel->entryByName(vmName);
+                         const bool vmAlive = e && e->state == VmEntry::State::Running && !m_dbusViewers.contains(vmName);
 
-    const VmEntry *cfgEntry = veModel->entryByName(vmName);
-    const bool hasUsbController = cfgEntry && cfgEntry->config.usbController() != VMSpecs::UsbController::None;
-    const ViewerDevicePrefs viewerPrefs = loadViewerPrefs(vmName);
+                         if (!ok || !vmAlive || !displayListener->connectListener()) {
+                             if (!ok) {
+                                 qCWarning(KEMU) << "RegisterListener failed:" << err;
+                                 KMessageBox::error(this, i18n("Display registration for '%1' failed: %2", vmName, err), i18n("Viewer Error"));
+                             }
+                             delete displayListener;
+                             ctrl->deleteLater();
+                             return;
+                         }
 
-    // --- Audio listeners ---
-    state.audioOut = new QemuAudioListener(this);
-    state.audioIn = new QemuAudioInListener(this);
+                         DbusViewerState state;
+                         state.ctrl = ctrl;
+                         state.displayListener = displayListener;
 
-    // --- Viewer window ---
-    // Must exist before audio registration below: audioOutReady()/
-    // audioInReady() run on the window. (The old code ordered this via
-    // async completion; with synchronous registration the order is ours.)
-    state.window =
-        new DbusViewerWindow(state.displayListener, ctrl, consolePath, state.audioOut, state.audioIn, false, false, hasUsbController, viewerPrefs, nullptr);
-    state.window->setWindowTitle(vmName);
-    state.window->setAttribute(Qt::WA_DeleteOnClose, false);
-    state.window->displayWidget()->watchGLibFd(state.displayListener->socketFd(), state.displayListener->mainContext());
-    state.window->show();
+                         const VmEntry *cfgEntry = veModel->entryByName(vmName);
+                         const bool hasUsbController = cfgEntry && cfgEntry->config.usbController() != VMSpecs::UsbController::None;
+                         const ViewerDevicePrefs viewerPrefs = loadViewerPrefs(vmName);
 
-    // --- Audio registration (synchronous on the control connection) ---
-    // Failure is non-fatal: the VM may lack -audiodev dbus, in which case
-    // the Audio object does not exist and the call errors out.
-    const int outFd = state.audioOut->createSocketPair();
-    if (outFd >= 0) {
-        const bool ok = ctrl->callWithFdSync(KemuDbusDisplayConst::AudioPath, KemuDbusDisplayConst::AudioIface, u"RegisterOutListener"_s, outFd, &err);
-        ::close(outFd);
-        if (ok && state.audioOut->connectListener())
-            state.window->audioOutReady();
-        else
-            qCDebug(KEMU) << "RegisterOutListener not available:" << err;
-    }
+                         // --- Audio listeners (created up front, registered async below) ---
+                         state.audioOut = new QemuAudioListener(this);
+                         state.audioIn = new QemuAudioInListener(this);
 
-    const int inFd = state.audioIn->createSocketPair();
-    if (inFd >= 0) {
-        const bool ok = ctrl->callWithFdSync(KemuDbusDisplayConst::AudioPath, KemuDbusDisplayConst::AudioIface, u"RegisterInListener"_s, inFd, &err);
-        ::close(inFd);
-        if (ok && state.audioIn->connectListener())
-            state.window->audioInReady();
-        else
-            qCDebug(KEMU) << "RegisterInListener not available:" << err;
-    }
+                         // --- Viewer window ---
+                         state.window = new DbusViewerWindow(state.displayListener,
+                                                             ctrl,
+                                                             consolePath,
+                                                             state.audioOut,
+                                                             state.audioIn,
+                                                             false,
+                                                             false,
+                                                             hasUsbController,
+                                                             viewerPrefs,
+                                                             nullptr);
+                         state.window->setWindowTitle(vmName);
+                         state.window->setAttribute(Qt::WA_DeleteOnClose, false);
+                         state.window->displayWidget()->watchGLibFd(state.displayListener->socketFd(), state.displayListener->mainContext());
+                         state.window->show();
 
-    // --- Teardown triggers ---
-    // Auto-cleanup when QEMU's display connection drops (unchanged).
-    connect(state.displayListener, &QemuDisplayListener::connectionLost, this, [this, vmName]() {
-        stopDbusViewer(vmName);
-    });
+                         // --- Teardown triggers ---
+                         // Auto-cleanup when QEMU's display connection drops.
+                         connect(state.displayListener, &QemuDisplayListener::connectionLost, this, [this, vmName]() {
+                             stopDbusViewer(vmName);
+                         });
 
-    // Second trigger: the control connection dropped. Deferred, because the
-    // signal is emitted from within the connection's own dispatch.
-    connect(ctrl, &QemuControlConnection::connectionLost, this, [this, vmName]() {
-        QTimer::singleShot(0, this, [this, vmName] {
-            stopDbusViewer(vmName);
-        });
-    });
+                         // Second trigger: the control connection dropped. Deferred,
+                         // because the signal is emitted from within the connection's
+                         // own dispatch.
+                         connect(ctrl, &QemuControlConnection::connectionLost, this, [this, vmName]() {
+                             QTimer::singleShot(0, this, [this, vmName] {
+                                 stopDbusViewer(vmName);
+                             });
+                         });
 
-    // --- User-facing wiring: UNCHANGED from the old startDbusViewer ---
-    // (viewerClosed with Qt::QueuedConnection incl. its comment block,
-    //  shutdown/reset/powerOff/snapshots/devicePrefs, ISO and floppy
-    //  requests, USB menu aboutToShow.)
-    // When the user closes the viewer window, keep QEMU running, mark the VM
-    // as headless and tear down the per-viewer D-Bus listeners so the user can
-    // reconnect later.
-    //
-    // QueuedConnection: the slot must run AFTER closeEvent() has fully
-    // returned, otherwise stopDbusViewer() would delete the window from
-    // within its own event handler.
-    connect(
-        state.window,
-        &DbusViewerWindow::viewerClosed,
-        this,
-        [this, vmName]() {
-            if (!m_dbusViewers.contains(vmName))
-                return; // already torn down (shutdown path / connectionLost)
+                         // When the user closes the viewer window, keep QEMU running,
+                         // mark the VM as headless and tear down the per-viewer D-Bus
+                         // listeners so the user can reconnect later.
+                         //
+                         // QueuedConnection: the slot must run AFTER closeEvent() has
+                         // fully returned, otherwise stopDbusViewer() would delete the
+                         // window from within its own event handler.
+                         connect(
+                             state.window,
+                             &DbusViewerWindow::viewerClosed,
+                             this,
+                             [this, vmName]() {
+                                 if (!m_dbusViewers.contains(vmName))
+                                     return; // already torn down (shutdown path / connectionLost)
 
-            const VmEntry *entry = veModel->entryByName(vmName);
-            if (entry && entry->state == VmEntry::State::Running)
-                veModel->setHeadless(vmName, true);
+                                 const VmEntry *entry = veModel->entryByName(vmName);
+                                 if (entry && entry->state == VmEntry::State::Running)
+                                     veModel->setHeadless(vmName, true);
 
-            stopDbusViewer(vmName);
+                                 stopDbusViewer(vmName);
 
-            if (selectedVmName() == vmName) {
-                updateDetails();
-                updateActionStates();
-            }
-        },
-        Qt::QueuedConnection);
+                                 if (selectedVmName() == vmName) {
+                                     updateDetails();
+                                     updateActionStates();
+                                 }
+                             },
+                             Qt::QueuedConnection);
 
-    connect(state.window, &DbusViewerWindow::shutdownRequested, this, [this, vmName] {
-        shutdownVMByName(vmName);
-    });
+                         connect(state.window, &DbusViewerWindow::shutdownRequested, this, [this, vmName] {
+                             shutdownVMByName(vmName);
+                         });
 
-    connect(state.window, &DbusViewerWindow::resetRequested, this, [this, vmName] {
-        resetVMByName(vmName);
-    });
+                         connect(state.window, &DbusViewerWindow::resetRequested, this, [this, vmName] {
+                             resetVMByName(vmName);
+                         });
 
-    connect(state.window, &DbusViewerWindow::powerOffRequested, this, [this, vmName] {
-        powerOffVMByName(vmName);
-    });
+                         connect(state.window, &DbusViewerWindow::powerOffRequested, this, [this, vmName] {
+                             powerOffVMByName(vmName);
+                         });
 
-    connect(state.window, &DbusViewerWindow::snapshotManagerRequested, this, [this, vmName] {
-        manageSnapshotsForVm(vmName);
-    });
+                         connect(state.window, &DbusViewerWindow::snapshotManagerRequested, this, [this, vmName] {
+                             manageSnapshotsForVm(vmName);
+                         });
 
-    connect(state.window, &DbusViewerWindow::devicePrefsChanged, this, [this, vmName](const ViewerDevicePrefs &p) {
-        saveViewerPrefs(vmName, p);
-    });
+                         connect(state.window, &DbusViewerWindow::devicePrefsChanged, this, [this, vmName](const ViewerDevicePrefs &p) {
+                             saveViewerPrefs(vmName, p);
+                         });
 
-    connect(state.window, &DbusViewerWindow::changeIsoRequested, this, [this, vmName] {
-        changeISOForVm(vmName);
-    });
-    connect(state.window, &DbusViewerWindow::ejectIsoRequested, this, [this, vmName] {
-        ejectISOForVm(vmName);
-    });
-    connect(state.window, &DbusViewerWindow::changeFloppyRequested, this, [this, vmName] {
-        changeFloppyForVm(vmName);
-    });
-    connect(state.window, &DbusViewerWindow::ejectFloppyRequested, this, [this, vmName] {
-        ejectFloppyForVm(vmName);
-    });
+                         connect(state.window, &DbusViewerWindow::changeIsoRequested, this, [this, vmName] {
+                             changeISOForVm(vmName);
+                         });
+                         connect(state.window, &DbusViewerWindow::ejectIsoRequested, this, [this, vmName] {
+                             ejectISOForVm(vmName);
+                         });
+                         connect(state.window, &DbusViewerWindow::changeFloppyRequested, this, [this, vmName] {
+                             changeFloppyForVm(vmName);
+                         });
+                         connect(state.window, &DbusViewerWindow::ejectFloppyRequested, this, [this, vmName] {
+                             ejectFloppyForVm(vmName);
+                         });
 
-    // USB submenu population: reuse the existing enumerator path.
-    if (QMenu *usbMenu = state.window->usbMenu()) {
-        connect(usbMenu, &QMenu::aboutToShow, this, [this, vmName, usbMenu] {
-            populateUsbMenuFor(vmName, usbMenu);
-        });
-    }
+                         // USB submenu population: reuse the existing enumerator path.
+                         if (QMenu *usbMenu = state.window->usbMenu()) {
+                             connect(usbMenu, &QMenu::aboutToShow, this, [this, vmName, usbMenu] {
+                                 populateUsbMenuFor(vmName, usbMenu);
+                             });
+                         }
 
-    m_dbusViewers.insert(vmName, state);
+                         m_dbusViewers.insert(vmName, state);
 
-    // Reflect current media state in the freshly created viewer (unchanged).
-    pushMediaStateToViewer(vmName);
+                         // Reflect current media state in the freshly created viewer.
+                         pushMediaStateToViewer(vmName);
+
+                         // Audio: asynchronous registration chain (see
+                         // registerAudioListeners); runs against the map entry, so it
+                         // must come after the insert above.
+                         registerAudioListeners(vmName);
+                     });
 }
 
 void MainWindow::stopDbusViewer(const QString &vmName)
@@ -1073,6 +1064,54 @@ void MainWindow::stopDbusViewer(const QString &vmName)
 
     if (state.ctrl)
         state.ctrl->deleteLater();
+}
+
+void MainWindow::registerAudioListeners(const QString &vmName)
+{
+    auto it = m_dbusViewers.find(vmName);
+    if (it == m_dbusViewers.end() || !it->ctrl)
+        return;
+    QemuControlConnection *ctrl = it->ctrl.data();
+
+    const int outFd = it->audioOut->createSocketPair();
+    if (outFd >= 0) {
+        ctrl->callWithFd(KemuDbusDisplayConst::AudioPath,
+                         KemuDbusDisplayConst::AudioIface,
+                         u"RegisterOutListener"_s,
+                         outFd,
+                         [this, vmName, outFd](bool ok, const QString &err) {
+                             ::close(outFd);
+                             auto it = m_dbusViewers.find(vmName);
+                             if (it == m_dbusViewers.end())
+                                 return; // viewer torn down meanwhile
+                             if (!ok) {
+                                 qCDebug(KEMU) << "RegisterOutListener not available:" << err;
+                                 return;
+                             }
+                             if (it->audioOut->connectListener() && it->window)
+                                 it->window->audioOutReady();
+                         });
+    }
+
+    const int inFd = it->audioIn->createSocketPair();
+    if (inFd >= 0) {
+        ctrl->callWithFd(KemuDbusDisplayConst::AudioPath,
+                         KemuDbusDisplayConst::AudioIface,
+                         u"RegisterInListener"_s,
+                         inFd,
+                         [this, vmName, inFd](bool ok, const QString &err) {
+                             ::close(inFd);
+                             auto it = m_dbusViewers.find(vmName);
+                             if (it == m_dbusViewers.end())
+                                 return;
+                             if (!ok) {
+                                 qCDebug(KEMU) << "RegisterInListener not available:" << err;
+                                 return;
+                             }
+                             if (it->audioIn->connectListener() && it->window)
+                                 it->window->audioInReady();
+                         });
+    }
 }
 
 void MainWindow::cleanupDbusSocket(const QString &vmName)

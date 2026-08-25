@@ -137,7 +137,7 @@ private:
     QPoint m_wheelAccum;
 
     QemuDisplayListener *m_listener;
-    QemuControlConnection *m_ctrl = nullptr;
+    QPointer<QemuControlConnection> m_ctrl = nullptr;
     QString m_consolePath;
     guint m_propsSubscription = 0;
 

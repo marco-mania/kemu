@@ -11,8 +11,11 @@
 #include <gio/gio.h>
 #pragma pop_macro("signals")
 
+#include <QCoreApplication>
 #include <QObject>
+#include <QPointer>
 #include <QString>
+
 #include <functional>
 
 #include "dbusdisplay/glibeventbridge.h"
@@ -55,9 +58,15 @@ public:
     using ReplyFn = std::function<void(GVariant *reply, const GError *error)>;
     void callWithReply(const QString &path, const QString &iface, const QString &method, GVariant *params, ReplyFn fn);
 
-    // Synchronous call passing one fd (index 0 in the fd list). Does not
-    // close fd. Returns false and fills errorMsg on failure.
-    bool callWithFdSync(const QString &path, const QString &iface, const QString &method, int fd, QString *errorMsg = nullptr);
+    // Method call passing one fd (index 0 in the fd list). Does not close
+    // fd. The callback is invoked from the Qt event loop (decoupled from
+    // the bridge dispatch), with the error message empty on success.
+    //
+    // NEVER wait synchronously on this connection: QEMU issues synchronous
+    // counter-queries (proxy GetAll, audio Read) that only our running
+    // event loop can answer - blocking it deadlocks QEMU's main loop.
+    using FdCallFn = std::function<void(bool ok, const QString &error)>;
+    void callWithFd(const QString &path, const QString &iface, const QString &method, int fd, FdCallFn fn);
 
     // Signal subscription; handler fires on the GUI thread.
     using SignalFn = std::function<void(GVariant *parameters)>;

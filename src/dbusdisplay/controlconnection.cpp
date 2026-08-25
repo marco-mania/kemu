@@ -45,10 +45,12 @@ void QemuControlConnection::createAsync(int fd, QObject *parent, int timeoutMs, 
     };
     auto *ctx = new Ctx{self, std::move(done), g_cancellable_new()};
 
-    // Bound the handshake: an old QEMU without p2p support would otherwise
-    // leave us waiting forever for the authentication server.
+    // Bound the handshake. The timer holds its own reference: on success the
+    // completion callback drops its ref long before the timer fires.
+    g_object_ref(ctx->cancellable);
     QTimer::singleShot(timeoutMs, self, [cancellable = ctx->cancellable]() {
         g_cancellable_cancel(cancellable);
+        g_object_unref(cancellable);
     });
 
     g_main_context_push_thread_default(self->m_context);
@@ -62,19 +64,30 @@ void QemuControlConnection::createAsync(int fd, QObject *parent, int timeoutMs, 
             auto *ctx = static_cast<Ctx *>(userData);
             GError *err = nullptr;
             GDBusConnection *conn = g_dbus_connection_new_finish(res, &err);
+            QString msg;
             if (!conn) {
-                const QString msg = QString::fromUtf8(err->message);
+                msg = QString::fromUtf8(err->message);
                 g_error_free(err);
-                ctx->done(nullptr, msg);
-                ctx->self->deleteLater();
             } else {
                 ctx->self->m_conn = conn;
                 g_dbus_connection_set_exit_on_close(conn, FALSE);
                 g_signal_connect(conn, "closed", G_CALLBACK(QemuControlConnection::onClosed), ctx->self);
-                ctx->done(ctx->self, QString());
             }
             g_object_unref(ctx->cancellable);
-            delete ctx;
+
+            // Leave the bridge's dispatch stack before running the
+            // continuation: it may build windows, run sync calls, or show
+            // dialogs with nested event loops.
+            const bool ok = (conn != nullptr);
+            QTimer::singleShot(0, ctx->self, [ctx, ok, msg]() {
+                if (ok) {
+                    ctx->done(ctx->self, QString());
+                } else {
+                    ctx->done(nullptr, msg);
+                    ctx->self->deleteLater();
+                }
+                delete ctx;
+            });
         },
         ctx);
     g_main_context_pop_thread_default(self->m_context);
@@ -152,41 +165,59 @@ void QemuControlConnection::callWithReply(const QString &path, const QString &if
     g_main_context_pop_thread_default(m_context);
 }
 
-bool QemuControlConnection::callWithFdSync(const QString &path, const QString &iface, const QString &method, int fd, QString *errorMsg)
+void QemuControlConnection::callWithFd(const QString &path, const QString &iface, const QString &method, int fd, FdCallFn fn)
 {
     GError *error = nullptr;
     GUnixFDList *fdList = g_unix_fd_list_new();
     if (g_unix_fd_list_append(fdList, fd, &error) < 0) {
-        if (errorMsg)
-            *errorMsg = QString::fromUtf8(error->message);
+        const QString msg = QString::fromUtf8(error->message);
         g_error_free(error);
         g_object_unref(fdList);
-        return false;
+        fn(false, msg);
+        return;
     }
 
-    GVariant *reply = g_dbus_connection_call_with_unix_fd_list_sync(m_conn,
-                                                                    nullptr,
-                                                                    path.toUtf8().constData(),
-                                                                    iface.toUtf8().constData(),
-                                                                    method.toUtf8().constData(),
-                                                                    g_variant_new("(h)", 0),
-                                                                    nullptr,
-                                                                    G_DBUS_CALL_FLAGS_NONE,
-                                                                    5000,
-                                                                    fdList,
-                                                                    nullptr,
-                                                                    nullptr,
-                                                                    &error);
+    struct Ctx {
+        FdCallFn fn;
+        QPointer<QemuControlConnection> self;
+    };
+    auto *ctx = new Ctx{std::move(fn), this};
+
+    g_main_context_push_thread_default(m_context);
+    g_dbus_connection_call_with_unix_fd_list(
+        m_conn,
+        nullptr,
+        path.toUtf8().constData(),
+        iface.toUtf8().constData(),
+        method.toUtf8().constData(),
+        g_variant_new("(h)", 0),
+        nullptr,
+        G_DBUS_CALL_FLAGS_NONE,
+        5000,
+        fdList,
+        nullptr,
+        [](GObject *source, GAsyncResult *res, gpointer userData) {
+            auto *ctx = static_cast<Ctx *>(userData);
+            GError *err = nullptr;
+            GVariant *reply = g_dbus_connection_call_with_unix_fd_list_finish(G_DBUS_CONNECTION(source), nullptr, res, &err);
+            const bool ok = (reply != nullptr);
+            QString msg;
+            if (reply)
+                g_variant_unref(reply);
+            if (err) {
+                msg = QString::fromUtf8(err->message);
+                g_error_free(err);
+            }
+            // Leave the bridge's dispatch stack before running continuations.
+            QObject *guard = ctx->self ? static_cast<QObject *>(ctx->self.data()) : QCoreApplication::instance();
+            QTimer::singleShot(0, guard, [ctx, ok, msg]() {
+                ctx->fn(ok, msg);
+                delete ctx;
+            });
+        },
+        ctx);
+    g_main_context_pop_thread_default(m_context);
     g_object_unref(fdList);
-
-    if (!reply) {
-        if (errorMsg)
-            *errorMsg = QString::fromUtf8(error->message);
-        g_error_free(error);
-        return false;
-    }
-    g_variant_unref(reply);
-    return true;
 }
 
 guint QemuControlConnection::subscribeSignal(const QString &path, const QString &iface, const QString &member, SignalFn fn)

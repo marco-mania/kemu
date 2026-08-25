@@ -187,6 +187,7 @@ private:
     bool startDbusViewer(const QString &vmName);
     void stopDbusViewer(const QString &vmName);
     void finishDbusViewer(const QString &vmName, QemuControlConnection *ctrl);
+    void registerAudioListeners(const QString &vmName);
     void cleanupDbusSocket(const QString &vmName);
 
     struct DbusViewerState {
