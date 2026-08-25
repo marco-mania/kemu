@@ -11,8 +11,6 @@
 #include <QClipboard>
 #include <QCloseEvent>
 #include <QCursor>
-#include <QDBusReply>
-#include <QDBusUnixFileDescriptor>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>

@@ -157,7 +157,6 @@ target_link_libraries(
   Qt6::Network
   Qt6::Svg
   Qt6::Multimedia
-  Qt6::DBus
   Qt6::OpenGL
   Qt6::OpenGLWidgets
   KF6::CoreAddons

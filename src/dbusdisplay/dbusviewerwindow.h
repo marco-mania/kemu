@@ -10,7 +10,6 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
-#include <QDBusConnection>
 #include <QLabel>
 #include <QMainWindow>
 #include <QMenuBar>

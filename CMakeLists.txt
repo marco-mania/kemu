@@ -42,7 +42,6 @@ find_package(
              Widgets
              Network
              Svg
-             DBus
              Multimedia
              OpenGL
              OpenGLWidgets)
