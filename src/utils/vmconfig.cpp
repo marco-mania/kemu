@@ -789,7 +789,7 @@ QString VMConfig::toUIString(VMSpecs::DisplayType type)
     case VMSpecs::DisplayType::Sdl:
         return i18n("SDL");
     case VMSpecs::DisplayType::Dbus:
-        return i18n("D-Bus (Integrated Viewer)");
+        return i18n("Integrated Viewer");
     }
     return {};
 }
