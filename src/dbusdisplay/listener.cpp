@@ -457,8 +457,12 @@ void QemuDisplayListener::handleScanout(GVariant *parameters, GDBusMethodInvocat
     const int bpp = m_image.depth() / 8;
     const size_t rowBytes = static_cast<size_t>(width) * bpp;
 
-    for (uint32_t y = 0; y < height; ++y) {
-        memcpy(m_image.scanLine(static_cast<int>(y)), data + y * srcStride, rowBytes);
+    if (srcStride == static_cast<size_t>(m_image.bytesPerLine())) {
+        memcpy(m_image.bits(), data, srcStride * height);
+    } else {
+        for (uint32_t y = 0; y < height; ++y) {
+            memcpy(m_image.scanLine(static_cast<int>(y)), data + y * srcStride, rowBytes);
+        }
     }
 
     // Full-frame change.
