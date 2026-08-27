@@ -8,7 +8,7 @@
 #include "kemu_dbusdisplay_debug.h"
 
 #include <sys/socket.h>
-// #include <unistd.h>
+#include <unistd.h>
 
 // =============================================================================
 // D-Bus Interface XML for AudioOutListener
