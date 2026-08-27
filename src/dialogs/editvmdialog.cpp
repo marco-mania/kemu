@@ -1484,7 +1484,7 @@ void EditVmDialog::applyModeConstraints()
     // The disk is resized through the dedicated actions in the main window,
     // which know how to talk to qemu-img.
     diskSpin->setEnabled(false);
-    // ... unverändert weiter ...
+
     if (diskLabel)
         diskLabel->setEnabled(false);
     diskSpin->setToolTip(i18n("Use the disk actions in the main window to resize this disk."));
