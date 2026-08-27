@@ -245,8 +245,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     auto *ramContainer = new QVBoxLayout();
     auto *ramSliderLayout = new QHBoxLayout();
 
-    const QList<int> ramSteps = {16,   32,   64,   128,   256,   512,   768,   1024,  1536,  2048,  3072,
-                                 4096, 6144, 8192, 12288, 16384, 24576, 32768, 49152, 65536, 98304, 131072};
+    const QList<int> ramSteps = RamSpinBox::steps();
 
     ramSlider = new QSlider(Qt::Horizontal);
     ramSlider->setRange(0, ramSteps.size() - 1);
@@ -839,12 +838,6 @@ void EditVmDialog::setConfig(const VMConfig &config)
 void EditVmDialog::onMachineTypeChanged(int /*index*/)
 {
     updateDeviceAvailability();
-}
-
-void EditVmDialog::onRamSliderChanged(int gb)
-{
-    const QSignalBlocker blockRAMSpin(ramSpin);
-    ramSpin->setValue(gb * 1024);
 }
 
 void EditVmDialog::onRamSpinChanged(int mb)

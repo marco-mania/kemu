@@ -120,6 +120,7 @@ target_sources(
           widgets/vmiconselector.h
           widgets/vmiconselector.cpp
           widgets/ramspinbox.h
+          widgets/steppedspinbox.h
           dbusdisplay/dbusviewerwindow.cpp
           dbusdisplay/dbusviewerwindow.h
           dbusdisplay/displaywidget.cpp

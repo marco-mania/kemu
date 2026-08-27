@@ -47,6 +47,17 @@ int nearestStepIndex(const QList<int> &steps, int value, int minIndex = 0)
     return best;
 }
 
+// First index whose step is >= minValue, so the slider cannot offer a value
+// the spin box would clamp away.
+int firstStepIndexAtLeast(const QList<int> &steps, int minValue)
+{
+    for (int i = 0; i < steps.size(); ++i) {
+        if (steps.at(i) >= minValue)
+            return i;
+    }
+    return steps.size() - 1;
+}
+
 QLabel *sectionLabel(const QString &text)
 {
     auto *label = new QLabel(text);
@@ -63,8 +74,8 @@ NewVmDialog::NewVmDialog(QWidget *parent)
 {
     setWindowTitle(i18n("New Virtual Machine"));
 
-    m_ramSteps = {256, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384, 24576, 32768, 49152, 65536};
-    m_diskSteps = {8, 16, 20, 25, 32, 40, 50, 64, 80, 100, 128, 160, 200, 256, 320, 400, 500, 640, 800, 1000, 1500, 2000};
+    m_ramSteps = RamSpinBox::steps();
+    m_diskSteps = {1, 2, 4, 5, 8, 10, 12, 15, 16, 20, 25, 30, 40, 50, 60, 80, 100, 128, 160, 200, 256, 320, 400, 500, 640, 800, 1000, 1500, 2000};
 
     m_cloudConfig = SettingsDialog::deploymentDefaults();
 
@@ -198,8 +209,9 @@ void NewVmDialog::buildUi()
 
     diskSlider = new QSlider(Qt::Horizontal);
     diskSlider->setRange(0, m_diskSteps.size() - 1);
-    diskSpin = new QSpinBox();
-    diskSpin->setRange(KEMUConst::DefaultMinDiskSizeGB, 32000);
+    diskSpin = new SteppedSpinBox();
+    diskSpin->setSteps(m_diskSteps);
+    diskSpin->setRange(m_diskSteps.first(), m_diskSteps.last());
     diskSpin->setSuffix(i18n(" GB"));
     auto *diskLayout = new QHBoxLayout();
     diskLayout->addWidget(diskSlider, 1);
@@ -239,6 +251,7 @@ void NewVmDialog::buildUi()
     connect(ramSpin, &RamSpinBox::valueChanged, this, [this](int mb) {
         syncSlider(ramSlider, m_ramSteps, mb);
     });
+    connect(ramSpin, &QAbstractSpinBox::editingFinished, ramSpin, &SteppedSpinBox::snapToStep);
 
     connect(cpuSlider, &QSlider::valueChanged, this, [this](int cores) {
         const QSignalBlocker blocker(cpuSpin);
@@ -258,6 +271,7 @@ void NewVmDialog::buildUi()
     connect(diskSpin, &QSpinBox::valueChanged, this, [this](int gb) {
         syncSlider(diskSlider, m_diskSteps, gb);
     });
+    connect(diskSpin, &QAbstractSpinBox::editingFinished, diskSpin, &SteppedSpinBox::snapToStep);
 
     connect(cloudInitButton, &QPushButton::clicked, this, &NewVmDialog::openCloudConfigDialog);
 
@@ -562,8 +576,12 @@ void NewVmDialog::applyTemplateDefaults()
 
     ramSpin->setValue(defaults.ramMb());
 
-    const int minDisk = qMax(m_imageDatabase->minDiskGbFor(tplId, selectedVersion()), KEMUConst::DefaultMinDiskSizeGB);
+    // minDiskGbFor() already falls back to the project default, so no qMax():
+    // it would override a template that deliberately asks for less.
+    const int minDisk = m_imageDatabase->minDiskGbFor(tplId, selectedVersion());
+
     diskSpin->setMinimum(minDisk);
+    diskSlider->setMinimum(firstStepIndexAtLeast(m_diskSteps, minDisk));
     diskSpin->setValue(qMax(defaults.diskSizeGb(), minDisk));
 }
 

@@ -73,7 +73,6 @@ public:
 private Q_SLOTS:
     void browseSharedDir();
     void onMachineTypeChanged(int index);
-    void onRamSliderChanged(int gb);
     void onRamSpinChanged(int mb);
     void onOsTypeChanged(int index);
     void onOsNameChanged(int index);

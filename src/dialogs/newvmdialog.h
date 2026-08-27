@@ -26,6 +26,7 @@
 #include "utils/virtualnetworkmanager.h"
 #include "utils/vmconfig.h"
 #include "widgets/ramspinbox.h"
+#include "widgets/steppedspinbox.h"
 #include "widgets/vmiconselector.h"
 
 using namespace Qt::StringLiterals;
@@ -120,7 +121,7 @@ private:
     QSlider *cpuSlider = nullptr;
     QSpinBox *cpuSpin = nullptr;
     QSlider *diskSlider = nullptr;
-    QSpinBox *diskSpin = nullptr;
+    SteppedSpinBox *diskSpin = nullptr;
 
     QLabel *deployInfoLabel = nullptr;
     QDialogButtonBox *buttonBox = nullptr;
