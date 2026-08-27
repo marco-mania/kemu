@@ -66,6 +66,9 @@ QemuAudioListener::~QemuAudioListener()
     cleanupConnection();
 
     for (auto *stream : m_streams) {
+        if (stream->ioDevice) {
+            disconnect(stream->ioDevice, &QIODevice::readyRead, this, nullptr);
+        }
         if (stream->sink) {
             stream->sink->stop();
             delete stream->sink;
@@ -316,6 +319,9 @@ void QemuAudioListener::handleFini(GVariant *parameters, GDBusMethodInvocation *
     qCDebug(KEMU_DBUSDISPLAY) << "Audio Fini: id=" << id;
 
     if (auto *stream = m_streams.take(id)) {
+        if (stream->ioDevice) {
+            disconnect(stream->ioDevice, &QIODevice::readyRead, this, nullptr);
+        }
         if (stream->sink) {
             stream->sink->stop();
             delete stream->sink;

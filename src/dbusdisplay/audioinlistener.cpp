@@ -116,6 +116,9 @@ QemuAudioInListener::~QemuAudioInListener()
     m_closed = true;
 
     for (auto *stream : m_streams) {
+        if (stream->ioDevice) {
+            disconnect(stream->ioDevice, &QIODevice::readyRead, this, nullptr);
+        }
         if (stream->source) {
             stream->source->stop();
             delete stream->source;
@@ -363,6 +366,9 @@ void QemuAudioInListener::handleFini(GVariant *parameters, GDBusMethodInvocation
     g_variant_get(parameters, "(t)", &id);
 
     if (auto *stream = m_streams.take(id)) {
+        if (stream->ioDevice) {
+            disconnect(stream->ioDevice, &QIODevice::readyRead, this, nullptr);
+        }
         if (stream->source) {
             stream->source->stop();
             delete stream->source;
