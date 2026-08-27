@@ -777,6 +777,8 @@ void QemuDisplayWidget::onDmaBufScanout(int w, int h)
     }
     if (m_eglAvailable) {
         m_dmaBufPending = true;
+    } else {
+        qCDebug(KEMU_DBUSDISPLAY) << "DMA-BUF scanout received but EGL is not available";
     }
     scheduleRepaint();
     if (m_fbSize != QSize(w, h)) {
