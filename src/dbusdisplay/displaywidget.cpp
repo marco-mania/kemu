@@ -1166,11 +1166,8 @@ void QemuDisplayWidget::updateWidgetSize()
 // then upload only the dirty rects from the listener.
 void QemuDisplayWidget::uploadDirtyRects(const QImage &source)
 {
-    const int srcBpp = source.depth() / 8; // always 4 for RGB32/ARGB32
+    const int srcBpp = source.depth() / 8;
 
-    // (Re-)allocate texture on geometry change. Texture content is
-    // garbage afterwards, so force a full upload by overriding
-    // the dirty region.
     bool forceFullUpload = false;
     if (m_texAllocSize != source.size()) {
         glTexImage2D(GL_TEXTURE_2D, 0, m_bgraInternalFormat, source.width(), source.height(), 0, GL_BGRA_EXT, GL_UNSIGNED_BYTE, nullptr);
@@ -1179,14 +1176,11 @@ void QemuDisplayWidget::uploadDirtyRects(const QImage &source)
     }
 
     QRegion dirty = m_listener->takeDirtyRegion();
-    if (forceFullUpload || !m_textureReady) {
+    if (forceFullUpload || !m_textureReady)
         dirty = QRegion(0, 0, source.width(), source.height());
-    }
-    if (dirty.isEmpty()) {
-        return; // GPU state still matches; just re-render the quad
-    }
+    if (dirty.isEmpty())
+        return;
 
-    // Many small rects cost more in driver overhead than the bytes they save.
     constexpr int kMaxSubImageRects = 16;
     if (dirty.rectCount() > kMaxSubImageRects)
         dirty = QRegion(dirty.boundingRect());
@@ -1197,15 +1191,24 @@ void QemuDisplayWidget::uploadDirtyRects(const QImage &source)
     }
 
     const uchar *base = source.constBits();
+    QByteArray tmp;
 
     for (const QRect &r : dirty) {
-        // Without ROW_LENGTH, widen the rect to the full scanline so the
-        // upload reads contiguous memory (32bpp rows carry no padding).
-        const QRect rect = m_hasUnpackRowLength ? r : QRect(0, r.y(), source.width(), r.height());
+        if (!m_hasUnpackRowLength && (r.x() != 0 || r.width() != source.width())) {
+            const int rowBytes = r.width() * srcBpp;
+            const int totalBytes = rowBytes * r.height();
+            if (tmp.size() < totalBytes)
+                tmp.resize(totalBytes);
 
-        const uchar *ptr = base + static_cast<size_t>(rect.y()) * source.bytesPerLine() + static_cast<size_t>(rect.x()) * srcBpp;
-
-        glTexSubImage2D(GL_TEXTURE_2D, 0, rect.x(), rect.y(), rect.width(), rect.height(), GL_BGRA_EXT, GL_UNSIGNED_BYTE, ptr);
+            for (int row = 0; row < r.height(); ++row) {
+                memcpy(tmp.data() + row * rowBytes, base + (r.y() + row) * source.bytesPerLine() + r.x() * srcBpp, rowBytes);
+            }
+            glTexSubImage2D(GL_TEXTURE_2D, 0, r.x(), r.y(), r.width(), r.height(), GL_BGRA_EXT, GL_UNSIGNED_BYTE, tmp.constData());
+        } else {
+            const QRect rect = m_hasUnpackRowLength ? r : QRect(0, r.y(), source.width(), r.height());
+            const uchar *ptr = base + static_cast<size_t>(rect.y()) * source.bytesPerLine() + static_cast<size_t>(rect.x()) * srcBpp;
+            glTexSubImage2D(GL_TEXTURE_2D, 0, rect.x(), rect.y(), rect.width(), rect.height(), GL_BGRA_EXT, GL_UNSIGNED_BYTE, ptr);
+        }
     }
 
     if (m_hasUnpackRowLength) {
