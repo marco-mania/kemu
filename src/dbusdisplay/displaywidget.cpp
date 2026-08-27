@@ -678,11 +678,14 @@ void QemuDisplayWidget::renderCursorQuad()
 
 void QemuDisplayWidget::queryPointerMode()
 {
+    auto ptr = QPointer(this);
     m_ctrl->callWithReply(m_consolePath,
                           u"org.freedesktop.DBus.Properties"_s,
                           u"Get"_s,
                           g_variant_new("(ss)", "org.qemu.Display1.Mouse", "IsAbsolute"),
-                          [this](GVariant *reply, const GError *error) {
+                          [this, ptr](GVariant *reply, const GError *error) {
+                              if (!ptr)
+                                  return;
                               if (error || !reply) {
                                   qCWarning(KEMU_DBUSDISPLAY) << "IsAbsolute read failed:" << (error ? error->message : "no reply");
                                   return; // on error: stay absolute (no regression)

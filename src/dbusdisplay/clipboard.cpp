@@ -182,11 +182,14 @@ void QemuClipboardManager::doRegister()
     if (!m_ctrl)
         return;
 
+    auto ptr = QPointer(this);
     m_ctrl->callWithReply(KemuDbusDisplayConst::ClipboardPath,
                           KemuDbusDisplayConst::ClipboardIface,
                           u"Register"_s,
                           nullptr,
-                          [this](GVariant *, const GError *error) {
+                          [this, ptr](GVariant *, const GError *error) {
+                              if (!ptr)
+                                  return;
                               if (error) {
                                   qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Register() failed:" << error->message;
                                   m_registered = false;
@@ -250,11 +253,14 @@ void QemuClipboardManager::handleGrab(uint selection, uint serial, const QString
     if (selectedMime.isEmpty() || !m_ctrl)
         return;
 
+    auto ptr = QPointer(this);
     m_ctrl->callWithReply(KemuDbusDisplayConst::ClipboardPath,
                           KemuDbusDisplayConst::ClipboardIface,
                           u"Request"_s,
                           g_variant_new("(u@as)", static_cast<guint32>(selection), mimesToVariant({selectedMime})),
-                          [this](GVariant *reply, const GError *error) {
+                          [this, ptr](GVariant *reply, const GError *error) {
+                              if (!ptr)
+                                  return;
                               if (error || !reply) {
                                   qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Request reply error:" << (error ? error->message : "no reply");
                                   return;
@@ -372,11 +378,14 @@ void QemuClipboardManager::onHostClipboardChanged()
 
     qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Host->Guest Grab (serial:" << m_currentSerial << ")";
 
+    auto ptr = QPointer(this);
     m_ctrl->callWithReply(KemuDbusDisplayConst::ClipboardPath,
                           KemuDbusDisplayConst::ClipboardIface,
                           u"Grab"_s,
                           g_variant_new("(uu@as)", 0u, static_cast<guint32>(m_currentSerial), mimesToVariant(mimesToSend)),
-                          [this](GVariant *, const GError *error) {
+                          [this, ptr](GVariant *, const GError *error) {
+                              if (!ptr)
+                                  return;
                               if (error) {
                                   qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Grab to QEMU failed:" << error->message;
                                   m_weAreOwner = false;
