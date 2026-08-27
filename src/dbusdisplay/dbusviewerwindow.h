@@ -38,6 +38,7 @@ struct ViewerDevicePrefs {
     bool audioOut = true; // default: on (current behaviour)
     bool audioIn = false; // default: off
     ClipboardDirection clipboard = ClipboardDirection::Off; // default: off
+    bool networkLinkUp = true; // virtual cable plugged in
 };
 
 // =============================================================================
@@ -83,6 +84,14 @@ public:
     // Called by MainWindow on viewer creation and after every media change.
     void setMediaState(bool hasIso, const QString &isoName, bool hasFloppy, const QString &floppyName);
 
+    // Describe the VM's NIC. Empty label = no network card (action hidden).
+    // Call once after construction, like setMediaState().
+    void setNetworkState(const QString &nicLabel, bool linkUp);
+
+    // Confirm - or revert - a link change once QMP has answered.
+    // persist=false for states QEMU reports on its own (see section 7).
+    void setNetworkLinkState(bool up, bool persist = true);
+
     QMenu *usbMenu() const
     {
         return m_usbMenu;
@@ -102,6 +111,8 @@ Q_SIGNALS:
     void changeFloppyRequested();
     void ejectFloppyRequested();
 
+    void networkLinkChangeRequested(bool up);
+
     void devicePrefsChanged(const ViewerDevicePrefs &prefs);
 
 protected:
@@ -118,6 +129,7 @@ private Q_SLOTS:
     void onZoomReset();
     void onToggleAudioOut(bool checked);
     void onToggleAudioIn(bool checked);
+    void onToggleNetworkLink(bool checked);
     void onClipboardOff();
     void onClipboardToHost();
     void onClipboardToGuest();
@@ -182,6 +194,7 @@ private:
     QAction *m_actClipToGuest = nullptr;
     QAction *m_actClipBoth = nullptr;
     QAction *m_actGrabMouse = nullptr;
+    QAction *m_actNetworkLink = nullptr;
     QAction *m_actAbout = nullptr;
 
     QMenu *m_usbMenu = nullptr;
@@ -192,6 +205,7 @@ private:
     QLabel *m_lblResolution = nullptr;
     QLabel *m_lblAudioOut = nullptr;
     QLabel *m_lblAudioIn = nullptr;
+    QLabel *m_lblNetwork = nullptr;
     QLabel *m_lblClipboard = nullptr;
     QLabel *m_lblMouse = nullptr;
 
@@ -202,6 +216,9 @@ private:
     bool m_hasFloppy = false;
     QString m_isoName;
     QString m_floppyName;
+
+    QString m_nicLabel;
+    bool m_hasNic = false;
 
     QSize m_scanoutSize;
     QSize m_lastWindowSize = {1280, 720};

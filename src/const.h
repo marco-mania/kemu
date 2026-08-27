@@ -48,4 +48,7 @@ inline constexpr auto VirtiofsdPidFileName = "virtiofsd.sock.pid"_L1;
 inline constexpr auto QemuMonitorSocketFileName = "qemu-monitor.sock"_L1;
 inline constexpr auto DeploySerialLogFileName = "deploy-serial.log"_L1;
 
+// Net client id used for -netdev; also the `name` argument of QMP set_link.
+inline constexpr auto NetdevId = "nic0"_L1;
+
 } // namespace KEMUConst

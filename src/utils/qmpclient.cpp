@@ -859,6 +859,18 @@ QMPResult QMPClient::detachUsbDevice(const QString &id)
 }
 
 // ---------------------------------------------------------------------------
+// Network
+// ---------------------------------------------------------------------------
+
+void QMPClient::setNetworkLink(const QString &nicId, bool up, std::function<void(QMPResult)> callback)
+{
+    QJsonObject args;
+    args[u"name"_s] = nicId;
+    args[u"up"_s] = up;
+    sendCommand(u"set_link"_s, args, std::move(callback));
+}
+
+// ---------------------------------------------------------------------------
 // Socket I/O
 // ---------------------------------------------------------------------------
 

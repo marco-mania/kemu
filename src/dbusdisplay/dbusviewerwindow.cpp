@@ -225,6 +225,14 @@ void DbusViewerWindow::createActions()
     clipGroup->addAction(m_actClipBoth);
     connect(m_actClipBoth, &QAction::triggered, this, &DbusViewerWindow::onClipboardBoth);
 
+    // -- Devices: Network ---
+    m_actNetworkLink = new QAction(i18nc("@action:inmenu", "&Network Connected"), this);
+    m_actNetworkLink->setCheckable(true);
+    m_actNetworkLink->setIcon(QIcon::fromTheme(u"network-wired"_s));
+    m_actNetworkLink->setToolTip(i18nc("@info:tooltip", "Plug or unplug the virtual network cable"));
+    m_actNetworkLink->setChecked(m_prefs.networkLinkUp); // before connect(): no spurious toggle
+    connect(m_actNetworkLink, &QAction::toggled, this, &DbusViewerWindow::onToggleNetworkLink);
+
     // --- Help ---
     m_actAbout = new QAction(i18n("&About..."), this);
     connect(m_actAbout, &QAction::triggered, this, &DbusViewerWindow::onAbout);
@@ -297,6 +305,9 @@ void DbusViewerWindow::createMenus()
     clipMenu->addAction(m_actClipToGuest);
     clipMenu->addAction(m_actClipBoth);
 
+    devicesMenu->addSeparator();
+    devicesMenu->addAction(m_actNetworkLink);
+
     // Help
     QMenu *helpMenu = menuBar()->addMenu(i18n("&Help"));
     helpMenu->addAction(m_actAbout);
@@ -338,6 +349,9 @@ void DbusViewerWindow::createStatusBar()
     m_lblAudioIn->setMinimumWidth(100);
     m_lblAudioIn->setAlignment(Qt::AlignCenter);
 
+    m_lblNetwork = new QLabel(this);
+    m_lblNetwork->setFrameStyle(QFrame::Panel | QFrame::Sunken);
+
     m_lblClipboard = new QLabel;
     m_lblClipboard->setFrameStyle(QFrame::Panel | QFrame::Sunken);
     m_lblClipboard->setMinimumWidth(120);
@@ -349,6 +363,7 @@ void DbusViewerWindow::createStatusBar()
     statusBar()->addPermanentWidget(m_lblMouse);
     statusBar()->addPermanentWidget(m_lblAudioOut);
     statusBar()->addPermanentWidget(m_lblAudioIn);
+    statusBar()->addPermanentWidget(m_lblNetwork);
     statusBar()->addPermanentWidget(m_lblClipboard);
 
     updateStatusBar();
@@ -421,6 +436,16 @@ void DbusViewerWindow::updateStatusBar()
         m_lblClipboard->setText(i18n("Clipboard: BI"));
         m_lblClipboard->setToolTip(i18n("Clipboard: Bidirectional"));
         break;
+    }
+
+    if (m_lblNetwork && m_hasNic) {
+        if (m_prefs.networkLinkUp) {
+            m_lblNetwork->setText(i18nc("@info:status", "Net: ON"));
+            m_lblNetwork->setToolTip(i18nc("@info:tooltip", "%1 - cable plugged in", m_nicLabel));
+        } else {
+            m_lblNetwork->setText(i18nc("@info:status", "Net: OFF"));
+            m_lblNetwork->setToolTip(i18nc("@info:tooltip", "%1 - cable unplugged", m_nicLabel));
+        }
     }
 }
 
@@ -541,6 +566,17 @@ void DbusViewerWindow::onToggleAudioIn(bool checked)
 }
 
 // =============================================================================
+// Slots: Network
+// =============================================================================
+
+void DbusViewerWindow::onToggleNetworkLink(bool checked)
+{
+    // Re-enabled by setNetworkLinkState() once QMP has answered.
+    m_actNetworkLink->setEnabled(false);
+    Q_EMIT networkLinkChangeRequested(checked);
+}
+
+// =============================================================================
 // Slots: Clipboard
 // =============================================================================
 
@@ -627,6 +663,9 @@ void DbusViewerWindow::setSuspended(bool suspended)
     } else {
         statusBar()->clearMessage();
     }
+
+    if (m_actNetworkLink)
+        m_actNetworkLink->setEnabled(m_hasNic && !suspended);
 }
 
 // =============================================================================
@@ -832,6 +871,39 @@ void DbusViewerWindow::setMediaState(bool hasIso, const QString &isoName, bool h
         m_actEjectFloppy->setEnabled(hasFloppy);
 
     updateStatusBar();
+}
+
+void DbusViewerWindow::setNetworkState(const QString &nicLabel, bool linkUp)
+{
+    m_nicLabel = nicLabel;
+    m_hasNic = !nicLabel.isEmpty();
+    m_prefs.networkLinkUp = linkUp;
+
+    if (m_actNetworkLink) {
+        QSignalBlocker block(m_actNetworkLink);
+        m_actNetworkLink->setVisible(m_hasNic);
+        m_actNetworkLink->setChecked(m_hasNic && linkUp);
+        m_actNetworkLink->setEnabled(m_hasNic && !m_suspended);
+    }
+    if (m_lblNetwork)
+        m_lblNetwork->setVisible(m_hasNic);
+
+    updateStatusBar();
+}
+
+void DbusViewerWindow::setNetworkLinkState(bool up, bool persist)
+{
+    m_prefs.networkLinkUp = up;
+
+    if (m_actNetworkLink) {
+        QSignalBlocker block(m_actNetworkLink); // a revert must not re-fire the request
+        m_actNetworkLink->setChecked(up);
+        m_actNetworkLink->setEnabled(m_hasNic && !m_suspended);
+    }
+
+    updateStatusBar();
+    if (persist)
+        Q_EMIT devicePrefsChanged(m_prefs);
 }
 
 void DbusViewerWindow::updateWindowAndDisplaySize()

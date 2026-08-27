@@ -135,6 +135,7 @@ private:
     void changeFloppyForVm(const QString &vmName);
     void ejectFloppyForVm(const QString &vmName);
     void pushMediaStateToViewer(const QString &vmName);
+    void pushNetworkStateToViewer(const QString &vmName);
 
     ImageDatabase m_imageDatabase;
 

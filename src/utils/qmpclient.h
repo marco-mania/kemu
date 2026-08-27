@@ -138,6 +138,10 @@ public:
     QMPResult attachUsbDevice(int busNum, int devAddr, const QString &id);
     QMPResult detachUsbDevice(const QString &id);
 
+    // Network link ("virtual cable"). Async on purpose: the viewer's D-Bus
+    // display connection needs a running event loop.
+    void setNetworkLink(const QString &nicId, bool up, std::function<void(QMPResult)> callback = nullptr);
+
 Q_SIGNALS:
     void connected();
     void disconnected();

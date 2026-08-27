@@ -606,6 +606,13 @@ void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const Q
         balloonArgs[u"value"_s] = 2;
         client->sendCommand(u"qom-set"_s, balloonArgs);
 
+        // QEMU always starts with the link up; restore a persisted "cable out".
+        {
+            const VmEntry *netEntry = veModel->entryByName(vmName);
+            if (netEntry && netEntry->config.networkCard() != VMSpecs::NetworkCard::None && !loadViewerPrefs(vmName).networkLinkUp)
+                client->setNetworkLink(KEMUConst::NetdevId, false);
+        }
+
         if (selectedVmName() == vmName && perfMonitor) {
             const VmEntry *e = veModel->entryByName(vmName);
             if (e) {
@@ -1010,6 +1017,31 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                              saveViewerPrefs(vmName, p);
                          });
 
+                         connect(state.window, &DbusViewerWindow::networkLinkChangeRequested, this, [this, vmName](bool up) {
+                             auto it = m_dbusViewers.find(vmName);
+                             if (it == m_dbusViewers.end() || !it->window)
+                                 return;
+                             QPointer<DbusViewerWindow> viewer = it->window;
+
+                             const VmEntry *entry = veModel->entryByName(vmName);
+                             if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
+                                 viewer->setNetworkLinkState(!up, false); // revert, keep the stored pref
+                                 KMessageBox::error(viewer, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+                                 return;
+                             }
+
+                             entry->qmpClient->setNetworkLink(KEMUConst::NetdevId, up, [viewer, up](QMPResult res) {
+                                 if (!viewer)
+                                     return; // viewer closed while QEMU was answering
+                                 if (!res.success) {
+                                     viewer->setNetworkLinkState(!up, false);
+                                     KMessageBox::error(viewer, i18n("Could not change the network link state: %1", res.errorMessage));
+                                     return;
+                                 }
+                                 viewer->setNetworkLinkState(up);
+                             });
+                         });
+
                          connect(state.window, &DbusViewerWindow::changeIsoRequested, this, [this, vmName] {
                              changeISOForVm(vmName);
                          });
@@ -1032,8 +1064,8 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
 
                          m_dbusViewers.insert(vmName, state);
 
-                         // Reflect current media state in the freshly created viewer.
                          pushMediaStateToViewer(vmName);
+                         pushNetworkStateToViewer(vmName);
 
                          // Audio: asynchronous registration chain (see
                          // registerAudioListeners); runs against the map entry, so it
@@ -2250,6 +2282,26 @@ void MainWindow::pushMediaStateToViewer(const QString &vmName)
                               floppyPath.isEmpty() ? QString() : QFileInfo(floppyPath).fileName());
 }
 
+void MainWindow::pushNetworkStateToViewer(const QString &vmName)
+{
+    auto it = m_dbusViewers.find(vmName);
+    if (it == m_dbusViewers.end() || !it->window)
+        return;
+
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry)
+        return;
+
+    const VMConfig &cfg = entry->config;
+    if (cfg.networkCard() == VMSpecs::NetworkCard::None) {
+        it->window->setNetworkState(QString(), false);
+        return;
+    }
+
+    const QString label = u"%1 (%2)"_s.arg(VMConfig::toUIString(cfg.networkCard()), VMConfig::toUIString(cfg.networkMode()));
+    it->window->setNetworkState(label, loadViewerPrefs(vmName).networkLinkUp);
+}
+
 void MainWindow::shrinkDisk()
 {
     if (currentConfig.name().isEmpty())
@@ -3040,6 +3092,16 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
         }
 
         statusBar()->showMessage(i18n("VM '%1' ejected the ISO.", vmName));
+        return;
+    }
+
+    if (eventName == u"NETDEV_STREAM_CONNECTED"_s || eventName == u"NETDEV_STREAM_DISCONNECTED"_s) {
+        if (data.value(u"netdev-id"_s).toString() != KEMUConst::NetdevId)
+            return;
+        auto it = m_dbusViewers.find(vmName);
+        // Reported by QEMU, not requested by the user: do not persist.
+        if (it != m_dbusViewers.end() && it->window)
+            it->window->setNetworkLinkState(eventName == u"NETDEV_STREAM_CONNECTED"_s, false);
         return;
     }
 }
@@ -3997,6 +4059,7 @@ ViewerDevicePrefs MainWindow::loadViewerPrefs(const QString &vmName) const
     prefs.audioOut = grp.readEntry(u"AudioOut"_s, prefs.audioOut);
     prefs.audioIn = grp.readEntry(u"AudioIn"_s, prefs.audioIn);
     prefs.clipboard = clipboardDirFromString(grp.readEntry(u"Clipboard"_s, clipboardDirToString(prefs.clipboard)));
+    prefs.networkLinkUp = grp.readEntry(u"NetworkLinkUp"_s, prefs.networkLinkUp);
     return prefs;
 }
 
@@ -4008,6 +4071,8 @@ void MainWindow::saveViewerPrefs(const QString &vmName, const ViewerDevicePrefs 
     grp.writeEntry(u"AudioOut"_s, prefs.audioOut);
     grp.writeEntry(u"AudioIn"_s, prefs.audioIn);
     grp.writeEntry(u"Clipboard"_s, clipboardDirToString(prefs.clipboard));
+    grp.writeEntry(u"NetworkLinkUp"_s, prefs.networkLinkUp);
+
     grp.sync();
 }
 

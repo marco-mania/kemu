@@ -330,7 +330,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
 
     // --- Network ---
     if (config.networkCard() != VMSpecs::NetworkCard::None) {
-        QString netDevice = u"%1,netdev=nic0"_s.arg(VMConfig::toQemuString(config.networkCard()));
+        QString netDevice = u"%1,netdev=%2"_s.arg(VMConfig::toQemuString(config.networkCard()), KEMUConst::NetdevId);
         if (!config.macAddress().isEmpty())
             netDevice.append(u",mac=%1"_s.arg(config.macAddress()));
         args << u"-device"_s << netDevice;
@@ -342,11 +342,11 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             // rather than silently falling back to passt.
             Q_ASSERT_X(!networkContext.tapDevice.isEmpty(), "QemuCommandBuilder::build", "VirtualNetwork mode requires NetworkContext::tapDevice to be set");
 
-            args << u"-netdev"_s << u"tap,id=nic0,ifname=%1,script=no,downscript=no"_s.arg(networkContext.tapDevice);
+            args << u"-netdev"_s << u"tap,id=%1,ifname=%2,script=no,downscript=no"_s.arg(KEMUConst::NetdevId).arg(networkContext.tapDevice);
         } else if (networkContext.useSlirp) {
             // QEMU's built-in usermode networking. No external process, no
             // helper socket - just port forwards on the command line.
-            QString netdev = u"user,id=nic0"_s;
+            QString netdev = u"user,id=%1"_s.arg(KEMUConst::NetdevId);
             for (const auto &rule : config.portForwards()) {
                 const QString proto = rule.protocol == PortForwardRule::Protocol::Tcp ? u"tcp"_s : u"udp"_s;
                 netdev += u",hostfwd=%1:127.0.0.1:%2-:%3"_s.arg(proto).arg(rule.hostPort).arg(rule.guestPort);
@@ -356,7 +356,9 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             // Passt: user-mode networking via unix stream socket.
             const QString passtSock =
                 networkContext.passtSocketPath.isEmpty() ? vmDir.absoluteFilePath(KEMUConst::PasstSocketFileName) : networkContext.passtSocketPath;
-            args << u"-netdev"_s << u"stream,id=nic0,server=off,addr.type=unix,addr.path=%1"_s.arg(relativePaths ? QFileInfo(passtSock).fileName() : passtSock);
+            args << u"-netdev"_s
+                 << u"stream,id=%1,server=off,addr.type=unix,addr.path=%2"_s.arg(KEMUConst::NetdevId)
+                        .arg(relativePaths ? QFileInfo(passtSock).fileName() : passtSock);
         }
     }
 
