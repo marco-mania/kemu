@@ -526,12 +526,7 @@ void QemuDisplayWidget::paintGL()
 
     if (m_dmaBufPending && m_eglAvailable) {
         m_dmaBufPending = false;
-        importDmaBuf();
-    }
-
-    if (m_dmaBufPending && m_eglAvailable) {
-        // First frame after ScanoutDMABUF, before any Update arrived.
-        if (ensureDmaBufImported())
+        if (importDmaBuf())
             blitImportToPresent();
     }
 
