@@ -51,12 +51,12 @@ static const gchar audioInListenerXml[] =
       <arg type="ay" name="volume" direction="in"/>
     </method>
     <method name="Read">
-    <arg type="t" name="id" direction="in"/>
-    <arg type="t" name="size" direction="in"/>
-    <arg type="ay" name="data" direction="out"/>
+      <arg type="t" name="id" direction="in"/>
+      <arg type="t" name="size" direction="in"/>
+      <arg type="ay" name="data" direction="out"/>
     </method>
-    </interface>
-    </node>
+  </interface>
+</node>
     )XML";
 
 static const GDBusInterfaceVTable audioInVTable = {QemuAudioInListener::onMethodCall, nullptr, nullptr, {}};
