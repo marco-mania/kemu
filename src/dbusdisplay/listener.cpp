@@ -484,20 +484,25 @@ void QemuDisplayListener::handleScanoutMap(GVariant *parameters, GDBusMethodInvo
         return;
     }
     GError *error = nullptr;
-    const int memFd = g_unix_fd_list_get(fdList, fdIndex, &error);
-    if (memFd < 0) {
-        g_error_free(error);
+    // Take ownership immediately, as handleScanoutDMABUF() does: every return
+    // path below then frees the descriptor.
+    UniqueFd memFd(g_unix_fd_list_get(fdList, fdIndex, &error));
+    if (!memFd.isValid()) {
+        if (error)
+            g_error_free(error);
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "FD error");
         return;
     }
+
     const QImage::Format qtFormat = pixmanFormatToQt(pixman_format);
     if (qtFormat == QImage::Format_Invalid) {
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_NOT_SUPPORTED, "Unsupported pixman format: 0x%x", pixman_format);
         return;
     }
+
     const size_t mapSize = static_cast<size_t>(height) * stride + offset;
-    void *mapped = mmap(nullptr, mapSize, PROT_READ, MAP_SHARED, memFd, 0);
-    close(memFd);
+    void *mapped = mmap(nullptr, mapSize, PROT_READ, MAP_SHARED, memFd.get(), 0);
+    memFd.reset(); // the mapping stays valid without the descriptor
     if (mapped == MAP_FAILED) {
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "mmap failed");
         return;
