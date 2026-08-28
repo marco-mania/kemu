@@ -423,6 +423,9 @@ void NewVmDialog::openCustomiseDialog()
         ramSpin->setValue(m_customConfig.ramMb());
         cpuSpin->setValue(m_customConfig.cpuCoreCount());
         diskSpin->setValue(m_customConfig.diskSizeGb());
+
+        if (isoRadio->isChecked() && !m_customConfig.isoPath().isEmpty())
+            isoRequester->setText(m_customConfig.isoPath());
     }
 
     syncSlider(ramSlider, m_ramSteps, ramSpin->value());
@@ -707,6 +710,13 @@ VMConfig NewVmDialog::getResult() const
         // templates.json asks for the D-Bus display, which needs dbus-daemon.
         if (!VMConfig::isDisplayTypeAvailable(config.displayType()))
             config.setDisplayType(VMSpecs::DisplayType::Gtk);
+    }
+
+    // The installer medium lives in this dialog's own field, so it must be
+    // applied even when a customised configuration is in play.
+    if (source() == Source::InstallerIso) {
+        config.setISOPath(installerIsoPath());
+        config.setBootFromIso(true);
     }
 
     iconSelector->applyTo(config);

@@ -198,11 +198,21 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     QString bootOrder;
     if (canBootFromFloppy)
         bootOrder = u"a"_s;
-    else if (config.bootFromIso())
+    else if (config.bootFromIso() && !config.isoPath().isEmpty())
         bootOrder = u"d"_s;
     else
         bootOrder = u"c"_s;
-    args << u"-boot"_s << bootOrder;
+
+    // An installer reboots into the system it has just written to disk.
+    // "once" makes QEMU restore the normal order on the first reset, so the
+    // guest does not land in the installer again.
+    const bool installerFirstBoot =
+        bootOrder == u"d"_s && config.deployState() == VMConfig::DeployState::Deploying && config.imageType() == VMConfig::ImageType::InstallerIso;
+
+    if (installerFirstBoot)
+        args << u"-boot"_s << u"order=c,once=d,menu=on"_s;
+    else
+        args << u"-boot"_s << bootOrder;
 
     // -- Shared Folders ---
     if (!config.sharedPath().isEmpty()) {

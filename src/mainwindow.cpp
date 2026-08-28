@@ -724,8 +724,9 @@ void MainWindow::launchQemuForDeployment(const QString &vmName, bool headless, c
                                                  /*relativePaths=*/false,
                                                  headless);
 
-    // Optional serial log for unattended-install debugging.
-    if (SettingsDialog::deploySerialLog()) {
+    // Unattended runs only: a serial console makes some installers move their
+    // UI off the display, which would defeat an attended installation.
+    if (headless && SettingsDialog::deploySerialLog()) {
         const QString logFile = vmPath + u'/' + KEMUConst::DeploySerialLogFileName;
         args << u"-serial"_s << u"file:%1"_s.arg(logFile);
     }
@@ -785,7 +786,8 @@ void MainWindow::launchQemuForDeployment(const QString &vmName, bool headless, c
     veModel->setHeadless(vmName, headless);
     veModel->setQemuProcess(vmName, process);
 
-    statusBar()->showMessage(i18n("Deploying '%1' - unattended installation running...", vmName));
+    statusBar()->showMessage(headless ? i18n("Deploying '%1' - unattended installation running...", vmName)
+                                      : i18n("Installing '%1' - finish the installation in the VM window, then shut the guest down.", vmName));
     updateDetails();
     updateActionStates();
 
@@ -812,6 +814,15 @@ void MainWindow::launchQemuForDeployment(const QString &vmName, bool headless, c
         if (safeClient)
             safeClient->connectToVm(sockPath);
     });
+
+    // Attended installs need a window. Gtk/SDL open their own, the D-Bus display
+    // is ours to connect. Placed after the QMP setup because startDbusViewer()
+    // needs a live QMP session and would otherwise burn its retry budget.
+    if (!headless && config.displayType() == VMSpecs::DisplayType::Dbus) {
+        QTimer::singleShot(500, this, [this, vmName]() {
+            startDbusViewer(vmName);
+        });
+    }
 }
 
 bool MainWindow::startDbusViewer(const QString &vmName)
@@ -824,6 +835,9 @@ bool MainWindow::startDbusViewer(const QString &vmName)
             existing.window->activateWindow();
             return true;
         }
+        // Stale entry without a window: drop it, otherwise the re-validation
+        // below would discard the connection we are about to establish.
+        stopDbusViewer(vmName);
     }
 
     // --- Rendezvous via QMP ---
@@ -831,8 +845,7 @@ bool MainWindow::startDbusViewer(const QString &vmName)
     // QMP session is the precondition. Right after VM start it may not be
     // up yet; retry briefly instead of blocking.
     const VmEntry *entry = veModel->entryByName(vmName);
-    const bool vmAlive = entry && entry->state == VmEntry::State::Running;
-    if (!vmAlive) {
+    if (!hasLiveQemu(vmName)) {
         // VM died or was stopped while we were (re)trying: abort silently.
         m_viewerConnectAttempts.remove(vmName);
         return false;
@@ -894,8 +907,7 @@ bool MainWindow::startDbusViewer(const QString &vmName)
         }
 
         // The handshake ran through the event loop; re-validate the world.
-        const VmEntry *e = veModel->entryByName(vmName);
-        if (!e || e->state != VmEntry::State::Running || m_dbusViewers.contains(vmName)) {
+        if (!hasLiveQemu(vmName) || m_dbusViewers.contains(vmName)) {
             ctrl->deleteLater(); // never delete synchronously: we are inside the bridge's dispatch
             return;
         }
@@ -930,8 +942,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                          ::close(listenerFd); // QEMU received its own duplicate via the fd list
 
                          // The reply went through the event loop; re-validate the world.
-                         const VmEntry *e = veModel->entryByName(vmName);
-                         const bool vmAlive = e && e->state == VmEntry::State::Running && !m_dbusViewers.contains(vmName);
+                         const bool vmAlive = hasLiveQemu(vmName) && !m_dbusViewers.contains(vmName);
 
                          if (!ok || !vmAlive || !displayListener->connectListener()) {
                              if (!ok) {
@@ -1001,8 +1012,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                                  if (!m_dbusViewers.contains(vmName))
                                      return; // already torn down (shutdown path / connectionLost)
 
-                                 const VmEntry *entry = veModel->entryByName(vmName);
-                                 if (entry && entry->state == VmEntry::State::Running)
+                                 if (hasLiveQemu(vmName))
                                      veModel->setHeadless(vmName, true);
 
                                  stopDbusViewer(vmName);
@@ -1389,8 +1399,8 @@ void MainWindow::updateActionStates()
     const bool hasUsbController = hasSelection && entry && entry->config.usbController() != VMSpecs::UsbController::None;
     usbActionMenu->setEnabled(hasUsbController && isRunning);
 
-    const bool canReconnect =
-        isRunning && entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !m_dbusViewers.contains(entry->config.name());
+    const bool canReconnect = (isRunning || isDeploying) && entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Dbus
+        && !m_dbusViewers.contains(entry->config.name());
     actionCollection()->action(u"vm_reconnect"_s)->setEnabled(hasSelection && canReconnect);
 
     const bool hasActiveNamespace = hasSelection && (isRunning || isDeploying) && entry->config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
@@ -2648,7 +2658,7 @@ void MainWindow::reconnectViewer()
         return;
 
     const VmEntry *entry = veModel->entryByName(vmName);
-    if (!entry || entry->state != VmEntry::State::Running)
+    if (!entry || !hasLiveQemu(vmName))
         return;
 
     if (entry->config.displayType() == VMSpecs::DisplayType::Dbus) {
@@ -3792,7 +3802,6 @@ void MainWindow::createNewVM()
     if (source == NewVmDialog::Source::InstallerIso) {
         newConfig.setImageType(VMConfig::ImageType::InstallerIso);
         newConfig.setDeployState(VMConfig::DeployState::Deploying);
-        newConfig.setBootFromIso(true);
         saveVmConfig(vmPath, newConfig);
         loadVmList();
         selectVmByName(newConfig.name());
@@ -4204,7 +4213,7 @@ void MainWindow::showQemuFailureDialog(const QString &vmName, bool startupFailed
     KMessageBox::error(this, body, title);
 }
 
-void MainWindow::startDeployment(const QString &vmName, const bool disable_headless)
+void MainWindow::startDeployment(const QString &vmName)
 {
     VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || entry->state != VmEntry::State::Deploying)
@@ -4264,7 +4273,11 @@ void MainWindow::startDeployment(const QString &vmName, const bool disable_headl
         }
     }
 
-    const bool headless = disable_headless ? false : SettingsDialog::deployHeadless();
+    // Headless is a cloud-init concept: the guest configures itself and signals
+    // completion by shutting down. An installer ISO needs a display.
+    const auto pending = m_pendingDeployments.constFind(vmName);
+    const bool unattended = pending != m_pendingDeployments.constEnd() && pending->type == PendingDeployment::Type::CloudImage;
+    const bool headless = unattended && SettingsDialog::deployHeadless();
 
     chain->run([this, vmName, headless, resolvedTap](bool ok) {
         if (!ok) {
@@ -4307,6 +4320,9 @@ void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry)
         return;
+
+    // Not routed through tearDownVmRuntime(), so drop the viewer explicitly.
+    stopDbusViewer(vmName);
 
     if (entry->qemuProcess) {
         entry->qemuProcess->disconnect(this);
@@ -4594,4 +4610,10 @@ QWidget *MainWindow::dialogParentFor(const QString &vmName)
     if (it != m_dbusViewers.constEnd() && it->window && it->window->isVisible())
         return it->window;
     return this;
+}
+
+bool MainWindow::hasLiveQemu(const QString &vmName) const
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    return entry && (entry->state == VmEntry::State::Running || entry->state == VmEntry::State::Deploying);
 }

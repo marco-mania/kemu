@@ -260,7 +260,7 @@ private:
         CloudDeployConfig cloudConfig;
     };
     QMap<QString, PendingDeployment> m_pendingDeployments;
-    void startDeployment(const QString &vmName, const bool disable_headless = false);
+    void startDeployment(const QString &vmName);
     void finalizeDeployment(const QString &vmName);
     void abortDeployment(const QString &vmName, bool deleteVm);
 
@@ -294,6 +294,8 @@ private:
     bool m_suspendInProgress = false;
     bool m_exitPolicyDone = false;
     bool m_closingFromSession = false;
+
+    [[nodiscard]] bool hasLiveQemu(const QString &vmName) const;
 
     QWidget *dialogParentFor(const QString &vmName);
 };

@@ -371,10 +371,11 @@ void SettingsDialog::setupAutomatedDeployPage()
     allArchCheck->setChecked(showAllArchitectures());
     behaviourLayout->addRow(allArchCheck);
 
-    deployHeadlessCheck = new QCheckBox(i18n("Run deployment in background (headless)"));
+    deployHeadlessCheck = new QCheckBox(i18n("Run cloud image deployment in background (headless)"));
     deployHeadlessCheck->setToolTip(
-        i18n("When disabled, the QEMU window is visible during deployment, "
-             "which can be useful for diagnosing installation issues."));
+        i18n("Cloud images configure themselves through cloud-init and need no "
+             "display. Installations from an ISO always open a window, "
+             "regardless of this setting."));
     deployHeadlessCheck->setChecked(deployHeadless());
     behaviourLayout->addRow(deployHeadlessCheck);
 
