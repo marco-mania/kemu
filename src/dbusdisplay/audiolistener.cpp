@@ -87,7 +87,7 @@ QemuAudioListener::~QemuAudioListener()
 int QemuAudioListener::createSocketPair()
 {
     int sv[2];
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) {
+    if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0) {
         qCCritical(KEMU_DBUSDISPLAY) << "Audio: socketpair() failed:" << strerror(errno);
         return -1;
     }

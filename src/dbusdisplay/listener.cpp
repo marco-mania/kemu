@@ -194,7 +194,10 @@ bool QemuDisplayListener::takeDmaBufScanout(DmaBufScanout &out)
 int QemuDisplayListener::createSocketPair()
 {
     int sv[2];
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) {
+    // CLOEXEC: neither end may leak into the processes KEMU spawns later
+    // (QEMU for other VMs, swtpm, virtiofsd, passt). The end handed to QEMU
+    // travels over SCM_RIGHTS, which is unaffected by the flag.
+    if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0) {
         qCCritical(KEMU_DBUSDISPLAY) << "socketpair():" << strerror(errno);
         return -1;
     }
