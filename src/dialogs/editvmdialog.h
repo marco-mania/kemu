@@ -62,6 +62,13 @@ public:
 
     void setConfig(const VMConfig &config);
 
+    // Show the configuration without allowing changes. Call after setConfig().
+    void setReadOnly(bool readOnly);
+    [[nodiscard]] bool isReadOnly() const
+    {
+        return m_readOnly;
+    }
+
     void setExistingVmNames(const QStringList &names);
     void setMacUsageInfo(const QList<MacUsageInfo> &info);
 
@@ -167,6 +174,7 @@ private:
     QStringList usedMacAddresses() const;
 
     Mode m_mode = Mode::Edit;
+    bool m_readOnly = false;
     VMConfig m_original;
 
     void applyModeConstraints();

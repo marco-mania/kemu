@@ -24,6 +24,39 @@ void setCombo(QComboBox *combo, E enumValue)
     if (idx >= 0)
         combo->setCurrentIndex(idx);
 }
+// Text-like widgets stay enabled so their content remains legible and
+// selectable; everything else is disabled.
+void makeReadOnly(QWidget *widget)
+{
+    if (auto *combo = qobject_cast<QComboBox *>(widget)) {
+        combo->setEnabled(false);
+        return; // do not descend into the internal line edit
+    }
+    if (auto *spin = qobject_cast<QAbstractSpinBox *>(widget)) {
+        spin->setReadOnly(true);
+        spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        spin->setFocusPolicy(Qt::NoFocus);
+        return;
+    }
+    if (auto *edit = qobject_cast<QLineEdit *>(widget)) {
+        edit->setReadOnly(true);
+        return;
+    }
+    if (auto *edit = qobject_cast<QPlainTextEdit *>(widget)) {
+        edit->setReadOnly(true);
+        return;
+    }
+    if (auto *view = qobject_cast<QAbstractItemView *>(widget)) {
+        view->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        return;
+    }
+    if (qobject_cast<QAbstractButton *>(widget) || qobject_cast<QAbstractSlider *>(widget)) {
+        widget->setEnabled(false);
+        return;
+    }
+    for (QWidget *child : widget->findChildren<QWidget *>(Qt::FindDirectChildrenOnly))
+        makeReadOnly(child);
+}
 } // namespace
 
 EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
@@ -846,6 +879,25 @@ void EditVmDialog::setConfig(const VMConfig &config)
     applyModeConstraints();
 }
 
+void EditVmDialog::setReadOnly(bool readOnly)
+{
+    m_readOnly = readOnly;
+    if (!readOnly)
+        return;
+
+    makeReadOnly(this);
+
+    // Composite widget without a QAbstractButton root.
+    iconSelector->setEnabled(false);
+
+    // setStandardButtons() replaces the buttons the walk above disabled.
+    buttonBox->setStandardButtons(QDialogButtonBox::Close);
+    buttonBox->setEnabled(true);
+
+    if (!m_original.name().isEmpty())
+        setWindowTitle(i18n("Specification of VM: %1 (running)", m_original.name()));
+}
+
 void EditVmDialog::onMachineTypeChanged(int /*index*/)
 {
     updateDeviceAvailability();
@@ -1484,8 +1536,8 @@ void EditVmDialog::validateForm()
         macWarningLabel->clear();
     }
 
-    if (buttonBox)
-        buttonBox->button(QDialogButtonBox::Ok)->setEnabled(valid);
+    if (auto *ok = buttonBox ? buttonBox->button(QDialogButtonBox::Ok) : nullptr)
+        ok->setEnabled(valid);
 }
 
 void EditVmDialog::applyModeConstraints()

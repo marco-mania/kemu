@@ -1355,7 +1355,10 @@ void MainWindow::updateActionStates()
     const bool canChangeMedia = hasSelection && entry && (entry->state == VmEntry::State::Stopped || entry->state == VmEntry::State::Running);
 
     // --- Configure action states ---
-    actionCollection()->action(u"vm_edit"_s)->setEnabled(hasSelection && !isBusy);
+    // Always available: read-only while the VM is busy.
+    QAction *editAction = actionCollection()->action(u"vm_edit"_s);
+    editAction->setEnabled(hasSelection);
+    editAction->setToolTip(isBusy ? i18n("Show the specification (read-only while the VM is busy)") : i18n("Edit the virtual machine's specification"));
     actionCollection()->action(u"vm_delete"_s)->setEnabled(hasSelection && !isBusy);
     actionCollection()->action(u"vm_clone"_s)->setEnabled(hasSelection && !isBusy);
     actionCollection()->action(u"vm_show_cmd"_s)->setEnabled(hasSelection);
@@ -3813,12 +3816,9 @@ void MainWindow::createNewVM()
 
 void MainWindow::editVM()
 {
-    if (currentConfig.name().isEmpty())
-        return;
-    if (veModel->isBusy(currentConfig.name())) {
-        KMessageBox::error(this, i18n("Please stop the VM before editing."), i18n("Busy"));
-        return;
-    }
+    // A busy VM cannot be reconfigured, but its specification is still worth
+    // looking at, so open the dialog read-only instead of refusing.
+    const bool readOnly = veModel->isBusy(currentConfig.name());
 
     const DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
     if (dInfo.isValid)
@@ -3832,6 +3832,12 @@ void MainWindow::editVM()
     dialog.setMacUsageInfo(macUsageInfo());
 
     dialog.setConfig(currentConfig);
+
+    if (readOnly) {
+        dialog.setReadOnly(true);
+        dialog.exec();
+        return;
+    }
 
     if (dialog.exec() == QDialog::Accepted) {
         VMConfig newConfig = dialog.getResult();
