@@ -31,14 +31,14 @@ using namespace Qt::StringLiterals;
  *
  * Architecture overview (per network):
  *
- *   ┌─── User Namespace (unshare --user --net) ───────────────────┐
+ *   ┌─── User Namespace (unshare --user --net) ────────────────────┐
  *   │                                                              │
  *   │   br0  (bridge, gateway IP)                                  │
- *   │    ├── tap-<vm1>  ←──── QEMU VM 1 (started via nsenter)     │
- *   │    ├── tap-<vm2>  ←──── QEMU VM 2                           │
+ *   │    ├── tap-<vm1>  ←──── QEMU VM 1 (outside, holds tap fd)    │
+ *   │    ├── tap-<vm2>  ←──── QEMU VM 2                            │
  *   │    └── ...                                                   │
  *   │                                                              │
- *   │   [dnsmasq]  (optional, DHCP on br0)                        │
+ *   │   [dnsmasq]  (optional, DHCP on br0)                         │
  *   │                                                              │
  *   └──────────────────────────────────────────────────────────────┘
  *          │
@@ -51,9 +51,6 @@ using namespace Qt::StringLiterals;
  *   3. detachVm()      → removes tap device, decrements ref count
  *   4. stopNetwork()   → kills all namespace processes; kernel cleans up
  *                         all interfaces automatically
- *
- * All QEMU processes for VMs on a virtual network MUST be launched inside
- * the namespace via nsenter (see nsenterArgs()).
  */
 class VirtualNetworkManager : public QObject
 {
@@ -111,6 +108,13 @@ public:
      * @return The tap interface name (e.g. "tap-myvm"), or empty on failure.
      */
     QString attachVm(const QString &networkName, const QString &vmName);
+
+    /**
+     * Open the VM's tap device inside the namespace and return a descriptor.
+     * The caller owns the fd and hands it to QEMU, which therefore stays
+     * outside the namespace. Returns -1 on failure.
+     */
+    [[nodiscard]] int openTapFd(const QString &networkName, const QString &vmName);
 
     /**
      * Remove the tap device for the given VM and decrement the ref count.

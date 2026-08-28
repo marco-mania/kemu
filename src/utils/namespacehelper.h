@@ -61,6 +61,12 @@ public:
     static bool setBridgeStp(qint64 nsPid, const QString &bridge, bool enabled, QString *error = nullptr);
     static bool addAddress(qint64 nsPid, const QString &iface, const QString &addr, int prefixLen, QString *error = nullptr);
     static bool createTapDevice(qint64 nsPid, const QString &name, QString *error = nullptr);
+    /**
+     * Open an existing tap device inside the namespace and return its file
+     * descriptor. The caller owns the fd and passes it to QEMU via
+     * "-netdev tap,fd=N", so QEMU does not have to join the namespace.
+     */
+    static int openTapFd(qint64 nsPid, const QString &name, QString *error = nullptr);
     static bool addInterfaceToBridge(qint64 nsPid, const QString &iface, const QString &bridge, QString *error = nullptr);
     static bool removeInterface(qint64 nsPid, const QString &iface);
 
@@ -97,6 +103,10 @@ private:
     static bool forkInNamespace(qint64 nsPid, std::function<int()> childFunc, QString *error = nullptr);
 
     static bool forkInNamespaceWithOutput(qint64 nsPid, std::function<int(int writeFd)> childFunc, QByteArray &output, QString *error = nullptr);
+
+    // Fork a child that enters the namespace, opens a descriptor and hands it
+    // back over a socketpair via SCM_RIGHTS.
+    static int forkInNamespaceWithFd(qint64 nsPid, std::function<int()> childFunc, QString *error = nullptr);
 
     // Netlink helpers (called inside the namespace child)
     static int netlinkGetIfindex(int nlFd, const char *ifname);

@@ -188,8 +188,12 @@ private:
 
     // Single source of truth for the user-mode networking backend.
     bool usePasstFor(const VMConfig &config) const;
-    NetworkContext networkContextFor(const VMConfig &config, const QString &tapDevice = {}) const;
+    NetworkContext networkContextFor(const VMConfig &config, const QString &tapDevice = {}, int tapFd = -1) const;
 
+    // Returns false only when a tap was required but could not be opened.
+    // tapFd stays -1 for every other network mode.
+    bool openTapFdFor(const VMConfig &config, const QString &vmName, const QString &tapDevice, int *tapFd);
+    KProcess *createQemuProcess(const QString &vmName, const QStringList &args, int tapFd);
     void launchQemuProcess(const QString &vmName, bool headless, const QString &tapDevice);
     void launchQemuForDeployment(const QString &vmName, bool headless, const QString &tapDevice);
 

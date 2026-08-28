@@ -141,6 +141,90 @@ bool NamespaceHelper::forkInNamespaceWithOutput(qint64 nsPid, std::function<int(
     return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
+int NamespaceHelper::forkInNamespaceWithFd(qint64 nsPid, std::function<int()> childFunc, QString *error)
+{
+    int sv[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) != 0) {
+        if (error)
+            *error = QString::fromUtf8(strerror(errno));
+        return -1;
+    }
+
+    const pid_t child = fork();
+    if (child < 0) {
+        close(sv[0]);
+        close(sv[1]);
+        if (error)
+            *error = QString::fromUtf8(strerror(errno));
+        return -1;
+    }
+
+    if (child == 0) {
+        close(sv[0]);
+        if (!enterNamespace(nsPid))
+            _exit(100);
+
+        const int fd = childFunc();
+        if (fd < 0)
+            _exit(1);
+
+        char dummy = 'F';
+        struct iovec iov{&dummy, 1};
+        char cbuf[CMSG_SPACE(sizeof(int))] = {};
+
+        struct msghdr msg{};
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = cbuf;
+        msg.msg_controllen = sizeof(cbuf);
+
+        struct cmsghdr *cm = CMSG_FIRSTHDR(&msg);
+        cm->cmsg_level = SOL_SOCKET;
+        cm->cmsg_type = SCM_RIGHTS;
+        cm->cmsg_len = CMSG_LEN(sizeof(int));
+        memcpy(CMSG_DATA(cm), &fd, sizeof(int));
+
+        _exit(sendmsg(sv[1], &msg, 0) == 1 ? 0 : 1);
+    }
+
+    close(sv[1]);
+
+    char dummy = 0;
+    struct iovec iov{&dummy, 1};
+    char cbuf[CMSG_SPACE(sizeof(int))] = {};
+
+    struct msghdr msg{};
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = cbuf;
+    msg.msg_controllen = sizeof(cbuf);
+
+    // MSG_CMSG_CLOEXEC: the descriptor must not leak into unrelated children;
+    // the QEMU launch path clears the flag deliberately.
+    const ssize_t n = recvmsg(sv[0], &msg, MSG_CMSG_CLOEXEC);
+    close(sv[0]);
+
+    int status = 0;
+    waitpid(child, &status, 0);
+
+    int fd = -1;
+    if (n == 1) {
+        for (struct cmsghdr *cm = CMSG_FIRSTHDR(&msg); cm != nullptr; cm = CMSG_NXTHDR(&msg, cm)) {
+            if (cm->cmsg_level == SOL_SOCKET && cm->cmsg_type == SCM_RIGHTS) {
+                memcpy(&fd, CMSG_DATA(cm), sizeof(int));
+                break;
+            }
+        }
+    }
+
+    if (fd < 0 && error) {
+        *error = (WIFEXITED(status) && WEXITSTATUS(status) == 100) ? QStringLiteral("Failed to enter namespace (PID %1)").arg(nsPid)
+                                                                   : QStringLiteral("No descriptor received from the namespace child.");
+    }
+
+    return fd;
+}
+
 // ============================================================================
 // Namespace Lifecycle
 // ============================================================================
@@ -557,6 +641,33 @@ bool NamespaceHelper::createTapDevice(qint64 nsPid, const QString &name, QString
 
             close(fd);
             return 0;
+        },
+        error);
+}
+
+int NamespaceHelper::openTapFd(qint64 nsPid, const QString &name, QString *error)
+{
+    const QByteArray nameBytes = name.toUtf8();
+
+    return forkInNamespaceWithFd(
+        nsPid,
+        [&]() -> int {
+            const int fd = open("/dev/net/tun", O_RDWR);
+            if (fd < 0)
+                return -1;
+
+            struct ifreq ifr{};
+            // IFF_VNET_HDR enables virtio-net offloading; QEMU probes the
+            // flag on the descriptor it is handed.
+            ifr.ifr_flags = IFF_TAP | IFF_NO_PI | IFF_VNET_HDR;
+            strncpy(ifr.ifr_name, nameBytes.constData(), IFNAMSIZ - 1);
+
+            if (ioctl(fd, TUNSETIFF, &ifr) < 0) {
+                close(fd);
+                return -1;
+            }
+
+            return fd;
         },
         error);
 }

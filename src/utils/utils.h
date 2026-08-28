@@ -80,7 +80,7 @@ QString generateCloudInitPasswordHash(const QString &password);
  * @return true if the file exists or was created within the timeout. false on
  * timeout.
  */
-bool waitForSocket(const QString &sockPath, int timeoutMs = 5000);
+// bool waitForSocket(const QString &sockPath, int timeoutMs = 5000);
 
 struct OvmfPaths {
     QString codePath;

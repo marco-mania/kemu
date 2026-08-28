@@ -237,16 +237,10 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         } else {
             // -- 9p / VirtFS (for Linux/BSD/Unix guests) --
             // No additional daemon required.
-            // When QEMU runs inside a namespace (virtual network mode),
-            // it sees itself as UID 0. security_model=none would make all
-            // files root-owned in the guest. Use mapped-xattr instead,
-            // which stores guest UIDs in xattrs on the host.
-            const QString secModel = (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) ? u"mapped-xattr"_s : u"none"_s;
             args << u"-virtfs"_s
-                 << u"local,path=%1,mount_tag=%2,security_model=%3,id=fs0"_s.arg(relativePaths ? QFileInfo(config.sharedPath()).fileName()
-                                                                                               : config.sharedPath(),
-                                                                                 mountTag,
-                                                                                 secModel);
+                 << u"local,path=%1,mount_tag=%2,security_model=none,id=fs0"_s.arg(relativePaths ? QFileInfo(config.sharedPath()).fileName()
+                                                                                                 : config.sharedPath(),
+                                                                                   mountTag);
         }
     }
 
@@ -346,13 +340,19 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         args << u"-device"_s << netDevice;
 
         if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
-            // Namespace-based: QEMU uses a pre-created tap device on the bridge.
-            // QEMU itself must be launched inside the namespace via nsenter.
-            // The caller MUST provide the tap name - otherwise we fail loud
-            // rather than silently falling back to passt.
-            Q_ASSERT_X(!networkContext.tapDevice.isEmpty(), "QemuCommandBuilder::build", "VirtualNetwork mode requires NetworkContext::tapDevice to be set");
+            if (networkContext.tapFd >= 0) {
+                // QEMU rejects ifname=, script= and downscript= together
+                // with fd=.
+                args << u"-netdev"_s << u"tap,id=%1,fd=%2"_s.arg(KEMUConst::NetdevId).arg(networkContext.tapFd);
+            } else {
+                // Name-based form for the exported script, which cannot inherit
+                // a descriptor and therefore enters the namespace itself.
+                Q_ASSERT_X(!networkContext.tapDevice.isEmpty(),
+                           "QemuCommandBuilder::build",
+                           "VirtualNetwork mode requires NetworkContext::tapDevice or tapFd to be set");
 
-            args << u"-netdev"_s << u"tap,id=%1,ifname=%2,script=no,downscript=no"_s.arg(KEMUConst::NetdevId).arg(networkContext.tapDevice);
+                args << u"-netdev"_s << u"tap,id=%1,ifname=%2,script=no,downscript=no"_s.arg(KEMUConst::NetdevId).arg(networkContext.tapDevice);
+            }
         } else if (networkContext.useSlirp) {
             // QEMU's built-in usermode networking. No external process, no
             // helper socket - just port forwards on the command line.
@@ -560,6 +560,11 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     }
 
     if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && config.networkCard() != VMSpecs::NetworkCard::None) {
+        script +=
+            u"# KEMU itself does not use nsenter here: it opens the tap inside\n"_s
+            u"# the namespace and hands QEMU the descriptor via -netdev tap,fd=.\n"_s
+            u"# A standalone script cannot inherit a descriptor, so it enters the\n"_s
+            u"# namespace instead.\n"_s;
         script += u"exec nsenter -t $NS_PID -U --preserve-credentials -n -- \\\n  "_s;
     } else {
         script += u"exec "_s;

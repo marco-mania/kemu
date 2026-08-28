@@ -49,45 +49,45 @@ QString generateCloudInitPasswordHash(const QString &password)
     return u"!"_s;
 }
 
-bool waitForSocket(const QString &sockPath, int timeoutMs)
-{
-    if (QFile::exists(sockPath)) {
-        return true;
-    }
-
-    const QFileInfo fileInfo(sockPath);
-    const QString dirPath = fileInfo.absolutePath();
-
-    QEventLoop loop;
-    QTimer timer;
-    QFileSystemWatcher watcher;
-
-    watcher.addPath(dirPath);
-
-    bool found = false;
-
-    QObject::connect(&watcher, &QFileSystemWatcher::directoryChanged, [&]() {
-        if (QFile::exists(sockPath)) {
-            found = true;
-            timer.stop();
-            loop.quit();
-        }
-    });
-
-    timer.setSingleShot(true);
-    QObject::connect(&timer, &QTimer::timeout, [&]() {
-        watcher.disconnect();
-        loop.quit();
-    });
-
-    timer.start(timeoutMs);
-    loop.exec();
-
-    // Cleanup: remove path and clear watcher
-    watcher.removePath(dirPath);
-
-    return found;
-}
+// bool waitForSocket(const QString &sockPath, int timeoutMs)
+// {
+//     if (QFile::exists(sockPath)) {
+//         return true;
+//     }
+//
+//     const QFileInfo fileInfo(sockPath);
+//     const QString dirPath = fileInfo.absolutePath();
+//
+//     QEventLoop loop;
+//     QTimer timer;
+//     QFileSystemWatcher watcher;
+//
+//     watcher.addPath(dirPath);
+//
+//     bool found = false;
+//
+//     QObject::connect(&watcher, &QFileSystemWatcher::directoryChanged, [&]() {
+//         if (QFile::exists(sockPath)) {
+//             found = true;
+//             timer.stop();
+//             loop.quit();
+//         }
+//     });
+//
+//     timer.setSingleShot(true);
+//     QObject::connect(&timer, &QTimer::timeout, [&]() {
+//         watcher.disconnect();
+//         loop.quit();
+//     });
+//
+//     timer.start(timeoutMs);
+//     loop.exec();
+//
+//     // Cleanup: remove path and clear watcher
+//     watcher.removePath(dirPath);
+//
+//     return found;
+// }
 
 namespace
 {

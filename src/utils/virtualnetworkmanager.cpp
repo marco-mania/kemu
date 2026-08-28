@@ -288,6 +288,30 @@ QString VirtualNetworkManager::attachVm(const QString &networkName, const QStrin
     return tapName;
 }
 
+int VirtualNetworkManager::openTapFd(const QString &networkName, const QString &vmName)
+{
+    resetError();
+
+    const auto it = m_runtime.constFind(networkName);
+    if (it == m_runtime.constEnd() || it->nsPid <= 0) {
+        setError(networkName, i18n("Network '%1' is not running.", networkName));
+        return -1;
+    }
+
+    const QString tapName = it->attachedVms.value(vmName);
+    if (tapName.isEmpty()) {
+        setError(networkName, i18n("VM '%1' is not attached to network '%2'.", vmName, networkName));
+        return -1;
+    }
+
+    QString error;
+    const int fd = NamespaceHelper::openTapFd(it->nsPid, tapName, &error);
+    if (fd < 0)
+        setError(networkName, i18n("Could not open tap device '%1': %2", tapName, error));
+
+    return fd;
+}
+
 void VirtualNetworkManager::detachVm(const QString &networkName, const QString &vmName)
 {
     auto it = m_runtime.find(networkName);

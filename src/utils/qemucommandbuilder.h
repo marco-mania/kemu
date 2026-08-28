@@ -24,8 +24,6 @@ using namespace Qt::StringLiterals;
  *
  * For NetworkMode::VirtualNetwork (namespace-based):
  *   - tapDevice is set (e.g. "tap-myvm"), passtSocketPath is empty, useSlirp is false.
- *   - QEMU must be launched inside the namespace (via nsenter);
- *     that is handled by MainWindow, not by this builder.
  *
  * For NetworkMode != VirtualNetwork, exactly one of:
  *   - useSlirp is true: QEMU's built-in usermode networking is used, no
@@ -35,6 +33,10 @@ using namespace Qt::StringLiterals;
 struct NetworkContext {
     /// Tap device name inside the namespace (VirtualNetwork mode).
     QString tapDevice;
+
+    /// Open descriptor for that tap device. When set, QEMU receives the
+    /// descriptor rather than the name and runs outside the namespace.
+    int tapFd = -1;
 
     /// Unix socket path for passt (Passt mode).
     QString passtSocketPath;

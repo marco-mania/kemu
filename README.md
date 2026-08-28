@@ -245,7 +245,7 @@ Virtual networks connect multiple VMs to a shared private subnet. The entire sta
 
 ```
 
-Each virtual network creates an isolated Linux network namespace containing a bridge. VMs attach to the bridge via tap devices and can communicate directly at layer 2. QEMU processes are launched inside the namespace so they can access the tap devices.
+Each virtual network creates an isolated Linux network namespace containing a bridge. VMs attach to the bridge via tap devices and can communicate directly at layer 2. QEMU runs outside the namespace: KEMU opens the tap device inside it and passes the file descriptor to QEMU, so the VM process keeps the host's user ID, its access to PipeWire and the GPU, and the integrated D-Bus viewer.
 
 **Features per network (individually configurable):**
 
@@ -261,15 +261,13 @@ Each virtual network creates an isolated Linux network namespace containing a br
 
 **Automatic cleanup:** When all VMs disconnect from a virtual network, KEMU stops the network. Killing the namespace anchor process causes the kernel to automatically destroy all interfaces, bridges, and routes, leaving no leftover state and requiring no manual cleanup.
 
-**Shared folders:** Since QEMU runs as mapped root inside the namespace, 9p shared folders automatically use the `mapped-xattr` security model (instead of `none` in user mode). See the [Shared Folders](https://www.google.com/search?q=%23shared-folders) section for details.
-
 **Debugging:** Click the namespace PID in the VM details panel to copy it, then enter the namespace from any terminal:
 
 ```bash
 nsenter -t <PID> -U --preserve-credentials -n -- /bin/bash
 ```
 
-From this shell, you have full access to all VMs on the virtual network.
+From this shell, you have full access to all VMs on the virtual network. The QEMU processes themselves run outside the namespace; you will see the bridge, the tap devices and dnsmasq, but no VM processes
 
 ## Sandbox Mode
 
@@ -295,8 +293,6 @@ KEMU enables host-guest file exchange via the following protocols:
 
 Configuration is done in the VM settings. The *Shared Name* serves as the mount tag within the guest.
 
-> **Note on Virtual Networks:** When a VM runs on a virtual network, QEMU executes inside a user namespace with mapped root privileges. KEMU handles this automatically by adjusting the 9p security model (see the Linux section below). Windows guests using virtio-fs are unaffected, as `virtiofsd` runs on the host outside the namespace.
-
 ### Linux & BSD Guests
 
 Mounting via 9p (Example: using the tag `exchange` mounted to `/mnt/shared`).
@@ -307,11 +303,6 @@ sudo mount -t 9p -o trans=virtio exchange /mnt/shared
 ```
 
 *fstab:* `exchange /mnt/shared 9p trans=virtio,version=9p2000.L,rw,nofail 0 0`
-
-> **Virtual Network Mode:** VMs on a virtual network run inside a user namespace where QEMU perceives itself as root (UID 0). KEMU automatically switches to `security_model=mapped-xattr` for these VMs, storing guest file ownership in extended attributes on the host. This process is generally transparent. If you encounter permission issues in the guest, mount with `access=any`:
-> ```bash
-> sudo mount -t 9p -o trans=virtio,version=9p2000.L,access=any exchange /mnt/shared
-> ```
 
 * **FreeBSD (13+):**
 ```bash
