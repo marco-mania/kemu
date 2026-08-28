@@ -54,6 +54,21 @@ MainWindow::MainWindow(QWidget *parent)
 
     loadVmList();
 
+    // A .part file at startup means a previous save was interrupted.
+    for (const QString &name : veModel->vmNames())
+        SaveStateManager::cleanupStalePart(getVmDir(name).absolutePath(), name);
+
+    m_sessionGuard = new SessionGuard(this);
+    connect(m_sessionGuard, &SessionGuard::aboutToSleep, this, &MainWindow::onAboutToSleep);
+    connect(m_sessionGuard, &SessionGuard::wokeUp, this, &MainWindow::onWokeUp);
+    // Forced shutdown: same damage control as for sleep, nothing slower fits.
+    connect(m_sessionGuard, &SessionGuard::aboutToShutdown, this, &MainWindow::onAboutToSleep);
+
+    connect(veModel, &VirtualEnvironmentModel::vmStateChanged, this, [this]() {
+        updateSessionInhibitors();
+    });
+    updateSessionInhibitors();
+
     // preselect first VM
     if (veModel->rowCount() > 0) {
         QModelIndex firstIndex = veModel->index(0, 0);
@@ -178,16 +193,18 @@ bool MainWindow::queryClose()
             return false;
     }
 
-    if (hasRunning) {
-        auto result = KMessageBox::warningTwoActions(this,
-                                                     i18n("Virtual machines are still running. If you close the window, "
-                                                          "they will be terminated. Do you really want to proceed?"),
-                                                     i18nc("@title:window", "Confirm Exit"),
-                                                     KStandardGuiItem::close(),
-                                                     KStandardGuiItem::cancel());
+    if (hasRunning && !m_exitPolicyDone) {
+        const ExitChoice choice = m_closingFromSession ? ExitChoice::ApplyPolicy : askExitChoice();
 
-        if (result != KMessageBox::PrimaryAction)
+        if (choice == ExitChoice::Cancel)
             return false;
+
+        if (choice == ExitChoice::ApplyPolicy) {
+            statusBar()->showMessage(i18n("Shutting down virtual machines..."));
+            applyExitPolicy();
+            return false; // the watcher calls close() again once we are done
+        }
+        // QuitNow falls through: viewers are torn down and QEMU dies with us.
     }
 
     const auto viewerNames = m_dbusViewers.keys();
@@ -1011,6 +1028,10 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
 
                          connect(state.window, &DbusViewerWindow::snapshotManagerRequested, this, [this, vmName] {
                              manageSnapshotsForVm(vmName);
+                         });
+
+                         connect(state.window, &DbusViewerWindow::inhibitStateChanged, this, [this]() {
+                             updateSessionInhibitors();
                          });
 
                          connect(state.window, &DbusViewerWindow::devicePrefsChanged, this, [this, vmName](const ViewerDevicePrefs &p) {
@@ -1843,6 +1864,7 @@ void MainWindow::openSettingsPage(SettingsDialog::Page page)
         onVmSelectionChanged();
         if (perfMonitor)
             perfMonitor->setVisible(SettingsDialog::isPerformanceMonitorEnabled());
+        updateSessionInhibitors();
     }
 }
 
@@ -3054,7 +3076,7 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
     }
 
     if (eventName == u"STOP"_s) {
-        if (isSaving)
+        if (isSaving || m_suspendInProgress)
             return;
         statusBar()->showMessage(i18n("VM '%1' paused.", vmName));
         return;
@@ -3063,7 +3085,7 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
     if (eventName == u"RESUME"_s) {
         // Only happens as a rollback after a failed migration - in that
         // case the save-state failure dialog explains what's going on.
-        if (isSaving)
+        if (isSaving || m_suspendInProgress)
             return;
         statusBar()->showMessage(i18n("VM '%1' resumed.", vmName));
         return;
@@ -3237,6 +3259,50 @@ void MainWindow::exportOVA(const QString &filePath)
     statusBar()->showMessage(i18n("Exporting VM '%1' as OVA...", currentConfig.name()));
     updateActionStates();
     updateDetails();
+}
+
+void MainWindow::onAboutToSleep()
+{
+    m_pausedBySuspend.clear();
+    m_suspendInProgress = true;
+
+    auto pending = std::make_shared<int>(0);
+    for (const QString &name : veModel->vmNames()) {
+        const VmEntry *e = veModel->entryByName(name);
+        if (!e || e->state != VmEntry::State::Running || !e->qmpClient || !e->qmpClient->isConnected())
+            continue;
+
+        m_pausedBySuspend.insert(name);
+        ++(*pending);
+
+        if (auto it = m_dbusViewers.find(name); it != m_dbusViewers.end() && it->window)
+            it->window->setSuspended(true);
+
+        e->qmpClient->sendCommand(u"stop"_s, {}, [this, pending](QMPResult) {
+            if (--(*pending) == 0)
+                m_sessionGuard->prepareHandled();
+        });
+    }
+
+    if (*pending == 0)
+        m_sessionGuard->prepareHandled();
+}
+
+void MainWindow::onWokeUp()
+{
+    const QStringList names(m_pausedBySuspend.cbegin(), m_pausedBySuspend.cend());
+    m_pausedBySuspend.clear();
+
+    for (const QString &name : names) {
+        const VmEntry *e = veModel->entryByName(name);
+        if (!e || e->state != VmEntry::State::Running || !e->qmpClient || !e->qmpClient->isConnected())
+            continue;
+
+        e->qmpClient->sendCommand(u"cont"_s, {}, nullptr);
+        if (auto it = m_dbusViewers.find(name); it != m_dbusViewers.end() && it->window)
+            it->window->setSuspended(false);
+    }
+    m_suspendInProgress = false;
 }
 
 void MainWindow::shutdownVMByName(const QString &vmName)
@@ -4378,6 +4444,105 @@ void MainWindow::populateUsbMenuFor(const QString &vmName, QMenu *target)
         action->setData(QVariantList{dev.busNum, dev.devAddr, dev.busKey(), dev.qemuId(), vmName}); // carry vmName
         connect(action, &QAction::triggered, this, &MainWindow::onUsbActionTriggered);
     }
+}
+
+MainWindow::ExitChoice MainWindow::askExitChoice()
+{
+    QStringList details;
+    for (const QString &name : veModel->vmNames()) {
+        const VmEntry *e = veModel->entryByName(name);
+        if (!e || e->state != VmEntry::State::Running)
+            continue;
+        details << i18nc("@item VM name and what will happen to it", "%1 - %2", name, VMConfig::toUIString(e->config.exitAction()));
+    }
+
+    const auto answer = KMessageBox::warningTwoActionsCancelList(this,
+                                                                 i18n("Virtual machines are still running. "
+                                                                      "They will be handled as configured:"),
+                                                                 details,
+                                                                 i18nc("@title:window", "Confirm Exit"),
+                                                                 KGuiItem(i18n("Apply and Quit"), u"application-exit"_s),
+                                                                 KGuiItem(i18n("Quit Immediately"), u"process-stop"_s),
+                                                                 KStandardGuiItem::cancel());
+
+    switch (answer) {
+    case KMessageBox::PrimaryAction:
+        return ExitChoice::ApplyPolicy;
+    case KMessageBox::SecondaryAction:
+        return ExitChoice::QuitNow;
+    default:
+        return ExitChoice::Cancel;
+    }
+}
+
+void MainWindow::updateSessionInhibitors()
+{
+    bool anyRunning = false;
+    for (const QString &name : veModel->vmNames()) {
+        const VmEntry *e = veModel->entryByName(name);
+        if (e && (e->state == VmEntry::State::Running || e->state == VmEntry::State::Deploying))
+            anyRunning = true;
+    }
+    m_sessionGuard->setShutdownBlocked(anyRunning, i18n("Virtual machines are running"));
+
+    bool inhibitSaver = false;
+    if (SettingsDialog::inhibitScreensaverAlways()) {
+        inhibitSaver = !m_dbusViewers.isEmpty();
+    } else {
+        for (const auto &state : std::as_const(m_dbusViewers)) {
+            if (!state.window)
+                continue;
+            if (SettingsDialog::inhibitScreensaverFullscreen() && state.window->isFullScreen())
+                inhibitSaver = true;
+            if (SettingsDialog::inhibitScreensaverPointerGrab() && state.window->displayWidget()->isPointerCaptured())
+                inhibitSaver = true;
+        }
+    }
+    m_sessionGuard->setScreensaverInhibited(inhibitSaver, i18n("A virtual machine is in use"));
+}
+
+void MainWindow::applyExitPolicy()
+{
+    for (const QString &name : veModel->vmNames()) {
+        const VmEntry *e = veModel->entryByName(name);
+        if (!e || e->state != VmEntry::State::Running)
+            continue;
+
+        switch (e->config.exitAction()) {
+        case VMSpecs::ExitAction::SaveState:
+            saveStateVMByName(name, true); // skipConfirm: already confirmed above
+            break;
+        case VMSpecs::ExitAction::Shutdown:
+            shutdownVMByName(name);
+            break;
+        case VMSpecs::ExitAction::PowerOff:
+            powerOffVMByName(name);
+            break;
+        }
+    }
+
+    // Poll until nothing is in flight, then close for real. Polling avoids
+    // adding completion callbacks to three different teardown paths.
+    auto *watch = new QTimer(this);
+    const qint64 deadline = QDateTime::currentMSecsSinceEpoch() + KEMUConst::kExitPolicyTimeoutMs;
+    connect(watch, &QTimer::timeout, this, [this, watch, deadline]() {
+        bool busy = false;
+        for (const QString &name : veModel->vmNames()) {
+            const VmEntry *e = veModel->entryByName(name);
+            if (!e)
+                continue;
+            if (e->state == VmEntry::State::Running || e->state == VmEntry::State::Saving || e->state == VmEntry::State::ShuttingDown)
+                busy = true;
+        }
+        if (busy && QDateTime::currentMSecsSinceEpoch() < deadline)
+            return;
+
+        watch->stop();
+        watch->deleteLater();
+        m_exitPolicyDone = true;
+        close();
+    });
+    watch->start(500);
 }
 
 void MainWindow::scheduleQemuStartupProbe(KProcess *process, const QString &vmName)

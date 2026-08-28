@@ -141,6 +141,12 @@ enum class Architecture {
     Riscv64 // RISC-V, 64-bit
 };
 
+enum class ExitAction {
+    SaveState, // migrate to file, resume on next start
+    Shutdown, // ACPI power button, let the guest shut down
+    PowerOff // kill QEMU (last resort)
+};
+
 Q_ENUM_NS(DisplayType)
 Q_ENUM_NS(GpuType)
 Q_ENUM_NS(AudioDevice)
@@ -154,36 +160,38 @@ Q_ENUM_NS(PointerDevice)
 Q_ENUM_NS(KeyboardDevice)
 Q_ENUM_NS(OsType)
 Q_ENUM_NS(Architecture)
+Q_ENUM_NS(ExitAction)
 
 struct Defaults {
     bool useKvm = true;
     int ramMb = 4096;
     bool useMemoryBallooning = true;
     bool preallocMemory = false;
-    VMSpecs::CpuModel cpuModel = VMSpecs::CpuModel::Host;
+    CpuModel cpuModel = CpuModel::Host;
     int cpuCoreCount = 2;
     int diskSizeGb = 40;
-    VMSpecs::MachineType machineType = VMSpecs::MachineType::Q35;
-    VMSpecs::GpuType gpuType = VMSpecs::GpuType::Virtio;
+    MachineType machineType = MachineType::Q35;
+    GpuType gpuType = GpuType::Virtio;
     int gpuMemMb = 64;
     bool gpu3dAcceleration = true;
-    VMSpecs::AudioDevice audioDevice = VMSpecs::AudioDevice::Hda;
-    VMSpecs::DiskInterface diskInterface = VMSpecs::DiskInterface::Virtio;
-    VMSpecs::NetworkCard networkCard = VMSpecs::NetworkCard::Virtio;
-    VMSpecs::DisplayType displayType = VMSpecs::DisplayType::Gtk;
-    VMSpecs::UsbController usbController = VMSpecs::UsbController::Xhci;
-    VMSpecs::PointerDevice pointerDevice = VMSpecs::PointerDevice::UsbTablet;
-    VMSpecs::KeyboardDevice keyboardDevice = VMSpecs::KeyboardDevice::Ps2;
+    AudioDevice audioDevice = AudioDevice::Hda;
+    DiskInterface diskInterface = DiskInterface::Virtio;
+    NetworkCard networkCard = NetworkCard::Virtio;
+    DisplayType displayType = DisplayType::Gtk;
+    UsbController usbController = UsbController::Xhci;
+    PointerDevice pointerDevice = PointerDevice::UsbTablet;
+    KeyboardDevice keyboardDevice = KeyboardDevice::Ps2;
     QSize displayResolution = QSize(1280, 720);
     bool useUefi = true;
     bool useTpm = false;
     bool useSecureBoot = false;
     bool useLocalTime = false;
     bool useAcpi = true;
-    VMSpecs::OsType osType = VMSpecs::OsType::Linux;
-    VMSpecs::Architecture architecture = VMSpecs::Architecture::X86_64;
-    VMSpecs::NetworkMode networkMode = VMSpecs::NetworkMode::Passt;
+    OsType osType = OsType::Linux;
+    Architecture architecture = Architecture::X86_64;
+    NetworkMode networkMode = NetworkMode::Passt;
     QString macAddress = u"52:54:00:12:34:56"_s;
+    ExitAction exitAction = ExitAction::SaveState;
 };
 
 } // namespace VMSpecs
@@ -462,6 +470,10 @@ public:
     {
         return m_deployState;
     }
+    [[nodiscard]] VMSpecs::ExitAction exitAction() const
+    {
+        return m_exitAction;
+    }
 
     static VMSpecs::MachineType recommendedMachineType(VMSpecs::CpuModel type);
     static int maxCoresForModel(VMSpecs::CpuModel type);
@@ -697,6 +709,11 @@ public:
         m_deployState = state;
     }
 
+    void setExitAction(const VMSpecs::ExitAction action)
+    {
+        m_exitAction = action;
+    }
+
     // --- Bus Type Helpers ---
     [[nodiscard]] static bool isIsaDevice(VMSpecs::GpuType type);
     [[nodiscard]] static bool isIsaDevice(VMSpecs::AudioDevice device);
@@ -753,6 +770,7 @@ public:
     [[nodiscard]] static QString toUIString(VMSpecs::OsType type);
     [[nodiscard]] static QString toUIString(VMSpecs::Architecture arch);
     [[nodiscard]] static QString toUIString(VMSpecs::NetworkMode mode);
+    [[nodiscard]] static QString toUIString(VMSpecs::ExitAction action);
     [[nodiscard]] static QString firmwareToUIString(bool useUefi, bool useSecureBoot);
 
     // --- Common Strings ---
@@ -770,6 +788,7 @@ public:
     [[nodiscard]] static QString toString(VMSpecs::OsType type);
     [[nodiscard]] static QString toString(VMSpecs::Architecture arch);
     [[nodiscard]] static QString toString(VMSpecs::NetworkMode mode);
+    [[nodiscard]] static QString toString(VMSpecs::ExitAction action);
     [[nodiscard]] static QString toString(ImageType type);
     [[nodiscard]] static QString toString(DeployState state);
     [[nodiscard]] static QString toString(IconSource src);
@@ -789,6 +808,7 @@ public:
     [[nodiscard]] static VMSpecs::OsType parseOsType(const QString &str);
     [[nodiscard]] static VMSpecs::Architecture parseArchitecture(const QString &str);
     [[nodiscard]] static VMSpecs::NetworkMode parseNetworkMode(const QString &str);
+    [[nodiscard]] static VMSpecs::ExitAction parseExitAction(const QString &str);
     [[nodiscard]] static ImageType parseImageType(const QString &str);
     [[nodiscard]] static DeployState parseDeployState(const QString &str);
     [[nodiscard]] static IconSource parseIconSource(const QString &str);
@@ -857,4 +877,6 @@ private:
 
     ImageType m_imageType = ImageType::Manual;
     DeployState m_deployState = DeployState::None;
+
+    VMSpecs::ExitAction m_exitAction = GlobalDefaults.exitAction;
 };

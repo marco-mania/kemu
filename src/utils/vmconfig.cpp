@@ -883,6 +883,19 @@ QString VMConfig::toUIString(VMSpecs::NetworkMode mode)
     return {};
 }
 
+QString VMConfig::toUIString(VMSpecs::ExitAction action)
+{
+    switch (action) {
+    case VMSpecs::ExitAction::SaveState:
+        return i18n("Save state");
+    case VMSpecs::ExitAction::Shutdown:
+        return i18n("Shut down");
+    case VMSpecs::ExitAction::PowerOff:
+        return i18n("Power off");
+    }
+    return {};
+}
+
 QString VMConfig::firmwareToUIString(bool useUefi, bool useSecureBoot)
 {
     if (!useUefi)
@@ -1088,6 +1101,19 @@ QString VMConfig::toString(VMSpecs::NetworkMode mode)
     if (mode == VMSpecs::NetworkMode::VirtualNetwork)
         return u"virtual_network"_s;
     return u"passt"_s;
+}
+
+QString VMConfig::toString(VMSpecs::ExitAction action)
+{
+    switch (action) {
+    case VMSpecs::ExitAction::SaveState:
+        return u"save_state"_s;
+    case VMSpecs::ExitAction::Shutdown:
+        return u"shut_down"_s;
+    case VMSpecs::ExitAction::PowerOff:
+        return u"power_off"_s;
+    }
+    return u"shut_down"_s;
 }
 
 QString VMConfig::toString(ImageType type)
@@ -1338,6 +1364,18 @@ VMSpecs::NetworkMode VMConfig::parseNetworkMode(const QString &str)
     return VMSpecs::NetworkMode::Passt;
 }
 
+VMSpecs::ExitAction VMConfig::parseExitAction(const QString &str)
+{
+    const QString s = str.toLower().trimmed();
+    if (s == u"save_state"_s)
+        return VMSpecs::ExitAction::SaveState;
+    if (s == u"shut_down")
+        return VMSpecs::ExitAction::Shutdown;
+    if (s == u"power_off")
+        return VMSpecs::ExitAction::PowerOff;
+    return VMSpecs::ExitAction::Shutdown;
+}
+
 VMConfig::ImageType VMConfig::parseImageType(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
@@ -1542,6 +1580,8 @@ QJsonObject VMConfig::toJson() const
 
     j[u"deploy_state"_s] = toString(m_deployState);
 
+    j[u"exit_action"_s] = toString(m_exitAction);
+
     return j;
 }
 
@@ -1642,6 +1682,8 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
         c.m_keyboardDevice = j[u"use_usb_keyboard"_s].toBool(false) ? VMSpecs::KeyboardDevice::Usb : VMSpecs::KeyboardDevice::Ps2;
 
     c.m_deployState = parseDeployState(j[u"deploy_state"_s].toString());
+
+    c.m_exitAction = parseExitAction(j[u"exit_action"_s].toString());
 
     return c;
 }

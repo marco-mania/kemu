@@ -462,6 +462,7 @@ void DbusViewerWindow::onToggleFullscreen(bool checked)
     } else {
         showNormal();
     }
+    Q_EMIT inhibitStateChanged();
 }
 
 void DbusViewerWindow::onToggleWindowMode(QAction *action)
@@ -720,6 +721,7 @@ void DbusViewerWindow::onPointerCaptureChanged(bool active)
         m_actGrabMouse->setChecked(active);
     }
     updateMouseStatus();
+    Q_EMIT inhibitStateChanged();
 }
 
 // =============================================================================
@@ -761,6 +763,7 @@ void DbusViewerWindow::changeEvent(QEvent *event)
             }
             updateWindowAndDisplaySize();
         }
+        Q_EMIT inhibitStateChanged();
     }
     QWidget::changeEvent(event); // Always call the base class implementation
 }

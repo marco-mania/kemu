@@ -54,6 +54,7 @@
 #include "utils/imagedatabase.h"
 #include "utils/qemucommandbuilder.h"
 #include "utils/savestatemanager.h"
+#include "utils/sessionguard.h"
 #include "utils/virtualnetworkmanager.h"
 #include "utils/vmconfig.h"
 #include "widgets/performancemonitorwidget.h"
@@ -74,6 +75,13 @@ class MainWindow : public KXmlGuiWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
+
+    // Set by the session-manager handler before close(): suppresses the
+    // confirmation dialog, which nobody would see during logout.
+    void setClosingFromSession(bool fromSession)
+    {
+        m_closingFromSession = fromSession;
+    }
 
 protected:
     bool queryClose() override;
@@ -122,6 +130,9 @@ private Q_SLOTS:
 
     void importOVA(const QString &filePath);
     void exportOVA(const QString &filePath);
+
+    void onAboutToSleep();
+    void onWokeUp();
 
 private:
     void shutdownVMByName(const QString &vmName);
@@ -267,6 +278,22 @@ private:
     static constexpr int kViewerConnectRetryMs = 250;
     static constexpr int kViewerHandshakeTimeoutMs = 5000;
     QSet<QString> m_startupFailureShown;
+
+    enum class ExitChoice {
+        Cancel,
+        ApplyPolicy,
+        QuitNow
+    };
+    ExitChoice askExitChoice();
+
+    void updateSessionInhibitors();
+    void applyExitPolicy();
+
+    SessionGuard *m_sessionGuard = nullptr;
+    QSet<QString> m_pausedBySuspend;
+    bool m_suspendInProgress = false;
+    bool m_exitPolicyDone = false;
+    bool m_closingFromSession = false;
 
     QWidget *dialogParentFor(const QString &vmName);
 };

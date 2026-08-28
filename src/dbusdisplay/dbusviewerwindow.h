@@ -113,6 +113,8 @@ Q_SIGNALS:
 
     void networkLinkChangeRequested(bool up);
 
+    void inhibitStateChanged(); // fullscreen or pointer capture changed
+
     void devicePrefsChanged(const ViewerDevicePrefs &prefs);
 
 protected:

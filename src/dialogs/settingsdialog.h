@@ -73,6 +73,10 @@ public:
     static bool deploySerialLog();
     static bool useSlirpNetworking();
 
+    static bool inhibitScreensaverAlways();
+    static bool inhibitScreensaverFullscreen();
+    static bool inhibitScreensaverPointerGrab();
+
     // Guest defaults for a new deployment. hostname, templateId and
     // networkTemplateId are left empty; the caller fills them in.
     [[nodiscard]] static CloudDeployConfig deploymentDefaults();
@@ -129,6 +133,10 @@ private:
 
     QCheckBox *perfMonitorCheck = nullptr;
     QComboBox *resolutionCombo = nullptr;
+
+    QCheckBox *ssAlwaysCheck = nullptr;
+    QCheckBox *ssFullscreenCheck = nullptr;
+    QCheckBox *ssGrabCheck = nullptr;
 
     QCheckBox *allArchCheck = nullptr;
     QCheckBox *cloneRegenerateMacCheck = nullptr;

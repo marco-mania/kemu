@@ -18,6 +18,11 @@ QString SaveStateManager::savestateFilePath(const QString &vmDir, const QString 
     return QDir(vmDir).absoluteFilePath(vmName + u".savestate"_s);
 }
 
+QString SaveStateManager::savestatePartPath(const QString &vmDir, const QString &vmName)
+{
+    return savestateFilePath(vmDir, vmName) + kPartSuffix;
+}
+
 bool SaveStateManager::hasSavestate(const QString &vmDir, const QString &vmName)
 {
     const QFileInfo fi(savestateFilePath(vmDir, vmName));
@@ -26,10 +31,22 @@ bool SaveStateManager::hasSavestate(const QString &vmDir, const QString &vmName)
 
 bool SaveStateManager::discardSavestate(const QString &vmDir, const QString &vmName)
 {
+    QFile::remove(savestatePartPath(vmDir, vmName)); // best effort
+
     const QString path = savestateFilePath(vmDir, vmName);
     if (!QFile::exists(path))
         return true;
     return QFile::remove(path);
+}
+
+void SaveStateManager::cleanupStalePart(const QString &vmDir, const QString &vmName)
+{
+    const QString part = savestatePartPath(vmDir, vmName);
+    if (!QFile::exists(part))
+        return;
+
+    qCWarning(KEMU) << "Removing leftover savestate fragment:" << part;
+    QFile::remove(part);
 }
 
 void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString &vmName, std::function<void(bool, QString)> callback)
@@ -43,7 +60,11 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
         return;
     }
 
-    const QString path = savestateFilePath(vmDir, vmName);
+    // Migrate into a .part file; an interrupted save must not leave anything
+    // behind that hasSavestate() would accept.
+    const QString finalPath = savestateFilePath(vmDir, vmName);
+    const QString path = savestatePartPath(vmDir, vmName);
+    QFile::remove(finalPath);
     QFile::remove(path);
     m_active.insert(qmp);
 
@@ -51,13 +72,9 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
     auto done = std::make_shared<bool>(false);
     const QPointer<QMPClient> qmpPtr = qmp;
 
-    // Watchdog parent: SaveStateManager. Lives until finalize() retires it.
     QTimer *watchdog = new QTimer(this);
     watchdog->setSingleShot(true);
 
-    // finalize() is the single exit point. The 'done' flag makes it idempotent
-    // so an event arriving in the same tick as the timeout cannot fire the
-    // caller's callback twice.
     auto finalize = [this, qmp, callback, conn, done, watchdog](bool ok, const QString &err) {
         if (*done)
             return;
@@ -72,8 +89,6 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
     };
 
     connect(watchdog, &QTimer::timeout, this, [qmpPtr, path, finalize]() {
-        // Try a graceful migrate_cancel before giving up. Fire-and-forget:
-        // the caller's force-kill path is the actual recovery.
         if (qmpPtr && qmpPtr->isConnected())
             qmpPtr->sendCommand(u"migrate_cancel"_s, {}, nullptr);
 
@@ -81,7 +96,7 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
         finalize(false, i18n("Save state timed out after %1 seconds", SaveStateManager::kSaveStateTimeoutMs / 1000));
     });
 
-    *conn = connect(qmp, &QMPClient::eventReceived, this, [qmpPtr, path, finalize](const QString &eventName, const QJsonObject &eventData) {
+    *conn = connect(qmp, &QMPClient::eventReceived, this, [qmpPtr, path, finalPath, finalize](const QString &eventName, const QJsonObject &eventData) {
         if (eventName != u"MIGRATION"_s)
             return;
 
@@ -89,6 +104,13 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
         qCDebug(KEMU) << "MIGRATION status =" << status;
 
         if (status == u"completed"_s) {
+            // Publishing step. QEMU may still hold the fd; renaming by inode
+            // is safe on POSIX and any trailing write lands in the same file.
+            if (!QFile::rename(path, finalPath)) {
+                QFile::remove(path);
+                finalize(false, i18n("Could not finalise the savestate file"));
+                return;
+            }
             finalize(true, {});
         } else if (status == u"failed"_s || status == u"cancelled"_s) {
             QFile::remove(path);
@@ -98,7 +120,6 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
         }
     });
 
-    // QEMU does not emit MIGRATION events unless this capability is enabled.
     QJsonArray caps;
     QJsonObject capEvents;
     capEvents.insert(u"capability"_s, u"events"_s);
@@ -115,8 +136,6 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
             return;
         }
 
-        // Arm only now: capabilities call is effectively synchronous,
-        // and we want the timeout to cover stop + migrate + the actual dump.
         watchdog->start(SaveStateManager::kSaveStateTimeoutMs);
 
         qmpPtr->sendCommand(u"stop"_s, {}, [qmpPtr, path, finalize](QMPResult r) {

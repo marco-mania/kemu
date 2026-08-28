@@ -51,4 +51,6 @@ inline constexpr auto DeploySerialLogFileName = "deploy-serial.log"_L1;
 // Net client id used for -netdev; also the `name` argument of QMP set_link.
 inline constexpr auto NetdevId = "nic0"_L1;
 
+inline static constexpr int kExitPolicyTimeoutMs = 120'000;
+
 } // namespace KEMUConst

@@ -241,6 +241,15 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
              "support ACPI and may fail to boot with it enabled."));
     sysLayout->addRow({}, acpiCheck);
 
+    exitActionCombo = new QComboBox(this);
+    for (const auto action : {VMSpecs::ExitAction::SaveState, VMSpecs::ExitAction::Shutdown, VMSpecs::ExitAction::PowerOff}) {
+        exitActionCombo->addItem(VMConfig::toUIString(action), QVariant::fromValue(action));
+    }
+    exitActionCombo->setToolTip(
+        i18n("What to do with this machine if it is still running when KEMU quits. "
+             "A confirmation dialog lets you override this."));
+    sysLayout->addRow(i18n("When KEMU exits:"), exitActionCombo);
+
     // RAM
     auto *ramContainer = new QVBoxLayout();
     auto *ramSliderLayout = new QHBoxLayout();
@@ -815,6 +824,8 @@ void EditVmDialog::setConfig(const VMConfig &config)
     setCombo(mouseCombo, config.pointerDevice());
     setCombo(keyboardCombo, config.keyboardDevice());
 
+    setCombo(exitActionCombo, config.exitAction());
+
     uefiCheck->setChecked(config.useUefi());
     localTimeCheck->setChecked(config.useLocalTime());
     tpmCheck->setChecked(config.useTpm());
@@ -1116,6 +1127,7 @@ VMConfig EditVmDialog::getResult() const
     c.setMachineType(static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt()));
     c.setUseUefi(uefiCheck->isChecked());
     c.setUseLocalTime(localTimeCheck->isChecked());
+    c.setExitAction(static_cast<VMSpecs::ExitAction>(exitActionCombo->currentData().toInt()));
     c.setUseTpm(tpmCheck->isChecked());
     c.setUseSecureBoot(secureBootCheck->isChecked());
     c.setUseAcpi(acpiCheck->isChecked());
@@ -1543,6 +1555,7 @@ void EditVmDialog::resetToFactoryDefaults()
     secureBootCheck->setChecked(GlobalDefaults.useSecureBoot);
     acpiCheck->setChecked(GlobalDefaults.useAcpi);
     localTimeCheck->setChecked(GlobalDefaults.useLocalTime);
+    setCombo(exitActionCombo, GlobalDefaults.exitAction);
 
     m_sb16Config = Sb16Config();
 

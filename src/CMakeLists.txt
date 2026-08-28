@@ -76,6 +76,8 @@ target_sources(
           utils/sandboxcapabilities.h
           utils/qemucapabilities.cpp
           utils/qemucapabilities.h
+          utils/sessionguard.cpp
+          utils/sessionguard.h
           utils/guestlocales.h
           utils/3rdparty/crypt_sha512.c
           models/virtualenvironmentmodel.cpp
@@ -158,6 +160,7 @@ target_link_libraries(
   Qt6::Network
   Qt6::Svg
   Qt6::Multimedia
+  Qt6::DBus
   Qt6::OpenGL
   Qt6::OpenGLWidgets
   KF6::CoreAddons

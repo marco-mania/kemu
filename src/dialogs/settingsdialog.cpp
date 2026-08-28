@@ -284,7 +284,11 @@ void SettingsDialog::setupMonitoringPage()
 void SettingsDialog::setupDisplayPage()
 {
     auto *page = new QWidget;
-    auto *layout = new QFormLayout(page);
+    auto *layout = new QVBoxLayout(page);
+
+    // --- Defaults ---
+    auto *defaultsGroup = new QGroupBox(i18n("Defaults"));
+    auto *defaultsLayout = new QFormLayout(defaultsGroup);
 
     resolutionCombo = new QComboBox;
     resolutionCombo->addItem(u"1280 × 800"_s, QSize(1280, 800));
@@ -307,7 +311,40 @@ void SettingsDialog::setupDisplayPage()
     if (resolutionCombo->currentIndex() < 0)
         resolutionCombo->setCurrentIndex(0);
 
-    layout->addRow(i18n("Default resolution for new VMs:"), resolutionCombo);
+    defaultsLayout->addRow(i18n("Default resolution for new VMs:"), resolutionCombo);
+    layout->addWidget(defaultsGroup);
+
+    // --- Screen locking ---
+    auto *lockGroup = new QGroupBox(i18n("Screen Locking"));
+    auto *lockLayout = new QVBoxLayout(lockGroup);
+
+    auto *lockHint = new QLabel(i18n("Keep the screen from locking or blanking while you are working in a guest."));
+    lockHint->setWordWrap(true);
+    lockLayout->addWidget(lockHint);
+
+    ssAlwaysCheck = new QCheckBox(i18n("Whenever a viewer window is open"));
+    ssAlwaysCheck->setToolTip(i18n("Includes windowed viewers you are not currently interacting with."));
+    ssAlwaysCheck->setChecked(inhibitScreensaverAlways());
+    lockLayout->addWidget(ssAlwaysCheck);
+
+    ssFullscreenCheck = new QCheckBox(i18n("While a viewer is fullscreen"));
+    ssFullscreenCheck->setChecked(inhibitScreensaverFullscreen());
+    lockLayout->addWidget(ssFullscreenCheck);
+
+    ssGrabCheck = new QCheckBox(i18n("While the pointer is captured by a guest"));
+    ssGrabCheck->setChecked(inhibitScreensaverPointerGrab());
+    lockLayout->addWidget(ssGrabCheck);
+
+    // "Always" subsumes the other two.
+    auto syncLockChecks = [this](bool always) {
+        ssFullscreenCheck->setEnabled(!always);
+        ssGrabCheck->setEnabled(!always);
+    };
+    connect(ssAlwaysCheck, &QCheckBox::toggled, this, syncLockChecks);
+    syncLockChecks(ssAlwaysCheck->isChecked());
+
+    layout->addWidget(lockGroup);
+    layout->addStretch();
 
     auto *item = addPage(page, i18n("Display"));
     item->setIcon(QIcon::fromTheme(u"preferences-desktop-display"_s));
@@ -494,6 +531,9 @@ void SettingsDialog::saveSettings()
     const QSize res = resolutionCombo->currentData().toSize();
     general.writeEntry("DisplayWidth", res.width());
     general.writeEntry("DisplayHeight", res.height());
+    general.writeEntry("InhibitScreensaverAlways", ssAlwaysCheck->isChecked());
+    general.writeEntry("InhibitScreensaverFullscreen", ssFullscreenCheck->isChecked());
+    general.writeEntry("InhibitScreensaverPointerGrab", ssGrabCheck->isChecked());
     general.writeEntry("ShowAllArchitectures", allArchCheck->isChecked());
     general.writeEntry("CloneRegenerateMac", cloneRegenerateMacCheck->isChecked());
     general.writeEntry("ImportRegenerateMac", importRegenerateMacCheck->isChecked());
@@ -602,6 +642,27 @@ bool SettingsDialog::useSlirpNetworking()
     KConfig config(u"kemurc"_s);
     const KConfigGroup general = config.group(u"General"_s);
     return general.readEntry("PreferSlirpNetworking", false);
+}
+
+bool SettingsDialog::inhibitScreensaverAlways()
+{
+    KConfig config(u"kemurc"_s);
+    const KConfigGroup general = config.group(u"General"_s);
+    return general.readEntry("InhibitScreensaverAlways", false);
+}
+
+bool SettingsDialog::inhibitScreensaverFullscreen()
+{
+    KConfig config(u"kemurc"_s);
+    const KConfigGroup general = config.group(u"General"_s);
+    return general.readEntry("InhibitScreensaverFullscreen", true);
+}
+
+bool SettingsDialog::inhibitScreensaverPointerGrab()
+{
+    KConfig config(u"kemurc"_s);
+    const KConfigGroup general = config.group(u"General"_s);
+    return general.readEntry("InhibitScreensaverPointerGrab", true);
 }
 
 CloudDeployConfig SettingsDialog::deploymentDefaults()
