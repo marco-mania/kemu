@@ -6,23 +6,12 @@
 
 #pragma once
 
-#include <QCoreApplication>
-#include <QDir>
-#include <QFile>
-#include <QFileInfo>
-#include <QFutureWatcher>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QObject>
+#include <QByteArray>
+#include <QString>
 
-#include <KJob>
-#include <KLocalizedString>
+#include "jobs/archivestreamjob.h"
 
-#include <atomic>
-
-using namespace Qt::StringLiterals;
-
-class ImportJob : public KJob
+class ImportJob : public ArchiveStreamJob
 {
     Q_OBJECT
 
@@ -36,29 +25,20 @@ public:
         return m_vmName;
     }
 
-    void setRegenerateMac(bool regen)
-    {
-        m_regenerateMac = regen;
-    }
-
 protected:
-    bool doKill() override;
-
-private Q_SLOTS:
-    void onImportFinished();
+    bool runWorker() override;
+    void workerFinished(bool ok) override;
+    void discardPartialOutput() override;
 
 private:
-    bool detectVmConfig();
+    // Reads config.json without decompressing the whole stream.
+    bool readConfigFromArchive(QByteArray *out);
+    bool parseConfig(const QByteArray &data);
 
-    // The worker function that runs in a separate thread
-    bool performArchiveImport();
+    static bool isExpectedEntry(const QString &name);
 
     QString m_archivePath;
     QString m_vmBaseDir;
     QString m_vmName;
-    bool m_regenerateMac = false;
-
-    // Threading and cancellation
-    QFutureWatcher<bool> *m_watcher = nullptr;
-    std::atomic<bool> m_cancelImport{false};
+    QString m_targetDir;
 };

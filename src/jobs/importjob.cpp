@@ -6,44 +6,74 @@
 
 #include "importjob.h"
 
-#include <QtConcurrent/QtConcurrent>
-
-#include "kemu_debug.h"
-
 extern "C" {
 #include <archive.h>
 #include <archive_entry.h>
 }
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QSet>
+
+#include <KLocalizedString>
+
+#include "const.h"
+#include "kemu_debug.h"
+#include "utils/archivepaths.h"
+#include "utils/vmconfig.h"
+
+using namespace Qt::StringLiterals;
+
+namespace
+{
+constexpr qint64 kMaxConfigBytes = 1 << 20;
+constexpr int kMaxHeadersToScan = 4;
+constexpr qint64 kSpaceHeadroom = 50LL << 20;
+}
+
 ImportJob::ImportJob(const QString &archivePath, const QString &vmBaseDir, QObject *parent)
-    : KJob(parent)
+    : ArchiveStreamJob(parent)
     , m_archivePath(archivePath)
     , m_vmBaseDir(vmBaseDir)
 {
-    setCapabilities(Killable);
-    setProperty("immediateProgressReporting", true);
 }
 
 void ImportJob::start()
 {
-    // Determine VM name from archive (extracts config.json to memory)
-    if (!detectVmConfig()) {
-        setError(1);
-        setErrorText(
-            i18n("Could not determine VM name from archive. "
-                 "The archive may be invalid."));
+    QByteArray configData;
+    if (!readConfigFromArchive(&configData) || !parseConfig(configData)) {
+        setError(ContentError);
+        setErrorText(i18n("Could not determine VM name from archive. The archive may be invalid."));
         emitResult();
         return;
     }
 
-    // Check if VM already exists
-    const QString targetPath = m_vmBaseDir + u"/"_s + m_vmName;
-    if (QDir(targetPath).exists()) {
-        setError(2);
-        setErrorText(
-            i18n("A VM named '%1' already exists. "
-                 "Please rename or delete it first.",
-                 m_vmName));
+    m_targetDir = ArchivePaths::resolveWithin(QDir(m_vmBaseDir), m_vmName);
+    if (m_targetDir.isEmpty()) {
+        setError(ContentError);
+        setErrorText(i18n("The archive contains an invalid VM name."));
+        emitResult();
+        return;
+    }
+
+    if (QDir(m_targetDir).exists()) {
+        setError(TargetExistsError);
+        setErrorText(i18n("A VM named '%1' already exists. Please rename or delete it first.", m_vmName));
+        emitResult();
+        return;
+    }
+
+    // The uncompressed payload is unknown up front; the archive size is a floor.
+    QString spaceMessage;
+    const qint64 archiveSize = QFileInfo(m_archivePath).size();
+    if (!hasFreeSpace(m_vmBaseDir, archiveSize + kSpaceHeadroom, &spaceMessage)) {
+        setError(DiskSpaceError);
+        setErrorText(spaceMessage);
         emitResult();
         return;
     }
@@ -53,221 +83,157 @@ void ImportJob::start()
                        QPair<QString, QString>(i18n("VM"), m_vmName),
                        QPair<QString, QString>(i18n("File"), QFileInfo(m_archivePath).fileName()));
 
-    Q_EMIT infoMessage(this, i18n("Preparing to import archive..."));
-    emitPercent(0, 100);
-
-    // Setup threaded execution
-    m_cancelImport = false;
-    m_watcher = new QFutureWatcher<bool>(this);
-    connect(m_watcher, &QFutureWatcher<bool>::finished, this, &ImportJob::onImportFinished);
-
-    // Start the import in a background thread to prevent UI freezing
-    const QFuture<bool> future = QtConcurrent::run(&ImportJob::performArchiveImport, this);
-    m_watcher->setFuture(future);
+    beginPhase(0, 1000, archiveSize);
+    startWorker();
 }
 
-bool ImportJob::detectVmConfig()
+bool ImportJob::readConfigFromArchive(QByteArray *out)
 {
-    // We use libarchive directly in the main thread here because we only
-    // want to quickly peek at the first file (config.json).
-    struct archive *a = archive_read_new();
+    archive *a = archive_read_new();
     archive_read_support_filter_all(a);
     archive_read_support_format_all(a);
 
-    if (archive_read_open_filename(a, m_archivePath.toUtf8().constData(), 10240) != ARCHIVE_OK) {
+    if (archive_read_open_filename(a, QFile::encodeName(m_archivePath).constData(), 10240) != ARCHIVE_OK) {
         archive_read_free(a);
         return false;
     }
 
-    struct archive_entry *entry;
-    QByteArray configData;
-    bool foundConfig = false;
+    bool found = false;
+    archive_entry *entry = nullptr;
 
-    // Iterate through archive headers until we find config.json
-    while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
-        const QString currentFile = QString::fromUtf8(archive_entry_pathname(entry));
+    // config.json is written first, so a short scan is enough. Bailing out
+    // early avoids decompressing a multi-GB stream on the main thread.
+    for (int scanned = 0; scanned < kMaxHeadersToScan; ++scanned) {
+        if (nextEntry(a, &entry) != EntryResult::Ready)
+            break;
 
-        if (currentFile == u"config.json"_s) {
-            const qint64 size = archive_entry_size(entry);
-            if (size > 0) {
-                configData.resize(size);
-                archive_read_data(a, configData.data(), size);
-            }
-            foundConfig = true;
-            break; // Stop reading once we found the config
-        }
+        if (QString::fromUtf8(archive_entry_pathname(entry)) != KEMUConst::VMConfigFileName)
+            continue;
+
+        const qint64 size = archive_entry_size(entry);
+        if (size <= 0 || size > kMaxConfigBytes)
+            break;
+
+        out->resize(size);
+        found = archive_read_data(a, out->data(), static_cast<size_t>(size)) == size;
+        break;
     }
 
     archive_read_close(a);
     archive_read_free(a);
 
-    if (!foundConfig || configData.isEmpty()) {
-        return false;
-    }
+    return found;
+}
 
-    // Parse the extracted JSON data
-    QJsonParseError error;
-    const QJsonDocument doc = QJsonDocument::fromJson(configData, &error);
+bool ImportJob::parseConfig(const QByteArray &data)
+{
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
 
-    if (error.error != QJsonParseError::NoError) {
-        qCWarning(KEMU) << "Could not parse the config file:" << error.errorString();
+    if (parseError.error != QJsonParseError::NoError) {
+        qCWarning(KEMU) << "Could not parse the config file:" << parseError.errorString();
         return false;
     }
 
     const QJsonObject obj = doc.object();
 
-    // Verify that the archive was created by this application
-    if (!obj.contains(u"application_name"_s) || obj.value(u"application_name"_s).toString() != QCoreApplication::applicationName()) {
+    if (obj.value(u"application_name"_s).toString() != QCoreApplication::applicationName())
         return false;
-    }
-
-    // Ensure version information is present
-    if (!obj.contains(u"application_version"_s)) {
+    if (!obj.contains(u"application_version"_s))
         return false;
-    }
 
-    // Extract the VM name from the configuration
-    if (obj.contains(u"name"_s)) {
-        m_vmName = obj.value(u"name"_s).toString();
-        return !m_vmName.isEmpty();
-    }
-
-    return false;
+    m_vmName = ArchivePaths::sanitizeVmName(obj.value(u"name"_s).toString());
+    return !m_vmName.isEmpty();
 }
 
-bool ImportJob::performArchiveImport()
+bool ImportJob::isExpectedEntry(const QString &name)
 {
-    struct archive *a = archive_read_new();
+    static const QSet<QString> allowed = {KEMUConst::VMConfigFileName,
+                                          KEMUConst::VMDiskFileName,
+                                          u"OVMF_VARS.fd"_s,
+                                          u"tpm2-00.permall"_s,
+                                          VMConfig::customIconFileName()};
+    return allowed.contains(name);
+}
+
+bool ImportJob::runWorker()
+{
+    archive *a = archive_read_new();
     archive_read_support_filter_all(a);
     archive_read_support_format_all(a);
 
-    if (archive_read_open_filename(a, m_archivePath.toUtf8().constData(), 10240) != ARCHIVE_OK) {
+    if (archive_read_open_filename(a, QFile::encodeName(m_archivePath).constData(), 10240) != ARCHIVE_OK) {
+        recordArchiveError(a, i18n("while opening %1", m_archivePath));
         archive_read_free(a);
         return false;
     }
 
-    // We calculate progress based on the compressed archive size
-    qint64 totalCompressedBytes = QFileInfo(m_archivePath).size();
-    if (totalCompressedBytes <= 0)
-        totalCompressedBytes = 1;
+    const QDir targetDir(m_targetDir);
+    QDir().mkpath(m_targetDir);
 
-    QString targetDir = m_vmBaseDir + u"/"_s + m_vmName;
-    QDir().mkpath(targetDir);
+    postInfoMessage(i18n("Extracting archive..."));
 
-    struct archive_entry *entry;
-    bool success = true;
-    char buffer[1024 * 1024]; // 1 MB chunk buffer
+    bool ok = true;
+    archive_entry *entry = nullptr;
 
-    // Extract files one by one
-    while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
-        if (m_cancelImport) {
-            success = false;
+    for (;;) {
+        if (isCancelled()) {
+            ok = false;
             break;
         }
 
-        QString currentFileName = QString::fromUtf8(archive_entry_pathname(entry));
+        const EntryResult r = nextEntry(a, &entry);
+        if (r == EntryResult::EndOfArchive)
+            break;
+        if (r == EntryResult::Failed) {
+            ok = false;
+            break;
+        }
 
-        // Security check: prevent directory traversal attacks
-        if (currentFileName.contains(u"..") || currentFileName.startsWith(u"/")) {
+        if (archive_entry_filetype(entry) != AE_IFREG)
             continue;
-        }
 
-        const QString fullPath = targetDir + u"/"_s + currentFileName;
-        QFile outFile(fullPath);
+        const QString name = QString::fromUtf8(archive_entry_pathname(entry));
+        if (!isExpectedEntry(name))
+            continue;
 
-        if (!outFile.open(QIODevice::WriteOnly)) {
-            success = false;
+        const QString destPath = ArchivePaths::resolveWithin(targetDir, name);
+        if (destPath.isEmpty())
+            continue;
+
+        if (!extractEntryTo(a, destPath)) {
+            ok = false;
             break;
         }
-
-        // Read file contents in chunks
-        while (true) {
-            if (m_cancelImport) {
-                success = false;
-                break;
-            }
-
-            const la_ssize_t readBytes = archive_read_data(a, buffer, sizeof(buffer));
-
-            if (readBytes == 0) {
-                break; // EOF for this entry
-            }
-            if (readBytes < 0) {
-                success = false; // Error reading data
-                break;
-            }
-
-            outFile.write(buffer, readBytes);
-
-            // Report progress (thread-safe dispatch to the main thread)
-            // archive_filter_bytes gives us the amount of compressed bytes read so
-            // far
-            const qint64 processedBytes = archive_filter_bytes(a, -1);
-            int percent = static_cast<int>((processedBytes * 100) / totalCompressedBytes);
-
-            // Limit to 99% during extraction, 100% is set when completely finished
-            percent = qMin(percent, 99);
-
-            QMetaObject::invokeMethod(
-                this,
-                [this, percent]() {
-                    setPercent(percent); // Updates KJob progress
-                    Q_EMIT infoMessage(this, i18n("Extracting archive... %1%", percent));
-                },
-                Qt::QueuedConnection);
-        }
-
-        outFile.close();
-        if (!success)
-            break;
     }
 
     archive_read_close(a);
     archive_read_free(a);
 
-    return success;
-}
-
-void ImportJob::onImportFinished()
-{
-    // Retrieve thread result
-    const bool success = m_watcher->result();
-    m_watcher->deleteLater();
-    m_watcher = nullptr;
-
-    const QString targetDir = m_vmBaseDir + u"/"_s + m_vmName;
-
-    if (m_cancelImport) {
-        // Job was killed; doKill() handles the cleanup
-        return;
+    if (ok && !QFile::exists(targetDir.filePath(KEMUConst::VMDiskFileName))) {
+        recordError(i18n("The archive does not contain a disk image."));
+        ok = false;
     }
 
-    if (!success) {
-        // Error occurred (not aborted by the user); cleanup remains
-        if (!m_vmName.isEmpty() && QDir(targetDir).exists()) {
-            QDir(targetDir).removeRecursively();
-        }
-        setError(4);
-        setErrorText(i18n("Archive extraction failed."));
+    return ok;
+}
+
+void ImportJob::workerFinished(bool ok)
+{
+    if (!ok) {
+        QDir(m_targetDir).removeRecursively();
+        setError(ArchiveError);
+        setErrorText(workerErrorText().isEmpty() ? i18n("Archive extraction failed.") : workerErrorText());
         emitResult();
         return;
     }
 
-    emitPercent(100, 100);
+    emitPercent(1000, 1000);
     emitResult();
 }
 
-bool ImportJob::doKill()
+void ImportJob::discardPartialOutput()
 {
-    // Signal the worker thread to abort
-    m_cancelImport = true;
-
-    // Cleanup partially extracted directory immediately.
-    // The worker thread will exit gracefully at the next chunk interval.
-    const QString targetDir = m_vmBaseDir + u"/"_s + m_vmName;
-    if (!m_vmName.isEmpty() && QDir(targetDir).exists()) {
-        QDir(targetDir).removeRecursively();
-    }
-
-    return true; // Confirms that the kill request was accepted
+    if (!m_targetDir.isEmpty())
+        QDir(m_targetDir).removeRecursively();
 }
