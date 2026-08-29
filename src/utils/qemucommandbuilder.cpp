@@ -553,10 +553,8 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
 
     if (config.displayType() == VMSpecs::DisplayType::Dbus) {
         const QString sockArg = relativePaths ? KEMUConst::DBUSSocketFileName : vmDir.absoluteFilePath(KEMUConst::DBUSSocketFileName);
-        script += u"# D-Bus display: QEMU listens on a private Unix socket.\n"_s;
-        script += u"# Inside KEMU, the integrated viewer connects automatically.\n"_s;
-        script += u"# For standalone use, connect with a D-Bus display viewer:\n"_s;
-        script += u"#   <viewer> --dbus-address unix:path=%1\n\n"_s.arg(sockArg);
+        script += u"# Inside KEMU, the integrated viewer connects automatically using D-Bus.\n"_s;
+        script += u"# For standalone use another display type.\n"_s;
     }
 
     if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && config.networkCard() != VMSpecs::NetworkCard::None) {
