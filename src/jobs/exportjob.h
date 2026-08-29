@@ -6,39 +6,19 @@
 
 #pragma once
 
-#include "const.h"
-#include <atomic>
-
-extern "C" {
-#include <archive.h>
-#include <archive_entry.h>
-}
-
-#include <KFormat>
 #include <QDir>
 #include <QFile>
-#include <QFileInfo>
-#include <QFutureWatcher>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QObject>
-#include <QStorageInfo>
-#include <QTemporaryFile>
-#include <QtConcurrent/QtConcurrent>
+#include <QString>
+#include <QStringList>
 
 #include <KJob>
 #include <KLocalizedString>
 
-#include "utils/vmconfig.h"
+#include "jobs/archivestreamjob.h"
 
-using namespace Qt::StringLiterals;
-
-static const QStringList DEFAULT_FILES_TO_EXPORT = {KEMUConst::VMConfigFileName, // must be first file in archive!
-                                                    KEMUConst::VMDiskFileName,
-                                                    u"OVMF_VARS.fd"_s,
-                                                    u"tpm2-00.permall"_s};
-
-class ExportJob : public KJob
+class ExportJob : public ArchiveStreamJob
 {
     Q_OBJECT
 
@@ -53,33 +33,21 @@ public:
     }
 
 protected:
-    bool doKill() override;
-
-private Q_SLOTS:
-    void onExportFinished();
+    bool runWorker() override;
+    void workerFinished(bool ok) override;
+    void discardPartialOutput() override;
 
 private:
-    bool prepareConfig();
-    void restoreConfig();
-
-    // the worker function that runs in a separate thread
-    bool performArchiveExport();
+    // Strips host-specific values; the original config.json is never touched.
+    QByteArray buildPortableConfig();
 
     QString m_vmName;
-    QString m_vmPath; // Full path to the VM directory
-    QString m_outputFilePath; // Target file path
-    QString m_tmpOutputPath; // Temporary output file next to the target
+    QString m_vmPath;
+    QString m_outputFilePath;
+    QString m_tmpOutputPath;
 
-    // List of files that were verified to exist and need to be packed
+    QByteArray m_configData;
     QStringList m_filesToPack;
     qint64 m_totalBytesToPack = 0;
-
-    QFutureWatcher<bool> *m_watcher = nullptr;
-    std::atomic<bool> m_cancelExport{false};
-
-    // Backup/restore original config.json
-    QByteArray m_originalConfigData;
-    bool m_configModified = false;
-
     QString m_customIconFileName;
 };
