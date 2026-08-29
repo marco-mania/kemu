@@ -100,6 +100,8 @@ target_sources(
           jobs/downloadjob.h
           jobs/clonejob.h
           jobs/clonejob.cpp
+          jobs/archivestreamjob.h
+          jobs/archivestreamjob.cpp
           dialogs/editvmdialog.cpp
           dialogs/editvmdialog.h
           dialogs/newvmdialog.cpp
