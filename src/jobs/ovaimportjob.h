@@ -6,32 +6,17 @@
 
 #pragma once
 
-#include <atomic>
+#include <memory>
 
-extern "C" {
-#include <archive.h>
-#include <archive_entry.h>
-}
-
-#include <QDir>
-#include <QFile>
-#include <QFileInfo>
-#include <QFutureWatcher>
-#include <QObject>
-#include <QRegularExpression>
+#include <QString>
 #include <QTemporaryDir>
-#include <QXmlStreamReader>
-#include <QtConcurrent/QtConcurrent>
 
-#include <KJob>
-#include <KLocalizedString>
-#include <KProcess>
-
+#include "jobs/archivestreamjob.h"
 #include "utils/vmconfig.h"
 
-using namespace Qt::StringLiterals;
+class QemuImgProcess;
 
-class OvaImportJob : public KJob
+class OvaImportJob : public ArchiveStreamJob
 {
     Q_OBJECT
 
@@ -50,37 +35,31 @@ public:
     }
 
 protected:
-    bool doKill() override;
-
-private Q_SLOTS:
-    void onExtractionFinished();
-    void onConvertReadyRead();
-    void onConvertFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    bool runWorker() override;
+    void workerFinished(bool ok) override;
+    void discardPartialOutput() override;
+    void abortExternalTools() override;
 
 private:
-    bool performOvaExtraction(); // Worker function for background thread
     bool parseOvf();
     void convertDisk();
+    void onConvertFinished(bool ok);
+
+    // Converts an OVF quantity plus AllocationUnits to bytes. Handles the
+    // programmatic form ("byte * 2^20") and textual units ("MegaBytes").
+    static qint64 ovfQuantityToBytes(qint64 quantity, const QString &units, qint64 defaultUnitBytes);
 
     QString m_ovaPath;
     QString m_vmBaseDir;
     int m_diskSizeGb;
 
-    QTemporaryDir m_stagingDir;
+    std::unique_ptr<QTemporaryDir> m_stagingDir;
     QString m_ovfPath;
     QString m_diskPath;
 
     QString m_vmName;
+    QString m_targetDir;
     VMConfig m_importedConfig;
 
-    KProcess *m_process = nullptr;
-
-    // Threading and cancellation for the extraction step
-    QFutureWatcher<bool> *m_watcher = nullptr;
-    std::atomic<bool> m_cancelImport{false};
-
-    // Convert an OVF quantity + AllocationUnits string to bytes.
-    // Handles the programmatic form ("byte * 2^20") and textual units
-    // ("MegaBytes", ...). Falls back to defaultUnitBytes when empty/unknown.
-    static qint64 ovfQuantityToBytes(qint64 quantity, const QString &units, qint64 defaultUnitBytes);
+    QemuImgProcess *m_converter = nullptr;
 };

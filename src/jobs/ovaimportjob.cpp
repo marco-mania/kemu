@@ -6,24 +6,102 @@
 
 #include "ovaimportjob.h"
 
-#include "utils/externaltools.h"
-#include "utils/vmconfig.h"
+extern "C" {
+#include <archive.h>
+#include <archive_entry.h>
+}
+
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QHash>
+#include <QRegularExpression>
+#include <QXmlStreamReader>
+#include <QtMath>
+
+#include <KLocalizedString>
+
+#include "utils/archivepaths.h"
+#include "utils/qemuimgprocess.h"
+
+using namespace Qt::StringLiterals;
+
+namespace
+{
+
+constexpr int kExtractBand = 150;
+
+const QString kOvfNs = u"http://schemas.dmtf.org/ovf/envelope/1"_s;
+
+// Namespace-aware lookup with a fallback for descriptors that declare no
+// namespace at all.
+QString ovfAttr(const QXmlStreamReader &xml, const QString &name)
+{
+    const QXmlStreamAttributes attrs = xml.attributes();
+    if (attrs.hasAttribute(kOvfNs, name))
+        return attrs.value(kOvfNs, name).toString();
+    return attrs.value(u"ovf:"_s + name).toString();
+}
+
+// Collects the children of one <Item> so that element order does not matter.
+// The CIM schema sorts them alphabetically, which puts AllocationUnits before
+// ResourceType.
+QHash<QString, QString> readItem(QXmlStreamReader &xml)
+{
+    QHash<QString, QString> fields;
+
+    while (!xml.atEnd()) {
+        xml.readNext();
+        if (xml.isEndElement() && xml.name() == u"Item")
+            break;
+        if (xml.isStartElement())
+            fields.insert(xml.name().toString(), xml.readElementText());
+    }
+
+    return fields;
+}
+
+QString normalizeMac(QString mac)
+{
+    mac.remove(u':');
+    mac.remove(u'-');
+    if (mac.length() != 12)
+        return {};
+
+    QStringList parts;
+    for (int i = 0; i < 12; i += 2)
+        parts << mac.mid(i, 2);
+    return parts.join(u':').toLower();
+}
+
+}
 
 OvaImportJob::OvaImportJob(const QString &ovaPath, const QString &vmBaseDir, int diskSizeGb, QObject *parent)
-    : KJob(parent)
+    : ArchiveStreamJob(parent)
     , m_ovaPath(ovaPath)
     , m_vmBaseDir(vmBaseDir)
     , m_diskSizeGb(diskSizeGb)
 {
-    setCapabilities(Killable);
-    setProperty("immediateProgressReporting", true);
 }
 
 void OvaImportJob::start()
 {
-    if (!m_stagingDir.isValid()) {
-        setError(1);
-        setErrorText(i18n("Failed to create temporary directory."));
+    // Staging next to the VM directory, not in tmpfs.
+    m_stagingDir = std::make_unique<QTemporaryDir>(m_vmBaseDir + u"/.kemu-import-XXXXXX"_s);
+    if (!m_stagingDir->isValid()) {
+        setError(StagingError);
+        setErrorText(i18n("Failed to create a staging directory in %1.", m_vmBaseDir));
+        emitResult();
+        return;
+    }
+
+    const qint64 archiveSize = QFileInfo(m_ovaPath).size();
+
+    // Extracted VMDK plus converted qcow2 both land here.
+    QString spaceMessage;
+    if (!hasFreeSpace(m_vmBaseDir, 3 * archiveSize, &spaceMessage)) {
+        setError(DiskSpaceError);
+        setErrorText(spaceMessage);
         emitResult();
         return;
     }
@@ -33,158 +111,124 @@ void OvaImportJob::start()
                        QPair<QString, QString>(i18n("File"), QFileInfo(m_ovaPath).fileName()),
                        QPair<QString, QString>(i18n("Step"), i18n("Extracting archive...")));
 
-    emitPercent(0, 1000);
-
-    // Setup threaded execution for extraction
-    m_cancelImport = false;
-    m_watcher = new QFutureWatcher<bool>(this);
-    connect(m_watcher, &QFutureWatcher<bool>::finished, this, &OvaImportJob::onExtractionFinished);
-
-    // Start extraction in a background thread to prevent UI freezing
-    const QFuture<bool> future = QtConcurrent::run(&OvaImportJob::performOvaExtraction, this);
-    m_watcher->setFuture(future);
+    beginPhase(0, kExtractBand, archiveSize);
+    startWorker();
 }
 
-bool OvaImportJob::performOvaExtraction()
+bool OvaImportJob::runWorker()
 {
-    struct archive *a = archive_read_new();
+    archive *a = archive_read_new();
     archive_read_support_filter_all(a);
     archive_read_support_format_all(a);
 
-    if (archive_read_open_filename(a, m_ovaPath.toUtf8().constData(), 10240) != ARCHIVE_OK) {
+    if (archive_read_open_filename(a, QFile::encodeName(m_ovaPath).constData(), 10240) != ARCHIVE_OK) {
+        recordArchiveError(a, i18n("while opening %1", m_ovaPath));
         archive_read_free(a);
         return false;
     }
 
-    qint64 totalCompressedBytes = QFileInfo(m_ovaPath).size();
-    if (totalCompressedBytes <= 0)
-        totalCompressedBytes = 1;
+    const QDir stagingDir(m_stagingDir->path());
+    bool ok = true;
+    archive_entry *entry = nullptr;
 
-    struct archive_entry *entry;
-    bool success = true;
-    char buffer[1024 * 1024]; // 1 MB chunk buffer
-
-    while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
-        if (m_cancelImport) {
-            success = false;
+    for (;;) {
+        if (isCancelled()) {
+            ok = false;
             break;
         }
 
-        const QString currentFileName = QString::fromUtf8(archive_entry_pathname(entry));
+        const EntryResult r = nextEntry(a, &entry);
+        if (r == EntryResult::EndOfArchive)
+            break;
+        if (r == EntryResult::Failed) {
+            ok = false;
+            break;
+        }
 
-        // Security check: prevent directory traversal
-        if (currentFileName.contains(u"..") || currentFileName.startsWith(u"/")) {
+        if (archive_entry_filetype(entry) != AE_IFREG)
             continue;
-        }
 
-        const QString fullPath = m_stagingDir.filePath(currentFileName);
+        const QString name = QString::fromUtf8(archive_entry_pathname(entry));
+        const QString destPath = ArchivePaths::resolveWithin(stagingDir, name);
+        if (destPath.isEmpty())
+            continue;
 
-        // Some OVAs nest files in subdirectories - create them first.
-        QDir().mkpath(QFileInfo(fullPath).path());
+        // Some OVAs nest files in subdirectories.
+        QDir().mkpath(QFileInfo(destPath).path());
 
-        QFile outFile(fullPath);
-
-        if (currentFileName.endsWith(u".ovf"_s, Qt::CaseInsensitive))
-            m_ovfPath = fullPath;
-
-        if (!outFile.open(QIODevice::WriteOnly)) {
-            success = false;
+        if (!extractEntryTo(a, destPath)) {
+            ok = false;
             break;
         }
 
-        while (true) {
-            if (m_cancelImport) {
-                success = false;
-                break;
-            }
-
-            const la_ssize_t readBytes = archive_read_data(a, buffer, sizeof(buffer));
-            if (readBytes == 0)
-                break; // EOF
-            if (readBytes < 0) {
-                success = false;
-                break;
-            } // Error
-
-            outFile.write(buffer, readBytes);
-
-            // Report progress (thread-safe dispatch)
-            const qint64 processedBytes = archive_filter_bytes(a, -1);
-            const int extractPercent = static_cast<int>((processedBytes * 100) / totalCompressedBytes);
-
-            // Map 0-100% extraction to 0-150 (out of 1000) for the total job progress
-            const int scaledPercent = qMin(static_cast<int>(extractPercent * 1.5), 150);
-
-            QMetaObject::invokeMethod(
-                this,
-                [this, scaledPercent]() {
-                    emitPercent(scaledPercent, 1000);
-                },
-                Qt::QueuedConnection);
-        }
-
-        outFile.close();
-        if (!success)
-            break;
+        if (name.endsWith(u".ovf"_s, Qt::CaseInsensitive))
+            m_ovfPath = destPath;
     }
 
     archive_read_close(a);
     archive_read_free(a);
 
-    return success;
+    return ok;
 }
 
-void OvaImportJob::onExtractionFinished()
+void OvaImportJob::workerFinished(bool ok)
 {
-    const bool success = m_watcher->result();
-    m_watcher->deleteLater();
-    m_watcher = nullptr;
-
-    if (m_cancelImport) {
-        if (!m_vmName.isEmpty()) {
-            QDir(m_vmBaseDir + u"/"_s + m_vmName).removeRecursively();
-        }
-        setError(KJob::KilledJobError);
+    if (!ok) {
+        setError(ArchiveError);
+        setErrorText(workerErrorText().isEmpty() ? i18n("Failed to extract the OVA archive.") : workerErrorText());
         emitResult();
         return;
     }
 
-    if (!success) {
-        setError(2);
-        setErrorText(i18n("Failed to extract OVA archive."));
-        emitResult();
-        return;
-    }
-
-    // Extraction is done, now we can parse the OVF in the main thread
     if (!parseOvf()) {
-        setError(3);
-        setErrorText(i18n("Failed to parse OVF descriptor or unsupported format."));
+        setError(ContentError);
+        setErrorText(i18n("Failed to parse the OVF descriptor or unsupported format."));
         emitResult();
         return;
     }
 
-    // Check if a VM with this name already exists
-    if (QDir(m_vmBaseDir + u"/"_s + m_vmName).exists()) {
-        setError(4);
-        setErrorText(
-            i18n("A VM named '%1' already exists. "
-                 "Please rename or delete it first.",
-                 m_vmName));
+    m_targetDir = ArchivePaths::resolveWithin(QDir(m_vmBaseDir), m_vmName);
+    if (m_targetDir.isEmpty()) {
+        setError(ContentError);
+        setErrorText(i18n("The OVF descriptor contains an invalid VM name."));
         emitResult();
         return;
     }
 
-    QDir().mkpath(m_vmBaseDir + u"/"_s + m_vmName);
+    if (QDir(m_targetDir).exists()) {
+        setError(TargetExistsError);
+        setErrorText(i18n("A VM named '%1' already exists. Please rename or delete it first.", m_vmName));
+        emitResult();
+        return;
+    }
 
-    // Proceed to the conversion phase
+    if (m_diskPath.isEmpty() || !QFile::exists(m_diskPath)) {
+        setError(ContentError);
+        setErrorText(i18n("No disk image found in the OVA archive."));
+        emitResult();
+        return;
+    }
+
+    QDir().mkpath(m_targetDir);
     convertDisk();
+}
+
+void OvaImportJob::discardPartialOutput()
+{
+    if (!m_targetDir.isEmpty())
+        QDir(m_targetDir).removeRecursively();
+}
+
+void OvaImportJob::abortExternalTools()
+{
+    if (m_converter)
+        m_converter->abort();
 }
 
 bool OvaImportJob::parseOvf()
 {
     if (m_ovfPath.isEmpty())
-        return false; // no .ovf in the archive -> caller reports parse failure
+        return false;
 
     QFile ovfFile(m_ovfPath);
     if (!ovfFile.open(QIODevice::ReadOnly))
@@ -194,112 +238,119 @@ bool OvaImportJob::parseOvf()
 
     int ramMb = GlobalDefaults.ramMb;
     int cpuCoreCount = GlobalDefaults.cpuCoreCount;
-    int diskCapacityGb = 0;
+    qint64 diskCapacityBytes = 0;
     QString vmName;
+    QString macAddress;
+
+    QHash<QString, QString> fileHrefs; // ovf:id -> ovf:href
+    QStringList diskFileRefs;
 
     while (!xml.atEnd()) {
         xml.readNext();
+        if (!xml.isStartElement())
+            continue;
 
-        if (xml.isStartElement()) {
-            // Get VM name from VirtualSystem
-            if (xml.name() == u"VirtualSystem") {
-                vmName = xml.attributes().value(u"ovf:id"_s).toString();
-            } else if (xml.name() == u"Name" && !xml.attributes().hasAttribute(u"ovf:id"_s)) { // Name element (child of VirtualSystem)
-                const QString text = xml.readElementText();
-                if (!text.isEmpty())
-                    vmName = text;
-            } else if (xml.name() == u"ResourceType") { // ResourceType + VirtualQuantity
-                const QString resType = xml.readElementText();
+        const QStringView element = xml.name();
 
-                // Forward-reading within the same item
-                // We need VirtualQuantity as a sibling element
-                // -> Simpler approach: note the ResourceType and continue reading
-                // (Simplified implementation)
-                if (resType == u"3"_s) {
-                    // CPU – VirtualQuantity follows
-                    while (!xml.atEnd()) {
-                        xml.readNext();
-                        if (xml.isStartElement() && xml.name() == u"VirtualQuantity") {
-                            cpuCoreCount = xml.readElementText().toInt();
-                            break;
-                        }
-                        if (xml.isEndElement() && xml.name() == u"Item")
-                            break;
-                    }
-                } else if (resType == u"4"_s) {
-                    // Memory: collect quantity and its allocation units.
-                    qint64 qty = 0;
-                    QString units;
-                    while (!xml.atEnd()) {
-                        xml.readNext();
-                        if (xml.isStartElement() && xml.name() == u"VirtualQuantity")
-                            qty = xml.readElementText().toLongLong();
-                        else if (xml.isStartElement() && xml.name() == u"AllocationUnits")
-                            units = xml.readElementText();
-                        else if (xml.isEndElement() && xml.name() == u"Item")
-                            break;
-                    }
-                    // Default to MiB (the common OVF case) when units are absent.
-                    ramMb = static_cast<int>(ovfQuantityToBytes(qty, units, 1024LL * 1024) / (1024LL * 1024));
-                } else if (resType == u"10"_s) {
-                    // Network Adapter
-                    while (!xml.atEnd()) {
-                        xml.readNext();
-                        if (xml.isStartElement() && xml.name() == u"MACAddress") {
-                            QString mac = xml.readElementText();
+        if (element == u"VirtualSystem") {
+            if (vmName.isEmpty())
+                vmName = ovfAttr(xml, u"id"_s);
 
-                            // OVF often stores the MAC address without colons (e.g.,
-                            // "525400123456"). We reformat it for QEMU and the UI to make it
-                            // look nice:
-                            if (mac.length() == 12 && !mac.contains(u':')) {
-                                mac = QString(u"%1:%2:%3:%4:%5:%6"_s)
-                                          .arg(mac.mid(0, 2), mac.mid(2, 2), mac.mid(4, 2), mac.mid(6, 2), mac.mid(8, 2), mac.mid(10, 2));
-                            }
+        } else if (element == u"Name") {
+            const QString text = xml.readElementText();
+            if (!text.isEmpty())
+                vmName = text;
 
-                            m_importedConfig.setMacAddress(mac);
-                            break;
-                        }
-                        if (xml.isEndElement() && xml.name() == u"Item")
-                            break;
-                    }
-                }
-            } else if (xml.name() == u"Disk") {
-                const QXmlStreamAttributes attrs = xml.attributes();
-                const qint64 cap = attrs.value(u"ovf:capacity"_s).toLongLong();
-                const QString capUnits = attrs.value(u"ovf:capacityAllocationUnits"_s).toString();
-                if (cap > 0) {
-                    const qint64 bytes = ovfQuantityToBytes(cap, capUnits, 1); // default unit: byte
-                    diskCapacityGb = static_cast<int>((bytes + (1LL << 30) - 1) / (1LL << 30)); // round up
-                }
-            } else if (xml.name() == u"File") {
-                // References/File: the disk image href (any format/name).
-                const QString href = xml.attributes().value(u"ovf:href"_s).toString();
-                if (m_diskPath.isEmpty() && !href.isEmpty())
-                    m_diskPath = m_stagingDir.filePath(href);
+        } else if (element == u"File") {
+            const QString id = ovfAttr(xml, u"id"_s);
+            const QString href = ovfAttr(xml, u"href"_s);
+            if (!href.isEmpty())
+                fileHrefs.insert(id, href);
+
+        } else if (element == u"Disk") {
+            diskFileRefs << ovfAttr(xml, u"fileRef"_s);
+
+            if (diskCapacityBytes == 0) {
+                const qint64 capacity = ovfAttr(xml, u"capacity"_s).toLongLong();
+                const QString units = ovfAttr(xml, u"capacityAllocationUnits"_s);
+                if (capacity > 0)
+                    diskCapacityBytes = ovfQuantityToBytes(capacity, units, 1); // default unit: byte
+            }
+
+        } else if (element == u"Item") {
+            const QHash<QString, QString> item = readItem(xml);
+
+            switch (item.value(u"ResourceType"_s).toInt()) {
+            case 3:
+                cpuCoreCount = item.value(u"VirtualQuantity"_s).toInt();
+                break;
+
+            case 4: {
+                const qint64 quantity = item.value(u"VirtualQuantity"_s).toLongLong();
+                const QString units = item.value(u"AllocationUnits"_s);
+                // Default to MiB, the common OVF case, when units are absent.
+                ramMb = static_cast<int>(ovfQuantityToBytes(quantity, units, 1024LL * 1024) / (1024LL * 1024));
+                break;
+            }
+
+            case 10: {
+                // OVF carries the MAC in rasd:Address; rasd:MACAddress is a
+                // non-standard extension some tools emit.
+                QString raw = item.value(u"Address"_s);
+                if (raw.isEmpty())
+                    raw = item.value(u"MACAddress"_s);
+                if (macAddress.isEmpty())
+                    macAddress = normalizeMac(raw);
+                break;
+            }
+
+            default:
+                break;
             }
         }
     }
 
-    if (vmName.isEmpty()) {
-        // Fallback: File name without extension
-        vmName = QFileInfo(m_ovaPath).completeBaseName();
-        if (vmName.endsWith(u".ova"_s, Qt::CaseInsensitive))
-            vmName.chop(4);
+    if (xml.hasError())
+        return false;
+
+    // Prefer the file referenced by the first Disk; taking the first File
+    // reference would pick up ISOs and NVRAM blobs.
+    QString href;
+    for (const QString &ref : std::as_const(diskFileRefs)) {
+        href = fileHrefs.value(ref);
+        if (!href.isEmpty())
+            break;
     }
+    if (href.isEmpty() && !fileHrefs.isEmpty())
+        href = fileHrefs.constBegin().value();
 
-    // Remove invalid characters from the VM name
-    vmName.replace(QRegularExpression(u"[^a-zA-Z0-9_\\-. ]"_s), u"_"_s);
-    m_vmName = vmName;
+    if (!href.isEmpty())
+        m_diskPath = m_stagingDir->filePath(href);
 
-    m_importedConfig.setName(vmName);
+    if (diskFileRefs.size() > 1)
+        Q_EMIT infoMessage(this, i18n("The appliance contains several disks; only the first one is imported."));
+
+    if (vmName.isEmpty())
+        vmName = QFileInfo(m_ovaPath).completeBaseName();
+
+    m_vmName = ArchivePaths::sanitizeVmName(vmName);
+    if (m_vmName.isEmpty())
+        return false;
+
+    const int diskCapacityGb = diskCapacityBytes > 0 ? static_cast<int>((diskCapacityBytes + (1LL << 30) - 1) / (1LL << 30)) : 0;
+
+    m_importedConfig.setName(m_vmName);
     m_importedConfig.setRamMb(ramMb > 0 ? ramMb : GlobalDefaults.ramMb);
     m_importedConfig.setCpuCoreCount(cpuCoreCount > 0 ? cpuCoreCount : GlobalDefaults.cpuCoreCount);
     m_importedConfig.setDiskSizeGb(diskCapacityGb > 0 ? diskCapacityGb : (m_diskSizeGb > 0 ? m_diskSizeGb : GlobalDefaults.diskSizeGb));
+    if (!macAddress.isEmpty())
+        m_importedConfig.setMacAddress(macAddress);
+
     // Conservative profile for foreign appliances: maximise the chance the
-    // imported guest boots without extra drivers. Users can refine per-VM later.
-    m_importedConfig.setMachineType(VMSpecs::MachineType::Pc); // i440fx
-    m_importedConfig.setUseUefi(false); // SeaBIOS
-    m_importedConfig.setDiskInterface(VMSpecs::DiskInterface::SataIde); // IDE on pc
+    // imported guest boots without extra drivers.
+    m_importedConfig.setMachineType(VMSpecs::MachineType::Pc);
+    m_importedConfig.setUseUefi(false);
+    m_importedConfig.setDiskInterface(VMSpecs::DiskInterface::SataIde);
     m_importedConfig.setNetworkCard(VMSpecs::NetworkCard::E1000);
     m_importedConfig.setGpuType(VMSpecs::GpuType::Vga);
     m_importedConfig.setPointerDevice(VMSpecs::PointerDevice::Ps2);
@@ -311,108 +362,56 @@ bool OvaImportJob::parseOvf()
 
 void OvaImportJob::convertDisk()
 {
-    const auto &tools = ExternalTools::instance();
-
-    if (!tools.isAvailable(ExternalTools::QemuImg)) {
-        setError(1);
-        setErrorText(i18n("qemu-img not found. Please check Settings."));
-        emitResult();
-        return;
-    }
-
     Q_EMIT description(this,
                        i18n("Importing OVA"),
                        QPair<QString, QString>(i18n("VM"), m_vmName),
                        QPair<QString, QString>(i18n("Step"), i18n("Converting disk format...")));
 
-    const QString targetQcow2 = m_vmBaseDir + u"/"_s + m_vmName + u"/disk.qcow2"_s;
+    const QString targetQcow2 = m_targetDir + u"/"_s + KEMUConst::VMDiskFileName;
 
-    m_process = new KProcess(this);
-    m_process->setOutputChannelMode(KProcess::SeparateChannels);
-    m_process->setProgram(tools.path(ExternalTools::QemuImg));
-    m_process->setArguments({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, m_diskPath, targetQcow2});
+    m_converter = new QemuImgProcess(this);
 
-    if (m_diskPath.isEmpty() || !QFile::exists(m_diskPath)) {
-        setError(7);
-        setErrorText(i18n("No disk image found in the OVA archive."));
+    connect(m_converter, &QemuImgProcess::progress, this, [this](double percent) {
+        emitPercent(kExtractBand + qRound(percent * ((1000 - kExtractBand) / 100.0)), 1000);
+    });
+    connect(m_converter, &QemuImgProcess::finished, this, &OvaImportJob::onConvertFinished);
+
+    if (!m_converter->start({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, m_diskPath, targetQcow2})) {
+        QDir(m_targetDir).removeRecursively();
+        setError(ToolError);
+        setErrorText(m_converter->errorText());
+        emitResult();
+    }
+}
+
+void OvaImportJob::onConvertFinished(bool ok)
+{
+    if (!ok) {
+        QDir(m_targetDir).removeRecursively();
+        setError(ToolError);
+        setErrorText(m_converter->errorText());
         emitResult();
         return;
     }
 
-    connect(m_process, &KProcess::readyReadStandardOutput, this, &OvaImportJob::onConvertReadyRead);
-    connect(m_process, static_cast<void (KProcess::*)(int, QProcess::ExitStatus)>(&KProcess::finished), this, &OvaImportJob::onConvertFinished);
+    const QString targetQcow2 = m_targetDir + u"/"_s + KEMUConst::VMDiskFileName;
+    m_importedConfig.setDiskPath(targetQcow2);
 
-    m_process->start();
-}
-
-void OvaImportJob::onConvertReadyRead()
-{
-    m_process->setReadChannel(QProcess::StandardOutput);
-    while (m_process->canReadLine()) {
-        const QString line = QString::fromUtf8(m_process->readLine()).trimmed();
-
-        const QRegularExpression rx(u"\\((\\d+\\.\\d+)/100%\\)"_s);
-        const QRegularExpressionMatch match = rx.match(line);
-        if (match.hasMatch()) {
-            bool ok;
-            const double percent = match.captured(1).toDouble(&ok);
-            if (ok) {
-                // 15% (150) were used for extraction, the remaining 85% (850) are for
-                // conversion
-                emitPercent(150 + qRound(percent * 8.5), 1000);
-            }
-        }
-    }
-}
-
-void OvaImportJob::onConvertFinished(int exitCode, QProcess::ExitStatus exitStatus)
-{
-    if (exitStatus != QProcess::NormalExit || exitCode != 0) {
-        QDir(m_vmBaseDir + u"/"_s + m_vmName).removeRecursively();
-        setError(6);
-        setErrorText(i18n("qemu-img convert from VMDK failed (exit code %1).", exitCode));
-        emitResult();
-        return;
-    }
-
-    m_importedConfig.setDiskPath(m_vmBaseDir + u"/"_s + m_vmName + u"/disk.qcow2"_s);
+    // The OVF capacity is a hint; the converted image is the truth.
+    const QemuImgProcess::ImageInfo info = QemuImgProcess::inspect(targetQcow2);
+    if (info.isValid)
+        m_importedConfig.setDiskSizeGb(qCeil(info.virtualSizeBytes / double(1LL << 30)));
 
     emitPercent(1000, 1000);
     emitResult();
 }
 
-bool OvaImportJob::doKill()
-{
-    m_cancelImport = true;
-
-    // Process phase: disconnect before killing so onConvertFinished() cannot
-    // emit a second result.
-    if (m_process && m_process->state() != QProcess::NotRunning) {
-        disconnect(m_process, nullptr, this, nullptr);
-        m_process->kill();
-    }
-
-    // Thread phase: defer to onExtractionFinished(), which cleans up.
-    if (m_watcher && m_watcher->isRunning())
-        return false;
-
-    // Convert phase (or before anything started): clean up and let KJob emit
-    // the single KilledJobError result.
-    if (!m_vmName.isEmpty())
-        QDir(m_vmBaseDir + u"/"_s + m_vmName).removeRecursively();
-
-    return true;
-}
-
-// Convert an OVF quantity + AllocationUnits string to bytes.
-// Handles the programmatic form ("byte * 2^20") and textual units
-// ("MegaBytes", ...). Falls back to defaultUnitBytes when empty/unknown.
 qint64 OvaImportJob::ovfQuantityToBytes(qint64 quantity, const QString &units, qint64 defaultUnitBytes)
 {
     if (quantity <= 0)
         return 0;
 
-    static const QRegularExpression powRx(QStringLiteral(R"(byte\s*\*\s*2\^(\d+))"), QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression powRx(uR"(byte\s*\*\s*2\^(\d+))"_s, QRegularExpression::CaseInsensitiveOption);
     const QRegularExpressionMatch m = powRx.match(units);
     if (m.hasMatch())
         return quantity * (1LL << m.captured(1).toInt());
