@@ -2465,7 +2465,9 @@ void MainWindow::exportVM()
             const QString vmName = exportJob->vmName();
             veModel->setVmState(vmName, VmEntry::State::Stopped);
 
-            if (exportJob->error()) {
+            if (exportJob->error() == KJob::KilledJobError) {
+                statusBar()->showMessage(i18n("Operation cancelled."));
+            } else if (exportJob->error()) {
                 statusBar()->showMessage(i18n("Export of VM '%1' failed: %2", vmName, exportJob->errorText()));
                 KMessageBox::error(this, i18n("Failed to export VM '%1':\n%2", vmName, exportJob->errorText()), i18n("Export Failed"));
             } else {
@@ -2512,23 +2514,29 @@ void MainWindow::importVM()
     }
     activeImports.append(job);
 
-    connect(job, &ImportJob::finished, this, [this, vmBaseDir](KJob *kjob) {
+    connect(job, &ImportJob::finished, this, [this](KJob *kjob) {
         auto *importJob = qobject_cast<ImportJob *>(kjob);
         if (!importJob)
             return;
 
         activeImports.removeOne(importJob);
 
-        if (importJob->error()) {
+        if (importJob->error() == KJob::KilledJobError) {
+            statusBar()->showMessage(i18n("Operation cancelled."));
+        } else if (importJob->error()) {
             statusBar()->showMessage(i18n("Import failed: %1", importJob->errorText()));
             KMessageBox::error(this, i18n("Failed to import VM:\n%1", importJob->errorText()), i18n("Import Failed"));
 
         } else {
-            if (SettingsDialog::importRegenerateMac()) {
-                VMConfig config = loadVmConfig(vmBaseDir);
+            const QString vmDir = getVmDir(importJob->vmName()).absolutePath();
+
+            VMConfig config = loadVmConfig(vmDir);
+            if (SettingsDialog::importRegenerateMac())
                 config.setMacAddress(Utils::generateRandomMac(usedMacAddresses()));
-                saveVmConfig(vmBaseDir, config);
-            }
+
+            // Always rewrite: this also regenerates qemu.sh, which is not part
+            // of the archive because it contains host paths.
+            saveVmConfig(vmDir, config);
 
             statusBar()->showMessage(i18n("VM '%1' imported successfully.", importJob->vmName()));
             loadVmList();
@@ -3218,9 +3226,9 @@ void MainWindow::importOVA(const QString &filePath)
 
         } else {
             VMConfig config = importJob->importedConfig();
-            if (SettingsDialog::importRegenerateMac()) {
-                config.setMacAddress(Utils::generateRandomMac(usedMacAddresses()));
-            }
+            const QStringList used = usedMacAddresses();
+            if (SettingsDialog::importRegenerateMac() || used.contains(config.macAddress(), Qt::CaseInsensitive))
+                config.setMacAddress(Utils::generateRandomMac(used));
             saveVmConfig(getVmDir(config.name()).absolutePath(), config);
 
             statusBar()->showMessage(i18n("VM '%1' imported from OVA.", config.name()));
@@ -3260,7 +3268,9 @@ void MainWindow::exportOVA(const QString &filePath)
         const QString vmName = exportJob->vmName();
         veModel->setVmState(vmName, VmEntry::State::Stopped);
 
-        if (exportJob->error()) {
+        if (exportJob->error() == KJob::KilledJobError) {
+            statusBar()->showMessage(i18n("Operation cancelled."));
+        } else if (exportJob->error()) {
             statusBar()->showMessage(i18n("OVA export of VM '%1' failed: %2", vmName, exportJob->errorText()));
             KMessageBox::error(this, i18n("Failed to export VM '%1' as OVA:\n%2", vmName, exportJob->errorText()), i18n("Export Failed"));
         } else {
