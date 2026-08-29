@@ -10,6 +10,9 @@
 
 extern "C" {
 char *__crypt_sha512(const char *key, const char *setting, char *output);
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/prctl.h>
 }
 
 namespace Utils
@@ -48,46 +51,6 @@ QString generateCloudInitPasswordHash(const QString &password)
 
     return u"!"_s;
 }
-
-// bool waitForSocket(const QString &sockPath, int timeoutMs)
-// {
-//     if (QFile::exists(sockPath)) {
-//         return true;
-//     }
-//
-//     const QFileInfo fileInfo(sockPath);
-//     const QString dirPath = fileInfo.absolutePath();
-//
-//     QEventLoop loop;
-//     QTimer timer;
-//     QFileSystemWatcher watcher;
-//
-//     watcher.addPath(dirPath);
-//
-//     bool found = false;
-//
-//     QObject::connect(&watcher, &QFileSystemWatcher::directoryChanged, [&]() {
-//         if (QFile::exists(sockPath)) {
-//             found = true;
-//             timer.stop();
-//             loop.quit();
-//         }
-//     });
-//
-//     timer.setSingleShot(true);
-//     QObject::connect(&timer, &QTimer::timeout, [&]() {
-//         watcher.disconnect();
-//         loop.quit();
-//     });
-//
-//     timer.start(timeoutMs);
-//     loop.exec();
-//
-//     // Cleanup: remove path and clear watcher
-//     watcher.removePath(dirPath);
-//
-//     return found;
-// }
 
 namespace
 {
@@ -251,6 +214,24 @@ QString vmNameToHostname(const QString &vmName)
         host.chop(1);
 
     return host.isEmpty() ? u"kemu-vm"_s : host.left(63);
+}
+
+void setDiesWithParent(KProcess *process, int inheritFd)
+{
+    // Runs in the child between fork and exec, so it must stay
+    // async-signal-safe.
+    process->setChildProcessModifier([inheritFd] {
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+        if (inheritFd >= 0)
+            fcntl(inheritFd, F_SETFD, 0);
+    });
+}
+
+void appendTail(QByteArray &tail, const QByteArray &data, int maxBytes)
+{
+    tail.append(data);
+    if (tail.size() > maxBytes)
+        tail.remove(0, tail.size() - maxBytes);
 }
 
 } // namespace Utils

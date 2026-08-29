@@ -21,6 +21,7 @@
 #include <QTimer>
 
 #include <KConfigGroup>
+#include <KProcess>
 #include <KSharedConfig>
 
 using namespace Qt::StringLiterals;
@@ -121,5 +122,15 @@ QString quoteShellArg(const QString &arg);
 // Derives an RFC-1123 style host name from a VM name. VM names allow spaces,
 // dots and underscores, host names do not.
 QString vmNameToHostname(const QString &vmName);
+
+// Installs PR_SET_PDEATHSIG=SIGTERM so the child dies with KEMU.
+// Replaces any previously installed child process modifier.
+// inheritFd, when >= 0, gets its CLOEXEC flag cleared so the child keeps it.
+// Never combine with UnixProcessParameters::CloseFileDescriptors: that would
+// close the descriptor despite the cleared flag.
+void setDiesWithParent(KProcess *process, int inheritFd = -1);
+
+// Appends to a rolling tail, discarding the oldest bytes beyond maxBytes.
+void appendTail(QByteArray &tail, const QByteArray &data, int maxBytes);
 
 } // namespace Utils

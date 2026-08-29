@@ -547,11 +547,10 @@ KProcess *MainWindow::createQemuProcess(const QString &vmName, const QStringList
 
     constexpr int kStderrTailLimit = 65536;
     connect(process, &QProcess::readyReadStandardError, this, [this, process, vmName]() {
-        QByteArray &tail = m_qemuStderrTails[vmName];
-        tail.append(process->readAllStandardError());
-        if (tail.size() > kStderrTailLimit)
-            tail.remove(0, tail.size() - kStderrTailLimit);
+        Utils::appendTail(m_qemuStderrTails[vmName], process->readAllStandardError(), kStderrTailLimit);
     });
+
+    Utils::setDiesWithParent(process, tapFd);
 
     // Never combine this with QProcess::UnixProcessParameters::CloseFileDescriptors:
     // it would close the tap descriptor despite the cleared CLOEXEC flag.

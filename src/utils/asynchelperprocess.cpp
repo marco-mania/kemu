@@ -12,9 +12,10 @@
 #include <KLocalizedString>
 
 extern "C" {
-#include <signal.h>
 #include <sys/prctl.h>
 }
+
+#include "utils/utils.h"
 
 using namespace Qt::StringLiterals;
 
@@ -111,11 +112,8 @@ void AsyncHelperProcess::start(const Options &options)
     m_process->setArguments(m_opts.arguments);
     m_process->setOutputChannelMode(KProcess::SeparateChannels);
 
-    if (m_opts.setParentDeathSignal) {
-        m_process->setChildProcessModifier([] {
-            prctl(PR_SET_PDEATHSIG, SIGTERM);
-        });
-    }
+    if (m_opts.setParentDeathSignal)
+        Utils::setDiesWithParent(m_process);
 
     // Hook all signals BEFORE start(). In Qt6 every QProcess signal is
     // delivered through the event loop, so we cannot miss one this way
