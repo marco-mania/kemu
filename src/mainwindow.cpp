@@ -21,7 +21,9 @@
 #include "jobs/ovaimportjob.h"
 #include "jobs/shrinkjob.h"
 #include "kemu_debug.h"
+#include "runtime/vmruntimeinfo.h"
 #include "utils/asynchelperprocess.h"
+#include "utils/cloudimagedeployer.h"
 #include "utils/qemucapabilities.h"
 #include "utils/qemucommandbuilder.h"
 #include "utils/qemuimgprocess.h"
@@ -37,6 +39,8 @@ extern "C" {
 #include <sys/prctl.h>
 #include <unistd.h>
 }
+
+#include <utility>
 
 MainWindow::MainWindow(QWidget *parent)
     : KXmlGuiWindow(parent)
@@ -209,7 +213,7 @@ bool MainWindow::queryClose()
         // QuitNow falls through: viewers are torn down and QEMU dies with us.
     }
 
-    const auto viewerNames = m_dbusViewers.keys();
+    const QStringList viewerNames = vmNamesWithViewer();
     for (const QString &name : viewerNames)
         stopDbusViewer(name);
 
@@ -548,7 +552,7 @@ KProcess *MainWindow::createQemuProcess(const QString &vmName, const QStringList
 
     constexpr int kStderrTailLimit = 65536;
     connect(process, &QProcess::readyReadStandardError, this, [this, process, vmName]() {
-        Utils::appendTail(m_qemuStderrTails[vmName], process->readAllStandardError(), kStderrTailLimit);
+        Utils::appendTail(runtimeFor(vmName).stderrTail, process->readAllStandardError(), kStderrTailLimit);
     });
 
     Utils::setDiesWithParent(process, tapFd);
@@ -614,7 +618,7 @@ void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const Q
         if (e && e->qemuProcess == process)
             return; // handleQemuExit will own this.
         const QString err = process->errorString();
-        m_startupFailureShown.insert(vmName);
+        runtimeFor(vmName).startupFailureShown = true;
         showQemuFailureDialog(vmName, true, -1, KProcess::CrashExit, err.toUtf8());
         process->deleteLater();
         tearDownVmRuntime(vmName);
@@ -632,7 +636,7 @@ void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const Q
 
     // Optimistic registration: if QEMU dies inside the probe window, the
     // probe will surface a startup-failure dialog and dedup against
-    // handleQemuExit via m_startupFailureShown.
+    // handleQemuExit.
     veModel->setHeadless(vmName, headless);
     veModel->setQemuProcess(vmName, process);
     veModel->setVmState(vmName, VmEntry::State::Running);
@@ -689,7 +693,7 @@ void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const Q
             // Do NOT 'cont' here: QMP is up long before the incoming migration
             // has finished loading the (paused) state. Enable MIGRATION events
             // and let onQMPEvent() resume once status == "completed".
-            m_resumingFromSavestate.insert(vmName);
+            runtimeFor(vmName).resumingFromSavestate = true;
 
             QJsonArray caps;
             QJsonObject capEvents;
@@ -860,8 +864,8 @@ void MainWindow::launchQemuForDeployment(const QString &vmName, bool headless, c
 bool MainWindow::startDbusViewer(const QString &vmName)
 {
     // Already running? Just bring the existing window to the front.
-    if (m_dbusViewers.contains(vmName)) {
-        auto &existing = m_dbusViewers[vmName];
+    if (auto *rt = runtime(vmName); rt && rt->viewer) {
+        auto &existing = *rt->viewer;
         if (existing.window) {
             existing.window->raise();
             existing.window->activateWindow();
@@ -879,27 +883,27 @@ bool MainWindow::startDbusViewer(const QString &vmName)
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!hasLiveQemu(vmName)) {
         // VM died or was stopped while we were (re)trying: abort silently.
-        m_viewerConnectAttempts.remove(vmName);
+        runtimeFor(vmName).viewerConnectAttempts = 0;
         return false;
     }
 
     QMPClient *qmp = entry->qmpClient.data();
     if (!qmp || !qmp->isConnected()) {
-        const int attempt = m_viewerConnectAttempts.value(vmName, 0);
-        if (attempt < kViewerConnectMaxAttempts) {
-            m_viewerConnectAttempts[vmName] = attempt + 1;
+        auto &rt = runtimeFor(vmName);
+        if (rt.viewerConnectAttempts < kViewerConnectMaxAttempts) {
+            ++rt.viewerConnectAttempts;
             QTimer::singleShot(kViewerConnectRetryMs, this, [this, vmName] {
                 startDbusViewer(vmName);
             });
             return true; // handshake initiated, completion is async
         }
-        m_viewerConnectAttempts.remove(vmName);
+        runtimeFor(vmName).viewerConnectAttempts = 0;
         KMessageBox::error(this,
                            i18n("Display connection for '%1' not available (no QMP after %2 attempts).", vmName, kViewerConnectMaxAttempts),
                            i18n("Viewer Error"));
         return false;
     }
-    m_viewerConnectAttempts.remove(vmName);
+    runtimeFor(vmName).viewerConnectAttempts = 0;
 
     // --- Socketpair: one end for QEMU, one end for us ---
     int sv[2];
@@ -939,7 +943,7 @@ bool MainWindow::startDbusViewer(const QString &vmName)
         }
 
         // The handshake ran through the event loop; re-validate the world.
-        if (!hasLiveQemu(vmName) || m_dbusViewers.contains(vmName)) {
+        if (!hasLiveQemu(vmName) || hasViewer(vmName)) {
             ctrl->deleteLater(); // never delete synchronously: we are inside the bridge's dispatch
             return;
         }
@@ -974,7 +978,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                          ::close(listenerFd); // QEMU received its own duplicate via the fd list
 
                          // The reply went through the event loop; re-validate the world.
-                         const bool vmAlive = hasLiveQemu(vmName) && !m_dbusViewers.contains(vmName);
+                         const bool vmAlive = hasLiveQemu(vmName) && !hasViewer(vmName);
 
                          if (!ok || !vmAlive || !displayListener->connectListener()) {
                              if (!ok) {
@@ -986,7 +990,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                              return;
                          }
 
-                         DbusViewerState state;
+                         VmRuntimeInfo::ViewerState state;
                          state.ctrl = ctrl;
                          state.displayListener = displayListener;
 
@@ -1041,7 +1045,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                              &DbusViewerWindow::viewerClosed,
                              this,
                              [this, vmName]() {
-                                 if (!m_dbusViewers.contains(vmName))
+                                 if (!hasViewer(vmName))
                                      return; // already torn down (shutdown path / connectionLost)
 
                                  if (hasLiveQemu(vmName))
@@ -1081,10 +1085,10 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                          });
 
                          connect(state.window, &DbusViewerWindow::networkLinkChangeRequested, this, [this, vmName](bool up) {
-                             auto it = m_dbusViewers.find(vmName);
-                             if (it == m_dbusViewers.end() || !it->window)
+                             auto *win = viewerWindow(vmName);
+                             if (!win)
                                  return;
-                             QPointer<DbusViewerWindow> viewer = it->window;
+                             QPointer<DbusViewerWindow> viewer = win;
 
                              const VmEntry *entry = veModel->entryByName(vmName);
                              if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
@@ -1125,7 +1129,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                              });
                          }
 
-                         m_dbusViewers.insert(vmName, state);
+                         runtimeFor(vmName).viewer = state;
 
                          pushMediaStateToViewer(vmName);
                          pushNetworkStateToViewer(vmName);
@@ -1139,10 +1143,12 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
 
 void MainWindow::stopDbusViewer(const QString &vmName)
 {
-    if (!m_dbusViewers.contains(vmName))
+    auto *rt = runtime(vmName);
+    if (!rt || !rt->viewer)
         return;
 
-    auto state = m_dbusViewers.take(vmName);
+    const VmRuntimeInfo::ViewerState state = *rt->viewer;
+    rt->viewer.reset();
 
     if (state.window) {
         state.window->displayWidget()->stopAllGLibWatching();
@@ -1163,12 +1169,12 @@ void MainWindow::stopDbusViewer(const QString &vmName)
 
 void MainWindow::registerAudioListeners(const QString &vmName)
 {
-    auto it = m_dbusViewers.find(vmName);
-    if (it == m_dbusViewers.end() || !it->ctrl)
+    auto *rt = runtime(vmName);
+    if (!rt || !rt->viewer || !rt->viewer->ctrl)
         return;
-    QemuControlConnection *ctrl = it->ctrl.data();
+    QemuControlConnection *ctrl = rt->viewer->ctrl.data();
 
-    const int outFd = it->audioOut->createSocketPair();
+    const int outFd = rt->viewer->audioOut->createSocketPair();
     if (outFd >= 0) {
         ctrl->callWithFd(KemuDbusDisplayConst::AudioPath,
                          KemuDbusDisplayConst::AudioIface,
@@ -1176,19 +1182,19 @@ void MainWindow::registerAudioListeners(const QString &vmName)
                          outFd,
                          [this, vmName, outFd](bool ok, const QString &err) {
                              ::close(outFd);
-                             auto it = m_dbusViewers.find(vmName);
-                             if (it == m_dbusViewers.end())
-                                 return; // viewer torn down meanwhile
+                             auto *rt = runtime(vmName);
+                             if (!rt || !rt->viewer)
+                                 return;
                              if (!ok) {
                                  qCDebug(KEMU) << "RegisterOutListener not available:" << err;
                                  return;
                              }
-                             if (it->audioOut->connectListener() && it->window)
-                                 it->window->audioOutReady();
+                             if (rt->viewer->audioOut->connectListener() && rt->viewer->window)
+                                 rt->viewer->window->audioOutReady();
                          });
     }
 
-    const int inFd = it->audioIn->createSocketPair();
+    const int inFd = rt->viewer->audioIn->createSocketPair();
     if (inFd >= 0) {
         ctrl->callWithFd(KemuDbusDisplayConst::AudioPath,
                          KemuDbusDisplayConst::AudioIface,
@@ -1196,15 +1202,15 @@ void MainWindow::registerAudioListeners(const QString &vmName)
                          inFd,
                          [this, vmName, inFd](bool ok, const QString &err) {
                              ::close(inFd);
-                             auto it = m_dbusViewers.find(vmName);
-                             if (it == m_dbusViewers.end())
+                             auto *rt = runtime(vmName);
+                             if (!rt || !rt->viewer)
                                  return;
                              if (!ok) {
                                  qCDebug(KEMU) << "RegisterInListener not available:" << err;
                                  return;
                              }
-                             if (it->audioIn->connectListener() && it->window)
-                                 it->window->audioInReady();
+                             if (rt->viewer->audioIn->connectListener() && rt->viewer->window)
+                                 rt->viewer->window->audioInReady();
                          });
     }
 }
@@ -1437,14 +1443,66 @@ void MainWindow::updateActionStates()
     const bool hasUsbController = hasSelection && entry && entry->config.usbController() != VMSpecs::UsbController::None;
     usbActionMenu->setEnabled(hasUsbController && isRunning);
 
-    const bool canReconnect = (isRunning || isDeploying) && entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Dbus
-        && !m_dbusViewers.contains(entry->config.name());
+    const bool canReconnect =
+        (isRunning || isDeploying) && entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !hasViewer(entry->config.name());
     actionCollection()->action(u"vm_reconnect"_s)->setEnabled(hasSelection && canReconnect);
 
     const bool hasActiveNamespace = hasSelection && (isRunning || isDeploying) && entry->config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
         && !entry->config.virtualNetworkName().isEmpty() && m_networkManager && m_networkManager->namespacePid(entry->config.virtualNetworkName()) > 0;
 
     actionCollection()->action(u"vm_network_shell"_s)->setEnabled(hasActiveNamespace && SandboxCapabilities::instance().has(SandboxCapabilities::HostTerminal));
+}
+
+VmRuntimeInfo &MainWindow::runtimeFor(const QString &vmName)
+{
+    auto it = m_runtimes.find(vmName);
+    if (it == m_runtimes.end()) {
+        VmRuntimeInfo info;
+        info.vmName = vmName;
+        it = m_runtimes.insert(vmName, info);
+    }
+    return *it;
+}
+
+VmRuntimeInfo *MainWindow::runtime(const QString &vmName)
+{
+    auto it = m_runtimes.find(vmName);
+    return it == m_runtimes.end() ? nullptr : &*it;
+}
+
+const VmRuntimeInfo *MainWindow::runtime(const QString &vmName) const
+{
+    auto it = m_runtimes.constFind(vmName);
+    return it == m_runtimes.constEnd() ? nullptr : &*it;
+}
+
+void MainWindow::dropRuntime(const QString &vmName)
+{
+    m_runtimes.remove(vmName);
+}
+
+DbusViewerWindow *MainWindow::viewerWindow(const QString &vmName) const
+{
+    const auto *rt = runtime(vmName);
+    if (!rt || !rt->viewer)
+        return nullptr;
+    return rt->viewer->window.data();
+}
+
+bool MainWindow::hasViewer(const QString &vmName) const
+{
+    const auto *rt = runtime(vmName);
+    return rt && rt->viewer.has_value();
+}
+
+QStringList MainWindow::vmNamesWithViewer() const
+{
+    QStringList names;
+    for (auto it = m_runtimes.cbegin(); it != m_runtimes.cend(); ++it) {
+        if (it->viewer)
+            names << it.key();
+    }
+    return names;
 }
 
 QString MainWindow::encodeThemeIcon(const QString &name, int sizePx) const
@@ -2097,9 +2155,14 @@ void MainWindow::tearDownVmRuntime(const QString &vmName)
     releaseNetwork(entry->config);
     veModel->clearRuntimeState(vmName);
 
-    m_qemuStderrTails.remove(vmName);
-    m_userInitiatedShutdowns.remove(vmName);
-    m_resumingFromSavestate.remove(vmName);
+    if (auto *rt = runtime(vmName)) {
+        // startupFailureShown deliberately survives: handleQemuExit() calls
+        // this before checking the flag, and would otherwise show a second
+        // dialog for a failure the startup probe already reported.
+        rt->stderrTail.clear();
+        rt->userInitiatedShutdown = false;
+        rt->resumingFromSavestate = false;
+    }
 }
 
 void MainWindow::changeISO()
@@ -2299,8 +2362,8 @@ void MainWindow::ejectFloppyForVm(const QString &vmName)
 
 void MainWindow::pushMediaStateToViewer(const QString &vmName)
 {
-    auto it = m_dbusViewers.find(vmName);
-    if (it == m_dbusViewers.end() || !it->window)
+    auto *win = viewerWindow(vmName);
+    if (!win)
         return;
 
     const VmEntry *entry = veModel->entryByName(vmName);
@@ -2310,16 +2373,16 @@ void MainWindow::pushMediaStateToViewer(const QString &vmName)
     const QString isoPath = entry->config.isoPath();
     const QString floppyPath = entry->config.floppyPath();
 
-    it->window->setMediaState(!isoPath.isEmpty(),
-                              isoPath.isEmpty() ? QString() : QFileInfo(isoPath).fileName(),
-                              !floppyPath.isEmpty(),
-                              floppyPath.isEmpty() ? QString() : QFileInfo(floppyPath).fileName());
+    win->setMediaState(!isoPath.isEmpty(),
+                       isoPath.isEmpty() ? QString() : QFileInfo(isoPath).fileName(),
+                       !floppyPath.isEmpty(),
+                       floppyPath.isEmpty() ? QString() : QFileInfo(floppyPath).fileName());
 }
 
 void MainWindow::pushNetworkStateToViewer(const QString &vmName)
 {
-    auto it = m_dbusViewers.find(vmName);
-    if (it == m_dbusViewers.end() || !it->window)
+    auto *win = viewerWindow(vmName);
+    if (!win)
         return;
 
     const VmEntry *entry = veModel->entryByName(vmName);
@@ -2328,12 +2391,12 @@ void MainWindow::pushNetworkStateToViewer(const QString &vmName)
 
     const VMConfig &cfg = entry->config;
     if (cfg.networkCard() == VMSpecs::NetworkCard::None) {
-        it->window->setNetworkState(QString(), false);
+        win->setNetworkState(QString(), false);
         return;
     }
 
     const QString label = u"%1 (%2)"_s.arg(VMConfig::toUIString(cfg.networkCard()), VMConfig::toUIString(cfg.networkMode()));
-    it->window->setNetworkState(label, loadViewerPrefs(vmName).networkLinkUp);
+    win->setNetworkState(label, loadViewerPrefs(vmName).networkLinkUp);
 }
 
 void MainWindow::shrinkDisk()
@@ -2669,7 +2732,7 @@ void MainWindow::reconnectViewer()
         return;
 
     if (entry->config.displayType() == VMSpecs::DisplayType::Dbus) {
-        if (m_dbusViewers.contains(vmName)) {
+        if (hasViewer(vmName)) {
             statusBar()->showMessage(i18n("Viewer is already running for '%1'.", vmName));
             return;
         }
@@ -2709,8 +2772,8 @@ void MainWindow::onTreeDoubleClicked(const QModelIndex &index)
 
     // VM is running and the integrated D-Bus viewer window is already open:
     // simply bring it to the front instead of trying to start the VM again.
-    if (entry->config.displayType() == VMSpecs::DisplayType::Dbus && m_dbusViewers.contains(vmName)) {
-        if (auto *win = m_dbusViewers[vmName].window.data()) {
+    if (entry->config.displayType() == VMSpecs::DisplayType::Dbus && hasViewer(vmName)) {
+        if (auto *win = viewerWindow(vmName)) {
             if (win->isMinimized() || !win->isVisible())
                 win->showNormal();
             win->raise();
@@ -2720,7 +2783,7 @@ void MainWindow::onTreeDoubleClicked(const QModelIndex &index)
     }
 
     // VM is running headless: reconnect viewer
-    if (entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !m_dbusViewers.contains(vmName))
+    if (entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !hasViewer(vmName))
         reconnectViewer();
 }
 
@@ -2895,10 +2958,8 @@ void MainWindow::startVM(bool headless)
         return;
     }
 
-    m_qemuStderrTails.remove(vmName);
-    m_userInitiatedShutdowns.remove(vmName);
-    m_resumingFromSavestate.remove(vmName);
-    m_startupFailureShown.remove(vmName);
+    // Reset failure-handling state from any previous attempt of this VM.
+    runtimeFor(vmName).resetRunState();
 
     if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !ExternalTools::instance().isVirtualNetworkCapable()) {
         const auto answer = KMessageBox::questionTwoActions(this,
@@ -3013,15 +3074,16 @@ void MainWindow::handleQemuExit(const QString &vmName, int exitCode, KProcess::E
     QPointer<KProcess> p = entry->qemuProcess;
 
     const bool wasDeploying = entry->state == VmEntry::State::Deploying;
-    const bool userInitiated = m_userInitiatedShutdowns.contains(vmName);
-    const bool startupAlreadyShown = m_startupFailureShown.contains(vmName);
+    auto &rt = runtimeFor(vmName);
+    const bool userInitiated = rt.userInitiatedShutdown;
+    const bool startupAlreadyShown = rt.startupFailureShown;
     const bool abnormal = (exitStatus != KProcess::NormalExit) || (exitCode != 0);
 
     if (p) {
-        QByteArray &tail = m_qemuStderrTails[vmName];
+        QByteArray &tail = rt.stderrTail;
         tail.append(p->readAllStandardError());
     }
-    const QByteArray stderrTail = m_qemuStderrTails.value(vmName);
+    const QByteArray stderrTail = rt.stderrTail;
 
     const bool savestatePresent = SaveStateManager::hasSavestate(getVmDir(vmName).absolutePath(), vmName);
 
@@ -3041,7 +3103,7 @@ void MainWindow::handleQemuExit(const QString &vmName, int exitCode, KProcess::E
         statusBar()->showMessage(i18n("VM '%1' stopped.", vmName));
     }
 
-    m_startupFailureShown.remove(vmName);
+    rt.startupFailureShown = false;
 
     if (selectedVmName() == vmName) {
         updateDetails();
@@ -3072,7 +3134,8 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
         // saved in a paused state (save() issued 'stop' before migrate), so it
         // stays paused until we 'cont'. Doing it here - not on QMP connect -
         // closes the race where QMP is up before the migration has finished.
-        if (status == u"completed"_s && m_resumingFromSavestate.remove(vmName)) {
+        auto *rt = runtime(vmName);
+        if (status == u"completed"_s && rt && std::exchange(rt->resumingFromSavestate, false)) {
             if (const VmEntry *e = veModel->entryByName(vmName); e && e->qmpClient) {
                 e->qmpClient->sendCommand(u"cont"_s, {}, [vmName](QMPResult r) {
                     if (!r.success)
@@ -3144,10 +3207,8 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
     if (eventName == u"NETDEV_STREAM_CONNECTED"_s || eventName == u"NETDEV_STREAM_DISCONNECTED"_s) {
         if (data.value(u"netdev-id"_s).toString() != KEMUConst::NetdevId)
             return;
-        auto it = m_dbusViewers.find(vmName);
-        // Reported by QEMU, not requested by the user: do not persist.
-        if (it != m_dbusViewers.end() && it->window)
-            it->window->setNetworkLinkState(eventName == u"NETDEV_STREAM_CONNECTED"_s, false);
+        if (auto *win = viewerWindow(vmName))
+            win->setNetworkLinkState(eventName == u"NETDEV_STREAM_CONNECTED"_s, false);
         return;
     }
 }
@@ -3290,7 +3351,8 @@ void MainWindow::exportOVA(const QString &filePath)
 
 void MainWindow::onAboutToSleep()
 {
-    m_pausedBySuspend.clear();
+    for (auto &rt : m_runtimes)
+        rt.pausedBySuspend = false;
     m_suspendInProgress = true;
 
     auto pending = std::make_shared<int>(0);
@@ -3299,11 +3361,11 @@ void MainWindow::onAboutToSleep()
         if (!e || e->state != VmEntry::State::Running || !e->qmpClient || !e->qmpClient->isConnected())
             continue;
 
-        m_pausedBySuspend.insert(name);
+        runtimeFor(name).pausedBySuspend = true;
         ++(*pending);
 
-        if (auto it = m_dbusViewers.find(name); it != m_dbusViewers.end() && it->window)
-            it->window->setSuspended(true);
+        if (auto *win = viewerWindow(name))
+            win->setSuspended(true);
 
         e->qmpClient->sendCommand(u"stop"_s, {}, [this, pending](QMPResult) {
             if (--(*pending) == 0)
@@ -3317,8 +3379,11 @@ void MainWindow::onAboutToSleep()
 
 void MainWindow::onWokeUp()
 {
-    const QStringList names(m_pausedBySuspend.cbegin(), m_pausedBySuspend.cend());
-    m_pausedBySuspend.clear();
+    QStringList names;
+    for (auto it = m_runtimes.begin(); it != m_runtimes.end(); ++it) {
+        if (std::exchange(it->pausedBySuspend, false))
+            names << it.key();
+    }
 
     for (const QString &name : names) {
         const VmEntry *e = veModel->entryByName(name);
@@ -3326,8 +3391,8 @@ void MainWindow::onWokeUp()
             continue;
 
         e->qmpClient->sendCommand(u"cont"_s, {}, nullptr);
-        if (auto it = m_dbusViewers.find(name); it != m_dbusViewers.end() && it->window)
-            it->window->setSuspended(false);
+        if (auto *win = viewerWindow(name))
+            win->setSuspended(false);
     }
     m_suspendInProgress = false;
 }
@@ -3383,13 +3448,15 @@ void MainWindow::shutdownVMByName(const QString &vmName)
     if (answer != KMessageBox::PrimaryAction)
         return;
 
-    m_userInitiatedShutdowns.insert(vmName);
+    runtimeFor(vmName).userInitiatedShutdown = true;
 
     const QMPResult result = client->sendCommandSync(u"system_powerdown"_s);
 
     if (!result.success) {
-        m_userInitiatedShutdowns.remove(vmName);
-        m_resumingFromSavestate.remove(vmName);
+        if (auto *rt = runtime(vmName)) {
+            rt->userInitiatedShutdown = false;
+            rt->resumingFromSavestate = false;
+        }
         KMessageBox::error(parentW, result.errorMessage, i18n("Shutdown Failed"));
         return;
     }
@@ -3515,7 +3582,7 @@ void MainWindow::powerOffVMByName(const QString &vmName)
     if (!forcePowerOff)
         return;
 
-    m_userInitiatedShutdowns.insert(vmName);
+    runtimeFor(vmName).userInitiatedShutdown = true;
 
     bool qmpSuccess = false;
     if (client && client->isConnected()) {
@@ -3583,27 +3650,30 @@ void MainWindow::saveStateVMByName(const QString &vmName, bool skipConfirm)
             return;
     }
 
-    m_userInitiatedShutdowns.insert(vmName);
+    runtimeFor(vmName).userInitiatedShutdown = true;
+
     veModel->setVmState(vmName, VmEntry::State::Saving);
     statusBar()->showMessage(i18n("Saving state of '%1'...", vmName));
     updateActionStates();
 
     // Visually mark the integrated D-Bus viewer as suspended.
-    if (auto it = m_dbusViewers.find(vmName); it != m_dbusViewers.end() && it->window)
-        it->window->setSuspended(true);
+    if (auto *win = viewerWindow(vmName))
+        win->setSuspended(true);
 
     const QString vmDirPath = getVmDir(vmName).absolutePath();
 
     m_saveStateManager.save(entry->qmpClient, vmDirPath, vmName, [this, vmName, safeParentW, process](bool ok, QString err) {
         if (!ok) {
-            m_userInitiatedShutdowns.remove(vmName);
-            m_resumingFromSavestate.remove(vmName);
+            if (auto *rt = runtime(vmName)) {
+                rt->userInitiatedShutdown = false;
+                rt->resumingFromSavestate = false;
+            }
             if (veModel->entryByName(vmName))
                 veModel->setVmState(vmName, VmEntry::State::Running);
 
             // Restore the viewer to its normal, interactive state.
-            if (auto it = m_dbusViewers.find(vmName); it != m_dbusViewers.end() && it->window)
-                it->window->setSuspended(false);
+            if (auto *win = viewerWindow(vmName))
+                win->setSuspended(false);
 
             if (safeParentW) {
                 KMessageBox::error(safeParentW, i18n("Could not save VM state: %1", err), i18n("Save State Failed"));
@@ -3781,12 +3851,12 @@ void MainWindow::createNewVM()
         loadVmList();
         selectVmByName(newConfig.name());
 
-        PendingDeployment pd;
-        pd.type = PendingDeployment::Type::CloudImage;
+        VmRuntimeInfo::PendingDeployment pd;
+        pd.type = VmRuntimeInfo::PendingDeployment::Type::CloudImage;
         pd.imageUrl = image.url;
         pd.imageLocalPath = imageLocalPath;
         pd.cloudConfig = cloudCfg;
-        m_pendingDeployments.insert(newConfig.name(), pd);
+        runtimeFor(newConfig.name()).deployment = pd;
 
         veModel->setVmState(newConfig.name(), VmEntry::State::Deploying);
         updateDetails();
@@ -3834,9 +3904,9 @@ void MainWindow::createNewVM()
         loadVmList();
         selectVmByName(newConfig.name());
 
-        PendingDeployment pd;
-        pd.type = PendingDeployment::Type::ManualIso;
-        m_pendingDeployments.insert(newConfig.name(), pd);
+        VmRuntimeInfo::PendingDeployment pd;
+        pd.type = VmRuntimeInfo::PendingDeployment::Type::ManualIso;
+        runtimeFor(newConfig.name()).deployment = pd;
 
         veModel->setVmState(newConfig.name(), VmEntry::State::Deploying);
         startDeployment(newConfig.name());
@@ -3900,6 +3970,8 @@ void MainWindow::editVM()
                 return;
             }
 
+            dropRuntime(oldName);
+
             QString oldDiskPath = newConfig.diskPath();
             if (oldDiskPath.contains(oldName)) {
                 newConfig.setDiskPath(oldDiskPath.replace(oldPath, newPath));
@@ -3959,6 +4031,7 @@ void MainWindow::deleteVM()
         }
 
         removeViewerPrefs(currentConfig.name());
+        dropRuntime(currentConfig.name());
         currentConfig = VMConfig();
         loadVmList();
         onVmSelectionChanged();
@@ -4255,10 +4328,7 @@ void MainWindow::startDeployment(const QString &vmName)
     veModel->updateConfig(vmName, config);
 
     // Reset failure-handling state from any previous attempt of this VM.
-    m_qemuStderrTails.remove(vmName);
-    m_userInitiatedShutdowns.remove(vmName);
-    m_resumingFromSavestate.remove(vmName);
-    m_startupFailureShown.remove(vmName);
+    runtimeFor(vmName).resetRunState();
 
     // Pre-flight: bail out before starting helpers if QEMU is missing,
     // so we don't leave half-set-up helpers running.
@@ -4303,8 +4373,8 @@ void MainWindow::startDeployment(const QString &vmName)
 
     // Headless is a cloud-init concept: the guest configures itself and signals
     // completion by shutting down. An installer ISO needs a display.
-    const auto pending = m_pendingDeployments.constFind(vmName);
-    const bool unattended = pending != m_pendingDeployments.constEnd() && pending->type == PendingDeployment::Type::CloudImage;
+    const auto *rt = runtime(vmName);
+    const bool unattended = rt && rt->deployment && rt->deployment->type == VmRuntimeInfo::PendingDeployment::Type::CloudImage;
     const bool headless = unattended && SettingsDialog::deployHeadless();
 
     chain->run([this, vmName, headless, resolvedTap](bool ok) {
@@ -4318,7 +4388,8 @@ void MainWindow::startDeployment(const QString &vmName)
 
 void MainWindow::finalizeDeployment(const QString &vmName)
 {
-    m_pendingDeployments.remove(vmName);
+    if (auto *rt = runtime(vmName))
+        rt->deployment.reset();
 
     const QString vmPath = getVmDir(vmName).absolutePath();
     const QDir vmDir(vmPath);
@@ -4343,7 +4414,8 @@ void MainWindow::finalizeDeployment(const QString &vmName)
 
 void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
 {
-    m_pendingDeployments.remove(vmName);
+    if (auto *rt = runtime(vmName))
+        rt->deployment.reset();
 
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry)
@@ -4417,10 +4489,11 @@ void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
 
 void MainWindow::deployCloudImage(const QString &vmName)
 {
-    if (!m_pendingDeployments.contains(vmName))
+    auto *rt = runtime(vmName);
+    if (!rt || !rt->deployment)
         return;
 
-    const auto pd = m_pendingDeployments[vmName];
+    const VmRuntimeInfo::PendingDeployment pd = *rt->deployment;
     QDir vmDir = getVmDir(vmName);
     VMConfig config = loadVmConfig(vmDir.absolutePath());
 
@@ -4429,7 +4502,7 @@ void MainWindow::deployCloudImage(const QString &vmName)
     auto result = CloudImageDeployer::deploy(pd.imageLocalPath, vmDir, config.diskSizeGb(), pd.cloudConfig);
 
     if (!result.success) {
-        m_pendingDeployments.remove(vmName);
+        rt->deployment.reset();
 
         if (selectedVmName() == vmName) {
             veTreeView->clearSelection();
@@ -4537,14 +4610,15 @@ void MainWindow::updateSessionInhibitors()
 
     bool inhibitSaver = false;
     if (SettingsDialog::inhibitScreensaverAlways()) {
-        inhibitSaver = !m_dbusViewers.isEmpty();
+        inhibitSaver = !vmNamesWithViewer().isEmpty();
     } else {
-        for (const auto &state : std::as_const(m_dbusViewers)) {
-            if (!state.window)
+        for (const auto &rt : std::as_const(m_runtimes)) {
+            if (!rt.viewer || !rt.viewer->window)
                 continue;
-            if (SettingsDialog::inhibitScreensaverFullscreen() && state.window->isFullScreen())
+            const DbusViewerWindow *win = rt.viewer->window;
+            if (SettingsDialog::inhibitScreensaverFullscreen() && win->isFullScreen())
                 inhibitSaver = true;
-            if (SettingsDialog::inhibitScreensaverPointerGrab() && state.window->displayWidget()->isPointerCaptured())
+            if (SettingsDialog::inhibitScreensaverPointerGrab() && win->displayWidget()->isPointerCaptured())
                 inhibitSaver = true;
         }
     }
@@ -4617,12 +4691,13 @@ void MainWindow::scheduleQemuStartupProbe(KProcess *process, const QString &vmNa
         if (!e || e->qemuProcess != safeProcess)
             return;
 
-        m_startupFailureShown.insert(vmName);
+        auto &rt = runtimeFor(vmName);
+        rt.startupFailureShown = true;
 
         // Capture diagnostics BEFORE teardown clears the stderr tail.
         const int exitCode = safeProcess->exitCode();
         const auto exitStatus = safeProcess->exitStatus();
-        const QByteArray tail = m_qemuStderrTails.value(vmName);
+        const QByteArray tail = rt.stderrTail;
 
         // FailedToStart never emits finished(), so handleQemuExit() will
         // never run for this process. Clean up here instead.
@@ -4641,9 +4716,9 @@ void MainWindow::scheduleQemuStartupProbe(KProcess *process, const QString &vmNa
 
 QWidget *MainWindow::dialogParentFor(const QString &vmName)
 {
-    auto it = m_dbusViewers.constFind(vmName);
-    if (it != m_dbusViewers.constEnd() && it->window && it->window->isVisible())
-        return it->window;
+    auto *win = viewerWindow(vmName);
+    if (win && win->isVisible())
+        return win;
     return this;
 }
 

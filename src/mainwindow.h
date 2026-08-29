@@ -49,7 +49,7 @@
 #include "dialogs/settingsdialog.h"
 #include "jobs/createvmjob.h"
 #include "models/virtualenvironmentmodel.h"
-#include "utils/cloudimagedeployer.h"
+#include "runtime/vmruntimeinfo.h"
 #include "utils/externaltools.h"
 #include "utils/imagedatabase.h"
 #include "utils/qemucommandbuilder.h"
@@ -154,6 +154,20 @@ private:
     void updateDetails();
     void updateActionStates();
 
+    // Per-VM runtime state. Created on demand, dropped with the VM.
+    QHash<QString, VmRuntimeInfo> m_runtimes;
+
+    VmRuntimeInfo &runtimeFor(const QString &vmName);
+    [[nodiscard]] VmRuntimeInfo *runtime(const QString &vmName);
+    [[nodiscard]] const VmRuntimeInfo *runtime(const QString &vmName) const;
+    void dropRuntime(const QString &vmName);
+
+    // Viewer convenience: "is there a viewer, and does it still have a
+    // window?" is asked about a dozen times.
+    [[nodiscard]] DbusViewerWindow *viewerWindow(const QString &vmName) const;
+    [[nodiscard]] bool hasViewer(const QString &vmName) const;
+    [[nodiscard]] QStringList vmNamesWithViewer() const;
+
     QString encodeThemeIcon(const QString &name, int sizePx) const;
 
     QStringList existingVmNames() const;
@@ -199,17 +213,6 @@ private:
     void registerAudioListeners(const QString &vmName);
     void cleanupDbusSocket(const QString &vmName);
 
-    struct DbusViewerState {
-        QPointer<DbusViewerWindow> window;
-        QemuDisplayListener *displayListener = nullptr;
-        QemuAudioListener *audioOut = nullptr;
-        QemuAudioInListener *audioIn = nullptr;
-        QPointer<QemuControlConnection> ctrl;
-    };
-    QMap<QString, DbusViewerState> m_dbusViewers;
-
-    QMap<QString, int> m_viewerConnectAttempts;
-
     bool requireTool(const ExternalTools::Tool tool);
 
     VirtualEnvironmentTreeView *veTreeView = nullptr;
@@ -234,10 +237,6 @@ private:
     QMap<QString, QDir> m_lastMediaDir;
 
     // QEMU failure handling, keyed by VM name
-    QMap<QString, QByteArray> m_qemuStderrTails;
-    QSet<QString> m_userInitiatedShutdowns;
-    QSet<QString> m_resumingFromSavestate; // VMs awaiting incoming-migration completion
-
     void showQemuFailureDialog(const QString &vmName, bool startupFailed, int exitCode, KProcess::ExitStatus exitStatus, const QByteArray &stderrTail);
 
     QTextBrowser *detailsBrowser = nullptr;
@@ -247,18 +246,6 @@ private:
     QList<QPointer<CreateVmJob>> creatingVMs;
     QList<QPointer<KJob>> activeImports;
 
-    // Deployment handling
-    struct PendingDeployment {
-        enum class Type {
-            CloudImage,
-            ManualIso
-        };
-        Type type = Type::ManualIso;
-        QString imageUrl;
-        QString imageLocalPath;
-        CloudDeployConfig cloudConfig;
-    };
-    QMap<QString, PendingDeployment> m_pendingDeployments;
     void startDeployment(const QString &vmName);
     void finalizeDeployment(const QString &vmName);
     void abortDeployment(const QString &vmName, bool deleteVm);
@@ -276,7 +263,6 @@ private:
     static constexpr int kViewerConnectMaxAttempts = 20;
     static constexpr int kViewerConnectRetryMs = 250;
     static constexpr int kViewerHandshakeTimeoutMs = 5000;
-    QSet<QString> m_startupFailureShown;
 
     enum class ExitChoice {
         Cancel,
@@ -289,7 +275,6 @@ private:
     void applyExitPolicy();
 
     SessionGuard *m_sessionGuard = nullptr;
-    QSet<QString> m_pausedBySuspend;
     bool m_suspendInProgress = false;
     bool m_exitPolicyDone = false;
     bool m_closingFromSession = false;

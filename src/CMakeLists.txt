@@ -42,7 +42,7 @@ target_sources(
           mainwindow.cpp
           mainwindow.h
           const.h
-          runtime/runtimeinfo.h
+          runtime/vmruntimeinfo.h
           utils/utils.cpp
           utils/utils.h
           utils/vmconfig.cpp
