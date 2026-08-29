@@ -17,7 +17,7 @@ using namespace Qt::StringLiterals;
 QStringList QemuCommandBuilder::build(const VMConfig &config,
                                       const QDir &vmDir,
                                       const QString &monitorSocketPath,
-                                      const NetworkContext &networkContext,
+                                      const QemuNetworkContext &networkContext,
                                       const bool relativePaths,
                                       const bool headless,
                                       const QString &incomingSavestatePath)
@@ -422,7 +422,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
 QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
                                              const QDir &vmDir,
                                              const QString &monitorSocketPath,
-                                             const NetworkContext &networkContext,
+                                             const QemuNetworkContext &networkContext,
                                              const VirtualNetwork &network,
                                              const bool relativePaths)
 {

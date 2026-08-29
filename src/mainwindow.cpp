@@ -508,9 +508,9 @@ bool MainWindow::usePasstFor(const VMConfig &config) const
     return !SettingsDialog::useSlirpNetworking();
 }
 
-NetworkContext MainWindow::networkContextFor(const VMConfig &config, const QString &tapDevice, int tapFd) const
+QemuNetworkContext MainWindow::createQemuNetworkContext(const VMConfig &config, const QString &tapDevice, int tapFd) const
 {
-    NetworkContext ctx;
+    QemuNetworkContext ctx;
     if (!tapDevice.isEmpty()) {
         ctx.tapDevice = tapDevice;
         ctx.tapFd = tapFd;
@@ -587,7 +587,7 @@ void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const Q
         return;
     }
 
-    const NetworkContext netCtx = networkContextFor(config, tapDevice, tapFd);
+    const QemuNetworkContext netCtx = createQemuNetworkContext(config, tapDevice, tapFd);
 
     const QString savestatePath = SaveStateManager::hasSavestate(vmDirPath, vmName) ? SaveStateManager::savestateFilePath(vmDirPath, vmName) : QString{};
     const bool isResume = !savestatePath.isEmpty();
@@ -771,7 +771,7 @@ void MainWindow::launchQemuForDeployment(const QString &vmName, bool headless, c
         return;
     }
 
-    const NetworkContext netCtx = networkContextFor(config, tapDevice, tapFd);
+    const QemuNetworkContext netCtx = createQemuNetworkContext(config, tapDevice, tapFd);
 
     QStringList args = QemuCommandBuilder::build(config,
                                                  getVmDir(vmName),
@@ -1911,7 +1911,7 @@ void MainWindow::generateShellScript(const QString &vmPath, const VMConfig &conf
     const QString sockPath = vmPath + u'/' + KEMUConst::QemuMonitorSocketFileName;
 
     const QString tap = config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork ? u"tap0"_s : QString{};
-    const NetworkContext netCtx = networkContextFor(config, tap);
+    const QemuNetworkContext netCtx = createQemuNetworkContext(config, tap);
 
     const VirtualNetwork net = (m_networkManager && config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         ? m_networkManager->network(config.virtualNetworkName())
@@ -2800,7 +2800,7 @@ void MainWindow::showCommand()
         return;
 
     const QString tap = currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork ? u"tap-<vm>"_s : QString{};
-    const NetworkContext netCtx = networkContextFor(currentConfig, tap);
+    const QemuNetworkContext netCtx = createQemuNetworkContext(currentConfig, tap);
 
     const VirtualNetwork net = (m_networkManager && currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         ? m_networkManager->network(currentConfig.virtualNetworkName())

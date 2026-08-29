@@ -30,7 +30,7 @@ using namespace Qt::StringLiterals;
  *     helper process required.
  *   - useSlirp is false (default): passt is used via passtSocketPath.
  */
-struct NetworkContext {
+struct QemuNetworkContext {
     /// Tap device name inside the namespace (VirtualNetwork mode).
     QString tapDevice;
 
@@ -62,7 +62,7 @@ public:
     static QStringList build(const VMConfig &config,
                              const QDir &vmDir,
                              const QString &monitorSocketPath,
-                             const NetworkContext &networkContext = {},
+                             const QemuNetworkContext &networkContext = {},
                              const bool relativePaths = false,
                              const bool headless = false,
                              const QString &incomingSavestatePath = {});
@@ -83,7 +83,7 @@ public:
     static QString buildShellScript(const VMConfig &config,
                                     const QDir &vmDir,
                                     const QString &monitorSocketPath,
-                                    const NetworkContext &networkContext,
+                                    const QemuNetworkContext &networkContext,
                                     const VirtualNetwork &network = {},
                                     const bool relativePaths = false);
 
