@@ -79,6 +79,8 @@ target_sources(
           utils/sessionguard.cpp
           utils/sessionguard.h
           utils/guestlocales.h
+          utils/archivepaths.cpp
+          utils/archivepaths.h
           utils/3rdparty/crypt_sha512.c
           models/virtualenvironmentmodel.cpp
           models/virtualenvironmentmodel.h
