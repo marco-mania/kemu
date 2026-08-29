@@ -728,6 +728,38 @@ QStringList VirtualEnvironmentModel::folderNames() const
     return names;
 }
 
+QList<MacUsageInfo> VirtualEnvironmentModel::macUsageInfo() const
+{
+    QList<MacUsageInfo> result;
+    result.reserve(m_vms.size());
+
+    for (const VmEntry &e : m_vms) {
+        if (e.config.macAddress().isEmpty())
+            continue;
+
+        MacUsageInfo info;
+        info.vmName = e.name;
+        info.mac = e.config.macAddress();
+        info.networkMode = e.config.networkMode();
+        info.virtualNetworkName = e.config.virtualNetworkName();
+        result << info;
+    }
+
+    return result;
+}
+
+QStringList VirtualEnvironmentModel::usedMacAddresses() const
+{
+    QStringList macs;
+    const QList<MacUsageInfo> usage = macUsageInfo();
+    macs.reserve(usage.size());
+
+    for (const MacUsageInfo &info : usage)
+        macs << info.mac;
+
+    return macs;
+}
+
 // -- Private helpers --
 
 VirtualEnvironmentModel::Node *VirtualEnvironmentModel::nodeFromIndex(const QModelIndex &index) const

@@ -158,8 +158,6 @@ private:
     QString encodeThemeIcon(const QString &name, int sizePx) const;
 
     QStringList existingVmNames() const;
-    QStringList usedMacAddresses() const;
-    QList<MacUsageInfo> macUsageInfo() const;
 
     void saveVmConfig(const QString &vmPath, const VMConfig &config);
     void generateShellScript(const QString &vmPath, const VMConfig &config);

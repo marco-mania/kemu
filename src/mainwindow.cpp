@@ -1472,31 +1472,6 @@ QStringList MainWindow::existingVmNames() const
     return names;
 }
 
-QStringList MainWindow::usedMacAddresses() const
-{
-    QStringList macs;
-    for (const auto &info : macUsageInfo())
-        macs << info.mac;
-    return macs;
-}
-
-QList<MacUsageInfo> MainWindow::macUsageInfo() const
-{
-    QList<MacUsageInfo> result;
-    for (const QString &name : veModel->vmNames()) {
-        const VmEntry *e = veModel->entryByName(name);
-        if (!e || e->config.macAddress().isEmpty())
-            continue;
-        MacUsageInfo info;
-        info.vmName = name;
-        info.mac = e->config.macAddress();
-        info.networkMode = e->config.networkMode();
-        info.virtualNetworkName = e->config.virtualNetworkName();
-        result << info;
-    }
-    return result;
-}
-
 void MainWindow::updateDetails()
 {
     const QPalette pal = detailsBrowser->palette();
@@ -1981,7 +1956,7 @@ void MainWindow::loadVmList()
         return loadVmConfig(vmPath);
     });
 
-    QStringList macs = usedMacAddresses();
+    QStringList macs = veModel->usedMacAddresses();
     for (const QString &name : veModel->vmNames()) {
         VmEntry *e = veModel->entryByName(name);
         if (!e)
@@ -2531,7 +2506,7 @@ void MainWindow::importVM()
 
             VMConfig config = loadVmConfig(vmDir);
             if (SettingsDialog::importRegenerateMac())
-                config.setMacAddress(Utils::generateRandomMac(usedMacAddresses()));
+                config.setMacAddress(Utils::generateRandomMac(veModel->usedMacAddresses()));
 
             // Always rewrite: this also regenerates qemu.sh, which is not part
             // of the archive because it contains host paths.
@@ -3225,7 +3200,7 @@ void MainWindow::importOVA(const QString &filePath)
 
         } else {
             VMConfig config = importJob->importedConfig();
-            const QStringList used = usedMacAddresses();
+            const QStringList used = veModel->usedMacAddresses();
             if (SettingsDialog::importRegenerateMac() || used.contains(config.macAddress(), Qt::CaseInsensitive))
                 config.setMacAddress(Utils::generateRandomMac(used));
             saveVmConfig(getVmDir(config.name()).absolutePath(), config);
@@ -3686,7 +3661,7 @@ void MainWindow::createNewVM()
     dialog.setExistingVmNames(existingVmNames());
     dialog.setImageDatabase(&m_imageDatabase);
     dialog.setNetworkManager(m_networkManager);
-    dialog.setMacUsageInfo(macUsageInfo());
+    dialog.setMacUsageInfo(veModel->macUsageInfo());
 
     if (dialog.exec() != QDialog::Accepted)
         return;
@@ -3705,7 +3680,7 @@ void MainWindow::createNewVM()
     if (!requireTool(ExternalTools::QemuImg))
         return;
 
-    newConfig.ensureMacAddress(usedMacAddresses());
+    newConfig.ensureMacAddress(veModel->usedMacAddresses());
 
     baseDir.mkdir(newConfig.name());
     const QString vmPath = baseDir.filePath(newConfig.name());
@@ -3855,7 +3830,7 @@ void MainWindow::editVM()
     dialog.setExistingVmNames(existingVmNames());
     dialog.setImageDatabase(&m_imageDatabase);
     dialog.setNetworkManager(m_networkManager);
-    dialog.setMacUsageInfo(macUsageInfo());
+    dialog.setMacUsageInfo(veModel->macUsageInfo());
 
     dialog.setConfig(currentConfig);
 
@@ -3868,7 +3843,7 @@ void MainWindow::editVM()
     if (dialog.exec() == QDialog::Accepted) {
         VMConfig newConfig = dialog.getResult();
 
-        newConfig.ensureMacAddress(usedMacAddresses());
+        newConfig.ensureMacAddress(veModel->usedMacAddresses());
 
         const QString oldName = currentConfig.name();
         const QString newName = newConfig.name();
@@ -4013,7 +3988,7 @@ void MainWindow::cloneVM()
             KMessageBox::error(this, i18n("Failed to clone VM '%1':\n%2", srcName, cloneJob->errorText()), i18n("Clone Failed"));
         } else {
             // collect used macs to exclude random generation matches
-            const QStringList usedMacs = usedMacAddresses();
+            const QStringList usedMacs = veModel->usedMacAddresses();
 
             VMConfig cloneConfig = loadVmConfig(dstPath);
             cloneConfig.setName(cloneName);
@@ -4021,7 +3996,7 @@ void MainWindow::cloneVM()
             cloneConfig.setDeployState(VMConfig::DeployState::Complete);
 
             if (SettingsDialog::cloneRegenerateMac()) {
-                const QStringList macs = usedMacAddresses();
+                const QStringList macs = veModel->usedMacAddresses();
 
                 if (!cloneConfig.macAddress().isEmpty()) {
                     auto answer = KMessageBox::questionTwoActions(this,

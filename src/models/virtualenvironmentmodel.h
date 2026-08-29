@@ -150,6 +150,10 @@ public:
     QMap<QString, QString> folderAssignments() const;
     QStringList folderNames() const;
 
+    // MAC address management (unique addresses)
+    [[nodiscard]] QList<MacUsageInfo> macUsageInfo() const;
+    [[nodiscard]] QStringList usedMacAddresses() const;
+
 Q_SIGNALS:
     void vmStateChanged(const QString &vmName, VmEntry::State newState);
 
