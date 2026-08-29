@@ -7,6 +7,8 @@
 #pragma once
 
 #include <QByteArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QObject>
 #include <QStringList>
 
@@ -30,6 +32,24 @@ public:
     {
         return m_errorText;
     }
+
+    struct ImageInfo {
+        qint64 virtualSizeBytes = 0;
+        qint64 actualSizeBytes = 0;
+        bool isValid = false;
+
+        [[nodiscard]] double virtualSizeGb() const
+        {
+            return virtualSizeBytes / double(1LL << 30);
+        }
+        [[nodiscard]] double actualSizeGb() const
+        {
+            return actualSizeBytes / double(1LL << 30);
+        }
+    };
+
+    // Synchronous; qemu-img info returns quickly even for large images.
+    static ImageInfo inspect(const QString &imagePath, int timeoutMs = 5000);
 
 Q_SIGNALS:
     void progress(double percent);

@@ -53,6 +53,7 @@
 #include "utils/externaltools.h"
 #include "utils/imagedatabase.h"
 #include "utils/qemucommandbuilder.h"
+#include "utils/qemuimgprocess.h"
 #include "utils/savestatemanager.h"
 #include "utils/sessionguard.h"
 #include "utils/virtualnetworkmanager.h"
@@ -61,12 +62,6 @@
 #include "widgets/virtualenvironmenttreeview.h"
 
 using namespace Qt::StringLiterals;
-
-struct DiskInfo {
-    double virtualSizeGb = 0.0;
-    double actualSizeGb = 0.0;
-    bool isValid = false;
-};
 
 class MainWindow : public KXmlGuiWindow
 {
@@ -170,7 +165,6 @@ private:
     void generateShellScript(const QString &vmPath, const VMConfig &config);
     VMConfig loadVmConfig(const QString &vmPath) const;
 
-    DiskInfo getDiskInfo(const QString &diskPath);
     bool vmSupportsScreendump() const;
 
     QString ensureNetworkRunning(const QString &networkName, const QString &vmName);

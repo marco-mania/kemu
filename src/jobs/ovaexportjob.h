@@ -6,76 +6,58 @@
 
 #pragma once
 
-#include <atomic>
+#include <memory>
 
-extern "C" {
-#include <archive.h>
-#include <archive_entry.h>
-}
-
-#include <QCryptographicHash>
-#include <QDir>
-#include <QFile>
-#include <QFileInfo>
-#include <QFutureWatcher>
-#include <QObject>
+#include <QString>
 #include <QTemporaryDir>
-#include <QXmlStreamWriter>
-#include <QtConcurrent/QtConcurrent>
 
-#include <KJob>
-#include <KLocalizedString>
-#include <KProcess>
-
+#include "jobs/archivestreamjob.h"
 #include "utils/vmconfig.h"
 
-using namespace Qt::StringLiterals;
+class QemuImgProcess;
 
-class OvaExportJob : public KJob
+class OvaExportJob : public ArchiveStreamJob
 {
     Q_OBJECT
 
 public:
-    explicit OvaExportJob(const QString &vmName, const VMConfig &config, const QString &diskPath, const QString &outputFilePath, QObject *parent = nullptr);
+    explicit OvaExportJob(const QString &vmName,
+                          const VMConfig &config,
+                          const QString &diskPath,
+                          qint64 diskCapacityBytes,
+                          const QString &outputFilePath,
+                          QObject *parent = nullptr);
 
     void start() override;
+
     [[nodiscard]] QString vmName() const
     {
         return m_vmName;
     }
 
 protected:
-    bool doKill() override;
-
-private Q_SLOTS:
-    void onConvertReadyRead();
-    void onConvertFinished(int exitCode, QProcess::ExitStatus exitStatus);
-    void onPackageFinished();
+    bool runWorker() override;
+    void workerFinished(bool ok) override;
+    void discardPartialOutput() override;
+    void abortExternalTools() override;
 
 private:
-    bool performBackgroundTasks();
+    void onConvertFinished(bool ok);
 
-    void createOvfDescriptor();
-    bool createManifestInThread();
-
-    bool performOvaPackagingInThread();
-
-    void cleanup();
+    bool createOvfDescriptor();
+    bool createManifest();
+    bool packageOva();
 
     QString m_vmName;
     VMConfig m_config;
     QString m_diskPath;
+    qint64 m_diskCapacityBytes = 0;
     QString m_outputFilePath;
 
-    QTemporaryDir m_stagingDir;
+    std::unique_ptr<QTemporaryDir> m_stagingDir;
     QString m_vmdkFileName;
     QString m_ovfFileName;
     QString m_mfFileName;
 
-    KProcess *m_process = nullptr;
-    QByteArray m_outputBuffer;
-
-    // Threading and cancellation for the packaging step
-    QFutureWatcher<bool> *m_watcher = nullptr;
-    std::atomic<bool> m_cancelExport{false};
+    QemuImgProcess *m_converter = nullptr;
 };

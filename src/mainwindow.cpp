@@ -1546,14 +1546,14 @@ void MainWindow::updateDetails()
         perfMonitor->setActive(vmLive);
     }
 
-    const DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
+    const QemuImgProcess::ImageInfo dInfo = QemuImgProcess::inspect(currentConfig.diskPath());
     QString diskVal;
     if (dInfo.isValid) {
         const QString diskInterfaceStr = VMConfig::toUIString(currentConfig.diskInterface());
 
         double usagePercent = 0.0;
-        if (dInfo.virtualSizeGb > 0.0)
-            usagePercent = (dInfo.actualSizeGb / dInfo.virtualSizeGb) * 100.0;
+        if (dInfo.virtualSizeBytes > 0.0)
+            usagePercent = (static_cast<double>(dInfo.actualSizeBytes) / static_cast<double>(dInfo.virtualSizeBytes)) * 100.0;
         usagePercent = qBound(0.0, usagePercent, 100.0);
         const int filledPct = qRound(usagePercent);
 
@@ -1590,9 +1590,9 @@ void MainWindow::updateDetails()
                 .arg(barHeightPx);
 
         diskVal = u"<span style='white-space:nowrap;'>%1&nbsp;&nbsp;%2&nbsp;&nbsp;%3</span>"_s
-                      .arg(i18n("%1 GB, %2", QString::number(dInfo.virtualSizeGb, 'f', 1), diskInterfaceStr))
+                      .arg(i18n("%1 GB, %2", QString::number(dInfo.virtualSizeGb(), 'f', 1), diskInterfaceStr))
                       .arg(barHtml)
-                      .arg(i18n("%1 GB used (%2%)", QString::number(dInfo.actualSizeGb, 'f', 1), QString::number(usagePercent, 'f', 0)));
+                      .arg(i18n("%1 GB used (%2%)", QString::number(dInfo.actualSizeGb(), 'f', 1), QString::number(usagePercent, 'f', 0)));
     } else {
         diskVal = i18n("Not available");
     }
@@ -2011,34 +2011,6 @@ void MainWindow::loadVmList()
     statusBar()->showMessage(i18n("%1 virtual machine(s) found.", veModel->vmNames().size()));
 }
 
-DiskInfo MainWindow::getDiskInfo(const QString &diskPath)
-{
-    DiskInfo info;
-    if (!QFile::exists(diskPath))
-        return info;
-
-    if (!ExternalTools::instance().isAvailable(ExternalTools::QemuImg))
-        return info;
-
-    KProcess p;
-    p.setOutputChannelMode(KProcess::SeparateChannels);
-    p.setProgram(ExternalTools::instance().path(ExternalTools::QemuImg));
-    p.setArguments({u"info"_s, u"--output=json"_s, u"--force-share"_s, diskPath});
-    p.start();
-    const bool finished = p.waitForFinished(5000);
-
-    if (finished && p.exitStatus() == KProcess::NormalExit && p.exitCode() == 0) {
-        const QJsonDocument doc = QJsonDocument::fromJson(p.readAllStandardOutput());
-        QJsonObject obj = doc.object();
-        const double virtBytes = obj[u"virtual-size"_s].toDouble();
-        const double actBytes = obj[u"actual-size"_s].toDouble();
-        info.virtualSizeGb = virtBytes / (1024.0 * 1024.0 * 1024.0);
-        info.actualSizeGb = actBytes / (1024.0 * 1024.0 * 1024.0);
-        info.isValid = true;
-    }
-    return info;
-}
-
 bool MainWindow::vmSupportsScreendump() const
 {
     return !currentConfig.gpu3dAcceleration();
@@ -2377,12 +2349,12 @@ void MainWindow::shrinkDisk()
     if (veModel->isBusy(currentConfig.name()))
         return;
 
-    const DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
+    const QemuImgProcess::ImageInfo dInfo = QemuImgProcess::inspect(currentConfig.diskPath());
     QString sizeInfo;
     if (dInfo.isValid) {
         sizeInfo = i18n("\n\nCurrent size: %1 GB (virtual), %2 GB (actual on disk)",
-                        QString::number(dInfo.virtualSizeGb, 'f', 1),
-                        QString::number(dInfo.actualSizeGb, 'f', 1));
+                        QString::number(dInfo.virtualSizeGb(), 'f', 1),
+                        QString::number(dInfo.actualSizeGb(), 'f', 1));
     }
 
     auto answer = KMessageBox::questionTwoActions(this,
@@ -2418,11 +2390,11 @@ void MainWindow::shrinkDisk()
             statusBar()->showMessage(i18n("Disk compaction of VM '%1' failed: %2", vmName, shrinkJob->errorText()));
         } else {
             const VMConfig config = loadVmConfig(getVmDir(vmName).absolutePath());
-            const DiskInfo dInfo = getDiskInfo(config.diskPath());
+            const QemuImgProcess::ImageInfo dInfo = QemuImgProcess::inspect(config.diskPath());
 
             QString newSizeMsg = u"."_s;
             if (dInfo.isValid) {
-                newSizeMsg = i18n(" (now %1 GB).", QString::number(dInfo.actualSizeGb, 'f', 1));
+                newSizeMsg = i18n(" (now %1 GB).", QString::number(dInfo.actualSizeGb(), 'f', 1));
             }
 
             statusBar()->showMessage(i18n("Disk of VM '%1' compacted successfully%2", vmName, newSizeMsg));
@@ -3266,13 +3238,14 @@ void MainWindow::importOVA(const QString &filePath)
 
 void MainWindow::exportOVA(const QString &filePath)
 {
-    const DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
-    const int diskGb = dInfo.isValid ? qRound(dInfo.virtualSizeGb) : currentConfig.diskSizeGb();
+    const QemuImgProcess::ImageInfo dInfo = QemuImgProcess::inspect(currentConfig.diskPath());
+
+    const int diskGb = dInfo.isValid ? qRound(dInfo.virtualSizeGb()) : currentConfig.diskSizeGb();
 
     VMConfig exportConfig = currentConfig;
     exportConfig.setDiskSizeGb(diskGb);
 
-    auto *job = new OvaExportJob(currentConfig.name(), exportConfig, currentConfig.diskPath(), filePath, this);
+    auto *job = new OvaExportJob(currentConfig.name(), currentConfig, currentConfig.diskPath(), dInfo.isValid ? dInfo.virtualSizeBytes : 0, filePath, this);
 
     if (jobTracker) {
         jobTracker->registerJob(job);
@@ -3864,9 +3837,9 @@ void MainWindow::editVM()
     // looking at, so open the dialog read-only instead of refusing.
     const bool readOnly = veModel->isBusy(currentConfig.name());
 
-    const DiskInfo dInfo = getDiskInfo(currentConfig.diskPath());
+    const QemuImgProcess::ImageInfo dInfo = QemuImgProcess::inspect(currentConfig.diskPath());
     if (dInfo.isValid)
-        currentConfig.setDiskSizeGb(qRound(dInfo.virtualSizeGb));
+        currentConfig.setDiskSizeGb(qRound(dInfo.virtualSizeGb()));
 
     EditVmDialog dialog(EditVmDialog::Mode::Edit, this);
 

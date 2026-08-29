@@ -115,3 +115,28 @@ void QemuImgProcess::abort()
         m_process->waitForFinished(2000);
     }
 }
+
+QemuImgProcess::ImageInfo QemuImgProcess::inspect(const QString &imagePath, int timeoutMs)
+{
+    ImageInfo info;
+
+    const auto &tools = ExternalTools::instance();
+    if (!QFile::exists(imagePath) || !tools.isAvailable(ExternalTools::QemuImg))
+        return info;
+
+    KProcess process;
+    process.setOutputChannelMode(KProcess::SeparateChannels);
+    process.setProgram(tools.path(ExternalTools::QemuImg));
+    process.setArguments({u"info"_s, u"--output=json"_s, u"--force-share"_s, imagePath});
+    process.start();
+
+    if (!process.waitForFinished(timeoutMs) || process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0)
+        return info;
+
+    const QJsonObject obj = QJsonDocument::fromJson(process.readAllStandardOutput()).object();
+    info.virtualSizeBytes = static_cast<qint64>(obj.value(u"virtual-size"_s).toDouble());
+    info.actualSizeBytes = static_cast<qint64>(obj.value(u"actual-size"_s).toDouble());
+    info.isValid = info.virtualSizeBytes > 0;
+
+    return info;
+}
