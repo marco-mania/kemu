@@ -1412,7 +1412,13 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_shutdown"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
     actionCollection()->action(u"vm_reset"_s)->setEnabled(hasSelection && isRunning);
     actionCollection()->action(u"vm_poweroff"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
-    actionCollection()->action(u"vm_save_state"_s)->setEnabled(isRunning && !isSaving);
+
+    const QString saveStateBlocker = saveStateBlockReason(entry);
+    auto *saveStateAction = actionCollection()->action(u"vm_save_state"_s);
+    saveStateAction->setEnabled(isRunning && !isSaving && saveStateBlocker.isEmpty());
+    saveStateAction->setToolTip(saveStateBlocker.isEmpty() ? i18n("Save the complete running state to disk and stop the VM")
+                                                           : i18n("Saving the state is not possible while %1", saveStateBlocker));
+
     actionCollection()->action(u"vm_discard_saved_state"_s)->setEnabled(hasSaved && !isRunning && !isSaving);
     actionCollection()->action(u"vm_change_iso"_s)->setEnabled(canChangeMedia);
     actionCollection()->action(u"vm_eject_iso"_s)->setEnabled(canChangeMedia && !currentConfig.isoPath().isEmpty());
@@ -3100,8 +3106,9 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
     }
 
     if (eventName == u"RESUME"_s) {
-        // Only happens as a rollback after a failed migration - in that
-        // case the save-state failure dialog explains what's going on.
+        // Sent when SaveStateManager resumes the guest after a failed save.
+        // QEMU does not roll back on its own here: we paused the guest before
+        // migrating, so it has no running state to restore.
         if (isSaving || m_suspendInProgress)
             return;
         statusBar()->showMessage(i18n("VM '%1' resumed.", vmName));
@@ -3467,7 +3474,7 @@ void MainWindow::powerOffVMByName(const QString &vmName)
     // Save State requires a working QMP channel. Without it we can only
     // offer the classic two-button dialog (Force power-off / Cancel).
     const QPointer<QMPClient> client = entry->qmpClient;
-    const bool canSaveState = client && client->isConnected();
+    const bool canSaveState = client && client->isConnected() && saveStateBlockReason(entry).isEmpty();
 
     const KGuiItem saveStateItem(i18n("Save State"), u"document-save"_s, i18n("Save the running state to disk; resume exactly here on next start"));
     const KGuiItem forceStopItem(i18n("Force power-off"), u"process-stop"_s, i18n("Forcefully stop the virtual machine (may cause data loss)"));
@@ -3547,6 +3554,20 @@ void MainWindow::saveStateVMByName(const QString &vmName, bool skipConfirm)
         return;
 
     QPointer<QWidget> safeParentW = dialogParentFor(vmName);
+
+    const QString blocker = saveStateBlockReason(entry);
+    if (!blocker.isEmpty()) {
+        if (!skipConfirm) {
+            KMessageBox::error(safeParentW,
+                               i18n("The state of '%1' cannot be saved because %2.\n\n"
+                                    "QEMU cannot migrate a virtual machine with this device attached. "
+                                    "Shut the VM down instead.",
+                                    vmName,
+                                    blocker),
+                               i18nc("@title:window", "Save State Not Possible"));
+        }
+        return;
+    }
 
     if (!skipConfirm) {
         const auto answer = KMessageBox::questionTwoActions(safeParentW,
@@ -4539,7 +4560,14 @@ void MainWindow::applyExitPolicy()
 
         switch (e->config.exitAction()) {
         case VMSpecs::ExitAction::SaveState:
-            saveStateVMByName(name, true); // skipConfirm: already confirmed above
+            if (saveStateBlockReason(e).isEmpty()) {
+                saveStateVMByName(name, true); // skipConfirm: already confirmed above
+            } else {
+                // Cannot migrate this VM; fall back to a clean shutdown rather
+                // than blocking logout on a dialog nobody will see.
+                qCWarning(KEMU) << "Save state not possible for" << name << "- shutting down instead.";
+                shutdownVMByName(name);
+            }
             break;
         case VMSpecs::ExitAction::Shutdown:
             shutdownVMByName(name);
