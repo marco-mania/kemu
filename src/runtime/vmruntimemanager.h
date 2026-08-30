@@ -1,0 +1,54 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
+#pragma once
+
+#include <QHash>
+#include <QObject>
+#include <QString>
+#include <QStringList>
+
+#include "runtime/vmruntimeinfo.h"
+
+class VirtualEnvironmentModel;
+class VirtualNetworkManager;
+
+/**
+ * Owns the runtime state of every virtual machine and, from step 4 on, the
+ * QEMU start and teardown path.
+ *
+ * Never touches a widget. Everything the user should see is a signal.
+ */
+class VmRuntimeManager : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit VmRuntimeManager(VirtualEnvironmentModel *model, VirtualNetworkManager *networks, QObject *parent = nullptr);
+
+    VmRuntimeInfo &runtimeFor(const QString &vmName);
+    [[nodiscard]] VmRuntimeInfo *runtime(const QString &vmName);
+    [[nodiscard]] const VmRuntimeInfo *runtime(const QString &vmName) const;
+    void dropRuntime(const QString &vmName);
+
+    [[nodiscard]] DbusViewerWindow *viewerWindow(const QString &vmName) const;
+    [[nodiscard]] bool hasViewer(const QString &vmName) const;
+    [[nodiscard]] QStringList vmNamesWithViewer() const;
+
+    // Suspend bookkeeping: which VMs did KEMU pause for a system suspend?
+    void clearPausedBySuspend();
+    [[nodiscard]] QStringList takePausedBySuspend();
+
+    // Live viewer windows across all VMs. Entries whose window has already
+    // been destroyed are skipped.
+    [[nodiscard]] QList<DbusViewerWindow *> viewerWindows() const;
+
+private:
+    VirtualEnvironmentModel *m_model = nullptr;
+    VirtualNetworkManager *m_networks = nullptr;
+
+    QHash<QString, VmRuntimeInfo> m_runtimes;
+};

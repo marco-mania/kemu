@@ -43,6 +43,8 @@ target_sources(
           mainwindow.h
           const.h
           runtime/vmruntimeinfo.h
+          runtime/vmruntimemanager.cpp
+          runtime/vmruntimemanager.h
           utils/utils.cpp
           utils/utils.h
           utils/vmconfig.cpp

@@ -49,7 +49,7 @@
 #include "dialogs/settingsdialog.h"
 #include "jobs/createvmjob.h"
 #include "models/virtualenvironmentmodel.h"
-#include "runtime/vmruntimeinfo.h"
+#include "runtime/vmruntimemanager.h"
 #include "utils/externaltools.h"
 #include "utils/imagedatabase.h"
 #include "utils/qemucommandbuilder.h"
@@ -154,19 +154,7 @@ private:
     void updateDetails();
     void updateActionStates();
 
-    // Per-VM runtime state. Created on demand, dropped with the VM.
-    QHash<QString, VmRuntimeInfo> m_runtimes;
-
-    VmRuntimeInfo &runtimeFor(const QString &vmName);
-    [[nodiscard]] VmRuntimeInfo *runtime(const QString &vmName);
-    [[nodiscard]] const VmRuntimeInfo *runtime(const QString &vmName) const;
-    void dropRuntime(const QString &vmName);
-
-    // Viewer convenience: "is there a viewer, and does it still have a
-    // window?" is asked about a dozen times.
-    [[nodiscard]] DbusViewerWindow *viewerWindow(const QString &vmName) const;
-    [[nodiscard]] bool hasViewer(const QString &vmName) const;
-    [[nodiscard]] QStringList vmNamesWithViewer() const;
+    VmRuntimeManager *m_runtimeManager = nullptr;
 
     QString encodeThemeIcon(const QString &name, int sizePx) const;
 
