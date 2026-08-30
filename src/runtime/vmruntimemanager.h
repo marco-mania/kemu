@@ -12,6 +12,7 @@
 #include <QStringList>
 
 #include "runtime/vmruntimeinfo.h"
+#include "utils/vmconfig.h"
 
 class VirtualEnvironmentModel;
 class VirtualNetworkManager;
@@ -27,7 +28,7 @@ class VmRuntimeManager : public QObject
     Q_OBJECT
 
 public:
-    explicit VmRuntimeManager(VirtualEnvironmentModel *model, VirtualNetworkManager *networks, QObject *parent = nullptr);
+    explicit VmRuntimeManager(VirtualEnvironmentModel *model, VirtualNetworkManager *network_manager, QObject *parent = nullptr);
 
     VmRuntimeInfo &runtimeFor(const QString &vmName);
     [[nodiscard]] VmRuntimeInfo *runtime(const QString &vmName);
@@ -46,9 +47,16 @@ public:
     // been destroyed are skipped.
     [[nodiscard]] QList<DbusViewerWindow *> viewerWindows() const;
 
+    // Misc helper functions
+    [[nodiscard]] bool hasLiveQemu(const QString &vmName) const;
+    // Returns the tap device name, or an empty string on failure. `reason` is
+    // filled on failure and is meant for the caller to display.
+    QString ensureNetworkRunning(const QString &networkName, const QString &vmName, QString *reason);
+    void releaseNetwork(const VMConfig &config);
+
 private:
     VirtualEnvironmentModel *m_model = nullptr;
-    VirtualNetworkManager *m_networks = nullptr;
+    VirtualNetworkManager *m_network_manager = nullptr;
 
     QHash<QString, VmRuntimeInfo> m_runtimes;
 };

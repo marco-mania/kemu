@@ -170,8 +170,6 @@ private:
     // user. QEMU sets a migration blocker for these devices.
     [[nodiscard]] QString saveStateBlockReason(const VmEntry *entry) const;
 
-    QString ensureNetworkRunning(const QString &networkName, const QString &vmName);
-    void releaseNetwork(const VMConfig &config);
     void tearDownVmRuntime(const QString &vmName);
 
     QDir getVmBaseDir() const;
@@ -265,8 +263,6 @@ private:
     bool m_suspendInProgress = false;
     bool m_exitPolicyDone = false;
     bool m_closingFromSession = false;
-
-    [[nodiscard]] bool hasLiveQemu(const QString &vmName) const;
 
     QWidget *dialogParentFor(const QString &vmName);
 };

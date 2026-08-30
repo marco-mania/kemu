@@ -878,7 +878,7 @@ bool MainWindow::startDbusViewer(const QString &vmName)
     // QMP session is the precondition. Right after VM start it may not be
     // up yet; retry briefly instead of blocking.
     const VmEntry *entry = veModel->entryByName(vmName);
-    if (!hasLiveQemu(vmName)) {
+    if (!m_runtimeManager->hasLiveQemu(vmName)) {
         // VM died or was stopped while we were (re)trying: abort silently.
         m_runtimeManager->runtimeFor(vmName).viewerConnectAttempts = 0;
         return false;
@@ -940,7 +940,7 @@ bool MainWindow::startDbusViewer(const QString &vmName)
         }
 
         // The handshake ran through the event loop; re-validate the world.
-        if (!hasLiveQemu(vmName) || m_runtimeManager->hasViewer(vmName)) {
+        if (!m_runtimeManager->hasLiveQemu(vmName) || m_runtimeManager->hasViewer(vmName)) {
             ctrl->deleteLater(); // never delete synchronously: we are inside the bridge's dispatch
             return;
         }
@@ -975,7 +975,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                          ::close(listenerFd); // QEMU received its own duplicate via the fd list
 
                          // The reply went through the event loop; re-validate the world.
-                         const bool vmAlive = hasLiveQemu(vmName) && !m_runtimeManager->hasViewer(vmName);
+                         const bool vmAlive = m_runtimeManager->hasLiveQemu(vmName) && !m_runtimeManager->hasViewer(vmName);
 
                          if (!ok || !vmAlive || !displayListener->connectListener()) {
                              if (!ok) {
@@ -1045,7 +1045,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                                  if (!m_runtimeManager->hasViewer(vmName))
                                      return; // already torn down (shutdown path / connectionLost)
 
-                                 if (hasLiveQemu(vmName))
+                                 if (m_runtimeManager->hasLiveQemu(vmName))
                                      veModel->setHeadless(vmName, true);
 
                                  stopDbusViewer(vmName);
@@ -2014,53 +2014,6 @@ QString MainWindow::saveStateBlockReason(const VmEntry *entry) const
     return {};
 }
 
-QString MainWindow::ensureNetworkRunning(const QString &networkName, const QString &vmName)
-{
-    if (!SandboxCapabilities::instance().has(SandboxCapabilities::UserNamespaces)) {
-        KMessageBox::error(this,
-                           i18n("User namespaces are not supported on this system. Virtual "
-                                "networking requires unprivileged user namespaces."));
-        return {};
-    }
-
-    if (!ExternalTools::instance().isVirtualNetworkCapable()) {
-        KMessageBox::error(this,
-                           i18n("Required tools for virtual networking are "
-                                "missing. Please check Settings → Executables."));
-        return {};
-    }
-
-    const VirtualNetwork net = m_networkManager->network(networkName);
-    if (!net.isValid()) {
-        KMessageBox::error(this, i18n("Virtual network '%1' not found or invalid: %2", networkName, m_networkManager->lastError()));
-        return {};
-    }
-
-    if (!m_networkManager->startNetwork(networkName)) {
-        KMessageBox::error(this, i18n("Failed to start virtual network '%1': %2", networkName, m_networkManager->lastError()));
-        return {};
-    }
-
-    const QString tapDevice = m_networkManager->attachVm(networkName, vmName);
-    if (tapDevice.isEmpty()) {
-        KMessageBox::error(this, i18n("Failed to create network interface for VM '%1': %2", vmName, m_networkManager->lastError()));
-        return {};
-    }
-
-    return tapDevice;
-}
-
-void MainWindow::releaseNetwork(const VMConfig &config)
-{
-    if (!m_networkManager)
-        return;
-    if (config.networkMode() != VMSpecs::NetworkMode::VirtualNetwork)
-        return;
-    if (config.virtualNetworkName().isEmpty())
-        return;
-    m_networkManager->detachVm(config.virtualNetworkName(), config.name());
-}
-
 void MainWindow::tearDownVmRuntime(const QString &vmName)
 {
     VmEntry *entry = veModel->entryByName(vmName);
@@ -2097,7 +2050,7 @@ void MainWindow::tearDownVmRuntime(const QString &vmName)
     QFile::remove(vmDir.filePath(KEMUConst::PasstSocketFileName));
     QFile::remove(vmDir.absoluteFilePath(KEMUConst::QemuMonitorSocketFileName));
 
-    releaseNetwork(entry->config);
+    m_runtimeManager->releaseNetwork(entry->config);
     veModel->clearRuntimeState(vmName);
 
     if (auto *rt = m_runtimeManager->runtime(vmName)) {
@@ -2673,7 +2626,7 @@ void MainWindow::reconnectViewer()
         return;
 
     const VmEntry *entry = veModel->entryByName(vmName);
-    if (!entry || !hasLiveQemu(vmName))
+    if (!entry || !m_runtimeManager->hasLiveQemu(vmName))
         return;
 
     if (entry->config.displayType() == VMSpecs::DisplayType::Dbus) {
@@ -2957,7 +2910,10 @@ void MainWindow::startVM(bool headless)
     QString resolvedTap;
     if (currentConfig.networkCard() != VMSpecs::NetworkCard::None) {
         if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
-            resolvedTap = ensureNetworkRunning(currentConfig.virtualNetworkName(), vmName);
+            QString reason;
+            resolvedTap = m_runtimeManager->ensureNetworkRunning(currentConfig.virtualNetworkName(), vmName, &reason);
+            if (resolvedTap.isEmpty() && !reason.isEmpty())
+                KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
             if (resolvedTap.isEmpty()) {
                 delete chain;
                 tearDownVmRuntime(vmName);
@@ -4297,7 +4253,10 @@ void MainWindow::startDeployment(const QString &vmName)
     QString resolvedTap;
     if (config.networkCard() != VMSpecs::NetworkCard::None) {
         if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
-            resolvedTap = ensureNetworkRunning(config.virtualNetworkName(), vmName);
+            QString reason;
+            resolvedTap = m_runtimeManager->ensureNetworkRunning(currentConfig.virtualNetworkName(), vmName, &reason);
+            if (resolvedTap.isEmpty() && !reason.isEmpty())
+                KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
             if (resolvedTap.isEmpty()) {
                 delete chain;
                 abortDeployment(vmName, false);
@@ -4405,7 +4364,7 @@ void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
 
     QFile::remove(getVmDir(vmName).absoluteFilePath(KEMUConst::QemuMonitorSocketFileName));
 
-    releaseNetwork(entry->config);
+    m_runtimeManager->releaseNetwork(entry->config);
 
     if (deleteVm) {
         {
@@ -4662,10 +4621,4 @@ QWidget *MainWindow::dialogParentFor(const QString &vmName)
     if (win && win->isVisible())
         return win;
     return this;
-}
-
-bool MainWindow::hasLiveQemu(const QString &vmName) const
-{
-    const VmEntry *entry = veModel->entryByName(vmName);
-    return entry && (entry->state == VmEntry::State::Running || entry->state == VmEntry::State::Deploying);
 }
