@@ -40,8 +40,8 @@ public:
     void save(QMPClient *qmp, const QString &vmDir, const QString &vmName, std::function<void(bool, QString)> callback);
 
 private:
-    // Guard against concurrent save-state operations on the same QMP client.
-    QSet<QMPClient *> m_active;
+    // Guard against concurrent save-state operations on the same VM.
+    QSet<QString> m_active;
 
     // Upper bound for the entire save-state migration. A wedged QEMU
     // (blocked disk I/O, broken filesystem) would otherwise leave the VM

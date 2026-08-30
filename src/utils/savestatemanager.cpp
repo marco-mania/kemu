@@ -55,7 +55,7 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
         callback(false, i18n("QMP not connected"));
         return;
     }
-    if (m_active.contains(qmp)) {
+    if (m_active.contains(vmName)) {
         callback(false, i18n("A save-state operation is already in progress"));
         return;
     }
@@ -66,7 +66,7 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
     const QString path = savestatePartPath(vmDir, vmName);
     QFile::remove(finalPath);
     QFile::remove(path);
-    m_active.insert(qmp);
+    m_active.insert(vmName);
 
     auto conn = std::make_shared<QMetaObject::Connection>();
     auto done = std::make_shared<bool>(false);
@@ -78,8 +78,12 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
 
     QTimer *watchdog = new QTimer(this);
     watchdog->setSingleShot(true);
+    // Covers the whole operation, including the capability and stop round
+    // trips. Without this a QMP client dying early would leave the caller
+    // waiting forever.
+    watchdog->start(kSaveStateTimeoutMs);
 
-    auto finalize = [this, qmp, qmpPtr, path, callback, conn, done, stopped, watchdog](bool ok, const QString &err) {
+    auto finalize = [this, vmName, qmpPtr, path, callback, conn, done, stopped, watchdog](bool ok, const QString &err) {
         if (*done)
             return;
         *done = true;
@@ -88,7 +92,7 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
             QObject::disconnect(*conn);
         watchdog->stop();
         watchdog->deleteLater();
-        m_active.remove(qmp);
+        m_active.remove(vmName);
 
         if (!ok) {
             QFile::remove(path);
@@ -129,6 +133,13 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
         }
     });
 
+    // The pending sendCommand() callbacks live inside the QMPClient and die
+    // with it, so a lost connection would otherwise only surface as a
+    // timeout - or not at all.
+    connect(qmp, &QObject::destroyed, this, [finalize]() {
+        finalize(false, i18n("QMP connection was lost"));
+    });
+
     QJsonArray caps;
     QJsonObject capEvents;
     capEvents.insert(u"capability"_s, u"events"_s);
@@ -144,8 +155,6 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
             finalize(false, i18n("QMP disconnected before save could start"));
             return;
         }
-
-        watchdog->start(SaveStateManager::kSaveStateTimeoutMs);
 
         qmpPtr->sendCommand(u"stop"_s, {}, [qmpPtr, path, stopped, finalize](QMPResult r) {
             if (!r.success) {
