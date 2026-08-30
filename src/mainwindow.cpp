@@ -264,11 +264,6 @@ bool MainWindow::isManagedVmDir(const QDir &dir) const
     return QFileInfo(path).absolutePath() == base;
 }
 
-QString MainWindow::monitorSocketPath(const QString &vmName) const
-{
-    return getVmDir(vmName).absoluteFilePath(KEMUConst::QemuMonitorSocketFileName);
-}
-
 void MainWindow::setupUi()
 {
     setWindowTitle(i18n("KEMU – Virtual Machine Manager"));
@@ -2100,7 +2095,7 @@ void MainWindow::tearDownVmRuntime(const QString &vmName)
     QFile::remove(vmDir.filePath(KEMUConst::SwtpmSocketFileName));
     QFile::remove(vmDir.filePath(KEMUConst::VirtiofsdPidFileName));
     QFile::remove(vmDir.filePath(KEMUConst::PasstSocketFileName));
-    QFile::remove(monitorSocketPath(vmName));
+    QFile::remove(vmDir.absoluteFilePath(KEMUConst::QemuMonitorSocketFileName));
 
     releaseNetwork(entry->config);
     veModel->clearRuntimeState(vmName);
@@ -2840,7 +2835,7 @@ void MainWindow::showCommand()
         ? m_networkManager->network(currentConfig.virtualNetworkName())
         : VirtualNetwork{};
 
-    const QString sockPath = monitorSocketPath(currentConfig.name());
+    const QString sockPath = getVmDir(currentConfig.name()).absoluteFilePath(KEMUConst::QemuMonitorSocketFileName);
     const bool portablePaths = SandboxCapabilities::instance().has(SandboxCapabilities::ExternalToolPaths);
     QString cmd = QemuCommandBuilder::buildShellScript(currentConfig, getVmDir(currentConfig.name()), sockPath, netCtx, net, !portablePaths);
 
@@ -4408,7 +4403,7 @@ void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
         QFile::remove(getVmBaseDir().filePath(vmName) + u'/' + KEMUConst::PasstSocketFileName);
     }
 
-    QFile::remove(monitorSocketPath(vmName));
+    QFile::remove(getVmDir(vmName).absoluteFilePath(KEMUConst::QemuMonitorSocketFileName));
 
     releaseNetwork(entry->config);
 

@@ -177,7 +177,6 @@ private:
     QDir getVmBaseDir() const;
     QDir getVmDir(const QString &vmName) const;
     [[nodiscard]] bool isManagedVmDir(const QDir &dir) const;
-    QString monitorSocketPath(const QString &vmName) const;
 
     void startSwtpmAsync(const QString &vmName, std::function<void(bool ok)> done);
     void startVirtiofsdAsync(const QString &vmName, std::function<void(bool ok)> done);
