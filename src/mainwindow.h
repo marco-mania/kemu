@@ -108,6 +108,10 @@ private Q_SLOTS:
     void openNetworkShell();
     void reconnectViewer();
 
+    void onVmStartFailed(const QString &vmName, const QString &reason, int exitCode, KProcess::ExitStatus exitStatus, const QByteArray &stderrTail);
+    void onVmExited(const VmRuntimeManager::ExitInfo &info);
+    void onPerfSample(const QString &vmName, int channel, double value);
+
     void onTreeSelectionChanged();
     void onTreeDoubleClicked(const QModelIndex &index);
     void onDropCompleted();
@@ -115,7 +119,6 @@ private Q_SLOTS:
     void showContextMenu(const QPoint &pos);
 
     void onVmSelectionChanged();
-    void handleQemuExit(const QString &vmName, int exitCode, KProcess::ExitStatus exitStatus);
 
     void onQMPEvent(const QString &vmName, const QString &eventName, const QJsonObject &data);
 
@@ -173,8 +176,6 @@ private:
     // user. QEMU sets a migration blocker for these devices.
     [[nodiscard]] QString saveStateBlockReason(const VmEntry *entry) const;
 
-    void tearDownVmRuntime(const QString &vmName);
-
     QDir getVmBaseDir() const;
     QDir getVmDir(const QString &vmName) const;
     [[nodiscard]] bool isManagedVmDir(const QDir &dir) const;
@@ -182,7 +183,6 @@ private:
     // Returns false only when a tap was required but could not be opened.
     // tapFd stays -1 for every other network mode.
     bool openTapFdFor(const VMConfig &config, const QString &vmName, const QString &tapDevice, int *tapFd);
-    KProcess *createQemuProcess(const QString &vmName, const QStringList &args, int tapFd);
     void launchQemuProcess(const QString &vmName, bool headless, const QString &tapDevice);
     void launchQemuForDeployment(const QString &vmName, bool headless, const QString &tapDevice);
 
@@ -238,8 +238,6 @@ private:
 
     VMConfig currentConfig;
 
-    void scheduleQemuStartupProbe(KProcess *process, const QString &vmName);
-    static constexpr int kQemuStartupProbeMs = 750;
     static constexpr int kViewerConnectMaxAttempts = 20;
     static constexpr int kViewerConnectRetryMs = 250;
     static constexpr int kViewerHandshakeTimeoutMs = 5000;

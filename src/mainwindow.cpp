@@ -35,7 +35,6 @@
 
 extern "C" {
 #include <fcntl.h>
-#include <signal.h>
 #include <sys/prctl.h>
 #include <unistd.h>
 }
@@ -58,6 +57,10 @@ MainWindow::MainWindow(QWidget *parent)
     m_networkManager->load();
 
     m_runtimeManager = new VmRuntimeManager(veModel, m_networkManager, this);
+    connect(m_runtimeManager, &VmRuntimeManager::runtimeTearingDown, this, &MainWindow::stopDbusViewer);
+    connect(m_runtimeManager, &VmRuntimeManager::startFailed, this, &MainWindow::onVmStartFailed);
+    connect(m_runtimeManager, &VmRuntimeManager::vmExited, this, &MainWindow::onVmExited);
+    connect(m_runtimeManager, &VmRuntimeManager::perfSample, this, &MainWindow::onPerfSample);
 
     const QDir dir = getVmBaseDir();
     if (!dir.exists())
@@ -171,7 +174,7 @@ MainWindow::~MainWindow()
             }
         }
 
-        tearDownVmRuntime(name);
+        m_runtimeManager->tearDown(name);
     }
 }
 
@@ -404,32 +407,6 @@ bool MainWindow::openTapFdFor(const VMConfig &config, const QString &vmName, con
     return true;
 }
 
-KProcess *MainWindow::createQemuProcess(const QString &vmName, const QStringList &args, int tapFd)
-{
-    auto *process = new KProcess(this);
-    process->setOutputChannelMode(KProcess::SeparateChannels);
-
-    constexpr int kStderrTailLimit = 65536;
-    connect(process, &QProcess::readyReadStandardError, this, [this, process, vmName]() {
-        Utils::appendTail(m_runtimeManager->runtimeFor(vmName).stderrTail, process->readAllStandardError(), kStderrTailLimit);
-    });
-
-    Utils::setDiesWithParent(process, tapFd);
-
-    // Never combine this with QProcess::UnixProcessParameters::CloseFileDescriptors:
-    // it would close the tap descriptor despite the cleared CLOEXEC flag.
-    process->setChildProcessModifier([tapFd] {
-        prctl(PR_SET_PDEATHSIG, SIGTERM);
-        if (tapFd >= 0)
-            fcntl(tapFd, F_SETFD, 0);
-    });
-
-    process->setProgram(ExternalTools::instance().path(ExternalTools::QemuSystem));
-    process->setArguments(args);
-
-    return process;
-}
-
 void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const QString &tapDevice)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
@@ -447,7 +424,7 @@ void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const Q
 
     int tapFd = -1;
     if (!openTapFdFor(config, vmName, tapDevice, &tapFd)) {
-        tearDownVmRuntime(vmName);
+        m_runtimeManager->tearDown(vmName);
         return;
     }
 
@@ -464,10 +441,10 @@ void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const Q
                                                        headless,
                                                        savestatePath);
 
-    KProcess *process = createQemuProcess(vmName, args, tapFd);
+    KProcess *process = m_runtimeManager->createQemuProcess(vmName, args, tapFd);
 
     connect(process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, [this, vmName](int code, KProcess::ExitStatus status) {
-        handleQemuExit(vmName, code, status);
+        m_runtimeManager->onQemuExit(vmName, code, status);
     });
 
     // Error-during-start path (e.g. exec failure). We never reach the probe
@@ -480,7 +457,7 @@ void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const Q
         m_runtimeManager->runtimeFor(vmName).startupFailureShown = true;
         showQemuFailureDialog(vmName, true, -1, KProcess::CrashExit, err.toUtf8());
         process->deleteLater();
-        tearDownVmRuntime(vmName);
+        m_runtimeManager->tearDown(vmName);
     });
 
     process->start();
@@ -503,7 +480,7 @@ void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const Q
     updateDetails();
     updateActionStates();
 
-    scheduleQemuStartupProbe(process, vmName);
+    m_runtimeManager->scheduleQemuStartupProbe(process, vmName);
 
     // --- QMP ---
     QMPClient *client = new QMPClient(this);
@@ -651,10 +628,10 @@ void MainWindow::launchQemuForDeployment(const QString &vmName, bool headless, c
         args << u"-serial"_s << u"file:%1"_s.arg(logFile);
     }
 
-    KProcess *process = createQemuProcess(vmName, args, tapFd);
+    KProcess *process = m_runtimeManager->createQemuProcess(vmName, args, tapFd);
 
     connect(process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, [this, vmName](int code, KProcess::ExitStatus status) {
-        handleQemuExit(vmName, code, status);
+        m_runtimeManager->onQemuExit(vmName, code, status);
     });
 
     // Failure-on-start path (exec failure etc.). Once QEMU has been registered
@@ -1885,55 +1862,6 @@ QString MainWindow::saveStateBlockReason(const VmEntry *entry) const
     return {};
 }
 
-void MainWindow::tearDownVmRuntime(const QString &vmName)
-{
-    VmEntry *entry = veModel->entryByName(vmName);
-    if (!entry)
-        return;
-
-    // Detach signal sources first so no slot fires during teardown.
-    if (entry->qmpClient) {
-        entry->qmpClient->disconnect();
-        entry->qmpClient->disconnectFromVm();
-        entry->qmpClient->deleteLater();
-    }
-
-    // Detach the integrated D-Bus viewer (also drops its listeners).
-    stopDbusViewer(vmName);
-
-    auto stopHelper = [](QPointer<KProcess> &p, int waitMs) {
-        if (!p)
-            return;
-        p->disconnect();
-        p->terminate();
-        if (!p->waitForFinished(waitMs))
-            p->kill();
-        delete p; // QPointer auto-nullifies
-    };
-
-    stopHelper(entry->swtpmProcess, 3000);
-    stopHelper(entry->virtiofsdProcess, 3000);
-    stopHelper(entry->passtProcess, 3000);
-
-    const QDir vmDir = getVmDir(vmName);
-    QFile::remove(vmDir.filePath(KEMUConst::SwtpmSocketFileName));
-    QFile::remove(vmDir.filePath(KEMUConst::VirtiofsdPidFileName));
-    QFile::remove(vmDir.filePath(KEMUConst::PasstSocketFileName));
-    QFile::remove(vmDir.absoluteFilePath(KEMUConst::QemuMonitorSocketFileName));
-
-    m_runtimeManager->releaseNetwork(entry->config);
-    veModel->clearRuntimeState(vmName);
-
-    if (auto *rt = m_runtimeManager->runtime(vmName)) {
-        // startupFailureShown deliberately survives: handleQemuExit() calls
-        // this before checking the flag, and would otherwise show a second
-        // dialog for a failure the startup probe already reported.
-        rt->stderrTail.clear();
-        rt->userInitiatedShutdown = false;
-        rt->resumingFromSavestate = false;
-    }
-}
-
 void MainWindow::changeISO()
 {
     if (!currentConfig.name().isEmpty())
@@ -2515,6 +2443,54 @@ void MainWindow::reconnectViewer()
     }
 }
 
+void MainWindow::onVmStartFailed(const QString &vmName, const QString &reason, int exitCode, KProcess::ExitStatus exitStatus, const QByteArray &stderrTail)
+{
+    if (!reason.isEmpty())
+        KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Start Failed"));
+    else
+        showQemuFailureDialog(vmName, /*startupFailed=*/true, exitCode, exitStatus, stderrTail);
+
+    if (selectedVmName() == vmName) {
+        updateDetails();
+        updateActionStates();
+    }
+}
+
+void MainWindow::onVmExited(const VmRuntimeManager::ExitInfo &info)
+{
+    if (info.wasDeploying && info.abnormal && !info.userInitiated) {
+        showQemuFailureDialog(info.vmName, /*startupFailed=*/false, info.exitCode, info.exitStatus, info.stderrTail);
+        abortDeployment(info.vmName, false);
+    } else if (info.wasDeploying) {
+        finalizeDeployment(info.vmName);
+    } else if (info.savestatePresent && !info.abnormal) {
+        statusBar()->showMessage(i18n("VM '%1' state saved.", info.vmName));
+    } else if (info.abnormal && !info.userInitiated && !info.startupFailureAlreadyShown) {
+        showQemuFailureDialog(info.vmName, /*startupFailed=*/false, info.exitCode, info.exitStatus, info.stderrTail);
+    } else {
+        statusBar()->showMessage(i18n("VM '%1' stopped.", info.vmName));
+    }
+
+    if (selectedVmName() == info.vmName) {
+        updateDetails();
+        updateActionStates();
+        if (perfMonitor) {
+            perfMonitor->clearHistory();
+            perfMonitor->setActive(false);
+        }
+    }
+}
+
+void MainWindow::onPerfSample(const QString &vmName, int channel, double value)
+{
+    if (selectedVmName() != vmName || !perfMonitor)
+        return;
+
+    static const PerformanceMonitorWidget::Channel channels[] = {PerformanceMonitorWidget::Cpu, PerformanceMonitorWidget::Ram, PerformanceMonitorWidget::Io};
+    if (channel >= 0 && channel < 3)
+        perfMonitor->addSample(channels[channel], value);
+}
+
 void MainWindow::onTreeSelectionChanged()
 {
     onVmSelectionChanged();
@@ -2776,12 +2752,12 @@ void MainWindow::startVM(bool headless)
 
     if (currentConfig.useTpm()) {
         chain->then([this, vmName](auto done) {
-            m_runtimeManager->startSwtpmAsync(vmName, getVmDir(vmName), reportingDone(vmName, std::move(done)));
+            m_runtimeManager->startSwtpmAsync(vmName, reportingDone(vmName, std::move(done)));
         });
     }
     if (!currentConfig.sharedPath().isEmpty() && currentConfig.osType() == VMSpecs::OsType::Windows) {
         chain->then([this, vmName](auto done) {
-            m_runtimeManager->startVirtiofsdAsync(vmName, getVmDir(vmName), reportingDone(vmName, std::move(done)));
+            m_runtimeManager->startVirtiofsdAsync(vmName, reportingDone(vmName, std::move(done)));
         });
     }
 
@@ -2796,20 +2772,20 @@ void MainWindow::startVM(bool headless)
                 KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
             if (resolvedTap.isEmpty()) {
                 delete chain;
-                tearDownVmRuntime(vmName);
+                m_runtimeManager->tearDown(vmName);
                 return;
             }
         } else if (m_runtimeManager->usePasstFor(currentConfig)) {
             const auto pf = currentConfig.portForwards();
             chain->then([this, vmName, pf](auto done) {
-                m_runtimeManager->startPasstAsync(vmName, getVmDir(vmName), pf, reportingDone(vmName, std::move(done)));
+                m_runtimeManager->startPasstAsync(vmName, pf, reportingDone(vmName, std::move(done)));
             });
         }
     }
 
     chain->run([this, vmName, headless, resolvedTap](bool ok) {
         if (!ok) {
-            tearDownVmRuntime(vmName);
+            m_runtimeManager->tearDown(vmName);
             return;
         }
         launchQemuProcess(vmName, headless, resolvedTap);
@@ -2844,59 +2820,6 @@ void MainWindow::saveStateVM()
 void MainWindow::discardSavedState()
 {
     discardSavedStateForVm(currentConfig.name());
-}
-
-void MainWindow::handleQemuExit(const QString &vmName, int exitCode, KProcess::ExitStatus exitStatus)
-{
-    const VmEntry *entry = veModel->entryByName(vmName);
-    if (!entry)
-        return;
-
-    QPointer<KProcess> p = entry->qemuProcess;
-
-    const bool wasDeploying = entry->state == VmEntry::State::Deploying;
-    auto &rt = m_runtimeManager->runtimeFor(vmName);
-    const bool userInitiated = rt.userInitiatedShutdown;
-    const bool startupAlreadyShown = rt.startupFailureShown;
-    const bool abnormal = (exitStatus != KProcess::NormalExit) || (exitCode != 0);
-
-    if (p) {
-        QByteArray &tail = rt.stderrTail;
-        tail.append(p->readAllStandardError());
-    }
-    const QByteArray stderrTail = rt.stderrTail;
-
-    const bool savestatePresent = SaveStateManager::hasSavestate(getVmDir(vmName).absolutePath(), vmName);
-
-    tearDownVmRuntime(vmName);
-
-    if (wasDeploying && abnormal && !userInitiated) {
-        showQemuFailureDialog(vmName, /*startupFailed=*/false, exitCode, exitStatus, stderrTail);
-        abortDeployment(vmName, false);
-    } else if (wasDeploying) {
-        finalizeDeployment(vmName);
-    } else if (savestatePresent && !abnormal) {
-        veModel->setVmState(vmName, VmEntry::State::Saved);
-        statusBar()->showMessage(i18n("VM '%1' state saved.", vmName));
-    } else if (abnormal && !userInitiated && !startupAlreadyShown) {
-        showQemuFailureDialog(vmName, /*startupFailed=*/false, exitCode, exitStatus, stderrTail);
-    } else {
-        statusBar()->showMessage(i18n("VM '%1' stopped.", vmName));
-    }
-
-    rt.startupFailureShown = false;
-
-    if (selectedVmName() == vmName) {
-        updateDetails();
-        updateActionStates();
-        if (perfMonitor) {
-            perfMonitor->clearHistory();
-            perfMonitor->setActive(false);
-        }
-    }
-
-    if (p)
-        p->deleteLater();
 }
 
 void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, const QJsonObject &data)
@@ -4125,12 +4048,12 @@ void MainWindow::startDeployment(const QString &vmName)
 
     if (currentConfig.useTpm()) {
         chain->then([this, vmName](auto done) {
-            m_runtimeManager->startSwtpmAsync(vmName, getVmDir(vmName), reportingDone(vmName, std::move(done)));
+            m_runtimeManager->startSwtpmAsync(vmName, reportingDone(vmName, std::move(done)));
         });
     }
     if (!currentConfig.sharedPath().isEmpty() && currentConfig.osType() == VMSpecs::OsType::Windows) {
         chain->then([this, vmName](auto done) {
-            m_runtimeManager->startVirtiofsdAsync(vmName, getVmDir(vmName), reportingDone(vmName, std::move(done)));
+            m_runtimeManager->startVirtiofsdAsync(vmName, reportingDone(vmName, std::move(done)));
         });
     }
 
@@ -4152,7 +4075,7 @@ void MainWindow::startDeployment(const QString &vmName)
         } else if (m_runtimeManager->usePasstFor(currentConfig)) {
             const auto pf = currentConfig.portForwards();
             chain->then([this, vmName, pf](auto done) {
-                m_runtimeManager->startPasstAsync(vmName, getVmDir(vmName), pf, reportingDone(vmName, std::move(done)));
+                m_runtimeManager->startPasstAsync(vmName, pf, reportingDone(vmName, std::move(done)));
             });
         }
     }
@@ -4462,44 +4385,6 @@ void MainWindow::applyExitPolicy()
         close();
     });
     watch->start(500);
-}
-
-void MainWindow::scheduleQemuStartupProbe(KProcess *process, const QString &vmName)
-{
-    QPointer<KProcess> safeProcess(process);
-    QTimer::singleShot(kQemuStartupProbeMs, this, [this, safeProcess, vmName]() {
-        if (!safeProcess)
-            return;
-        if (safeProcess->state() == KProcess::Running)
-            return; // Past the danger zone; handleQemuExit() owns any future exit.
-
-        // If finished() has already been delivered, handleQemuExit() has run
-        // and the entry no longer points at this process - nothing to do.
-        const VmEntry *e = veModel->entryByName(vmName);
-        if (!e || e->qemuProcess != safeProcess)
-            return;
-
-        auto &rt = m_runtimeManager->runtimeFor(vmName);
-        rt.startupFailureShown = true;
-
-        // Capture diagnostics BEFORE teardown clears the stderr tail.
-        const int exitCode = safeProcess->exitCode();
-        const auto exitStatus = safeProcess->exitStatus();
-        const QByteArray tail = rt.stderrTail;
-
-        // FailedToStart never emits finished(), so handleQemuExit() will
-        // never run for this process. Clean up here instead.
-        tearDownVmRuntime(vmName);
-        veModel->setVmState(vmName, VmEntry::State::Stopped);
-        safeProcess->deleteLater();
-
-        showQemuFailureDialog(vmName, /*startupFailed=*/true, exitCode, exitStatus, tail);
-
-        if (selectedVmName() == vmName) {
-            updateDetails();
-            updateActionStates();
-        }
-    });
 }
 
 QWidget *MainWindow::dialogParentFor(const QString &vmName)
