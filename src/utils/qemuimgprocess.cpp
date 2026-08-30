@@ -29,7 +29,7 @@ double QemuImgProcess::parseProgress(QStringView chunk)
     static const QRegularExpression rx(u"\\(\\s*(\\d+(?:\\.\\d+)?)/100%\\)"_s);
 
     double last = -1.0;
-    auto it = rx.globalMatch(chunk);
+    auto it = rx.globalMatchView(chunk);
     while (it.hasNext()) {
         bool ok = false;
         const double value = it.next().capturedView(1).toDouble(&ok);
