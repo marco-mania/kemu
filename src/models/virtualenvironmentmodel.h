@@ -25,6 +25,8 @@ using namespace Qt::StringLiterals;
 
 struct VmEntry {
     QString name;
+    QDir path; // absolute directory of this VM, set when loading
+
     VMConfig config;
 
     enum class State {
@@ -188,7 +190,6 @@ private:
     void emitVmChanged(const QString &name);
     void rebuildTree(const QMap<QString, QString> &folderAssignments);
 
-    QDir m_baseDir; // remembered for deriving savestate file paths
     QTimer *m_uptimeTimer = nullptr;
 
     void recomputeIcon(VmEntry &e) const; // rebuild cached styled icon

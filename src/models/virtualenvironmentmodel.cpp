@@ -325,8 +325,6 @@ void VirtualEnvironmentModel::loadFromDisk(const QDir &baseDir,
 {
     beginResetModel();
 
-    m_baseDir = baseDir;
-
     m_vms.clear();
     m_folders.clear();
     delete m_root;
@@ -342,6 +340,7 @@ void VirtualEnvironmentModel::loadFromDisk(const QDir &baseDir,
 
         VmEntry entry;
         entry.name = d;
+        entry.path = baseDir;
         entry.config = loader(vmPath);
         entry.folderName = folderAssignments.value(d);
         entry.hasSavestateFile = SaveStateManager::hasSavestate(vmPath, d);
@@ -370,8 +369,6 @@ void VirtualEnvironmentModel::reload(const QDir &baseDir, const QMap<QString, QS
 
     beginResetModel();
 
-    m_baseDir = baseDir;
-
     delete m_root;
     m_root = new Node;
     m_root->type = Node::RootNode;
@@ -387,6 +384,7 @@ void VirtualEnvironmentModel::reload(const QDir &baseDir, const QMap<QString, QS
 
         VmEntry entry;
         entry.name = d;
+        entry.path = baseDir;
         entry.config = loader(vmPath);
         entry.folderName = folderAssignments.value(d);
 
@@ -867,11 +865,10 @@ void VirtualEnvironmentModel::recomputeIcon(VmEntry &e) const
 void VirtualEnvironmentModel::refreshSavestateTime(VmEntry &e) const
 {
     e.savestateTime = QDateTime();
-    if (!e.hasSavestateFile)
+    if (!e.hasSavestateFile || e.path.isEmpty())
         return;
 
-    const QString vmPath = m_baseDir.filePath(e.name);
-    const QFileInfo fi(SaveStateManager::savestateFilePath(vmPath, e.name));
+    const QFileInfo fi(SaveStateManager::savestateFilePath(e.path.absolutePath(), e.name));
     if (fi.exists())
         e.savestateTime = fi.lastModified();
 }
