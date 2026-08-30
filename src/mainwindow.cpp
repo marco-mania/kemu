@@ -384,144 +384,6 @@ void MainWindow::setupUi()
     statusBar()->showMessage(i18n("Ready."));
 }
 
-void MainWindow::startSwtpmAsync(const QString &vmName, std::function<void(bool)> done)
-{
-    if (!requireTool(ExternalTools::Swtpm)) {
-        done(false);
-        return;
-    }
-
-    const QString vmPath = getVmDir(vmName).absolutePath();
-    const QString sockPath = vmPath + u'/' + KEMUConst::SwtpmSocketFileName;
-    QFile::remove(sockPath);
-
-    AsyncHelperProcess::Options opts;
-    opts.program = ExternalTools::instance().path(ExternalTools::Swtpm);
-    opts.arguments =
-        {u"socket"_s, u"--ctrl"_s, u"type=unixio,path=%1"_s.arg(sockPath), u"--terminate"_s, u"--tpmstate"_s, u"dir=%1"_s.arg(vmPath), u"--tpm2"_s};
-    opts.socketPath = sockPath;
-
-    AsyncHelperProcess::run(this, opts, [this, vmName, sockPath, done = std::move(done)](KProcess *process, bool ok, const QString &err) {
-        if (!ok) {
-            KMessageBox::error(this, i18n("Failed to start swtpm: %1", err));
-            QFile::remove(sockPath);
-            done(false);
-            return;
-        }
-        veModel->setSwtpmProcess(vmName, process);
-        done(true);
-    });
-}
-
-void MainWindow::startVirtiofsdAsync(const QString &vmName, std::function<void(bool)> done)
-{
-    if (!requireTool(ExternalTools::Virtiofsd)) {
-        done(false);
-        return;
-    }
-
-    const VmEntry *entry = veModel->entryByName(vmName);
-    if (!entry) {
-        done(false);
-        return;
-    }
-
-    const QString sockPath = getVmDir(vmName).absolutePath() + u'/' + KEMUConst::VirtiofsdSocketFileName;
-    const QString sharedPath = entry->config.sharedPath();
-    QFile::remove(sockPath);
-
-    AsyncHelperProcess::Options opts;
-    opts.program = ExternalTools::instance().path(ExternalTools::Virtiofsd);
-    opts.arguments = {u"--socket-path=%1"_s.arg(sockPath), u"--shared-dir=%1"_s.arg(sharedPath), u"--cache=auto"_s, u"--sandbox=none"_s};
-    opts.socketPath = sockPath;
-
-    AsyncHelperProcess::run(this, opts, [this, vmName, sockPath, done = std::move(done)](KProcess *process, bool ok, const QString &err) {
-        if (!ok) {
-            KMessageBox::error(this, i18n("Failed to start virtiofsd: %1", err));
-            QFile::remove(sockPath);
-            QFile::remove(getVmDir(vmName).absolutePath() + u'/' + KEMUConst::VirtiofsdPidFileName);
-            done(false);
-            return;
-        }
-        veModel->setVirtiofsdProcess(vmName, process);
-        done(true);
-    });
-}
-
-void MainWindow::startPasstAsync(const QString &vmName, const QList<PortForwardRule> &portForwards, std::function<void(bool)> done)
-{
-    const VmEntry *entry = veModel->entryByName(vmName);
-    if (entry && !usePasstFor(entry->config)) {
-        // Not reachable via the normal start paths; the VM is on SLIRP and
-        // its command line has no passt netdev, so continuing is safe.
-        qCWarning(KEMU) << "startPasstAsync() called for" << vmName << "which does not use passt - skipping";
-        done(true);
-        return;
-    }
-
-    if (!requireTool(ExternalTools::Passt)) {
-        done(false);
-        return;
-    }
-
-    const QString sockPath = getVmDir(vmName).absolutePath() + u'/' + KEMUConst::PasstSocketFileName;
-    QFile::remove(sockPath);
-
-    QStringList passtArgs = {u"--socket"_s, sockPath, u"-f"_s, u"-q"_s};
-
-    QStringList tcpPorts, udpPorts;
-    for (const auto &rule : portForwards) {
-        const QString mapping = (rule.hostPort != rule.guestPort) ? u"%1:%2"_s.arg(rule.hostPort).arg(rule.guestPort) : QString::number(rule.hostPort);
-        if (rule.protocol == PortForwardRule::Protocol::Tcp)
-            tcpPorts << mapping;
-        else
-            udpPorts << mapping;
-    }
-    if (!tcpPorts.isEmpty())
-        passtArgs << u"-t"_s << tcpPorts.join(u","_s);
-    if (!udpPorts.isEmpty())
-        passtArgs << u"-u"_s << udpPorts.join(u","_s);
-
-    AsyncHelperProcess::Options opts;
-    opts.program = ExternalTools::instance().path(ExternalTools::Passt);
-    opts.arguments = passtArgs;
-    opts.socketPath = sockPath;
-
-    AsyncHelperProcess::run(this, opts, [this, vmName, sockPath, done = std::move(done)](KProcess *process, bool ok, const QString &err) {
-        if (!ok) {
-            KMessageBox::error(this, i18n("Failed to start passt: %1", err));
-            QFile::remove(sockPath);
-            done(false);
-            return;
-        }
-        veModel->setPasstProcess(vmName, process);
-        done(true);
-    });
-}
-
-bool MainWindow::usePasstFor(const VMConfig &config) const
-{
-    if (config.networkCard() == VMSpecs::NetworkCard::None)
-        return false;
-    if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
-        return false;
-    if (!ExternalTools::instance().isPasstUsable())
-        return false;
-    return !SettingsDialog::useSlirpNetworking();
-}
-
-QemuNetworkContext MainWindow::createQemuNetworkContext(const VMConfig &config, const QString &tapDevice, int tapFd) const
-{
-    QemuNetworkContext ctx;
-    if (!tapDevice.isEmpty()) {
-        ctx.tapDevice = tapDevice;
-        ctx.tapFd = tapFd;
-        return ctx;
-    }
-    ctx.useSlirp = !usePasstFor(config);
-    return ctx;
-}
-
 bool MainWindow::openTapFdFor(const VMConfig &config, const QString &vmName, const QString &tapDevice, int *tapFd)
 {
     *tapFd = -1;
@@ -589,7 +451,7 @@ void MainWindow::launchQemuProcess(const QString &vmName, bool headless, const Q
         return;
     }
 
-    const QemuNetworkContext netCtx = createQemuNetworkContext(config, tapDevice, tapFd);
+    const QemuNetworkContext netCtx = m_runtimeManager->createQemuNetworkContext(config, tapDevice, tapFd);
 
     const QString savestatePath = SaveStateManager::hasSavestate(vmDirPath, vmName) ? SaveStateManager::savestateFilePath(vmDirPath, vmName) : QString{};
     const bool isResume = !savestatePath.isEmpty();
@@ -773,7 +635,7 @@ void MainWindow::launchQemuForDeployment(const QString &vmName, bool headless, c
         return;
     }
 
-    const QemuNetworkContext netCtx = createQemuNetworkContext(config, tapDevice, tapFd);
+    const QemuNetworkContext netCtx = m_runtimeManager->createQemuNetworkContext(config, tapDevice, tapFd);
 
     QStringList args = QemuCommandBuilder::build(config,
                                                  getVmDir(vmName),
@@ -1450,6 +1312,15 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_network_shell"_s)->setEnabled(hasActiveNamespace && SandboxCapabilities::instance().has(SandboxCapabilities::HostTerminal));
 }
 
+VmRuntimeManager::HelperResult MainWindow::reportingDone(const QString &vmName, std::function<void(bool)> done)
+{
+    return [this, vmName, done = std::move(done)](bool ok, const QString &error) {
+        if (!ok && !error.isEmpty())
+            KMessageBox::error(dialogParentFor(vmName), error);
+        done(ok);
+    };
+}
+
 QString MainWindow::encodeThemeIcon(const QString &name, int sizePx) const
 {
     const QIcon icon = QIcon::fromTheme(name);
@@ -1921,7 +1792,7 @@ void MainWindow::generateShellScript(const QString &vmPath, const VMConfig &conf
     const QString sockPath = vmPath + u'/' + KEMUConst::QemuMonitorSocketFileName;
 
     const QString tap = config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork ? u"tap0"_s : QString{};
-    const QemuNetworkContext netCtx = createQemuNetworkContext(config, tap);
+    const QemuNetworkContext netCtx = m_runtimeManager->createQemuNetworkContext(config, tap);
 
     const VirtualNetwork net = (m_networkManager && config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         ? m_networkManager->network(config.virtualNetworkName())
@@ -2782,7 +2653,7 @@ void MainWindow::showCommand()
         return;
 
     const QString tap = currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork ? u"tap-<vm>"_s : QString{};
-    const QemuNetworkContext netCtx = createQemuNetworkContext(currentConfig, tap);
+    const QemuNetworkContext netCtx = m_runtimeManager->createQemuNetworkContext(currentConfig, tap);
 
     const VirtualNetwork net = (m_networkManager && currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         ? m_networkManager->network(currentConfig.virtualNetworkName())
@@ -2892,16 +2763,25 @@ void MainWindow::startVM(bool headless)
         saveVmConfig(vmDirPath, currentConfig);
     }
 
+    // Pre-flight: a missing tool must not leave half-started helpers behind.
+    if (currentConfig.useTpm() && !requireTool(ExternalTools::Swtpm))
+        return;
+    if (!currentConfig.sharedPath().isEmpty() && currentConfig.osType() == VMSpecs::OsType::Windows && !requireTool(ExternalTools::Virtiofsd))
+        return;
+    if (currentConfig.networkCard() != VMSpecs::NetworkCard::None && currentConfig.networkMode() != VMSpecs::NetworkMode::VirtualNetwork
+        && m_runtimeManager->usePasstFor(currentConfig) && !requireTool(ExternalTools::Passt))
+        return;
+
     auto *chain = new StartupChain(this);
 
     if (currentConfig.useTpm()) {
         chain->then([this, vmName](auto done) {
-            startSwtpmAsync(vmName, std::move(done));
+            m_runtimeManager->startSwtpmAsync(vmName, getVmDir(vmName), reportingDone(vmName, std::move(done)));
         });
     }
     if (!currentConfig.sharedPath().isEmpty() && currentConfig.osType() == VMSpecs::OsType::Windows) {
         chain->then([this, vmName](auto done) {
-            startVirtiofsdAsync(vmName, std::move(done));
+            m_runtimeManager->startVirtiofsdAsync(vmName, getVmDir(vmName), reportingDone(vmName, std::move(done)));
         });
     }
 
@@ -2919,10 +2799,10 @@ void MainWindow::startVM(bool headless)
                 tearDownVmRuntime(vmName);
                 return;
             }
-        } else if (usePasstFor(currentConfig)) {
+        } else if (m_runtimeManager->usePasstFor(currentConfig)) {
             const auto pf = currentConfig.portForwards();
             chain->then([this, vmName, pf](auto done) {
-                startPasstAsync(vmName, pf, std::move(done));
+                m_runtimeManager->startPasstAsync(vmName, getVmDir(vmName), pf, reportingDone(vmName, std::move(done)));
             });
         }
     }
@@ -4233,17 +4113,24 @@ void MainWindow::startDeployment(const QString &vmName)
         return;
     }
 
+    // Pre-flight: bail out before starting helpers if QEMU is missing,
+    // so we don't leave half-set-up helpers running.
+    if (!requireTool(ExternalTools::QemuSystem)) {
+        abortDeployment(vmName, false);
+        return;
+    }
+
     // --- Helper chain ---
     auto *chain = new StartupChain(this);
 
-    if (config.useTpm()) {
+    if (currentConfig.useTpm()) {
         chain->then([this, vmName](auto done) {
-            startSwtpmAsync(vmName, std::move(done));
+            m_runtimeManager->startSwtpmAsync(vmName, getVmDir(vmName), reportingDone(vmName, std::move(done)));
         });
     }
-    if (!config.sharedPath().isEmpty() && config.osType() == VMSpecs::OsType::Windows) {
+    if (!currentConfig.sharedPath().isEmpty() && currentConfig.osType() == VMSpecs::OsType::Windows) {
         chain->then([this, vmName](auto done) {
-            startVirtiofsdAsync(vmName, std::move(done));
+            m_runtimeManager->startVirtiofsdAsync(vmName, getVmDir(vmName), reportingDone(vmName, std::move(done)));
         });
     }
 
@@ -4262,10 +4149,10 @@ void MainWindow::startDeployment(const QString &vmName)
                 abortDeployment(vmName, false);
                 return;
             }
-        } else if (usePasstFor(config)) {
-            const auto pf = config.portForwards();
+        } else if (m_runtimeManager->usePasstFor(currentConfig)) {
+            const auto pf = currentConfig.portForwards();
             chain->then([this, vmName, pf](auto done) {
-                startPasstAsync(vmName, pf, std::move(done));
+                m_runtimeManager->startPasstAsync(vmName, getVmDir(vmName), pf, reportingDone(vmName, std::move(done)));
             });
         }
     }

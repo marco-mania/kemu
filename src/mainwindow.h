@@ -155,6 +155,9 @@ private:
     void updateActionStates();
 
     VmRuntimeManager *m_runtimeManager = nullptr;
+    // Adapts the manager's HelperResult to StartupChain's done(bool) and
+    // shows the failure reason on the way through.
+    VmRuntimeManager::HelperResult reportingDone(const QString &vmName, std::function<void(bool)> done);
 
     QString encodeThemeIcon(const QString &name, int sizePx) const;
 
@@ -175,14 +178,6 @@ private:
     QDir getVmBaseDir() const;
     QDir getVmDir(const QString &vmName) const;
     [[nodiscard]] bool isManagedVmDir(const QDir &dir) const;
-
-    void startSwtpmAsync(const QString &vmName, std::function<void(bool ok)> done);
-    void startVirtiofsdAsync(const QString &vmName, std::function<void(bool ok)> done);
-    void startPasstAsync(const QString &vmName, const QList<PortForwardRule> &portForwards, std::function<void(bool ok)> done);
-
-    // Single source of truth for the user-mode networking backend.
-    bool usePasstFor(const VMConfig &config) const;
-    QemuNetworkContext createQemuNetworkContext(const VMConfig &config, const QString &tapDevice = {}, int tapFd = -1) const;
 
     // Returns false only when a tap was required but could not be opened.
     // tapFd stays -1 for every other network mode.

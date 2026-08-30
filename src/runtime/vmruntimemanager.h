@@ -12,6 +12,7 @@
 #include <QStringList>
 
 #include "runtime/vmruntimeinfo.h"
+#include "utils/qemucommandbuilder.h"
 #include "utils/vmconfig.h"
 
 class VirtualEnvironmentModel;
@@ -46,6 +47,17 @@ public:
     // Live viewer windows across all VMs. Entries whose window has already
     // been destroyed are skipped.
     [[nodiscard]] QList<DbusViewerWindow *> viewerWindows() const;
+
+    // Start helper processes
+    // Helper daemons report asynchronously; the error text travels with the
+    // result because there is no caller frame left to fill an out-parameter.
+    using HelperResult = std::function<void(bool ok, const QString &error)>;
+    void startSwtpmAsync(const QString &vmName, const QDir &vmDir, HelperResult done);
+    void startVirtiofsdAsync(const QString &vmName, const QDir &vmDir, HelperResult done);
+    void startPasstAsync(const QString &vmName, const QDir &vmDir, const QList<PortForwardRule> &portForwards, HelperResult done);
+    // Single source of truth for the user-mode networking backend.
+    [[nodiscard]] bool usePasstFor(const VMConfig &config) const;
+    [[nodiscard]] QemuNetworkContext createQemuNetworkContext(const VMConfig &config, const QString &tapDevice = {}, int tapFd = -1) const;
 
     // Misc helper functions
     [[nodiscard]] bool hasLiveQemu(const QString &vmName) const;
