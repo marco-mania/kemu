@@ -70,12 +70,16 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
 
     auto conn = std::make_shared<QMetaObject::Connection>();
     auto done = std::make_shared<bool>(false);
+    // Set once the guest is actually paused, so finalize() knows whether it
+    // has to undo that.
+    auto stopped = std::make_shared<bool>(false);
+
     const QPointer<QMPClient> qmpPtr = qmp;
 
     QTimer *watchdog = new QTimer(this);
     watchdog->setSingleShot(true);
 
-    auto finalize = [this, qmp, callback, conn, done, watchdog](bool ok, const QString &err) {
+    auto finalize = [this, qmp, qmpPtr, path, callback, conn, done, stopped, watchdog](bool ok, const QString &err) {
         if (*done)
             return;
         *done = true;
@@ -85,18 +89,27 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
         watchdog->stop();
         watchdog->deleteLater();
         m_active.remove(qmp);
+
+        if (!ok) {
+            QFile::remove(path);
+
+            // The guest was paused before migrating. Undo that, or a failed
+            // save leaves it frozen while the caller reports it as running.
+            if (*stopped && qmpPtr && qmpPtr->isConnected())
+                qmpPtr->sendCommand(u"cont"_s, {}, nullptr);
+        }
+
         callback(ok, err);
     };
 
-    connect(watchdog, &QTimer::timeout, this, [qmpPtr, path, finalize]() {
+    connect(watchdog, &QTimer::timeout, this, [qmpPtr, finalize]() {
         if (qmpPtr && qmpPtr->isConnected())
             qmpPtr->sendCommand(u"migrate_cancel"_s, {}, nullptr);
 
-        QFile::remove(path);
         finalize(false, i18n("Save state timed out after %1 seconds", SaveStateManager::kSaveStateTimeoutMs / 1000));
     });
 
-    *conn = connect(qmp, &QMPClient::eventReceived, this, [qmpPtr, path, finalPath, finalize](const QString &eventName, const QJsonObject &eventData) {
+    *conn = connect(qmp, &QMPClient::eventReceived, this, [path, finalPath, finalize](const QString &eventName, const QJsonObject &eventData) {
         if (eventName != u"MIGRATION"_s)
             return;
 
@@ -107,15 +120,11 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
             // Publishing step. QEMU may still hold the fd; renaming by inode
             // is safe on POSIX and any trailing write lands in the same file.
             if (!QFile::rename(path, finalPath)) {
-                QFile::remove(path);
                 finalize(false, i18n("Could not finalise the savestate file"));
                 return;
             }
             finalize(true, {});
         } else if (status == u"failed"_s || status == u"cancelled"_s) {
-            QFile::remove(path);
-            if (qmpPtr && qmpPtr->isConnected())
-                qmpPtr->sendCommand(u"cont"_s, {}, nullptr);
             finalize(false, i18n("Migration %1", status));
         }
     });
@@ -126,7 +135,7 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
     capEvents.insert(u"state"_s, true);
     caps.append(capEvents);
 
-    qmp->sendCommand(u"migrate-set-capabilities"_s, {{u"capabilities"_s, caps}}, [qmpPtr, path, finalize, watchdog](QMPResult r) {
+    qmp->sendCommand(u"migrate-set-capabilities"_s, {{u"capabilities"_s, caps}}, [qmpPtr, path, stopped, finalize, watchdog](QMPResult r) {
         if (!r.success) {
             finalize(false, i18n("Could not enable migration events: %1", r.errorMessage));
             return;
@@ -138,11 +147,13 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
 
         watchdog->start(SaveStateManager::kSaveStateTimeoutMs);
 
-        qmpPtr->sendCommand(u"stop"_s, {}, [qmpPtr, path, finalize](QMPResult r) {
+        qmpPtr->sendCommand(u"stop"_s, {}, [qmpPtr, path, stopped, finalize](QMPResult r) {
             if (!r.success) {
                 finalize(false, i18n("Could not pause VM: %1", r.errorMessage));
                 return;
             }
+            *stopped = true;
+
             if (!qmpPtr || !qmpPtr->isConnected()) {
                 finalize(false, i18n("QMP disconnected before migration could start"));
                 return;
