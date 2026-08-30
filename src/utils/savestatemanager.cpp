@@ -83,22 +83,30 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
     // waiting forever.
     watchdog->start(kSaveStateTimeoutMs);
 
-    auto finalize = [this, vmName, qmpPtr, path, callback, conn, done, stopped, watchdog](bool ok, const QString &err) {
+    // finalize() can be invoked from a sendCommand() callback, which lives
+    // inside the QMPClient and is not bound to this object's lifetime.
+    const QPointer<SaveStateManager> self = this;
+    auto finalize = [self, vmName, qmpPtr, path, callback, conn, done, stopped, watchdog](bool ok, const QString &err) {
         if (*done)
             return;
         *done = true;
 
         if (*conn)
             QObject::disconnect(*conn);
+
+        if (!self) {
+            // The manager is gone, and in KEMU it is owned by the same object
+            // that owns the callback. Nothing left to clean up or report to.
+            return;
+        }
+
         watchdog->stop();
         watchdog->deleteLater();
-        m_active.remove(vmName);
+        self->m_active.remove(vmName);
 
         if (!ok) {
             QFile::remove(path);
 
-            // The guest was paused before migrating. Undo that, or a failed
-            // save leaves it frozen while the caller reports it as running.
             if (*stopped && qmpPtr && qmpPtr->isConnected())
                 qmpPtr->sendCommand(u"cont"_s, {}, nullptr);
         }
