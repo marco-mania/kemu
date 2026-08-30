@@ -164,6 +164,10 @@ private:
 
     bool vmSupportsScreendump() const;
 
+    // Empty when a save state is possible, otherwise the reason to show the
+    // user. QEMU sets a migration blocker for these devices.
+    [[nodiscard]] QString saveStateBlockReason(const VmEntry *entry) const;
+
     QString ensureNetworkRunning(const QString &networkName, const QString &vmName);
     void releaseNetwork(const VMConfig &config);
     void tearDownVmRuntime(const QString &vmName);

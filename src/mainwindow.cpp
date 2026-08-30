@@ -1991,6 +1991,20 @@ bool MainWindow::vmSupportsScreendump() const
     return !currentConfig.gpu3dAcceleration();
 }
 
+QString MainWindow::saveStateBlockReason(const VmEntry *entry) const
+{
+    if (!entry)
+        return {};
+
+    if (!entry->config.sharedPath().isEmpty())
+        return i18n("a shared folder is attached");
+
+    if (!entry->attachedUsb.isEmpty())
+        return i18n("a USB device is passed through");
+
+    return {};
+}
+
 QString MainWindow::ensureNetworkRunning(const QString &networkName, const QString &vmName)
 {
     if (!SandboxCapabilities::instance().has(SandboxCapabilities::UserNamespaces)) {
