@@ -24,6 +24,7 @@
 #include "utils/asynchelperprocess.h"
 #include "utils/qemucapabilities.h"
 #include "utils/qemucommandbuilder.h"
+#include "utils/qemuimgprocess.h"
 #include "utils/sandboxcapabilities.h"
 #include "utils/startupchain.h"
 #include "utils/usbenumerator.h"

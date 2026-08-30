@@ -53,7 +53,6 @@
 #include "utils/externaltools.h"
 #include "utils/imagedatabase.h"
 #include "utils/qemucommandbuilder.h"
-#include "utils/qemuimgprocess.h"
 #include "utils/savestatemanager.h"
 #include "utils/sessionguard.h"
 #include "utils/virtualnetworkmanager.h"
