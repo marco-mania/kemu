@@ -8,11 +8,15 @@
 
 #include <QHash>
 #include <QObject>
+#include <QScopeGuard>
 #include <QString>
 #include <QStringList>
 
+#include "const.h"
+
 #include "runtime/vmruntimeinfo.h"
 #include "utils/qemucommandbuilder.h"
+#include "utils/qmpclient.h"
 #include "utils/vmconfig.h"
 
 class VirtualEnvironmentModel;
@@ -42,6 +46,17 @@ public:
     };
 
     explicit VmRuntimeManager(VirtualEnvironmentModel *model, VirtualNetworkManager *network_manager, QObject *parent = nullptr);
+
+    struct LaunchRequest {
+        QString vmName;
+        bool headless = false;
+        QString tapDevice;
+
+        // Deployment keeps the VM in state Deploying, may write a serial log,
+        // and skips savestate handling and the performance samples.
+        bool deployment = false;
+    };
+    void launch(const LaunchRequest &request);
 
     VmRuntimeInfo &runtimeFor(const QString &vmName);
     [[nodiscard]] VmRuntimeInfo *runtime(const QString &vmName);
@@ -85,6 +100,28 @@ public:
     // Single source of truth for VM store locations.
     [[nodiscard]] QDir baseDir() const;
     [[nodiscard]] QDir vmDir(const QString &vmName) const;
+    [[nodiscard]] QString vmPath(const QString &vmName) const;
+
+    [[nodiscard]] QString monitorSocketPath(const QString &vmName) const
+    {
+        return vmDir(vmName).absoluteFilePath(KEMUConst::QemuMonitorSocketFileName);
+    }
+    [[nodiscard]] QString swtpmSocketPath(const QString &vmName) const
+    {
+        return vmDir(vmName).absoluteFilePath(KEMUConst::SwtpmSocketFileName);
+    }
+    [[nodiscard]] QString virtiofsdSocketPath(const QString &vmName) const
+    {
+        return vmDir(vmName).absoluteFilePath(KEMUConst::VirtiofsdSocketFileName);
+    }
+    [[nodiscard]] QString virtiofsdPidPath(const QString &vmName) const
+    {
+        return vmDir(vmName).absoluteFilePath(KEMUConst::VirtiofsdPidFileName);
+    }
+    [[nodiscard]] QString passtSocketPath(const QString &vmName) const
+    {
+        return vmDir(vmName).absoluteFilePath(KEMUConst::PasstSocketFileName);
+    }
 
 public Q_SLOTS:
     void onQemuExit(const QString &vmName, int exitCode, KProcess::ExitStatus exitStatus);
@@ -106,6 +143,12 @@ Q_SIGNALS:
     // QEMU exited after a successful start.
     void vmExited(const VmRuntimeManager::ExitInfo &info);
 
+    // The QMP handshake is complete and the guest is configured.
+    void qmpReady(const QString &vmName);
+
+    // Forwarded QMP events; MainWindow::onQMPEvent() stays where it is.
+    void qmpEvent(const QString &vmName, const QString &eventName, const QJsonObject &data);
+
     // channel matches VirtualEnvironmentModel::appendPerfSample().
     void perfSample(const QString &vmName, int channel, double value);
 
@@ -116,6 +159,10 @@ private:
     VirtualNetworkManager *m_network_manager = nullptr;
 
     QHash<QString, VmRuntimeInfo> m_runtimes;
+
+    bool openTapFdFor(const VMConfig &config, const QString &vmName, const QString &tapDevice, int *tapFd, QString *reason);
+    void setUpQmpClient(const LaunchRequest &req, const QString &sockPath, bool isResume);
+    void connectPerfSignals(QMPClient *client, const QString &vmName);
 };
 
 Q_DECLARE_METATYPE(VmRuntimeManager::ExitInfo)

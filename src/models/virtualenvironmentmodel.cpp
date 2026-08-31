@@ -13,6 +13,8 @@
 #include "const.h"
 #include "utils/savestatemanager.h"
 
+#include "kemu_debug.h"
+
 namespace
 {
 QString formatUptime(const QDateTime &since)
@@ -338,9 +340,7 @@ void VirtualEnvironmentModel::loadFromDisk(const QDir &baseDir,
         if (!QFile::exists(vmPath + u"/config.json"_s))
             continue;
 
-        VmEntry entry;
-        entry.name = d;
-        entry.path = baseDir;
+        VmEntry entry(d, QDir(vmPath));
         entry.config = loader(vmPath);
         entry.folderName = folderAssignments.value(d);
         entry.hasSavestateFile = SaveStateManager::hasSavestate(vmPath, d);
@@ -382,9 +382,7 @@ void VirtualEnvironmentModel::reload(const QDir &baseDir, const QMap<QString, QS
         if (!QFile::exists(vmPath + u"/config.json"_s))
             continue;
 
-        VmEntry entry;
-        entry.name = d;
-        entry.path = baseDir;
+        VmEntry entry(d, QDir(vmPath));
         entry.config = loader(vmPath);
         entry.folderName = folderAssignments.value(d);
 
@@ -865,8 +863,15 @@ void VirtualEnvironmentModel::recomputeIcon(VmEntry &e) const
 void VirtualEnvironmentModel::refreshSavestateTime(VmEntry &e) const
 {
     e.savestateTime = QDateTime();
-    if (!e.hasSavestateFile || e.path.isEmpty())
+    if (!e.hasSavestateFile)
         return;
+
+    // QDir::isEmpty() asks the filesystem whether the directory has entries;
+    // path().isEmpty() is what we actually want here.
+    if (e.path.path().isEmpty()) {
+        qCWarning(KEMU) << "VmEntry" << e.name << "has no path; savestate time unavailable";
+        return;
+    }
 
     const QFileInfo fi(SaveStateManager::savestateFilePath(e.path.absolutePath(), e.name));
     if (fi.exists())

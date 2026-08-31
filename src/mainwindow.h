@@ -108,6 +108,7 @@ private Q_SLOTS:
     void openNetworkShell();
     void reconnectViewer();
 
+    void onVmStarted(const QString &vmName, bool headless, bool deployment);
     void onVmStartFailed(const QString &vmName, const QString &reason, int exitCode, KProcess::ExitStatus exitStatus, const QByteArray &stderrTail);
     void onVmExited(const VmRuntimeManager::ExitInfo &info);
     void onPerfSample(const QString &vmName, int channel, double value);
@@ -121,6 +122,7 @@ private Q_SLOTS:
     void onVmSelectionChanged();
 
     void onQMPEvent(const QString &vmName, const QString &eventName, const QJsonObject &data);
+    void onQmpReady(const QString &vmName);
 
     void onUsbMenuAboutToShow();
     void onUsbActionTriggered();
@@ -179,12 +181,6 @@ private:
     QDir getVmBaseDir() const;
     QDir getVmDir(const QString &vmName) const;
     [[nodiscard]] bool isManagedVmDir(const QDir &dir) const;
-
-    // Returns false only when a tap was required but could not be opened.
-    // tapFd stays -1 for every other network mode.
-    bool openTapFdFor(const VMConfig &config, const QString &vmName, const QString &tapDevice, int *tapFd);
-    void launchQemuProcess(const QString &vmName, bool headless, const QString &tapDevice);
-    void launchQemuForDeployment(const QString &vmName, bool headless, const QString &tapDevice);
 
     // D-Bus integrated viewer lifecycle
     bool startDbusViewer(const QString &vmName);

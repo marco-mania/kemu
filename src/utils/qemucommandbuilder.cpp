@@ -269,33 +269,32 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
 
     // --- Display Frontend ---
     if (config.displayType() == VMSpecs::DisplayType::Dbus) {
-        if (headless) {
-            args << u"-display"_s << u"none"_s;
-        } else {
-            // p2p: the connection is handed to QEMU via QMP add_client.
-            QString displayOpt = u"dbus,p2p=on"_s;
-            if (effective3d)
-                displayOpt += u",gl=on"_s;
-            if (config.audioDevice() != VMSpecs::AudioDevice::None) {
-                const QString audioId = (config.audioDevice() == VMSpecs::AudioDevice::Hda) ? u"audio0"_s : u"snd0"_s;
-                displayOpt += u",audiodev=%1"_s.arg(audioId);
-            }
-            args << u"-display"_s << displayOpt;
-
-            // ---- Guest agent for clipboard (clipboard only; pointing is
-            //      handled by the selected pointer device) ----
-            // For -display dbus, the in-guest spice-vdagent talks to QEMU's
-            // qemu-vdagent chardev. QEMU
-            // bridges that to /org/qemu/Display1/Clipboard on its D-Bus bus.
-            // Without this block, the Clipboard D-Bus object exists but has
-            // no peer on the guest side -- Grab/Request calls go nowhere.
-
-            // NB: The port name "com.redhat.spice.0" is hardcoded in the
-            // spice-vdagent daemon only for historical reasons.
-            args << u"-device"_s << u"virtio-serial-pci"_s;
-            args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,name=vdagent,clipboard=on,mouse=off"_s;
-            args << u"-device"_s << u"virtserialport,chardev=vdagent,name=com.redhat.spice.0"_s;
+        // p2p: QEMU opens no window of its own and waits for a peer handed to
+        // it via QMP add_client. "Headless" therefore only means "no viewer
+        // attached yet" - the display object has to exist either way, or
+        // reconnecting later would be impossible.
+        QString displayOpt = u"dbus,p2p=on"_s;
+        if (effective3d)
+            displayOpt += u",gl=on"_s;
+        if (config.audioDevice() != VMSpecs::AudioDevice::None) {
+            const QString audioId = (config.audioDevice() == VMSpecs::AudioDevice::Hda) ? u"audio0"_s : u"snd0"_s;
+            displayOpt += u",audiodev=%1"_s.arg(audioId);
         }
+        args << u"-display"_s << displayOpt;
+
+        // ---- Guest agent for clipboard (clipboard only; pointing is
+        //      handled by the selected pointer device) ----
+        // For -display dbus, the in-guest spice-vdagent talks to QEMU's
+        // qemu-vdagent chardev. QEMU bridges that to /org/qemu/Display1/Clipboard
+        // on its D-Bus bus.
+        // Without this block, the Clipboard D-Bus object exists but has
+        // no peer on the guest side -- Grab/Request calls go nowhere.
+        // NB: The port name "com.redhat.spice.0" is hardcoded in the
+        // spice-vdagent daemon only for historical reasons.
+        args << u"-device"_s << u"virtio-serial-pci"_s;
+        args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,name=vdagent,clipboard=on,mouse=off"_s;
+        args << u"-device"_s << u"virtserialport,chardev=vdagent,name=com.redhat.spice.0"_s;
+
     } else if (headless) {
         args << u"-display"_s << u"none"_s;
     } else {
@@ -307,7 +306,9 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
 
     // --- Audio ---
     if (config.audioDevice() != VMSpecs::AudioDevice::None) {
-        const bool useDbusAudio = (config.displayType() == VMSpecs::DisplayType::Dbus && !headless);
+        // Audio follows the display: with a D-Bus display it is routed to the
+        // viewer, which may attach later.
+        const bool useDbusAudio = (config.displayType() == VMSpecs::DisplayType::Dbus);
 
         QString hostAudioBackend = u"none"_s;
         const auto &qemu = QemuCapabilities::instance();

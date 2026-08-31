@@ -24,6 +24,103 @@ VmRuntimeManager::VmRuntimeManager(VirtualEnvironmentModel *model, VirtualNetwor
 {
 }
 
+void VmRuntimeManager::launch(const LaunchRequest &req)
+{
+    const QString &vmName = req.vmName;
+
+    const VmEntry *entry = m_model->entryByName(vmName);
+    if (!entry)
+        return;
+    if (req.deployment && entry->state != VmEntry::State::Deploying)
+        return;
+
+    // Copy: the model entry is mutated below and torn down on the failure path.
+    const VMConfig config = entry->config;
+
+    const QString path = vmPath(vmName);
+    const QString sockPath = monitorSocketPath(vmName);
+    QFile::remove(sockPath);
+
+    int tapFd = -1;
+    QString reason;
+    if (!openTapFdFor(config, vmName, req.tapDevice, &tapFd, &reason)) {
+        tearDown(vmName);
+        Q_EMIT startFailed(vmName, reason, 0, KProcess::NormalExit, {});
+        return;
+    }
+
+    // QEMU takes its own copy of the descriptor in start(); make sure ours is
+    // closed on every path from here on.
+    const auto tapGuard = qScopeGuard([&tapFd] {
+        if (tapFd >= 0)
+            ::close(tapFd);
+    });
+
+    const QemuNetworkContext netCtx = createQemuNetworkContext(config, req.tapDevice, tapFd);
+
+    const QString savestatePath =
+        (!req.deployment && SaveStateManager::hasSavestate(path, vmName)) ? SaveStateManager::savestateFilePath(path, vmName) : QString{};
+    const bool isResume = !savestatePath.isEmpty();
+
+    QStringList args = QemuCommandBuilder::build(config, vmDir(vmName), sockPath, netCtx, /*relativePaths=*/false, req.headless, savestatePath);
+
+    // Unattended runs only: a serial console makes some installers move their
+    // UI off the display, which would defeat an attended installation.
+    if (req.deployment && req.headless && SettingsDialog::deploySerialLog())
+        args << u"-serial"_s << u"file:%1"_s.arg(path + u'/' + KEMUConst::DeploySerialLogFileName);
+
+    KProcess *process = createQemuProcess(vmName, args, tapFd);
+
+    connect(process, &KProcess::finished, this, [this, vmName](int code, KProcess::ExitStatus status) {
+        onQemuExit(vmName, code, status);
+    });
+
+    // Error-during-start path (e.g. exec failure). We never reach the probe
+    // in that case.
+    connect(process, &QProcess::errorOccurred, this, [this, process, vmName, deployment = req.deployment](QProcess::ProcessError) {
+        const VmEntry *e = m_model->entryByName(vmName);
+        if (e && e->qemuProcess == process)
+            return; // onQemuExit() will own this.
+
+        const QString err = process->errorString();
+        process->deleteLater();
+
+        if (deployment) {
+            // MainWindow rolls the deployment back; the reason string carries
+            // the message the old code showed inline.
+            Q_EMIT startFailed(vmName, i18n("Failed to start QEMU for deployment: %1", err), 0, KProcess::CrashExit, {});
+        } else {
+            runtimeFor(vmName).startupFailureShown = true;
+            tearDown(vmName);
+            Q_EMIT startFailed(vmName, QString{}, -1, KProcess::CrashExit, err.toUtf8());
+        }
+    });
+
+    process->start();
+
+    // start() can fail synchronously; errorOccurred has already cleaned up.
+    if (process->state() == QProcess::NotRunning)
+        return;
+
+    // Optimistic registration: if QEMU dies inside the probe window, the probe
+    // surfaces a startup failure and dedups against onQemuExit() via
+    // VmRuntimeInfo::startupFailureShown.
+    m_model->setHeadless(vmName, req.headless);
+    m_model->setQemuProcess(vmName, process);
+
+    // Deployment stays in state Deploying: onQemuExit() routes it to finalize
+    // or abort when QEMU exits.
+    if (!req.deployment)
+        m_model->setVmState(vmName, VmEntry::State::Running);
+
+    Q_EMIT vmStarted(vmName, req.headless, req.deployment);
+
+    if (!req.deployment)
+        scheduleQemuStartupProbe(process, vmName);
+
+    setUpQmpClient(req, sockPath, isResume);
+}
+
 VmRuntimeInfo &VmRuntimeManager::runtimeFor(const QString &vmName)
 {
     auto it = m_runtimes.find(vmName);
@@ -86,11 +183,9 @@ void VmRuntimeManager::tearDown(const QString &vmName)
     if (!entry)
         return;
 
-    const QDir dir = vmDir(vmName);
-
     // Detach signal sources first so no slot fires during teardown.
     if (entry->qmpClient) {
-        entry->qmpClient->disconnect();
+        entry->qmpClient->disconnect(this);
         entry->qmpClient->disconnectFromVm();
         entry->qmpClient->deleteLater();
     }
@@ -113,10 +208,10 @@ void VmRuntimeManager::tearDown(const QString &vmName)
     stopHelper(entry->virtiofsdProcess, 3000);
     stopHelper(entry->passtProcess, 3000);
 
-    QFile::remove(dir.filePath(KEMUConst::SwtpmSocketFileName));
-    QFile::remove(dir.filePath(KEMUConst::VirtiofsdPidFileName));
-    QFile::remove(dir.filePath(KEMUConst::PasstSocketFileName));
-    QFile::remove(vmDir(vmName).absoluteFilePath(KEMUConst::QemuMonitorSocketFileName));
+    QFile::remove(swtpmSocketPath(vmName));
+    QFile::remove(virtiofsdPidPath(vmName));
+    QFile::remove(passtSocketPath(vmName));
+    QFile::remove(monitorSocketPath(vmName));
 
     releaseNetwork(entry->config);
     m_model->clearRuntimeState(vmName);
@@ -212,14 +307,13 @@ QList<DbusViewerWindow *> VmRuntimeManager::viewerWindows() const
 
 void VmRuntimeManager::startSwtpmAsync(const QString &vmName, HelperResult done)
 {
-    const QString vmPath = vmDir(vmName).absolutePath();
-    const QString sockPath = vmPath + u'/' + KEMUConst::SwtpmSocketFileName;
+    const QString sockPath = swtpmSocketPath(vmName);
     QFile::remove(sockPath);
 
     AsyncHelperProcess::Options opts;
     opts.program = ExternalTools::instance().path(ExternalTools::Swtpm);
     opts.arguments =
-        {u"socket"_s, u"--ctrl"_s, u"type=unixio,path=%1"_s.arg(sockPath), u"--terminate"_s, u"--tpmstate"_s, u"dir=%1"_s.arg(vmPath), u"--tpm2"_s};
+        {u"socket"_s, u"--ctrl"_s, u"type=unixio,path=%1"_s.arg(sockPath), u"--terminate"_s, u"--tpmstate"_s, u"dir=%1"_s.arg(vmPath(vmName)), u"--tpm2"_s};
     opts.socketPath = sockPath;
 
     AsyncHelperProcess::run(this, opts, [this, vmName, sockPath, done = std::move(done)](KProcess *process, bool ok, const QString &err) {
@@ -241,8 +335,8 @@ void VmRuntimeManager::startVirtiofsdAsync(const QString &vmName, HelperResult d
         return;
     }
 
-    const QString sockPath = vmDir(vmName).absolutePath() + u'/' + KEMUConst::VirtiofsdSocketFileName;
-    const QString pidPath = vmDir(vmName).absolutePath() + u'/' + KEMUConst::VirtiofsdPidFileName;
+    const QString sockPath = virtiofsdSocketPath(vmName);
+    const QString pidPath = virtiofsdPidPath(vmName);
     const QString sharedPath = entry->config.sharedPath();
     QFile::remove(sockPath);
 
@@ -274,7 +368,7 @@ void VmRuntimeManager::startPasstAsync(const QString &vmName, const QList<PortFo
         return;
     }
 
-    const QString sockPath = vmDir(vmName).absolutePath() + u'/' + KEMUConst::PasstSocketFileName;
+    const QString sockPath = passtSocketPath(vmName);
     QFile::remove(sockPath);
 
     QStringList passtArgs = {u"--socket"_s, sockPath, u"-f"_s, u"-q"_s};
@@ -396,6 +490,11 @@ QDir VmRuntimeManager::vmDir(const QString &vmName) const
     return QDir(baseDir().absoluteFilePath(vmName));
 }
 
+QString VmRuntimeManager::vmPath(const QString &vmName) const
+{
+    return baseDir().absoluteFilePath(vmName);
+}
+
 void VmRuntimeManager::onQemuExit(const QString &vmName, int exitCode, KProcess::ExitStatus exitStatus)
 {
     const VmEntry *entry = m_model->entryByName(vmName);
@@ -404,7 +503,6 @@ void VmRuntimeManager::onQemuExit(const QString &vmName, int exitCode, KProcess:
 
     QPointer<KProcess> p = entry->qemuProcess;
     auto &rt = runtimeFor(vmName);
-    const QString vmPath = vmDir(vmName).absolutePath();
 
     ExitInfo info;
     info.vmName = vmName;
@@ -414,7 +512,7 @@ void VmRuntimeManager::onQemuExit(const QString &vmName, int exitCode, KProcess:
     info.userInitiated = rt.userInitiatedShutdown;
     info.startupFailureAlreadyShown = rt.startupFailureShown;
     info.wasDeploying = entry->state == VmEntry::State::Deploying;
-    info.savestatePresent = SaveStateManager::hasSavestate(vmPath, vmName);
+    info.savestatePresent = SaveStateManager::hasSavestate(vmPath(vmName), vmName);
 
     if (p)
         rt.stderrTail.append(p->readAllStandardError());
@@ -433,4 +531,121 @@ void VmRuntimeManager::onQemuExit(const QString &vmName, int exitCode, KProcess:
         p->deleteLater();
 
     Q_EMIT vmExited(info);
+}
+
+bool VmRuntimeManager::openTapFdFor(const VMConfig &config, const QString &vmName, const QString &tapDevice, int *tapFd, QString *reason)
+{
+    *tapFd = -1;
+
+    if (config.networkMode() != VMSpecs::NetworkMode::VirtualNetwork || tapDevice.isEmpty() || !m_network_manager)
+        return true;
+
+    // Opening the tap inside the namespace and handing QEMU the descriptor
+    // keeps QEMU in our namespace, and thus at our UID - the D-Bus display
+    // authenticates over the socket's peer credentials.
+    const int fd = m_network_manager->openTapFd(config.virtualNetworkName(), vmName);
+    if (fd < 0) {
+        if (reason)
+            *reason = i18n("Could not open the network interface for '%1': %2", vmName, m_network_manager->lastError());
+        return false;
+    }
+
+    *tapFd = fd;
+    return true;
+}
+
+void VmRuntimeManager::setUpQmpClient(const LaunchRequest &req, const QString &sockPath, bool isResume)
+{
+    const QString vmName = req.vmName;
+
+    auto *client = new QMPClient(this);
+    m_model->setQmpClient(vmName, client);
+
+    connect(client, &QMPClient::eventReceived, this, [this, vmName](const QString &eventName, const QJsonObject &data) {
+        Q_EMIT qmpEvent(vmName, eventName, data);
+    });
+
+    connect(client, &QMPClient::connected, this, [this, client, vmName, deployment = req.deployment, isResume]() {
+        client->startPerformanceTimer(1000);
+
+        if (deployment)
+            return;
+
+        // Enable balloon guest statistics for actual RAM usage.
+        QJsonObject balloonArgs;
+        balloonArgs[u"path"_s] = u"/machine/peripheral-anon/balloon0"_s;
+        balloonArgs[u"property"_s] = u"guest-stats-polling-interval"_s;
+        balloonArgs[u"value"_s] = 2;
+        client->sendCommand(u"qom-set"_s, balloonArgs);
+
+        Q_EMIT qmpReady(vmName);
+
+        // Successful resume: the savestate file has done its job, drop it so a
+        // subsequent normal start does not try to resume again.
+        const QString path = vmPath(vmName);
+        if (SaveStateManager::hasSavestate(path, vmName)) {
+            SaveStateManager::discardSavestate(path, vmName);
+            m_model->setHasSavestate(vmName, false);
+        }
+
+        if (isResume) {
+            // Do NOT 'cont' here: QMP is up long before the incoming migration
+            // has finished loading the (paused) state. Enable MIGRATION events
+            // and let MainWindow resume once status == "completed".
+            runtimeFor(vmName).resumingFromSavestate = true;
+
+            QJsonArray caps;
+            QJsonObject capEvents;
+            capEvents.insert(u"capability"_s, u"events"_s);
+            capEvents.insert(u"state"_s, true);
+            caps.append(capEvents);
+            client->sendCommand(u"migrate-set-capabilities"_s, {{u"capabilities"_s, caps}}, nullptr);
+        }
+    });
+
+    if (!req.deployment)
+        connectPerfSignals(client, vmName);
+
+    QPointer<QMPClient> safeClient(client);
+    AsyncHelperProcess::waitForSocket(this, sockPath, 2000, 50, [safeClient, vmName, sockPath](bool ok) {
+        if (!ok) {
+            qCWarning(KEMU) << "QMP: socket not ready for" << vmName;
+            return;
+        }
+        if (safeClient)
+            safeClient->connectToVm(sockPath);
+    });
+}
+
+void VmRuntimeManager::connectPerfSignals(QMPClient *client, const QString &vmName)
+{
+    connect(client, &QMPClient::cpuUsageUpdated, this, [this, vmName](const VmCpuUsage &usage) {
+        if (!usage.isValid)
+            return;
+        m_model->appendPerfSample(vmName, 0, usage.averagePercent);
+        Q_EMIT perfSample(vmName, 0, usage.averagePercent);
+    });
+
+    connect(client, &QMPClient::memoryUsageUpdated, this, [this, vmName](const VmMemoryUsage &usage) {
+        if (!usage.isValid)
+            return;
+        m_model->appendPerfSample(vmName, 1, usage.usagePercent);
+        Q_EMIT perfSample(vmName, 1, usage.usagePercent);
+    });
+
+    connect(client, &QMPClient::blockStatsUpdated, this, [this, vmName](const VmBlockStats &stats) {
+        if (!stats.isValid)
+            return;
+        VmEntry *e = m_model->entryByName(vmName);
+        if (!e)
+            return;
+
+        const double totalBps = stats.totalRdBytesPerSec + stats.totalWrBytesPerSec;
+        if (totalBps > e->ioPeakBytesPerSec)
+            e->ioPeakBytesPerSec = totalBps;
+        const double pct = (e->ioPeakBytesPerSec > 0.0) ? (totalBps / e->ioPeakBytesPerSec * 100.0) : 0.0;
+
+        m_model->appendPerfSample(vmName, 2, pct);
+        Q_EMIT perfSample(vmName, 2, pct);
+    });
 }

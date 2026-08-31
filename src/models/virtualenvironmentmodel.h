@@ -24,6 +24,13 @@
 using namespace Qt::StringLiterals;
 
 struct VmEntry {
+    VmEntry() = default;
+    VmEntry(const QString &vmName, const QDir &vmDir)
+        : name(vmName)
+        , path(vmDir)
+    {
+    }
+
     QString name;
     QDir path; // absolute directory of this VM, set when loading
 
