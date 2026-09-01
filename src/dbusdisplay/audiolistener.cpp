@@ -284,6 +284,11 @@ void QemuAudioListener::handleInit(GVariant *parameters, GDBusMethodInvocation *
     auto *stream = new AudioStream;
     stream->format = format;
     stream->enabled = false;
+    stream->drainTimer.setSingleShot(true);
+    stream->drainTimer.setInterval(5);
+    connect(&stream->drainTimer, &QTimer::timeout, this, [this, id] {
+        flushStream(id);
+    });
 
     const QAudioDevice defaultDevice = QMediaDevices::defaultAudioOutput();
     if (defaultDevice.isNull()) {
@@ -302,6 +307,25 @@ void QemuAudioListener::handleInit(GVariant *parameters, GDBusMethodInvocation *
     }
 
     stream->sink = new QAudioSink(defaultDevice, format);
+
+    connect(stream->sink, &QAudioSink::stateChanged, this, [this, id](QAudio::State state) {
+        auto *stream = m_streams.value(id, nullptr);
+        if (!stream || state != QAudio::IdleState || stream->sink->error() != QAudio::NoError) {
+            return;
+        }
+        const qsizetype pending = stream->pendingData.size() - stream->pendingOffset;
+        if (pending > 0) {
+            qCWarning(KEMU_DBUSDISPLAY) << "Audio: underrun with" << pending << "bytes pending on stream" << id;
+        } else {
+            // Nothing queued: the guest simply stopped producing audio.
+            qCDebug(KEMU_DBUSDISPLAY) << "Audio: sink idle on stream" << id;
+        }
+    });
+
+    // Qt's default is small and platform-dependent. Audio Writes arrive on
+    // the GUI thread, which has no latency guarantee under load, so the sink
+    // needs enough slack to ride out a stalled frame.
+    stream->sink->setBufferSize(format.bytesForDuration(80'000)); // 80 ms
 
     m_streams.insert(id, stream);
 
@@ -343,27 +367,17 @@ void QemuAudioListener::handleWrite(GVariant *parameters, GDBusMethodInvocation 
     const GVariantPtr dataVariant(rawData);
 
     auto *stream = m_streams.value(id, nullptr);
-    if (stream && stream->ioDevice && stream->enabled && !m_muted) {
+    if (stream && stream->enabled && !m_muted) {
         gsize dataLen = 0;
         const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
 
-        if (data && dataLen > 0)
+        if (data && dataLen > 0) {
             stream->pendingData.append(reinterpret_cast<const char *>(data), static_cast<qsizetype>(dataLen));
-
-        // The sink accepts only as much as its buffer has free; retry the
-        // remainder on the next Write instead of dropping it.
-        if (!stream->pendingData.isEmpty()) {
-            const qint64 written = stream->ioDevice->write(stream->pendingData);
-            if (written > 0)
-                stream->pendingData.remove(0, written);
         }
-
-        // Bound the backlog to ~200 ms; drop oldest samples beyond that.
-        const qsizetype maxPending = qMax<qsizetype>(16384, stream->format.bytesForDuration(200000));
-        if (stream->pendingData.size() > maxPending)
-            stream->pendingData.remove(0, stream->pendingData.size() - maxPending);
+        flushStream(id);
     } else if (stream) {
-        stream->pendingData.clear(); // muted/disabled: discard, don't replay later
+        stream->clearPending(); // muted/disabled: discard, don't replay later
+        stream->drainTimer.stop();
     }
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
@@ -397,6 +411,8 @@ void QemuAudioListener::handleSetEnabled(GVariant *parameters, GDBusMethodInvoca
             if (stream->sink->state() == QAudio::ActiveState) {
                 stream->sink->suspend();
             }
+            stream->clearPending();
+            stream->drainTimer.stop();
         }
     }
 
@@ -431,6 +447,58 @@ void QemuAudioListener::handleSetVolume(GVariant *parameters, GDBusMethodInvocat
     }
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
+}
+
+void QemuAudioListener::flushStream(quint64 id)
+{
+    auto *stream = m_streams.value(id, nullptr);
+    if (!stream || !stream->enabled || m_muted) {
+        return;
+    }
+
+    // A sink stopped on an error never accepts data again; restart it instead
+    // of piling up a backlog nobody drains.
+    if (stream->sink && stream->sink->state() == QAudio::StoppedState && stream->sink->error() != QAudio::NoError) {
+        qCWarning(KEMU_DBUSDISPLAY) << "Audio: restarting sink on stream" << id << "after" << stream->sink->error();
+        stream->ioDevice = stream->sink->start();
+    }
+    if (!stream->ioDevice) {
+        return;
+    }
+
+    const qsizetype available = stream->pendingData.size() - stream->pendingOffset;
+    if (available > 0) {
+        const qint64 written = stream->ioDevice->write(stream->pendingData.constData() + stream->pendingOffset, available);
+        if (written < 0) {
+            qCWarning(KEMU_DBUSDISPLAY) << "Audio: write failed on stream" << id << stream->sink->error();
+        } else {
+            stream->pendingOffset += written;
+        }
+    }
+
+    if (stream->pendingOffset >= stream->pendingData.size()) {
+        stream->clearPending();
+        stream->drainTimer.stop();
+        return;
+    }
+
+    // Reclaim the consumed head only now and then: removing from the front on
+    // every write memmoves the whole backlog in the hot path.
+    if (stream->pendingOffset >= 65536) {
+        stream->pendingData.remove(0, stream->pendingOffset);
+        stream->pendingOffset = 0;
+    }
+
+    const qsizetype maxPending = qMax<qsizetype>(16384, stream->format.bytesForDuration(200000));
+    if (stream->pendingData.size() - stream->pendingOffset > maxPending) {
+        qCWarning(KEMU_DBUSDISPLAY) << "Audio: backlog exceeds" << maxPending << "bytes on stream" << id << "- dropping oldest samples";
+        stream->pendingData.remove(0, stream->pendingData.size() - maxPending);
+        stream->pendingOffset = 0;
+    }
+
+    // Retry on our own. Waiting for the next Write is what let the sink run
+    // dry while data was queued.
+    stream->drainTimer.start();
 }
 
 void QemuAudioListener::cleanupConnection()

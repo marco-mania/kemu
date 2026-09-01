@@ -19,6 +19,7 @@
 #include <QIODevice>
 #include <QMediaDevices>
 #include <QObject>
+#include <QTimer>
 
 using namespace Qt::StringLiterals;
 
@@ -92,10 +93,20 @@ private:
     struct AudioStream {
         QAudioFormat format;
         QAudioSink *sink = nullptr;
-        QIODevice *ioDevice = nullptr; // returned by QAudioSink::start()
+        QIODevice *ioDevice = nullptr;
         bool enabled = false;
-        QByteArray pendingData; // PCM the sink could not accept yet
+
+        QByteArray pendingData;
+        qsizetype pendingOffset = 0;
+        QTimer drainTimer; // retries a partial write without waiting for QEMU
+
+        void clearPending()
+        {
+            pendingData.clear();
+            pendingOffset = 0;
+        }
     };
+    void flushStream(quint64 id);
 
     GDBusConnection *m_conn = nullptr;
     GMainContext *m_context = nullptr;
