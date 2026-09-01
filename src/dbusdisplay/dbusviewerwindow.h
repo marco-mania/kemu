@@ -19,11 +19,11 @@
 #include <QStyle>
 #include <QTimer>
 #include <QToolBar>
+#include <QWindowStateChangeEvent>
 
 #include <KAboutApplicationDialog>
 #include <KAboutData>
 #include <KLocalizedString>
-#include <KMessageBox>
 
 #include "dbusdisplay/audioinlistener.h"
 #include "dbusdisplay/audiolistener.h"
@@ -161,6 +161,8 @@ private:
     Q_INVOKABLE void updateWindowAndDisplaySize();
     void fitContentToWindow();
     void fitWindowToContent(bool force);
+    void updateViewActions();
+    void showFullscreenHint();
 
     QemuControlConnection *m_ctrl;
     QString m_consolePath;
@@ -205,8 +207,6 @@ private:
     QAction *m_actGrabMouse = nullptr;
     QAction *m_actNetworkLink = nullptr;
     QAction *m_actAbout = nullptr;
-
-    void updateViewActions();
 
     QMenu *m_usbMenu = nullptr;
 

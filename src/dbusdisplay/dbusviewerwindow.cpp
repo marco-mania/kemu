@@ -488,8 +488,6 @@ void DbusViewerWindow::showOsd(const QString &text, int holdMs)
 void DbusViewerWindow::onToggleFullscreen(bool checked)
 {
     if (checked) {
-        // First-time hint; KMessageBox persists the user's choice in kemurc.
-        KMessageBox::information(this, i18n("Press <b>F11</b> to leave fullscreen mode again."), i18n("Fullscreen Mode"), u"ShowFullscreenHint"_s);
         showFullScreen();
     } else {
         showNormal();
@@ -788,14 +786,24 @@ void DbusViewerWindow::closeEvent(QCloseEvent *event)
 void DbusViewerWindow::changeEvent(QEvent *event)
 {
     if (event->type() == QEvent::WindowStateChange) {
-        // Check if the current state is FullScreen
-        if (this->windowState() & Qt::WindowFullScreen) {
+        const auto *stateEvent = static_cast<QWindowStateChangeEvent *>(event);
+        const bool wasFullscreen = stateEvent->oldState() & Qt::WindowFullScreen;
+
+        if (windowState() & Qt::WindowFullScreen) {
             menuBar()->hide();
             statusBar()->hide();
             {
                 QSignalBlocker block(m_actFullscreen);
                 m_actFullscreen->setChecked(true);
             }
+
+            // Covers the window manager's own fullscreen path too, not just
+            // our action. Skipped when only an unrelated state bit changed,
+            // for example on restore from minimised.
+            if (!wasFullscreen) {
+                showFullscreenHint();
+            }
+
             auto doResize = [this]() {
                 updateWindowAndDisplaySize();
             };
@@ -1011,4 +1019,16 @@ void DbusViewerWindow::updateViewActions()
 
     // A one-shot fit is pointless while the window follows the display anyway.
     m_actFitWindow->setEnabled(!m_windowFitsContent);
+}
+
+void DbusViewerWindow::showFullscreenHint()
+{
+    // Read the key off the action: the hint exists only to name it, so it
+    // must not be able to go stale.
+    const QString key = m_actFullscreen->shortcut().toString(QKeySequence::NativeText);
+    if (key.isEmpty()) {
+        return;
+    }
+
+    showOsd(i18nc("@info:status", "Press %1 to leave fullscreen", key), 3500);
 }
