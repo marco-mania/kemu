@@ -2130,7 +2130,7 @@ void MainWindow::reconnectViewer()
 
         // startDbusViewer() only reports that the handshake was initiated;
         // finishDbusViewer() clears the headless flag once it succeeds.
-        statusBar()->showMessage(i18n("Connecting viewer to '%1'..."));
+        statusBar()->showMessage(i18n("Connecting viewer to '%1'...", vmName));
         startDbusViewer(vmName);
         return;
     }
