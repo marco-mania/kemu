@@ -350,6 +350,11 @@ void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation
     }
 
     stream->source = new QAudioSource(inputDevice, format);
+    // Same reasoning as the sink: capture callbacks land on the GUI thread,
+    // which has no latency guarantee, so the source needs slack of its own.
+    stream->source->setBufferSize(format.bytesForDuration(100'000));
+
+    stream->primeBytes = static_cast<int>(format.bytesForDuration(50'000)); // 50 ms
     stream->ringBuffer.resize(AudioInStream::kRingCapacity);
 
     m_streams.insert(id, stream);
@@ -396,16 +401,17 @@ void QemuAudioInListener::handleSetEnabled(GVariant *parameters, GDBusMethodInvo
         if (enabled && !wasEnabled) {
             stream->ioDevice = stream->source->start();
             if (stream->ioDevice) {
-                // All D-Bus dispatch runs on the GUI thread (socket-notifier
-                // driven), so plain readyRead delivery is safe here.
-                connect(stream->ioDevice, &QIODevice::readyRead, this, [stream]() {
+                stream->readyReadConn = connect(stream->ioDevice, &QIODevice::readyRead, this, [stream]() {
                     const QByteArray chunk = stream->ioDevice->readAll();
                     stream->write(chunk.constData(), chunk.size());
                 });
             }
         } else if (!enabled && wasEnabled) {
-            stream->source->stop(); // also invalidates ioDevice + connection
+            disconnect(stream->readyReadConn);
+            stream->readyReadConn = {};
+            stream->source->stop();
             stream->ioDevice = nullptr;
+            stream->clear();
         }
     }
 
@@ -464,12 +470,26 @@ void QemuAudioInListener::handleRead(GVariant *parameters, GDBusMethodInvocation
 
     auto *stream = m_streams.value(id, nullptr);
     if (stream) {
-        if (stream->enabled && !m_muted && !data.isEmpty()) {
-            stream->read(data.data(), data.size());
-        } else {
+        if (!stream->enabled || m_muted) {
             // Return silence AND drop the backlog, so unmuting does not
             // replay up to ~341 ms of stale microphone audio.
             stream->clear();
+        } else if (!data.isEmpty()) {
+            // Build a cushion before serving. Without it the ring hovers at
+            // zero and almost every read gets padded with silence.
+            if (!stream->primed && stream->bufferedBytes >= stream->primeBytes) {
+                stream->primed = true;
+            }
+
+            if (stream->primed) {
+                const int got = stream->read(data.data(), data.size());
+                if (got == 0) {
+                    qCWarning(KEMU_DBUSDISPLAY) << "AudioIn: ring empty on stream" << id << "- rebuilding cushion";
+                    stream->primed = false;
+                } else if (got < data.size()) {
+                    qCWarning(KEMU_DBUSDISPLAY) << "AudioIn: short read" << got << "of" << data.size() << "on stream" << id;
+                }
+            }
         }
     }
 

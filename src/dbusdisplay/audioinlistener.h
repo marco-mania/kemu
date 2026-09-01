@@ -95,6 +95,10 @@ private:
 
         static constexpr int kRingCapacity = 65536; // ~341ms @ 48kHz stereo 16bit
 
+        bool primed = false; // cushion built up before serving QEMU
+        int primeBytes = 0; // target fill level, set from the format
+        QMetaObject::Connection readyReadConn;
+
         int read(char *dst, int maxLen);
         void write(const char *src, int len);
         void clear()
@@ -102,6 +106,7 @@ private:
             readPos = 0;
             writePos = 0;
             bufferedBytes = 0;
+            primed = false;
         }
     };
 
