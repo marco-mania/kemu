@@ -31,6 +31,8 @@
 #include "dbusdisplay/controlconnection.h"
 #include "dbusdisplay/displaywidget.h"
 #include "dbusdisplay/listener.h"
+#include "dbusdisplay/osdoverlay.h"
+#include "dbusdisplay/statusindicator.h"
 
 using namespace Qt::StringLiterals;
 
@@ -83,6 +85,10 @@ public:
     // Reflect the VM's removable-media state in menu + status bar.
     // Called by MainWindow on viewer creation and after every media change.
     void setMediaState(bool hasIso, const QString &isoName, bool hasFloppy, const QString &floppyName);
+
+    // Which removable drives the VM actually has. Indicators for absent
+    // drives are hidden instead of showing an "empty" state.
+    void setDriveAvailability(bool hasCdDrive, bool hasFloppyDrive);
 
     // Describe the VM's NIC. Empty label = no network card (action hidden).
     // Call once after construction, like setMediaState().
@@ -147,6 +153,8 @@ private:
     void createMenus();
     void createStatusBar();
     void updateStatusBar();
+    void popupIndicatorMenu(StatusIndicator *indicator, QMenu *menu);
+    void showOsd(const QString &text, int holdMs = 2500);
     void setupClipboard(ClipboardDirection dir);
     void teardownClipboard();
     Q_INVOKABLE void updateWindowAndDisplaySize();
@@ -201,21 +209,31 @@ private:
 
     QMenu *m_usbMenu = nullptr;
 
-    // Status bar labels
-    QLabel *m_lblCdrom = nullptr;
-    QLabel *m_lblFloppy = nullptr;
     QLabel *m_lblResolution = nullptr;
-    QLabel *m_lblAudioOut = nullptr;
-    QLabel *m_lblAudioIn = nullptr;
-    QLabel *m_lblNetwork = nullptr;
-    QLabel *m_lblClipboard = nullptr;
-    QLabel *m_lblMouse = nullptr;
+
+    // Status bar indicators
+    StatusIndicator *m_indCdrom = nullptr;
+    StatusIndicator *m_indFloppy = nullptr;
+    StatusIndicator *m_indNetwork = nullptr;
+    StatusIndicator *m_indClipboard = nullptr;
+    StatusIndicator *m_indAudioIn = nullptr;
+    StatusIndicator *m_indAudioOut = nullptr;
+    StatusIndicator *m_indMouse = nullptr;
+
+    // Device menus, reused as popups by the indicators above
+    QMenu *m_cdMenu = nullptr;
+    QMenu *m_floppyMenu = nullptr;
+    QMenu *m_clipMenu = nullptr;
+
+    OsdOverlay *m_osd = nullptr;
 
     ViewerDevicePrefs m_prefs;
     ClipboardDirection m_clipDirection;
 
     bool m_hasIso = false;
     bool m_hasFloppy = false;
+    bool m_hasCdDrive = true;
+    bool m_hasFloppyDrive = true;
     QString m_isoName;
     QString m_floppyName;
 

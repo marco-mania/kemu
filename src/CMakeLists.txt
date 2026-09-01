@@ -148,6 +148,10 @@ target_sources(
           dbusdisplay/glibeventbridge.cpp
           dbusdisplay/controlconnection.h
           dbusdisplay/controlconnection.cpp
+          dbusdisplay/osdoverlay.h
+          dbusdisplay/osdoverlay.cpp
+          dbusdisplay/statusindicator.h
+          dbusdisplay/statusindicator.cpp
           dbusdisplay/uniquefd.h
           dbusdisplay/gvariantptr.h)
 

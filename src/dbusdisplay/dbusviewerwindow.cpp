@@ -41,6 +41,11 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
     m_scrollArea->setFocusPolicy(Qt::NoFocus);
     setCentralWidget(m_scrollArea);
 
+    // Transient messages belong over the guest image, not in the status bar.
+    // The viewport is the right parent: it is always exactly the visible area,
+    // while m_display can be much larger than the window.
+    m_osd = new OsdOverlay(m_scrollArea->viewport());
+
     createActions();
     createMenus();
     createStatusBar();
@@ -280,14 +285,14 @@ void DbusViewerWindow::createMenus()
     mouseMenu->addAction(m_actGrabMouse);
     devicesMenu->addSeparator();
 
-    // Removable media (CD/DVD + Floppy)
-    QMenu *cdMenu = devicesMenu->addMenu(QIcon::fromTheme(u"media-optical"_s), i18n("&CD/DVD"));
-    cdMenu->addAction(m_actChangeIso);
-    cdMenu->addAction(m_actEjectIso);
+    m_cdMenu = devicesMenu->addMenu(QIcon::fromTheme(u"media-optical"_s), i18n("&CD/DVD"));
+    m_cdMenu->addAction(m_actChangeIso);
+    m_cdMenu->addAction(m_actEjectIso);
 
-    QMenu *floppyMenu = devicesMenu->addMenu(QIcon::fromTheme(u"media-floppy"_s), i18n("&Floppy"));
-    floppyMenu->addAction(m_actChangeFloppy);
-    floppyMenu->addAction(m_actEjectFloppy);
+    m_floppyMenu = devicesMenu->addMenu(QIcon::fromTheme(u"media-floppy"_s), i18n("&Floppy"));
+    m_floppyMenu->addAction(m_actChangeFloppy);
+    m_floppyMenu->addAction(m_actEjectFloppy);
+
     devicesMenu->addSeparator();
 
     // USB submenu (populated by MainWindow on aboutToShow)
@@ -299,11 +304,11 @@ void DbusViewerWindow::createMenus()
     }
     devicesMenu->addSeparator();
 
-    QMenu *clipMenu = devicesMenu->addMenu(i18n("&Clipboard"));
-    clipMenu->addAction(m_actClipOff);
-    clipMenu->addAction(m_actClipToHost);
-    clipMenu->addAction(m_actClipToGuest);
-    clipMenu->addAction(m_actClipBoth);
+    m_clipMenu = devicesMenu->addMenu(i18n("&Clipboard"));
+    m_clipMenu->addAction(m_actClipOff);
+    m_clipMenu->addAction(m_actClipToHost);
+    m_clipMenu->addAction(m_actClipToGuest);
+    m_clipMenu->addAction(m_actClipBoth);
 
     devicesMenu->addSeparator();
     devicesMenu->addAction(m_actNetworkLink);
@@ -319,52 +324,71 @@ void DbusViewerWindow::createMenus()
 
 void DbusViewerWindow::createStatusBar()
 {
-    m_lblFloppy = new QLabel;
-    m_lblFloppy->setFrameStyle(QFrame::Panel | QFrame::Sunken);
-    m_lblFloppy->setMinimumWidth(110);
-    m_lblFloppy->setAlignment(Qt::AlignCenter);
-
-    m_lblCdrom = new QLabel;
-    m_lblCdrom->setFrameStyle(QFrame::Panel | QFrame::Sunken);
-    m_lblCdrom->setMinimumWidth(110);
-    m_lblCdrom->setAlignment(Qt::AlignCenter);
-
-    m_lblResolution = new QLabel(i18n("No Display"));
-    m_lblResolution->setFrameStyle(QFrame::Panel | QFrame::Sunken);
-    m_lblResolution->setMinimumWidth(140);
+    m_lblResolution = new QLabel(u"–"_s, this);
     m_lblResolution->setAlignment(Qt::AlignCenter);
+    m_lblResolution->setAccessibleName(i18nc("@info:whatsthis", "Guest resolution"));
+    m_lblResolution->setToolTip(i18nc("@info:tooltip", "Resolution reported by the guest"));
 
-    m_lblMouse = new QLabel;
-    m_lblMouse->setFrameStyle(QFrame::Panel | QFrame::Sunken);
-    m_lblMouse->setMinimumWidth(140);
-    m_lblMouse->setAlignment(Qt::AlignCenter);
+    // Secondary information, and setForegroundRole() follows colour scheme
+    // changes where a hand-patched palette would go stale.
+    m_lblResolution->setForegroundRole(QPalette::PlaceholderText);
 
-    m_lblAudioOut = new QLabel;
-    m_lblAudioOut->setFrameStyle(QFrame::Panel | QFrame::Sunken);
-    m_lblAudioOut->setMinimumWidth(100);
-    m_lblAudioOut->setAlignment(Qt::AlignCenter);
+    // Fixed width from the widest plausible value: a mode switch must not
+    // reflow the whole bar.
+    m_lblResolution->setFixedWidth(m_lblResolution->fontMetrics().horizontalAdvance(u"8888 × 8888"_s) + 8);
 
-    m_lblAudioIn = new QLabel;
-    m_lblAudioIn->setFrameStyle(QFrame::Panel | QFrame::Sunken);
-    m_lblAudioIn->setMinimumWidth(100);
-    m_lblAudioIn->setAlignment(Qt::AlignCenter);
+    m_indCdrom = new StatusIndicator(this);
+    m_indCdrom->setIconNames(u"media-optical"_s, u"media-optical"_s);
+    m_indCdrom->setAccessibleName(i18nc("@info:whatsthis", "CD/DVD drive"));
+    connect(m_indCdrom, &StatusIndicator::activated, this, [this] {
+        popupIndicatorMenu(m_indCdrom, m_cdMenu);
+    });
 
-    m_lblNetwork = new QLabel(this);
-    m_lblNetwork->setFrameStyle(QFrame::Panel | QFrame::Sunken);
+    m_indFloppy = new StatusIndicator(this);
+    m_indFloppy->setIconNames(u"media-floppy"_s, u"media-floppy"_s);
+    m_indFloppy->setAccessibleName(i18nc("@info:whatsthis", "Floppy drive"));
+    connect(m_indFloppy, &StatusIndicator::activated, this, [this] {
+        popupIndicatorMenu(m_indFloppy, m_floppyMenu);
+    });
 
-    m_lblClipboard = new QLabel;
-    m_lblClipboard->setFrameStyle(QFrame::Panel | QFrame::Sunken);
-    m_lblClipboard->setMinimumWidth(120);
-    m_lblClipboard->setAlignment(Qt::AlignCenter);
+    m_indNetwork = new StatusIndicator(this);
+    m_indNetwork->setIconNames(u"network-wired-activated"_s, u"network-disconnect"_s);
+    m_indNetwork->setAccessibleName(i18nc("@info:whatsthis", "Network"));
+    m_indNetwork->setVisible(false); // until setNetworkState() says otherwise
+    // trigger() is a no-op while the action is disabled, which is exactly the
+    // guard we want during a pending QMP link change.
+    connect(m_indNetwork, &StatusIndicator::activated, m_actNetworkLink, &QAction::trigger);
 
-    statusBar()->addPermanentWidget(m_lblFloppy);
-    statusBar()->addPermanentWidget(m_lblCdrom);
+    m_indClipboard = new StatusIndicator(this);
+    m_indClipboard->setIconNames(u"edit-paste"_s, u"edit-paste"_s);
+    m_indClipboard->setAccessibleName(i18nc("@info:whatsthis", "Clipboard sharing"));
+    connect(m_indClipboard, &StatusIndicator::activated, this, [this] {
+        popupIndicatorMenu(m_indClipboard, m_clipMenu);
+    });
+
+    m_indAudioIn = new StatusIndicator(this);
+    m_indAudioIn->setIconNames(u"audio-input-microphone"_s, u"audio-input-microphone-muted"_s);
+    m_indAudioIn->setAccessibleName(i18nc("@info:whatsthis", "Microphone"));
+    connect(m_indAudioIn, &StatusIndicator::activated, m_actAudioIn, &QAction::trigger);
+
+    m_indAudioOut = new StatusIndicator(this);
+    m_indAudioOut->setIconNames(u"audio-volume-high"_s, u"audio-volume-muted"_s);
+    m_indAudioOut->setAccessibleName(i18nc("@info:whatsthis", "Audio output"));
+    connect(m_indAudioOut, &StatusIndicator::activated, m_actAudioOut, &QAction::trigger);
+
+    m_indMouse = new StatusIndicator(this);
+    m_indMouse->setIconNames(u"input-mouse"_s, u"input-mouse"_s);
+    m_indMouse->setAccessibleName(i18nc("@info:whatsthis", "Pointer"));
+    connect(m_indMouse, &StatusIndicator::activated, m_actGrabMouse, &QAction::trigger);
+
     statusBar()->addPermanentWidget(m_lblResolution);
-    statusBar()->addPermanentWidget(m_lblMouse);
-    statusBar()->addPermanentWidget(m_lblAudioOut);
-    statusBar()->addPermanentWidget(m_lblAudioIn);
-    statusBar()->addPermanentWidget(m_lblNetwork);
-    statusBar()->addPermanentWidget(m_lblClipboard);
+    statusBar()->addPermanentWidget(m_indCdrom);
+    statusBar()->addPermanentWidget(m_indFloppy);
+    statusBar()->addPermanentWidget(m_indNetwork);
+    statusBar()->addPermanentWidget(m_indClipboard);
+    statusBar()->addPermanentWidget(m_indAudioIn);
+    statusBar()->addPermanentWidget(m_indAudioOut);
+    statusBar()->addPermanentWidget(m_indMouse);
 
     updateStatusBar();
     updateMouseStatus();
@@ -375,77 +399,92 @@ void DbusViewerWindow::updateStatusBar()
 {
     // Audio output
     if (!m_audioOutConnected) {
-        m_lblAudioOut->setText(i18n("Sound: System"));
-        m_lblAudioOut->setToolTip(
-            i18n("D-Bus audio not available – QEMU uses system audio directly.\n"
-                 "For D-Bus control: -audiodev dbus,id=snd0 -machine audiodev=snd0"));
+        m_indAudioOut->setStatus(StatusIndicator::Unavailable,
+                                 i18nc("@info:tooltip",
+                                       "Audio output: system audio.\n"
+                                       "D-Bus audio not available - start QEMU with "
+                                       "-audiodev dbus,id=snd0 -machine audiodev=snd0"));
     } else if (m_actAudioOut->isChecked()) {
-        m_lblAudioOut->setText(i18n("Sound: ON"));
-        m_lblAudioOut->setToolTip(i18n("Audio output via D-Bus active"));
+        m_indAudioOut->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Audio output active - click to mute"));
     } else {
-        m_lblAudioOut->setText(i18n("Sound: OFF"));
-        m_lblAudioOut->setToolTip(i18n("Audio output muted"));
+        m_indAudioOut->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Audio output muted - click to unmute"));
     }
 
     // Audio input
     if (!m_audioInConnected) {
-        m_lblAudioIn->setText(i18n("Mic: System"));
-        m_lblAudioIn->setToolTip(
-            i18n("D-Bus microphone not available – QEMU uses system audio directly.\n"
-                 "For D-Bus control: -audiodev dbus,id=snd0 -machine audiodev=snd0"));
+        m_indAudioIn->setStatus(StatusIndicator::Unavailable,
+                                i18nc("@info:tooltip",
+                                      "Microphone: system audio.\n"
+                                      "D-Bus audio not available - start QEMU with "
+                                      "-audiodev dbus,id=snd0 -machine audiodev=snd0"));
     } else if (m_actAudioIn->isChecked()) {
-        m_lblAudioIn->setText(i18n("Mic: ON"));
-        m_lblAudioIn->setToolTip(i18n("Microphone forwarding via D-Bus active"));
+        m_indAudioIn->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Microphone forwarding active - click to mute"));
     } else {
-        m_lblAudioIn->setText(i18n("Mic: OFF"));
-        m_lblAudioIn->setToolTip(i18n("Microphone forwarding disabled"));
+        m_indAudioIn->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Microphone muted - click to unmute"));
     }
 
     // Removable media
-    if (m_hasIso) {
-        m_lblCdrom->setText(i18n("CD: %1", m_isoName));
-        m_lblCdrom->setToolTip(i18n("CD/DVD image inserted: %1", m_isoName));
-    } else {
-        m_lblCdrom->setText(i18n("CD: empty"));
-        m_lblCdrom->setToolTip(i18n("No CD/DVD image inserted"));
+    m_indCdrom->setVisible(m_hasCdDrive);
+    if (m_hasCdDrive) {
+        if (m_hasIso) {
+            m_indCdrom->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "CD/DVD: %1", m_isoName));
+        } else {
+            m_indCdrom->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "CD/DVD drive empty - click to insert an image"));
+        }
     }
 
-    if (m_hasFloppy) {
-        m_lblFloppy->setText(i18n("FD: %1", m_floppyName));
-        m_lblFloppy->setToolTip(i18n("Floppy image inserted: %1", m_floppyName));
-    } else {
-        m_lblFloppy->setText(i18n("FD: empty"));
-        m_lblFloppy->setToolTip(i18n("No floppy image inserted"));
+    m_indFloppy->setVisible(m_hasFloppyDrive);
+    if (m_hasFloppyDrive) {
+        if (m_hasFloppy) {
+            m_indFloppy->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Floppy: %1", m_floppyName));
+        } else {
+            m_indFloppy->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Floppy drive empty - click to insert an image"));
+        }
     }
 
-    // Clipboard
+    // Clipboard. Emblem convention: down = towards the host, up = towards the
+    // guest; bidirectional needs no arrow.
     switch (m_clipDirection) {
     case ClipboardDirection::Off:
-        m_lblClipboard->setText(i18n("Clipboard: OFF"));
-        m_lblClipboard->setToolTip(i18n("Clipboard disabled"));
+        m_indClipboard->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Clipboard sharing off - click to change"));
         break;
     case ClipboardDirection::ToHost:
-        m_lblClipboard->setText(i18n("Clipboard: G→H"));
-        m_lblClipboard->setToolTip(i18n("Clipboard: Guest → Host"));
+        m_indClipboard->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Clipboard: guest to host"), u"go-down"_s);
         break;
     case ClipboardDirection::ToGuest:
-        m_lblClipboard->setText(i18n("Clipboard: H→G"));
-        m_lblClipboard->setToolTip(i18n("Clipboard: Host → Guest"));
+        m_indClipboard->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Clipboard: host to guest"), u"go-up"_s);
         break;
     case ClipboardDirection::Both:
-        m_lblClipboard->setText(i18n("Clipboard: BI"));
-        m_lblClipboard->setToolTip(i18n("Clipboard: Bidirectional"));
+        m_indClipboard->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Clipboard: bidirectional"));
         break;
     }
 
-    if (m_lblNetwork && m_hasNic) {
+    // Network
+    m_indNetwork->setVisible(m_hasNic);
+    if (m_hasNic) {
         if (m_prefs.networkLinkUp) {
-            m_lblNetwork->setText(i18nc("@info:status", "Net: ON"));
-            m_lblNetwork->setToolTip(i18nc("@info:tooltip", "%1 - cable plugged in", m_nicLabel));
+            m_indNetwork->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "%1 - cable plugged in", m_nicLabel));
         } else {
-            m_lblNetwork->setText(i18nc("@info:status", "Net: OFF"));
-            m_lblNetwork->setToolTip(i18nc("@info:tooltip", "%1 - cable unplugged", m_nicLabel));
+            m_indNetwork->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "%1 - cable unplugged", m_nicLabel));
         }
+    }
+}
+
+void DbusViewerWindow::popupIndicatorMenu(StatusIndicator *indicator, QMenu *menu)
+{
+    if (!indicator || !menu) {
+        return;
+    }
+
+    // Open upwards: the indicator sits at the bottom edge of the window.
+    const QSize hint = menu->sizeHint();
+    menu->popup(indicator->mapToGlobal(QPoint(indicator->width() / 2 - hint.width() / 2, -hint.height())));
+}
+
+void DbusViewerWindow::showOsd(const QString &text, int holdMs)
+{
+    if (m_osd) {
+        m_osd->showMessage(text, holdMs);
     }
 }
 
@@ -676,14 +715,17 @@ void DbusViewerWindow::setSuspended(bool suspended)
 void DbusViewerWindow::onScanoutChanged(int width, int height)
 {
     if (width > 0 && height > 0) {
-        m_lblResolution->setText(u"%1 × %2"_s.arg(width).arg(height));
+        // Only on a real change: QEMU repeats the scanout on every mode probe.
         if (m_scanoutSize != QSize(width, height)) {
             m_scanoutSize = {width, height};
+            m_lblResolution->setText(u"%1 × %2"_s.arg(width).arg(height));
+            m_lblResolution->setToolTip(i18nc("@info:tooltip", "Resolution reported by the guest"));
             updateWindowAndDisplaySize();
         }
     } else {
         m_scanoutSize = {};
-        m_lblResolution->setText(i18n("No Display"));
+        m_lblResolution->setText(u"–"_s);
+        m_lblResolution->setToolTip(i18nc("@info:tooltip", "No display output from the guest"));
     }
 }
 
@@ -699,17 +741,19 @@ void DbusViewerWindow::onAbout()
 
 void DbusViewerWindow::updateMouseStatus()
 {
-    if (m_display->isPointerCaptured()) {
-        m_lblMouse->setText(i18n("Pointer: Captured (Ctrl+Alt+G to release)"));
-        m_lblMouse->setToolTip(i18n("Pointer captured – press Ctrl+Alt+G to release"));
+    if (!m_indMouse) {
         return;
     }
+
+    if (m_display->isPointerCaptured()) {
+        m_indMouse->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Pointer captured - press Ctrl+Alt+G to release"), u"object-locked"_s);
+        return;
+    }
+
     if (m_display->isGuestAbsolute()) {
-        m_lblMouse->setText(i18n("Pointer: Absolute"));
-        m_lblMouse->setToolTip(i18n("Absolute pointer – host and guest cursor are synced; no capture needed"));
+        m_indMouse->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Absolute pointer - host and guest cursor are synced"));
     } else {
-        m_lblMouse->setText(i18n("Pointer: Released"));
-        m_lblMouse->setToolTip(i18n("Click into the display to capture the pointer"));
+        m_indMouse->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Pointer released - click into the display to capture"));
     }
 }
 
@@ -720,6 +764,13 @@ void DbusViewerWindow::onPointerCaptureChanged(bool active)
         QSignalBlocker block(m_actGrabMouse);
         m_actGrabMouse->setChecked(active);
     }
+
+    if (active) {
+        showOsd(i18nc("@info:status", "Pointer captured - press Ctrl+Alt+G to release"), 3000);
+    } else {
+        showOsd(i18nc("@info:status", "Pointer released"), 1500);
+    }
+
     updateMouseStatus();
     Q_EMIT inhibitStateChanged();
 }
@@ -876,6 +927,13 @@ void DbusViewerWindow::setMediaState(bool hasIso, const QString &isoName, bool h
     updateStatusBar();
 }
 
+void DbusViewerWindow::setDriveAvailability(bool hasCdDrive, bool hasFloppyDrive)
+{
+    m_hasCdDrive = hasCdDrive;
+    m_hasFloppyDrive = hasFloppyDrive;
+    updateStatusBar();
+}
+
 void DbusViewerWindow::setNetworkState(const QString &nicLabel, bool linkUp)
 {
     m_nicLabel = nicLabel;
@@ -888,8 +946,6 @@ void DbusViewerWindow::setNetworkState(const QString &nicLabel, bool linkUp)
         m_actNetworkLink->setChecked(m_hasNic && linkUp);
         m_actNetworkLink->setEnabled(m_hasNic && !m_suspended);
     }
-    if (m_lblNetwork)
-        m_lblNetwork->setVisible(m_hasNic);
 
     updateStatusBar();
 }
