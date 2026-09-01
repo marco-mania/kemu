@@ -130,8 +130,9 @@ protected:
 
 private Q_SLOTS:
     void onToggleFullscreen(bool checked);
-    void onResetToNativeSize();
-    void onToggleWindowMode(QAction *action);
+    void onToggleScaleToWindow(bool checked);
+    void onToggleResizeWindow(bool checked);
+    void onFitWindowToDisplay();
     void onZoomIn();
     void onZoomOut();
     void onZoomReset();
@@ -185,11 +186,9 @@ private:
     QAction *m_actSnapshots = nullptr;
     QAction *m_actQuit = nullptr;
     QAction *m_actFullscreen = nullptr;
-    QAction *m_actNativeSize = nullptr;
-    QActionGroup *m_windowActionGroup = nullptr;
-    QAction *m_actWindowFitsContent = nullptr;
-    QAction *m_actContentFitsWindow = nullptr;
-    QAction *m_actManualZoom = nullptr;
+    QAction *m_actFitWindow = nullptr;
+    QAction *m_actScaleToWindow = nullptr;
+    QAction *m_actResizeWindow = nullptr;
     QAction *m_actZoomIn = nullptr;
     QAction *m_actZoomOut = nullptr;
     QAction *m_actZoomReset = nullptr;
@@ -206,6 +205,8 @@ private:
     QAction *m_actGrabMouse = nullptr;
     QAction *m_actNetworkLink = nullptr;
     QAction *m_actAbout = nullptr;
+
+    void updateViewActions();
 
     QMenu *m_usbMenu = nullptr;
 

@@ -118,27 +118,21 @@ void DbusViewerWindow::createActions()
     m_actFullscreen->setStatusTip(i18n("Toggle fullscreen mode"));
     connect(m_actFullscreen, &QAction::toggled, this, &DbusViewerWindow::onToggleFullscreen);
 
-    m_actNativeSize = new QAction(QIcon::fromTheme(u"zoom-original"_s), i18n("&Reset to Native Size"), this);
-    m_actNativeSize->setShortcut(QKeySequence(u"Ctrl+Shift+R"_s));
-    m_actNativeSize->setStatusTip(i18n("Resize the window to the guest's native resolution"));
-    connect(m_actNativeSize, &QAction::triggered, this, &DbusViewerWindow::onResetToNativeSize);
+    m_actFitWindow = new QAction(QIcon::fromTheme(u"zoom-fit-best"_s), i18n("&Fit Window to Display"), this);
+    m_actFitWindow->setShortcut(QKeySequence(u"Ctrl+Shift+R"_s));
+    m_actFitWindow->setStatusTip(i18n("Resize the window so the guest display fits exactly"));
+    connect(m_actFitWindow, &QAction::triggered, this, &DbusViewerWindow::onFitWindowToDisplay);
 
-    m_windowActionGroup = new QActionGroup(this);
-    m_windowActionGroup->setExclusive(true);
-    connect(m_windowActionGroup, &QActionGroup::triggered, this, &DbusViewerWindow::onToggleWindowMode);
+    m_actScaleToWindow = new QAction(i18n("&Scale Display to Window"), this);
+    m_actScaleToWindow->setCheckable(true);
+    m_actScaleToWindow->setStatusTip(i18n("Scale the guest display so it always fills the window"));
+    connect(m_actScaleToWindow, &QAction::toggled, this, &DbusViewerWindow::onToggleScaleToWindow);
 
-    m_actWindowFitsContent = new QAction(i18n("Window Fits &Content"), m_windowActionGroup);
-    m_actWindowFitsContent->setCheckable(true);
-    m_actWindowFitsContent->setChecked(true);
-    m_actWindowFitsContent->setStatusTip(i18n("Fit window size to content"));
-
-    m_actContentFitsWindow = new QAction(i18n("&Content Fits Window"), m_windowActionGroup);
-    m_actContentFitsWindow->setCheckable(true);
-    m_actContentFitsWindow->setStatusTip(i18n("Fit content to window size"));
-
-    m_actManualZoom = new QAction(i18n("&Manual Zoom"), m_windowActionGroup);
-    m_actManualZoom->setCheckable(true);
-    m_actManualZoom->setStatusTip(i18n("Control zoom level and window size manually"));
+    m_actResizeWindow = new QAction(i18n("Auto-&Resize Window"), this);
+    m_actResizeWindow->setCheckable(true);
+    m_actResizeWindow->setChecked(true); // before connect(): no spurious toggle
+    m_actResizeWindow->setStatusTip(i18n("Keep the window matched to the guest display size"));
+    connect(m_actResizeWindow, &QAction::toggled, this, &DbusViewerWindow::onToggleResizeWindow);
 
     m_actZoomIn = new QAction(i18n("Zoom &In"), this);
     m_actZoomIn->setShortcut(QKeySequence::ZoomIn);
@@ -150,9 +144,8 @@ void DbusViewerWindow::createActions()
     m_actZoomOut->setStatusTip(i18n("Decrease zoom level"));
     connect(m_actZoomOut, &QAction::triggered, this, &DbusViewerWindow::onZoomOut);
 
-    m_actZoomReset = new QAction(i18n("&Reset Zoom"), this);
-    m_actZoomReset->setStatusTip(i18n("Reset zoom level to 100%"));
-    connect(m_actZoomReset, &QAction::triggered, this, &DbusViewerWindow::onZoomReset);
+    m_actZoomReset = new QAction(QIcon::fromTheme(u"zoom-original"_s), i18n("&Zoom to 100%"), this);
+    m_actZoomReset->setStatusTip(i18n("Show the guest display at its native pixel size"));
 
     m_actGrabMouse = new QAction(QIcon::fromTheme(u"input-mouse"_s), i18n("&Capture Mouse"), this);
     m_actGrabMouse->setCheckable(true);
@@ -264,11 +257,11 @@ void DbusViewerWindow::createMenus()
     // View
     QMenu *viewMenu = menuBar()->addMenu(i18n("&View"));
     viewMenu->addAction(m_actFullscreen);
-    viewMenu->addAction(m_actNativeSize);
     viewMenu->addSeparator();
-    viewMenu->addAction(m_actWindowFitsContent);
-    viewMenu->addAction(m_actContentFitsWindow);
-    viewMenu->addAction(m_actManualZoom);
+    viewMenu->addAction(m_actScaleToWindow);
+    viewMenu->addAction(m_actResizeWindow);
+    viewMenu->addSeparator();
+    viewMenu->addAction(m_actFitWindow);
     viewMenu->addSeparator();
     viewMenu->addAction(m_actZoomIn);
     viewMenu->addAction(m_actZoomOut);
@@ -504,25 +497,6 @@ void DbusViewerWindow::onToggleFullscreen(bool checked)
     Q_EMIT inhibitStateChanged();
 }
 
-void DbusViewerWindow::onToggleWindowMode(QAction *action)
-{
-    if (action == m_actManualZoom) {
-        m_windowFitsContent = false;
-        m_contentFitsWindow = false;
-    } else if (action == m_actWindowFitsContent) {
-        m_windowFitsContent = true;
-        m_contentFitsWindow = false;
-    } else if (action == m_actContentFitsWindow) {
-        m_windowFitsContent = false;
-        m_contentFitsWindow = true;
-    }
-    m_actZoomIn->setEnabled(!m_contentFitsWindow);
-    m_actZoomOut->setEnabled(!m_contentFitsWindow);
-    m_actZoomReset->setEnabled(!m_contentFitsWindow);
-    m_lastWindowSize = {0, 0}; // Force resizing the window when changing modes
-    updateWindowAndDisplaySize();
-}
-
 void DbusViewerWindow::onZoomIn()
 {
     m_scale += 0.25f;
@@ -547,10 +521,10 @@ void DbusViewerWindow::onZoomReset()
     updateWindowAndDisplaySize();
 }
 
-void DbusViewerWindow::onResetToNativeSize()
+void DbusViewerWindow::onFitWindowToDisplay()
 {
     if (m_scanoutSize.width() <= 0 || m_scanoutSize.height() <= 0) {
-        statusBar()->showMessage(i18n("Native display size not yet known"), 3000);
+        statusBar()->showMessage(i18n("Guest display size not known yet"), 3000);
         return;
     }
 
@@ -560,20 +534,41 @@ void DbusViewerWindow::onResetToNativeSize()
         m_actFullscreen->setChecked(false);
     }
 
+    // Auto-scaling has no user scale to preserve, so 100% is the only
+    // meaningful target. The other modes keep whatever zoom is set.
     if (m_contentFitsWindow) {
-        m_scale = 1.0f; // Same as "Reset Zoom" in "Content Fits Window" mode
+        m_scale = 1.0f;
     }
+
     auto doResize = [this] {
         fitWindowToContent(true);
     };
 
-    // Defer the resize until the window state transition has settled,
-    // otherwise the WM may overwrite our geometry while leaving fullscreen.
     if (wasFullscreen) {
         QTimer::singleShot(0, this, doResize);
     } else {
         doResize();
     }
+}
+
+void DbusViewerWindow::onToggleScaleToWindow(bool checked)
+{
+    m_contentFitsWindow = checked;
+    // Auto-scaling owns the window size, so the resize option steps aside
+    // while it is on and returns to its own setting afterwards.
+    m_windowFitsContent = !checked && m_actResizeWindow->isChecked();
+    m_actResizeWindow->setEnabled(!checked);
+
+    updateViewActions();
+    m_lastWindowSize = {0, 0}; // force a resize on the next update
+    updateWindowAndDisplaySize();
+}
+
+void DbusViewerWindow::onToggleResizeWindow(bool checked)
+{
+    m_windowFitsContent = checked && !m_contentFitsWindow;
+    m_lastWindowSize = {0, 0};
+    updateWindowAndDisplaySize();
 }
 
 // =============================================================================
@@ -1005,4 +1000,15 @@ void DbusViewerWindow::fitWindowToContent(bool force)
         resize(windowSize);
         m_lastWindowSize = windowSize;
     }
+}
+
+void DbusViewerWindow::updateViewActions()
+{
+    const bool zoomable = !m_contentFitsWindow;
+    m_actZoomIn->setEnabled(zoomable);
+    m_actZoomOut->setEnabled(zoomable);
+    m_actZoomReset->setEnabled(zoomable);
+
+    // A one-shot fit is pointless while the window follows the display anyway.
+    m_actFitWindow->setEnabled(!m_windowFitsContent);
 }
