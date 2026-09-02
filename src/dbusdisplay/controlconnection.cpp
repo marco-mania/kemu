@@ -119,7 +119,11 @@ void QemuControlConnection::callAsync(const QString &path, const QLatin1StringVi
     g_dbus_connection_call(m_conn,
                            nullptr,
                            path.toUtf8().constData(),
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
                            iface.toUtf8().constData(),
+#else
+                           QString(iface).toUtf8().constData(),
+#endif
                            method.toUtf8().constData(),
                            params,
                            nullptr,
