@@ -98,6 +98,10 @@ public:
     // persist=false for states QEMU reports on its own (see section 7).
     void setNetworkLinkState(bool up, bool persist = true);
 
+    // How many USB devices are currently redirected into the VM.
+    // Call after every attach/detach, like setMediaState().
+    void setUsbState(int attachedCount);
+
     QMenu *usbMenu() const
     {
         return m_usbMenu;
@@ -220,6 +224,9 @@ private:
     StatusIndicator *m_indAudioIn = nullptr;
     StatusIndicator *m_indAudioOut = nullptr;
     StatusIndicator *m_indMouse = nullptr;
+    StatusIndicator *m_indUsb = nullptr;
+
+    int m_usbAttached = 0;
 
     // Device menus, reused as popups by the indicators above
     QMenu *m_cdMenu = nullptr;

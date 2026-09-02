@@ -6,8 +6,14 @@
 
 #pragma once
 
+#include <QIcon>
 #include <QString>
+#include <QStyle>
+#include <QStyleOptionToolButton>
+#include <QStylePainter>
 #include <QToolButton>
+
+#include <KIconUtils>
 
 using namespace Qt::StringLiterals;
 
@@ -49,9 +55,16 @@ public:
         return m_state;
     }
 
+    // Popup menu opened on click. Placement, including flipping upwards at
+    // the screen edge, is left to QToolButton.
+    void setPopupMenu(QMenu *menu);
+
 Q_SIGNALS:
     // Emitted on click, but only while the indicator is not Unavailable.
     void activated();
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
 
 private:
     void refreshIcon();

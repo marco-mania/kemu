@@ -6,11 +6,6 @@
 
 #include "statusindicator.h"
 
-#include <KIconUtils>
-
-#include <QIcon>
-#include <QStyle>
-
 StatusIndicator::StatusIndicator(QWidget *parent)
     : QToolButton(parent)
 {
@@ -48,6 +43,26 @@ void StatusIndicator::setStatus(State state, const QString &tooltip, const QStri
     setToolTip(tooltip);
     // Screen readers read name + description; the name stays the fixed role.
     setAccessibleDescription(tooltip);
+}
+
+void StatusIndicator::setPopupMenu(QMenu *menu)
+{
+    setMenu(menu);
+    setPopupMode(QToolButton::InstantPopup);
+}
+
+void StatusIndicator::paintEvent(QPaintEvent *)
+{
+    QStylePainter painter(this);
+    QStyleOptionToolButton option;
+    initStyleOption(&option);
+
+    // Drop the menu arrow: it widens the button and breaks the even spacing
+    // of the indicator row. The popup behaviour is unaffected.
+    option.features &= ~QStyleOptionToolButton::HasMenu;
+    option.subControls &= ~QStyle::SC_ToolButtonMenu;
+
+    painter.drawComplexControl(QStyle::CC_ToolButton, option);
 }
 
 void StatusIndicator::refreshIcon()

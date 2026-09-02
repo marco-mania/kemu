@@ -333,16 +333,17 @@ void DbusViewerWindow::createStatusBar()
     m_indCdrom = new StatusIndicator(this);
     m_indCdrom->setIconNames(u"media-optical"_s, u"media-optical"_s);
     m_indCdrom->setAccessibleName(i18nc("@info:whatsthis", "CD/DVD drive"));
-    connect(m_indCdrom, &StatusIndicator::activated, this, [this] {
-        popupIndicatorMenu(m_indCdrom, m_cdMenu);
-    });
+    m_indCdrom->setPopupMenu(m_cdMenu);
 
     m_indFloppy = new StatusIndicator(this);
     m_indFloppy->setIconNames(u"media-floppy"_s, u"media-floppy"_s);
     m_indFloppy->setAccessibleName(i18nc("@info:whatsthis", "Floppy drive"));
-    connect(m_indFloppy, &StatusIndicator::activated, this, [this] {
-        popupIndicatorMenu(m_indFloppy, m_floppyMenu);
-    });
+    m_indFloppy->setPopupMenu(m_floppyMenu);
+
+    m_indUsb = new StatusIndicator(this);
+    m_indUsb->setIconNames(u"drive-removable-media-usb"_s, u"drive-removable-media-usb"_s);
+    m_indUsb->setAccessibleName(i18nc("@info:whatsthis", "USB devices"));
+    m_indUsb->setPopupMenu(m_usbMenu);
 
     m_indNetwork = new StatusIndicator(this);
     m_indNetwork->setIconNames(u"network-wired-activated"_s, u"network-disconnect"_s);
@@ -355,9 +356,7 @@ void DbusViewerWindow::createStatusBar()
     m_indClipboard = new StatusIndicator(this);
     m_indClipboard->setIconNames(u"edit-paste"_s, u"edit-paste"_s);
     m_indClipboard->setAccessibleName(i18nc("@info:whatsthis", "Clipboard sharing"));
-    connect(m_indClipboard, &StatusIndicator::activated, this, [this] {
-        popupIndicatorMenu(m_indClipboard, m_clipMenu);
-    });
+    m_indClipboard->setPopupMenu(m_clipMenu);
 
     m_indAudioIn = new StatusIndicator(this);
     m_indAudioIn->setIconNames(u"audio-input-microphone"_s, u"audio-input-microphone-muted"_s);
@@ -377,6 +376,7 @@ void DbusViewerWindow::createStatusBar()
     statusBar()->addPermanentWidget(m_lblResolution);
     statusBar()->addPermanentWidget(m_indCdrom);
     statusBar()->addPermanentWidget(m_indFloppy);
+    statusBar()->addPermanentWidget(m_indUsb);
     statusBar()->addPermanentWidget(m_indNetwork);
     statusBar()->addPermanentWidget(m_indClipboard);
     statusBar()->addPermanentWidget(m_indAudioIn);
@@ -459,6 +459,17 @@ void DbusViewerWindow::updateStatusBar()
             m_indNetwork->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "%1 - cable plugged in", m_nicLabel));
         } else {
             m_indNetwork->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "%1 - cable unplugged", m_nicLabel));
+        }
+    }
+
+    // USB. The menu fills itself on aboutToShow; the indicator only needs
+    // the count MainWindow hands us.
+    m_indUsb->setVisible(m_hasUsbController);
+    if (m_hasUsbController) {
+        if (m_usbAttached > 0) {
+            m_indUsb->setStatus(StatusIndicator::Active, i18ncp("@info:tooltip", "%1 USB device attached", "%1 USB devices attached", m_usbAttached));
+        } else {
+            m_indUsb->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "No USB devices attached - click to attach"));
         }
     }
 }
@@ -966,6 +977,12 @@ void DbusViewerWindow::setNetworkLinkState(bool up, bool persist)
     updateStatusBar();
     if (persist)
         Q_EMIT devicePrefsChanged(m_prefs);
+}
+
+void DbusViewerWindow::setUsbState(int attachedCount)
+{
+    m_usbAttached = attachedCount;
+    updateStatusBar();
 }
 
 void DbusViewerWindow::updateWindowAndDisplaySize()
