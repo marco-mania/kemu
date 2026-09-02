@@ -94,6 +94,11 @@ int main(int argc, char *argv[])
 
     const KDBusService service(KDBusService::Unique);
 
+    // Touch Qt Multimedia once while nothing depends on latency: the first
+    // access loads the FFmpeg backend and probes hardware decoders, which
+    // costs tens of milliseconds on the GUI thread.
+    (void)QMediaDevices::defaultAudioOutput();
+
     auto *mainwindow = new MainWindow();
     mainwindow->setAttribute(Qt::WA_DeleteOnClose);
     mainwindow->show();
