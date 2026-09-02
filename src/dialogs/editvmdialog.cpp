@@ -345,9 +345,11 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::Ps2), static_cast<int>(VMSpecs::PointerDevice::Ps2));
     mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::UsbMouse), static_cast<int>(VMSpecs::PointerDevice::UsbMouse));
     mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::UsbTablet), static_cast<int>(VMSpecs::PointerDevice::UsbTablet));
+    mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::VirtioTablet), static_cast<int>(VMSpecs::PointerDevice::VirtioTablet));
     mouseCombo->setToolTip(
-        i18n("PS/2 and USB mouse are relative pointers; USB tablet gives absolute "
-             "positioning (seamless, no grab). USB options need a USB controller."));
+        i18n("PS/2 and USB mouse are relative pointers; tablets give absolute "
+             "positioning (seamless, no grab). USB options need a USB controller, "
+             "VirtIO needs PCI and a virtio input driver in the guest."));
     setCombo(mouseCombo, GlobalDefaults.pointerDevice);
     hwLayout->addRow(i18n("Mouse:"), mouseCombo);
 
@@ -1441,30 +1443,35 @@ void EditVmDialog::updateDeviceAvailability()
 void EditVmDialog::updateInputDeviceAvailability()
 {
     const bool hasUsb = static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()) != VMSpecs::UsbController::None;
-    const QString tip = hasUsb ? QString() : i18n("Requires a USB controller.");
+    const auto machine = static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt());
+    const bool hasPci = VMConfig::supportsPciBus(machine);
 
-    // Enable/disable USB-dependent items via the combo's item model.
-    const auto setUsbItemEnabled = [&](QComboBox *combo, int enumValue) {
+    const QString usbTip = i18n("Requires a USB controller.");
+    const QString pciTip = i18n("Requires a PCI/PCIe bus (e.g., Q35 or Legacy PC).");
+
+    const auto setItemState = [](QComboBox *combo, int enumValue, bool enabled, const QString &tip) {
         if (auto *model = qobject_cast<QStandardItemModel *>(combo->model())) {
             const int idx = combo->findData(enumValue);
             if (idx >= 0 && model->item(idx)) {
-                model->item(idx)->setEnabled(hasUsb);
-                combo->setItemData(idx, tip, Qt::ToolTipRole);
+                model->item(idx)->setEnabled(enabled);
+                combo->setItemData(idx, enabled ? QString() : tip, Qt::ToolTipRole);
             }
         }
     };
 
-    setUsbItemEnabled(mouseCombo, static_cast<int>(VMSpecs::PointerDevice::UsbMouse));
-    setUsbItemEnabled(mouseCombo, static_cast<int>(VMSpecs::PointerDevice::UsbTablet));
-    setUsbItemEnabled(keyboardCombo, static_cast<int>(VMSpecs::KeyboardDevice::Usb));
+    setItemState(mouseCombo, static_cast<int>(VMSpecs::PointerDevice::UsbMouse), hasUsb, usbTip);
+    setItemState(mouseCombo, static_cast<int>(VMSpecs::PointerDevice::UsbTablet), hasUsb, usbTip);
+    setItemState(mouseCombo, static_cast<int>(VMSpecs::PointerDevice::VirtioTablet), hasPci, pciTip);
+    setItemState(keyboardCombo, static_cast<int>(VMSpecs::KeyboardDevice::Usb), hasUsb, usbTip);
 
-    // Fall back to PS/2 if a USB device is selected but USB is unavailable.
-    if (!hasUsb) {
-        if (static_cast<VMSpecs::PointerDevice>(mouseCombo->currentData().toInt()) != VMSpecs::PointerDevice::Ps2)
-            setCombo(mouseCombo, VMSpecs::PointerDevice::Ps2);
-        if (static_cast<VMSpecs::KeyboardDevice>(keyboardCombo->currentData().toInt()) != VMSpecs::KeyboardDevice::Ps2)
-            setCombo(keyboardCombo, VMSpecs::KeyboardDevice::Ps2);
-    }
+    // Fall back to PS/2 when the selected device is unavailable.
+    const auto pointer = static_cast<VMSpecs::PointerDevice>(mouseCombo->currentData().toInt());
+    const bool pointerOk = (pointer == VMSpecs::PointerDevice::Ps2) || (pointer == VMSpecs::PointerDevice::VirtioTablet ? hasPci : hasUsb);
+    if (!pointerOk)
+        setCombo(mouseCombo, VMSpecs::PointerDevice::Ps2);
+
+    if (!hasUsb && static_cast<VMSpecs::KeyboardDevice>(keyboardCombo->currentData().toInt()) != VMSpecs::KeyboardDevice::Ps2)
+        setCombo(keyboardCombo, VMSpecs::KeyboardDevice::Ps2);
 }
 
 void EditVmDialog::validateForm()

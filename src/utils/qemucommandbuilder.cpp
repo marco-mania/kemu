@@ -404,6 +404,9 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             args << u"-device"_s << u"usb-tablet,bus=%1"_s.arg(usbBus);
         }
         break;
+    case VMSpecs::PointerDevice::VirtioTablet:
+        args << u"-device"_s << u"virtio-tablet-pci"_s;
+        break;
     }
 
     // --- Keyboard device ---

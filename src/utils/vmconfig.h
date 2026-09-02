@@ -118,7 +118,8 @@ enum class NetworkMode {
 enum class PointerDevice {
     Ps2, // relative, always present on pc/q35, no USB required
     UsbMouse, // relative, requires a USB controller
-    UsbTablet // absolute, requires a USB controller
+    UsbTablet, // absolute, requires a USB controller
+    VirtioTablet // absolute, requires PCI and a virtio input driver in the guest
 };
 
 enum class KeyboardDevice {

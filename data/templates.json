@@ -112,7 +112,8 @@
         }
       ],
       "qemu_defaults": {
-        "disk_size_gb": 40
+        "disk_size_gb": 40,
+        "pointer_device": "virtio-tablet"
       }
     },
     {
@@ -174,7 +175,8 @@
         }
       ],
       "qemu_defaults": {
-        "disk_size_gb": 40
+        "disk_size_gb": 40,
+        "pointer_device": "virtio-tablet"
       }
     },
     {
@@ -218,7 +220,8 @@
         }
       ],
       "qemu_defaults": {
-        "disk_size_gb": 40
+        "disk_size_gb": 40,
+        "pointer_device": "virtio-tablet"
       }
     },
     {
@@ -280,7 +283,8 @@
         }
       ],
       "qemu_defaults": {
-        "disk_size_gb": 30
+        "disk_size_gb": 30,
+        "pointer_device": "virtio-tablet"
       }
     },
     {
@@ -390,7 +394,8 @@
         }
       ],
       "qemu_defaults": {
-        "disk_size_gb": 40
+        "disk_size_gb": 40,
+        "pointer_device": "virtio-tablet"
       }
     },
     {
@@ -452,7 +457,8 @@
         }
       ],
       "qemu_defaults": {
-        "disk_size_gb": 40
+        "disk_size_gb": 40,
+        "pointer_device": "virtio-tablet"
       }
     },
     {
@@ -483,7 +489,8 @@
         }
       ],
       "qemu_defaults": {
-        "disk_size_gb": 30
+        "disk_size_gb": 40,
+        "pointer_device": "virtio-tablet"
       }
     },
     {
@@ -545,7 +552,8 @@
         }
       ],
       "qemu_defaults": {
-        "disk_size_gb": 40
+        "disk_size_gb": 40,
+        "pointer_device": "virtio-tablet"
       }
     },
     {
@@ -607,7 +615,8 @@
         }
       ],
       "qemu_defaults": {
-        "disk_size_gb": 40
+        "disk_size_gb": 40,
+        "pointer_device": "virtio-tablet"
       }
     },
     {
@@ -1119,27 +1128,47 @@
         "display_type": "gtk"
       }
     },
-        {
+    {
       "id": "other-linux",
       "display_name": "Other Linux",
       "os_type": "linux",
       "icon_hint": "computer",
-      "releases": [{ "version": "", "quick_deploy": false, "min_disk_gb": 16 }]
+      "releases": [
+        {
+          "version": "",
+          "quick_deploy": false,
+          "min_disk_gb": 16
+        }
+      ]
     },
     {
       "id": "other-bsd",
       "display_name": "Other BSD",
       "os_type": "bsd",
       "icon_hint": "computer",
-      "releases": [{ "version": "", "quick_deploy": false, "min_disk_gb": 16 }],
-      "qemu_defaults": { "disk_size_gb": 30 }
+      "releases": [
+        {
+          "version": "",
+          "quick_deploy": false,
+          "min_disk_gb": 16
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 30
+      }
     },
     {
       "id": "other-windows",
       "display_name": "Other Windows",
       "os_type": "windows",
       "icon_hint": "computer",
-      "releases": [{ "version": "", "quick_deploy": false, "min_disk_gb": 32 }],
+      "releases": [
+        {
+          "version": "",
+          "quick_deploy": false,
+          "min_disk_gb": 32
+        }
+      ],
       "qemu_defaults": {
         "use_balloon": false,
         "disk_size_gb": 64,
@@ -1151,7 +1180,13 @@
       "display_name": "Other DOS",
       "os_type": "dos",
       "icon_hint": "computer",
-      "releases": [{ "version": "", "quick_deploy": false, "min_disk_gb": 1 }],
+      "releases": [
+        {
+          "version": "",
+          "quick_deploy": false,
+          "min_disk_gb": 1
+        }
+      ],
       "qemu_defaults": {
         "use_kvm": false,
         "ram": 64,
@@ -1179,7 +1214,12 @@
       "display_name": "Other operating system",
       "os_type": "other",
       "icon_hint": "computer",
-      "releases": [{ "version": "", "quick_deploy": false }]
+      "releases": [
+        {
+          "version": "",
+          "quick_deploy": false
+        }
+      ]
     }
   ]
 }

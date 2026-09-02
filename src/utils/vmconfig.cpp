@@ -818,6 +818,8 @@ QString VMConfig::toUIString(VMSpecs::PointerDevice dev)
         return i18n("USB mouse");
     case VMSpecs::PointerDevice::UsbTablet:
         return i18n("USB tablet");
+    case VMSpecs::PointerDevice::VirtioTablet:
+        return i18n("VirtIO tablet");
     }
     return {};
 }
@@ -1052,6 +1054,8 @@ QString VMConfig::toString(VMSpecs::PointerDevice dev)
         return u"usb-mouse"_s;
     case VMSpecs::PointerDevice::UsbTablet:
         return u"usb-tablet"_s;
+    case VMSpecs::PointerDevice::VirtioTablet:
+        return u"virtio-tablet"_s;
     }
     return u"usb-tablet"_s;
 }
@@ -1318,6 +1322,8 @@ VMSpecs::PointerDevice VMConfig::parsePointerDevice(const QString &str)
         return VMSpecs::PointerDevice::Ps2;
     if (s == u"usb-mouse"_s)
         return VMSpecs::PointerDevice::UsbMouse;
+    if (s == u"virtio-tablet"_s)
+        return VMSpecs::PointerDevice::VirtioTablet;
     return VMSpecs::PointerDevice::UsbTablet; // default
 }
 
