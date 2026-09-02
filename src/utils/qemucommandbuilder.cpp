@@ -12,6 +12,8 @@
 #include "utils/sandboxcapabilities.h"
 #include "utils/utils.h"
 
+#include "kemu_debug.h"
+
 using namespace Qt::StringLiterals;
 
 QStringList QemuCommandBuilder::build(const VMConfig &config,
@@ -395,8 +397,12 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             args << u"-device"_s << u"usb-mouse,bus=%1"_s.arg(usbBus);
         break;
     case VMSpecs::PointerDevice::UsbTablet:
-        if (!usbBus.isEmpty())
+        if (usbBus.isEmpty()) {
+            qCWarning(KEMU) << "Pointer device usb-tablet requested without a USB controller - guest falls back to PS/2";
+            break;
+        } else {
             args << u"-device"_s << u"usb-tablet,bus=%1"_s.arg(usbBus);
+        }
         break;
     }
 
