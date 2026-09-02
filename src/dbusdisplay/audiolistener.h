@@ -21,6 +21,8 @@
 #include <QObject>
 #include <QTimer>
 
+#include "dbusdisplay/pcmringbuffer.h"
+
 using namespace Qt::StringLiterals;
 
 // =============================================================================
@@ -96,14 +98,15 @@ private:
         QIODevice *ioDevice = nullptr;
         bool enabled = false;
 
-        QByteArray pendingData;
-        qsizetype pendingOffset = 0;
+        PcmRingBuffer buffer;
         QTimer drainTimer; // retries a partial write without waiting for QEMU
 
-        void clearPending()
+        ~AudioStream()
         {
-            pendingData.clear();
-            pendingOffset = 0;
+            if (sink) {
+                sink->stop();
+                delete sink;
+            }
         }
     };
     void flushStream(quint64 id);

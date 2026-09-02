@@ -153,7 +153,8 @@ target_sources(
           dbusdisplay/statusindicator.h
           dbusdisplay/statusindicator.cpp
           dbusdisplay/uniquefd.h
-          dbusdisplay/gvariantptr.h)
+          dbusdisplay/gvariantptr.h
+          dbusdisplay/pcmringbuffer.h)
 
 target_include_directories(
   ${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MNL_INCLUDE_DIRS}

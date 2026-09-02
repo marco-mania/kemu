@@ -61,47 +61,6 @@ static const gchar audioInListenerXml[] =
 
 static const GDBusInterfaceVTable audioInVTable = {QemuAudioInListener::onMethodCall, nullptr, nullptr, {}};
 
-int QemuAudioInListener::AudioInStream::read(char *dst, int maxLen)
-{
-    if (!dst || maxLen <= 0)
-        return 0;
-
-    const int toRead = qMin(maxLen, bufferedBytes);
-    int done = 0;
-    while (done < toRead) {
-        const int chunk = qMin(toRead - done, kRingCapacity - readPos);
-        memcpy(dst + done, ringBuffer.constData() + readPos, chunk);
-        readPos = (readPos + chunk) % kRingCapacity;
-        done += chunk;
-    }
-    bufferedBytes -= toRead;
-    return toRead;
-}
-
-void QemuAudioInListener::AudioInStream::write(const char *src, int len)
-{
-    if (!src || len <= 0)
-        return;
-
-    if (len >= kRingCapacity) { // keep only the newest samples
-        src += len - kRingCapacity;
-        len = kRingCapacity;
-    }
-    const int overflow = bufferedBytes + len - kRingCapacity;
-    if (overflow > 0) { // drop oldest to make room
-        readPos = (readPos + overflow) % kRingCapacity;
-        bufferedBytes -= overflow;
-    }
-    int done = 0;
-    while (done < len) {
-        const int chunk = qMin(len - done, kRingCapacity - writePos);
-        memcpy(ringBuffer.data() + writePos, src + done, chunk);
-        writePos = (writePos + chunk) % kRingCapacity;
-        done += chunk;
-    }
-    bufferedBytes += len;
-}
-
 // =============================================================================
 // Constructor / Destructor
 // =============================================================================
@@ -115,16 +74,7 @@ QemuAudioInListener::~QemuAudioInListener()
 {
     m_closed = true;
 
-    for (auto *stream : m_streams) {
-        if (stream->ioDevice) {
-            disconnect(stream->ioDevice, &QIODevice::readyRead, this, nullptr);
-        }
-        if (stream->source) {
-            stream->source->stop();
-            delete stream->source;
-        }
-        delete stream;
-    }
+    qDeleteAll(m_streams);
     m_streams.clear();
 
     cleanupConnection();
@@ -294,15 +244,8 @@ void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation
         return;
     }
 
-    // Clean up old stream
-    if (m_streams.contains(id)) {
-        auto *old = m_streams.take(id);
-        if (old->source) {
-            old->source->stop();
-            delete old->source;
-        }
-        delete old;
-    }
+    // Replacing a stream: tear the old one down before the new source opens.
+    delete m_streams.take(id);
 
     // QAudioFormat
     QAudioFormat format;
@@ -354,8 +297,11 @@ void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation
     // which has no latency guarantee, so the source needs slack of its own.
     stream->source->setBufferSize(format.bytesForDuration(100'000));
 
+    // Capture cushion. The ring holds clearly more than the prime level so a
+    // late Read does not immediately run into the drop path.
+    constexpr int kCaptureBufferUs = 350'000;
     stream->primeBytes = static_cast<int>(format.bytesForDuration(50'000)); // 50 ms
-    stream->ringBuffer.resize(AudioInStream::kRingCapacity);
+    stream->buffer.reset(qMax<int>(32768, static_cast<int>(format.bytesForDuration(kCaptureBufferUs))), format.bytesPerFrame());
 
     m_streams.insert(id, stream);
 
@@ -370,16 +316,7 @@ void QemuAudioInListener::handleFini(GVariant *parameters, GDBusMethodInvocation
     guint64 id;
     g_variant_get(parameters, "(t)", &id);
 
-    if (auto *stream = m_streams.take(id)) {
-        if (stream->ioDevice) {
-            disconnect(stream->ioDevice, &QIODevice::readyRead, this, nullptr);
-        }
-        if (stream->source) {
-            stream->source->stop();
-            delete stream->source;
-        }
-        delete stream;
-    }
+    delete m_streams.take(id);
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
 }
@@ -403,7 +340,10 @@ void QemuAudioInListener::handleSetEnabled(GVariant *parameters, GDBusMethodInvo
             if (stream->ioDevice) {
                 stream->readyReadConn = connect(stream->ioDevice, &QIODevice::readyRead, this, [stream]() {
                     const QByteArray chunk = stream->ioDevice->readAll();
-                    stream->write(chunk.constData(), chunk.size());
+                    // Overwrite-oldest is intentional here: if QEMU stops
+                    // fetching, the guest should get fresh audio on resume,
+                    // not a stale backlog.
+                    stream->buffer.write(chunk.constData(), static_cast<int>(chunk.size()));
                 });
             }
         } else if (!enabled && wasEnabled) {
@@ -477,12 +417,12 @@ void QemuAudioInListener::handleRead(GVariant *parameters, GDBusMethodInvocation
         } else if (!data.isEmpty()) {
             // Build a cushion before serving. Without it the ring hovers at
             // zero and almost every read gets padded with silence.
-            if (!stream->primed && stream->bufferedBytes >= stream->primeBytes) {
+            if (!stream->primed && stream->buffer.size() >= stream->primeBytes) {
                 stream->primed = true;
             }
 
             if (stream->primed) {
-                const int got = stream->read(data.data(), data.size());
+                const int got = stream->buffer.read(data.data(), static_cast<int>(data.size()));
                 if (got == 0) {
                     qCWarning(KEMU_DBUSDISPLAY) << "AudioIn: ring empty on stream" << id << "- rebuilding cushion";
                     stream->primed = false;

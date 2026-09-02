@@ -17,6 +17,8 @@
 #include <QIODevice>
 #include <QObject>
 
+#include "dbusdisplay/pcmringbuffer.h"
+
 using namespace Qt::StringLiterals;
 
 // =============================================================================
@@ -86,26 +88,25 @@ private:
         QIODevice *ioDevice = nullptr;
         bool enabled = false;
 
-        // Ringbuffer for continuous capture
-        QByteArray ringBuffer;
-        int writePos = 0;
-        int readPos = 0;
-        int bufferedBytes = 0;
-
-        static constexpr int kRingCapacity = 65536; // ~341ms @ 48kHz stereo 16bit
+        PcmRingBuffer buffer;
 
         bool primed = false; // cushion built up before serving QEMU
         int primeBytes = 0; // target fill level, set from the format
         QMetaObject::Connection readyReadConn;
 
-        int read(char *dst, int maxLen);
-        void write(const char *src, int len);
         void clear()
         {
-            readPos = 0;
-            writePos = 0;
-            bufferedBytes = 0;
+            buffer.clear();
             primed = false;
+        }
+
+        ~AudioInStream()
+        {
+            QObject::disconnect(readyReadConn);
+            if (source) {
+                source->stop();
+                delete source;
+            }
         }
     };
 

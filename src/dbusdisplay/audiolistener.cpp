@@ -65,16 +65,7 @@ QemuAudioListener::~QemuAudioListener()
 
     cleanupConnection();
 
-    for (auto *stream : m_streams) {
-        if (stream->ioDevice) {
-            disconnect(stream->ioDevice, &QIODevice::readyRead, this, nullptr);
-        }
-        if (stream->sink) {
-            stream->sink->stop();
-            delete stream->sink;
-        }
-        delete stream;
-    }
+    qDeleteAll(m_streams);
     m_streams.clear();
 
     if (m_ourFd >= 0)
@@ -242,15 +233,8 @@ void QemuAudioListener::handleInit(GVariant *parameters, GDBusMethodInvocation *
         return;
     }
 
-    // Clean up existing stream if present
-    if (m_streams.contains(id)) {
-        auto *old = m_streams.take(id);
-        if (old->sink) {
-            old->sink->stop();
-            delete old->sink;
-        }
-        delete old;
-    }
+    // Replacing a stream: tear the old one down before the new sink opens.
+    delete m_streams.take(id);
 
     // Assemble QAudioFormat
     QAudioFormat format;
@@ -313,7 +297,7 @@ void QemuAudioListener::handleInit(GVariant *parameters, GDBusMethodInvocation *
         if (!stream || state != QAudio::IdleState || stream->sink->error() != QAudio::NoError) {
             return;
         }
-        const qsizetype pending = stream->pendingData.size() - stream->pendingOffset;
+        const int pending = stream->buffer.size();
         if (pending > 0) {
             qCWarning(KEMU_DBUSDISPLAY) << "Audio: underrun with" << pending << "bytes pending on stream" << id;
         } else {
@@ -326,6 +310,11 @@ void QemuAudioListener::handleInit(GVariant *parameters, GDBusMethodInvocation *
     // the GUI thread, which has no latency guarantee under load, so the sink
     // needs enough slack to ride out a stalled frame.
     stream->sink->setBufferSize(format.bytesForDuration(80'000)); // 80 ms
+
+    // Backlog budget. Anything beyond this is latency we can never play back
+    // in time, so the ring drops the oldest frames instead of growing.
+    constexpr int kBacklogUs = 200'000;
+    stream->buffer.reset(qMax<int>(32768, static_cast<int>(format.bytesForDuration(kBacklogUs))), format.bytesPerFrame());
 
     m_streams.insert(id, stream);
 
@@ -342,16 +331,7 @@ void QemuAudioListener::handleFini(GVariant *parameters, GDBusMethodInvocation *
 
     qCDebug(KEMU_DBUSDISPLAY) << "Audio Fini: id=" << id;
 
-    if (auto *stream = m_streams.take(id)) {
-        if (stream->ioDevice) {
-            disconnect(stream->ioDevice, &QIODevice::readyRead, this, nullptr);
-        }
-        if (stream->sink) {
-            stream->sink->stop();
-            delete stream->sink;
-        }
-        delete stream;
-    }
+    delete m_streams.take(id);
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
 }
@@ -372,11 +352,14 @@ void QemuAudioListener::handleWrite(GVariant *parameters, GDBusMethodInvocation 
         const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
 
         if (data && dataLen > 0) {
-            stream->pendingData.append(reinterpret_cast<const char *>(data), static_cast<qsizetype>(dataLen));
+            const int dropped = stream->buffer.write(reinterpret_cast<const char *>(data), static_cast<int>(dataLen));
+            if (dropped > 0) {
+                qCWarning(KEMU_DBUSDISPLAY) << "Audio: backlog full on stream" << id << "- dropped" << dropped << "bytes";
+            }
         }
         flushStream(id);
     } else if (stream) {
-        stream->clearPending(); // muted/disabled: discard, don't replay later
+        stream->buffer.clear(); // muted/disabled: discard, don't replay later
         stream->drainTimer.stop();
     }
 
@@ -411,7 +394,7 @@ void QemuAudioListener::handleSetEnabled(GVariant *parameters, GDBusMethodInvoca
             if (stream->sink->state() == QAudio::ActiveState) {
                 stream->sink->suspend();
             }
-            stream->clearPending();
+            stream->buffer.clear();
             stream->drainTimer.stop();
         }
     }
@@ -466,34 +449,28 @@ void QemuAudioListener::flushStream(quint64 id)
         return;
     }
 
-    const qsizetype available = stream->pendingData.size() - stream->pendingOffset;
-    if (available > 0) {
-        const qint64 written = stream->ioDevice->write(stream->pendingData.constData() + stream->pendingOffset, available);
+    // Write straight out of the ring: at most two passes, one per wrap half.
+    // The span stays valid until the next write() into the buffer.
+    while (!stream->buffer.isEmpty()) {
+        int len = 0;
+        const char *src = stream->buffer.peek(len);
+        if (len <= 0) {
+            break;
+        }
+        const qint64 written = stream->ioDevice->write(src, len);
         if (written < 0) {
             qCWarning(KEMU_DBUSDISPLAY) << "Audio: write failed on stream" << id << stream->sink->error();
-        } else {
-            stream->pendingOffset += written;
+            break;
+        }
+        stream->buffer.discard(static_cast<int>(written));
+        if (written < len) {
+            break; // sink is full
         }
     }
 
-    if (stream->pendingOffset >= stream->pendingData.size()) {
-        stream->clearPending();
+    if (stream->buffer.isEmpty()) {
         stream->drainTimer.stop();
         return;
-    }
-
-    // Reclaim the consumed head only now and then: removing from the front on
-    // every write memmoves the whole backlog in the hot path.
-    if (stream->pendingOffset >= 65536) {
-        stream->pendingData.remove(0, stream->pendingOffset);
-        stream->pendingOffset = 0;
-    }
-
-    const qsizetype maxPending = qMax<qsizetype>(16384, stream->format.bytesForDuration(200000));
-    if (stream->pendingData.size() - stream->pendingOffset > maxPending) {
-        qCWarning(KEMU_DBUSDISPLAY) << "Audio: backlog exceeds" << maxPending << "bytes on stream" << id << "- dropping oldest samples";
-        stream->pendingData.remove(0, stream->pendingData.size() - maxPending);
-        stream->pendingOffset = 0;
     }
 
     // Retry on our own. Waiting for the next Write is what let the sink run
