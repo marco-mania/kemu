@@ -15,7 +15,6 @@
 #include <QAudioSource>
 #include <QHash>
 #include <QIODevice>
-#include <QMutex>
 #include <QObject>
 
 using namespace Qt::StringLiterals;
