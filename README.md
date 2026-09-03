@@ -271,7 +271,7 @@ From this shell, you have full access to all VMs on the virtual network. The QEM
 
 ## Sandbox Mode
 
-Some of KEMU's features rely on Linux user namespaces, which sandbox environments block by design. When running as a Flatpak, KEMU detects this automatically (via `/.flatpak-info`) and adjusts its behavior to prevent runtime failures.
+Some of KEMU's features rely on Linux user namespaces, which sandbox environments block by design. When running in a restircted environment, KEMU detects this automatically and adjusts its behavior to prevent runtime failures. Features may be manually disabled for testing purpose with `--disable-capability ...` cli option.
 
 * **Networking:** Virtual Network mode is unavailable, as it requires namespace capabilities denied by the sandbox. User Mode still functions, but relies on QEMU's built-in usermode networking (SLIRP) instead of `passt`. `passt` performs its own `unshare()` on startup and therefore cannot run inside the sandbox. See [Networking](https://www.google.com/search?q=%23networking) for details on SLIRP's capabilities.
 * **Settings:** The Virtual Networks page is disabled, and the Executables page is read-only since all helper programs are bundled within the Flatpak image and cannot be replaced with host binaries. Existing configurations are preserved, so they will still be available if you later switch to a native installation.
@@ -279,8 +279,6 @@ Some of KEMU's features rely on Linux user namespaces, which sandbox environment
 * **Start scripts:** The generated `qemu.sh` and the "Show QEMU command" dialog reference paths inside the sandbox (e.g., `/app/bin/...`). These are intended for inspection and for execution via `flatpak run --command=...`, not for running directly on the host.
 * **File locations:** VM data and configuration reside under `~/.var/app/org.kde.kemu/`, rather than `~/.local/share/kemu`. VMs from a previous native installation will not be detected automatically; update *Settings -> General -> VM directory* to point to the old path if you wish to continue using them.
 * **USB passthrough:** In addition to the udev rule described under [USB Passthrough](https://www.google.com/search?q=%23usb-passthrough), the sandbox must be granted permission to access the device. Recent Flatpak versions prompt for this permission per device.
-
-Sandbox detection can be overridden for testing purposes using the CLI option `--sandbox-mode <auto|native|flatpak>` (default: `auto`). Note that this only changes KEMU's *behavior*—it does not create a sandbox, meaning paths like `/app/bin` will not exist in a native build.
 
 ## Shared Folders
 
