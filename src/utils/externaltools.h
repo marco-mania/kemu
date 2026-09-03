@@ -157,7 +157,11 @@ private:
 
     QHash<Tool, ToolInfo> m_tools;
 
-    static constexpr int kVersionProbeTimeoutMs = 2000;
+    // Cold-start budget. On a freshly installed self-contained image none of
+    // the helper binaries are in the page cache yet, and nine exec()s of
+    // multi-megabyte executables take noticeably longer than a warm run. The
+    // probes run in parallel, so a warm start does not pay for the headroom.
+    static constexpr int kVersionProbeTimeoutMs = 5000;
 
     void registerTool(Tool id, const QString &configKey, const QString &defaultBinary);
     void detectPath(ToolInfo &info, const KConfigGroup &overrides);

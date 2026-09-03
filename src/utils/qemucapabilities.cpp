@@ -7,6 +7,9 @@
 #include "qemucapabilities.h"
 
 #include "utils/externaltools.h"
+#include "utils/sandboxcapabilities.h"
+
+#include "kemu_debug.h"
 
 QemuCapabilities &QemuCapabilities::instance()
 {
@@ -18,34 +21,73 @@ void QemuCapabilities::refresh()
 {
     m_displays.clear();
     m_audiodevs.clear();
+    m_probeSucceeded = false;
 
     const QString qemu = ExternalTools::instance().path(ExternalTools::QemuSystem);
-    if (qemu.isEmpty() || !QFileInfo::exists(qemu))
+    if (qemu.isEmpty() || !QFileInfo::exists(qemu)) {
+        seedSelfContainedDefaults();
         return;
+    }
 
-    // Start both probes before awaiting either, so a refresh costs one
-    // timeout in total rather than one per help option.
-    KProcess displayProbe;
-    KProcess audiodevProbe;
-    startProbe(displayProbe, qemu, u"-display"_s);
-    startProbe(audiodevProbe, qemu, u"-audiodev"_s);
+    // One retry with a longer budget. The first run after an install pays for
+    // paging in the QEMU binary, which can outlast the normal budget on slow
+    // storage; the second attempt hits a warm page cache.
+    m_probeSucceeded = runProbes(qemu, kProbeTimeoutMs);
+    if (!m_probeSucceeded) {
+        qCWarning(KEMU) << "QEMU capability probe came back empty, retrying with a longer budget";
+        m_probeSucceeded = runProbes(qemu, kProbeRetryTimeoutMs);
+    }
 
-    QElapsedTimer elapsed;
-    elapsed.start();
-
-    m_displays = collectProbe(displayProbe, kProbeTimeoutMs - static_cast<int>(elapsed.elapsed()));
-    m_audiodevs = collectProbe(audiodevProbe, kProbeTimeoutMs - static_cast<int>(elapsed.elapsed()));
+    if (!m_probeSucceeded) {
+        qCWarning(KEMU) << "Could not determine the capabilities of" << qemu;
+        seedSelfContainedDefaults();
+    }
 }
 
 bool QemuCapabilities::hasDisplay(const QString &name) const
 {
-    // An empty set means the probe failed; never lock the user out over that.
+    // An empty set means the probe failed against a QEMU we do not control;
+    // never lock the user out over that. Self-contained builds never reach
+    // this branch because refresh() seeds a known-good minimum instead.
     return m_displays.isEmpty() || m_displays.contains(name.toLower());
 }
 
 bool QemuCapabilities::hasAudiodev(const QString &name) const
 {
     return m_audiodevs.isEmpty() || m_audiodevs.contains(name.toLower());
+}
+
+bool QemuCapabilities::runProbes(const QString &qemuPath, int timeoutMs)
+{
+    // Start both probes before awaiting either, so a refresh costs one
+    // timeout in total rather than one per help option.
+    KProcess displayProbe;
+    KProcess audiodevProbe;
+    startProbe(displayProbe, qemuPath, u"-display"_s);
+    startProbe(audiodevProbe, qemuPath, u"-audiodev"_s);
+
+    QElapsedTimer elapsed;
+    elapsed.start();
+
+    m_displays = collectProbe(displayProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
+    m_audiodevs = collectProbe(audiodevProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
+
+    return !m_displays.isEmpty() && !m_audiodevs.isEmpty();
+}
+
+void QemuCapabilities::seedSelfContainedDefaults()
+{
+    // Against a QEMU we do not control, a failed probe must not lock the user
+    // out: has*() keeps its permissive fallback for that case.
+    if (SandboxCapabilities::instance().has(SandboxCapabilities::ExternalToolPaths))
+        return;
+
+    // A build that ships its own QEMU knows what it shipped. Falling back to
+    // "everything is available" would offer backends the image does not
+    // contain and turn a probe timeout into a confusing QEMU start failure.
+    // The integrated viewer only ever needs these two.
+    m_displays = {u"none"_s, u"dbus"_s};
+    m_audiodevs = {u"none"_s, u"dbus"_s};
 }
 
 void QemuCapabilities::startProbe(KProcess &process, const QString &qemuPath, const QString &helpOption)
