@@ -562,7 +562,6 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     const QString qemuPath = relativePaths ? u"qemu-system-x86_64"_s : ExternalTools::instance().path(ExternalTools::QemuSystem);
 
     if (config.displayType() == VMSpecs::DisplayType::Dbus) {
-        const QString sockArg = relativePaths ? KEMUConst::DBUSSocketFileName : vmDir.absoluteFilePath(KEMUConst::DBUSSocketFileName);
         script += u"# Inside KEMU, the integrated viewer connects automatically using D-Bus.\n"_s;
         script += u"# For standalone use another display type.\n"_s;
     }

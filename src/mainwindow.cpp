@@ -745,13 +745,6 @@ void MainWindow::registerAudioListeners(const QString &vmName)
     }
 }
 
-void MainWindow::cleanupDbusSocket(const QString &vmName)
-{
-    const QDir vmDir = getVmDir(vmName);
-    QFile::remove(vmDir.absoluteFilePath(KEMUConst::DBUSSocketFileName));
-    QFile::remove(vmDir.absoluteFilePath(KEMUConst::DBUSConfigFileName));
-}
-
 bool MainWindow::requireTool(const ExternalTools::Tool tool)
 {
     if (ExternalTools::instance().isAvailable(tool))

@@ -31,7 +31,6 @@ ExternalTools::ExternalTools(QObject *parent)
     registerTool(Passt, u"PasstPath"_s, u"passt"_s);
     registerTool(Pasta, u"PastaPath"_s, u"pasta"_s);
     registerTool(Dnsmasq, u"DnsmasqPath"_s, u"dnsmasq"_s);
-    registerTool(DbusDaemon, u"DbusDaemonPath"_s, u"dbus-daemon"_s);
 }
 
 // --- Registration ---
@@ -200,15 +199,13 @@ QString ExternalTools::displayName(Tool tool)
         return i18n("pasta Namespace Network Connector");
     case Dnsmasq:
         return i18n("dnsmasq DHCP/DNS Server");
-    case DbusDaemon:
-        return i18n("D-Bus Daemon");
     }
     return {};
 }
 
 QList<ExternalTools::Tool> ExternalTools::allTools()
 {
-    return {QemuSystem, QemuImg, Swtpm, Virtiofsd, GenIsoImage, Passt, Pasta, Dnsmasq, DbusDaemon};
+    return {QemuSystem, QemuImg, Swtpm, Virtiofsd, GenIsoImage, Passt, Pasta, Dnsmasq};
 }
 
 QList<ExternalTools::Tool> ExternalTools::coreTools()
@@ -219,11 +216,6 @@ QList<ExternalTools::Tool> ExternalTools::coreTools()
 QList<ExternalTools::Tool> ExternalTools::virtualNetworkTools()
 {
     return {Pasta, Dnsmasq};
-}
-
-QList<ExternalTools::Tool> ExternalTools::dbusDisplayTools()
-{
-    return {DbusDaemon};
 }
 
 QList<ExternalTools::Tool> ExternalTools::unusedTools() const
@@ -288,7 +280,6 @@ QList<ExternalTools::FeatureGroup> ExternalTools::featureGroups()
 {
     return {{Core, i18n("Core Functionality"), i18n("Required for basic VM operation. This warning cannot be disabled."), coreTools(), false},
             {VirtualNetwork, i18n("Virtual Networks"), i18n("User-defined isolated networks with built-in DHCP and DNS."), virtualNetworkTools(), true},
-            {DbusDisplay, i18n("D-Bus Integrated Display"), i18n("Embedded display via a per-VM D-Bus session."), dbusDisplayTools(), true},
             {TpmEmulation,
              i18n("TPM Emulation"),
              i18n("Software TPM 2.0 device for guests that require it (e.g. Windows "
@@ -323,8 +314,6 @@ QString ExternalTools::suppressionConfigKey(FeatureGroupId id)
         return u"IgnoreMissing_Core"_s;
     case VirtualNetwork:
         return u"IgnoreMissing_VirtualNetwork"_s;
-    case DbusDisplay:
-        return u"IgnoreMissing_DbusDisplay"_s;
     case TpmEmulation:
         return u"IgnoreMissing_TpmEmulation"_s;
     case SharedFolders:

@@ -60,8 +60,6 @@ inline QStringList fallbackPaths()
     };
 }
 
-inline constexpr auto DBUSSocketFileName = "dbus-bus.sock"_L1;
-inline constexpr auto DBUSConfigFileName = "dbus-bus.conf"_L1;
 inline constexpr auto PasstSocketFileName = "passt.sock"_L1;
 inline constexpr auto SwtpmSocketFileName = "swtpm.sock"_L1;
 inline constexpr auto VirtiofsdSocketFileName = "virtiofsd.sock"_L1;

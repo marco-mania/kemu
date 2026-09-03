@@ -47,15 +47,13 @@ public:
         GenIsoImage, // genisoimage, mkisofs, or xorriso
         Passt, // passt -- single-VM user-mode networking (unchanged)
         Pasta, // pasta -- namespace-to-host NAT connector (from passt project)
-        Dnsmasq, // dnsmasq -- lightweight DHCP/DNS for virtual networks
-        DbusDaemon // dbus-daemon for per-VM private bus
+        Dnsmasq // dnsmasq -- lightweight DHCP/DNS for virtual networks
     };
     Q_ENUM(Tool)
 
     enum FeatureGroupId {
         Core,
         VirtualNetwork,
-        DbusDisplay,
         TpmEmulation,
         SharedFolders,
         CloudInitIso
@@ -96,8 +94,6 @@ public:
 
     // Tools required only for the virtual-network feature.
     [[nodiscard]] static QList<Tool> virtualNetworkTools();
-
-    [[nodiscard]] static QList<Tool> dbusDisplayTools();
 
     [[nodiscard]] QList<Tool> unusedTools() const;
 

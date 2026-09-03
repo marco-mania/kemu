@@ -7,7 +7,6 @@
 #include "vmconfig.h"
 
 #include "const.h"
-#include "utils/externaltools.h"
 #include "utils/qemucapabilities.h"
 #include "utils/utils.h"
 
@@ -535,7 +534,9 @@ bool VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType type)
     // unavailable when someone extends the enum.
     switch (type) {
     case VMSpecs::DisplayType::Dbus:
-        return ExternalTools::instance().isAvailable(ExternalTools::dbusDisplayTools()) && QemuCapabilities::instance().hasDisplay(u"dbus"_s);
+        // The integrated viewer talks to QEMU peer-to-peer over a socketpair
+        // handed over via QMP add_client, so no bus daemon is involved.
+        return QemuCapabilities::instance().hasDisplay(u"dbus"_s);
     case VMSpecs::DisplayType::Gtk:
     case VMSpecs::DisplayType::Sdl:
         return QemuCapabilities::instance().hasDisplay(toQemuString(type));
