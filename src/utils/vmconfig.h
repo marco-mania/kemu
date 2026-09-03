@@ -178,7 +178,7 @@ struct Defaults {
     AudioDevice audioDevice = AudioDevice::Hda;
     DiskInterface diskInterface = DiskInterface::Virtio;
     NetworkCard networkCard = NetworkCard::Virtio;
-    DisplayType displayType = DisplayType::Gtk;
+    DisplayType displayType = DisplayType::Dbus;
     UsbController usbController = UsbController::Xhci;
     PointerDevice pointerDevice = PointerDevice::UsbTablet;
     KeyboardDevice keyboardDevice = KeyboardDevice::Ps2;

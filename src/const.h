@@ -32,7 +32,6 @@ inline constexpr auto OsIconDirPath = "kemu/icons"_L1;
 inline constexpr auto DefaultMinDiskSizeGB = 8;
 inline constexpr auto DefaultZSTDCompressionLevelForExport = 10;
 inline constexpr auto DefaultDisplaySize = QSize(1280, 720);
-inline constexpr auto DefaultDisplayType = "GTK"_L1; //
 
 // Extra directories for QStandardPaths::findExecutable(), covering helpers that
 // distributions install outside $PATH.
