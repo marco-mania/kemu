@@ -4,9 +4,6 @@
 
 add_executable(${PROJECT_NAME})
 
-target_compile_definitions(${PROJECT_NAME}
-                           PRIVATE TRANSLATION_DOMAIN=\"${PROJECT_NAME}\")
-
 ecm_qt_declare_logging_category(
   ${PROJECT_NAME}
   HEADER

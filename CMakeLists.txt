@@ -12,12 +12,13 @@ endif()
 project(kemu VERSION 0.5.0)
 
 option(KEMU_SELF_CONTAINED "Application ships its own external tools" OFF)
-if(KEMU_SELF_CONTAINED)
-  target_compile_definitions(kemu PRIVATE KEMU_SELF_CONTAINED)
-endif()
 
 add_compile_definitions(APP_VERSION=\"${PROJECT_VERSION}\" APP_NAME=\"KEMU\"
                         TRANSLATION_DOMAIN=\"kemu\")
+
+if(KEMU_SELF_CONTAINED)
+  add_compile_definitions(KEMU_SELF_CONTAINED)
+endif()
 
 set(QT_MIN_VERSION "6.6.0")
 set(KF_MIN_VERSION "6.0.0")

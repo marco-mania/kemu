@@ -23,19 +23,13 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
-    app.setDesktopFileName(u"org.kde.kemu"_s);
-
-    app.setApplicationName(QStringLiteral(APP_NAME));
-    app.setApplicationVersion(QStringLiteral(APP_VERSION));
-    app.setOrganizationDomain(u"kde.org"_s);
-
     KLocalizedString::setApplicationDomain("kemu"_ba);
 
     const QIcon appIcon = QIcon::fromTheme(u"org.kde.kemu"_s);
 
     KAboutData aboutData("kemu"_L1,
-                         QApplication::applicationName(),
-                         QApplication::applicationVersion(),
+                         QStringLiteral(APP_NAME),
+                         QStringLiteral(APP_VERSION),
                          i18n("A KDE-based QEMU Virtual Machine Manager"),
                          KAboutLicense::GPL_V3,
                          i18n("© 2021-2026"));
@@ -53,7 +47,9 @@ int main(int argc, char *argv[])
                         {},
                         u"https://www.mckusick.com/beastie/mainpage/copyright.html"_s);
 
-    aboutData.setProgramLogo(appIcon.pixmap(128, 128));
+    aboutData.setOrganizationDomain("kde.org"_ba);
+    aboutData.setDesktopFileName(u"org.kde.kemu"_s);
+    aboutData.setProgramLogo(QIcon::fromTheme(u"org.kde.kemu"_s));
 
     KAboutData::setApplicationData(aboutData);
 
