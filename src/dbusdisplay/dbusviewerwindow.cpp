@@ -64,6 +64,8 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
 
     qCDebug(KEMU_DBUSDISPLAY) << "DbusViewerWindow: audioOutConnected=" << m_audioOutConnected << "audioInConnected=" << m_audioInConnected;
 
+    m_actGrabMouse->setEnabled(m_display->isPointerCaptureSupported());
+
     resize(m_lastWindowSize);
 
     QMetaObject::invokeMethod(
@@ -150,6 +152,10 @@ void DbusViewerWindow::createActions()
     m_actGrabMouse = new QAction(QIcon::fromTheme(u"input-mouse"_s), i18n("&Capture Mouse"), this);
     m_actGrabMouse->setCheckable(true);
     m_actGrabMouse->setStatusTip(i18n("Confine the mouse pointer to the VM (release with Ctrl+Alt+G)"));
+    if (!m_display->isPointerCaptureSupported()) {
+        m_actGrabMouse->setEnabled(false);
+        m_actGrabMouse->setToolTip(i18nc("@info:tooltip", "Pointer capture requires a Wayland session"));
+    }
     connect(m_actGrabMouse, &QAction::toggled, m_display, &QemuDisplayWidget::setPointerCaptured);
 
     // --- Devices: Audio ---
@@ -275,7 +281,9 @@ void DbusViewerWindow::createMenus()
     devicesMenu->addSeparator();
 
     QMenu *mouseMenu = devicesMenu->addMenu(i18n("&Mouse"));
+    mouseMenu->setToolTipsVisible(true);
     mouseMenu->addAction(m_actGrabMouse);
+
     devicesMenu->addSeparator();
 
     m_cdMenu = devicesMenu->addMenu(QIcon::fromTheme(u"media-optical"_s), i18n("&CD/DVD"));
@@ -746,6 +754,11 @@ void DbusViewerWindow::onAbout()
 void DbusViewerWindow::updateMouseStatus()
 {
     if (!m_indMouse) {
+        return;
+    }
+
+    if (!m_display->isGuestAbsolute() && !m_display->isPointerCaptureSupported()) {
+        m_indMouse->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Relative pointer - capture requires a Wayland session"), u"object-locked"_s);
         return;
     }
 

@@ -7,7 +7,6 @@ cmake_minimum_required(VERSION 3.20)
 if(POLICY CMP0175)
   cmake_policy(SET CMP0175 OLD)
 endif()
-# -------------------------------------------------------------------------
 
 project(kemu VERSION 0.5.0)
 
@@ -43,6 +42,7 @@ find_package(
   Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED
   COMPONENTS Core
              Gui
+             GuiPrivate
              Widgets
              Network
              Svg
@@ -75,6 +75,10 @@ pkg_check_modules(NFTNL REQUIRED libnftnl)
 pkg_check_modules(UDEV REQUIRED libudev)
 pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0 gio-unix-2.0)
 pkg_check_modules(EGL REQUIRED IMPORTED_TARGET egl)
+pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+pkg_check_modules(WAYLAND_PROTOCOLS REQUIRED wayland-protocols)
+pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
+find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
 
 add_subdirectory(src)
 

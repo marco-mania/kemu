@@ -4,6 +4,32 @@
 
 add_executable(${PROJECT_NAME})
 
+function(kemu_add_wayland_protocol basename xml)
+  set(header
+      "${CMAKE_CURRENT_BINARY_DIR}/wayland-${basename}-client-protocol.h")
+  set(source "${CMAKE_CURRENT_BINARY_DIR}/wayland-${basename}-protocol.c")
+  add_custom_command(
+    OUTPUT ${header}
+    COMMAND ${WAYLAND_SCANNER} client-header ${xml} ${header}
+    DEPENDS ${xml}
+    VERBATIM)
+  add_custom_command(
+    OUTPUT ${source}
+    COMMAND ${WAYLAND_SCANNER} private-code ${xml} ${source}
+    DEPENDS ${xml}
+    VERBATIM)
+  target_sources(${PROJECT_NAME} PRIVATE ${header} ${source})
+endfunction()
+
+kemu_add_wayland_protocol(
+  pointer-constraints-unstable-v1
+  ${WAYLAND_PROTOCOLS_DIR}/unstable/pointer-constraints/pointer-constraints-unstable-v1.xml
+)
+kemu_add_wayland_protocol(
+  relative-pointer-unstable-v1
+  ${WAYLAND_PROTOCOLS_DIR}/unstable/relative-pointer/relative-pointer-unstable-v1.xml
+)
+
 ecm_qt_declare_logging_category(
   ${PROJECT_NAME}
   HEADER
@@ -151,11 +177,13 @@ target_sources(
           dbusdisplay/statusindicator.cpp
           dbusdisplay/uniquefd.h
           dbusdisplay/gvariantptr.h
-          dbusdisplay/pcmringbuffer.h)
+          dbusdisplay/pcmringbuffer.h
+          dbusdisplay/waylandpointerlock.cpp
+          dbusdisplay/waylandpointerlock.h)
 
 target_include_directories(
   ${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MNL_INCLUDE_DIRS}
-                          ${NFTNL_INCLUDE_DIRS})
+                          ${NFTNL_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
 
 target_link_libraries(
   ${PROJECT_NAME}
@@ -165,8 +193,10 @@ target_link_libraries(
   LibArchive::LibArchive
   PkgConfig::GIO
   PkgConfig::EGL
+  PkgConfig::WAYLAND_CLIENT
   Qt6::Core
   Qt6::Gui
+  Qt6::GuiPrivate
   Qt6::Widgets
   Qt6::Network
   Qt6::Svg

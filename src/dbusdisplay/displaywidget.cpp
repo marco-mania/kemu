@@ -136,6 +136,15 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QemuControlC
     // display-listener handshake (its GLib FD is watched only after construction).
     queryPointerMode();
 
+    m_pointerLock = new WaylandPointerLock(this);
+    connect(m_pointerLock, &WaylandPointerLock::relativeMotion, this, &QemuDisplayWidget::onRelativeMotion);
+    connect(m_pointerLock, &WaylandPointerLock::lockedChanged, this, [this](bool locked) {
+        // The compositor drops the lock on focus loss. Treat that as an
+        // ungrab instead of pretending we still capture.
+        if (!locked && m_relativeGrabActive)
+            endRelativeGrab();
+    });
+
     m_motionTimer.setSingleShot(true);
     m_motionTimer.setTimerType(Qt::PreciseTimer);
     connect(&m_motionTimer, &QTimer::timeout, this, &QemuDisplayWidget::flushMotion);
@@ -714,17 +723,17 @@ void QemuDisplayWidget::beginRelativeGrab()
 {
     if (m_relativeGrabActive)
         return;
+    if (!m_pointerLock->lock(window()->windowHandle())) {
+        qCWarning(KEMU_DBUSDISPLAY) << "Pointer capture unavailable on this compositor";
+        return;
+    }
     m_relativeGrabActive = true;
 
     setCursor(Qt::BlankCursor);
-    grabMouse();
     setFocus(Qt::MouseFocusReason);
 
-    // Confine the host cursor by re-centring it on every move (see mouseMove).
-    // m_absVirtual tracks the synthetic absolute position for absolute guests.
     m_absVirtual = QPointF(rect().center());
-    m_suppressRelMove = true;
-    QCursor::setPos(mapToGlobal(rect().center()));
+    m_motionAccum = {};
 
     Q_EMIT relativeGrabChanged(true);
 }
@@ -735,9 +744,8 @@ void QemuDisplayWidget::endRelativeGrab()
         return;
     m_relativeGrabActive = false;
 
-    releaseMouse();
+    m_pointerLock->unlock();
     flushMotion(); // do not swallow the last delta
-    m_suppressRelMove = false;
 
     // Release modifiers so Ctrl/Alt cannot stick in the guest.
     for (uint32_t evdev : {29u /*LCtrl*/, 97u /*RCtrl*/, 56u /*LAlt*/, 100u /*RAlt*/})
@@ -957,32 +965,8 @@ void QemuDisplayWidget::mouseMoveEvent(QMouseEvent *event)
     if (m_dimmed)
         return;
 
-    if (m_relativeGrabActive) {
-        // Captured: keep the host cursor centred so it never leaves the window.
-        if (m_suppressRelMove) {
-            m_suppressRelMove = false; // swallow the warp echo
-            return;
-        }
-        const QPoint center = rect().center();
-        const QPoint d = event->position().toPoint() - center;
-        if (!d.isNull()) {
-            if (m_guestAbsolute) {
-                // Virtual absolute position, confined to the framebuffer.
-                m_absVirtual += QPointF(d);
-                m_absVirtual.setX(qBound(0.0, m_absVirtual.x(), qreal(width() - 1)));
-                m_absVirtual.setY(qBound(0.0, m_absVirtual.y(), qreal(height() - 1)));
-                const QPointF fb = mapToFramebuffer(m_absVirtual);
-                const uint fx = uint(qBound(0, int(fb.x()), m_fbSize.width() - 1));
-                const uint fy = uint(qBound(0, int(fb.y()), m_fbSize.height() - 1));
-                queueAbsMotion(fx, fy);
-            } else {
-                queueRelMotion(d.x(), d.y());
-            }
-            m_suppressRelMove = true;
-            QCursor::setPos(mapToGlobal(center));
-        }
-        return;
-    }
+    if (m_relativeGrabActive)
+        return; // locked: motion arrives via onRelativeMotion()
 
     // Not captured: absolute guests track the host pointer 1:1.
     if (m_guestAbsolute) {
@@ -990,6 +974,31 @@ void QemuDisplayWidget::mouseMoveEvent(QMouseEvent *event)
         queueAbsMotion(static_cast<uint>(fb.x()), static_cast<uint>(fb.y()));
     }
     // relative + not captured: nothing to send
+}
+
+void QemuDisplayWidget::onRelativeMotion(double dx, double dy)
+{
+    if (!m_relativeGrabActive || m_dimmed)
+        return;
+
+    // Deltas arrive in 1/256 px and in widget coordinates. Carry the
+    // remainder so slow movement is not rounded away.
+    m_motionAccum += QPointF(dx, dy) / m_scale;
+    const int ix = int(m_motionAccum.x());
+    const int iy = int(m_motionAccum.y());
+    if (!ix && !iy)
+        return;
+    m_motionAccum -= QPointF(ix, iy);
+
+    if (m_guestAbsolute) {
+        m_absVirtual += QPointF(ix, iy);
+        m_absVirtual.setX(qBound(0.0, m_absVirtual.x(), qreal(width() - 1)));
+        m_absVirtual.setY(qBound(0.0, m_absVirtual.y(), qreal(height() - 1)));
+        const QPointF fb = mapToFramebuffer(m_absVirtual);
+        queueAbsMotion(uint(qBound(0, int(fb.x()), m_fbSize.width() - 1)), uint(qBound(0, int(fb.y()), m_fbSize.height() - 1)));
+    } else {
+        queueRelMotion(ix, iy);
+    }
 }
 
 void QemuDisplayWidget::mousePressEvent(QMouseEvent *event)
@@ -1153,6 +1162,11 @@ void QemuDisplayWidget::setPointerCaptured(bool capture)
         beginRelativeGrab();
     else
         endRelativeGrab();
+}
+
+bool QemuDisplayWidget::isPointerCaptureSupported() const
+{
+    return m_pointerLock && m_pointerLock->isSupported();
 }
 
 void QemuDisplayWidget::updateWidgetSize()

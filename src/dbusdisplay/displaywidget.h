@@ -27,6 +27,7 @@
 #include "dbusdisplay/controlconnection.h"
 #include "dbusdisplay/glibeventbridge.h"
 #include "dbusdisplay/listener.h"
+#include "dbusdisplay/waylandpointerlock.h"
 
 using namespace Qt::StringLiterals;
 
@@ -67,6 +68,7 @@ public:
     void sendCtrlAltDel();
 
     void setPointerCaptured(bool capture);
+    bool isPointerCaptureSupported() const;
 
 Q_SIGNALS:
     void fullscreenToggleRequested();
@@ -81,6 +83,7 @@ protected:
     void keyReleaseEvent(QKeyEvent *event) override;
     bool focusNextPrevChild(bool next) override;
     void mouseMoveEvent(QMouseEvent *event) override;
+    void onRelativeMotion(double dx, double dy);
     void mousePressEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
@@ -190,7 +193,6 @@ private:
     QPointF m_absVirtual; // synthetic absolute position while captured (abs guests)
     bool m_guestAbsolute = true; // from QEMU IsAbsolute; default = absolute
     bool m_relativeGrabActive = false; // pointer captured?
-    bool m_suppressRelMove = false; // discard next (warp) move event
     bool m_pointerModeProbed = false; // IsAbsolute re-checked after first scanout
 
     bool m_dimmed = false;
@@ -205,6 +207,9 @@ private:
     bool m_lastCursorVisible = false;
 
     QPoint m_lastCursorPos = {-1, -1};
+
+    WaylandPointerLock *m_pointerLock = nullptr;
+    QPointF m_motionAccum; // sub-pixel carry between relative_motion events
 
     void uploadDirtyRects(const QImage &source);
     void uploadFullFrameConverted(const QImage &source);

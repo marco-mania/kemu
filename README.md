@@ -27,6 +27,9 @@ A traditional, direct-to-QEMU desktop frontend for Linux, built with Qt 6 Widget
 ## Limitations
 
 - Currently limited to a single storage drive per virtual machine.
+- Pointer capture in the D-Bus viewer requires a Wayland session. Under X11 or
+  XWayland the capture action is disabled; guests with an absolute pointing
+  device (tablet) are unaffected and work everywhere.
 
 ## Gallery
 
@@ -42,6 +45,8 @@ A traditional, direct-to-QEMU desktop frontend for Linux, built with Qt 6 Widget
 - Qt 6
 - KDE Frameworks 6
 - QEMU >= 7.2
+- Wayland (client library, protocols and `wayland-scanner`; build-time and runtime)
+- Qt 6 private headers (`Qt6::GuiPrivate`, for the Wayland surface of a window)
 - libarchive
 - libmnl (minimalistic netlink library for virtual networks)
 - libnftnl (nftables netlink helpers for virtual networks)
@@ -57,7 +62,8 @@ A traditional, direct-to-QEMU desktop frontend for Linux, built with Qt 6 Widget
 ```bash
 sudo pacman -S qt6-base qt6-declarative extra-cmake-modules \
   kconfig kcoreaddons ki18n kxmlgui kwidgetsaddons kdbusaddons \
-  kiconthemes qemu-full edk2-ovmf libarchive passt libmnl libnftnl
+  kiconthemes qemu-full edk2-ovmf libarchive passt libmnl libnftnl \
+  wayland wayland-protocols
 ```
 
 Optional:
@@ -74,6 +80,8 @@ sudo apt install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-multimedia-dev
   libkf6crash-dev libkf6xmlgui-dev libkf6widgetsaddons-dev libkf6iconthemes-dev \
   libkf6texttemplate-dev qemu-system extra-cmake-modules libegl1-mesa-dev \
   libarchive-dev passt libmnl-dev libnftnl-dev libudev-dev libkf6dbusaddons-dev \
+  libkf6dbusaddons-dev build-essential cmake \
+  libwayland-dev wayland-protocols qt6-base-private-dev \
   build-essential cmake
 ```
 
@@ -91,6 +99,8 @@ sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
   kf6-kio-devel kf6-kcrash-devel kf6-kxmlgui-devel kf6-kwidgetsaddons-devel \
   kf6-kiconthemes-devel kf6-ktexttemplate-devel kf6-kdbusaddons-devel \
   extra-cmake-modules qemu-system-x86 mesa-libEGL-devel libarchive-devel passt \
+  libmnl-devel libnftnl-devel systemd-devel gcc-c++ make cmake \
+  wayland-devel wayland-protocols-devel qt6-qtbase-private-devel \
   libmnl-devel libnftnl-devel systemd-devel gcc-c++ make cmake
 ```
 
@@ -121,6 +131,11 @@ cmake --build build/ --target install
 ```
 
 **Note:** Ensure `~/.local/bin` is in your system's `$PATH`.
+
+**Note:** The pointer capture implementation uses one Qt private header
+(`QNativeInterface::Private::QWaylandWindow`) to obtain the `wl_surface` of the
+viewer window. There is no public API for this. As a consequence, KEMU must be
+rebuilt after a Qt minor version upgrade.
 
 ### System-wide Installation
 
