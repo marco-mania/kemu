@@ -86,7 +86,7 @@ QString ExternalTools::autoDetect(const ToolInfo &info)
             return found;
     }
 
-    return QStandardPaths::findExecutable(info.defaultBinary, KEMUConst::FallbackPaths);
+    return QStandardPaths::findExecutable(info.defaultBinary, KEMUConst::fallbackPaths());
 }
 
 QString ExternalTools::firstVersionLine(QProcess &process)
