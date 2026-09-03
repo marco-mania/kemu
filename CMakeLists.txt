@@ -31,6 +31,7 @@ include(KDECMakeSettings)
 include(KDECompilerSettings NO_POLICY_SCOPE)
 include(FeatureSummary)
 include(ECMQtDeclareLoggingCategory)
+include(KDEClangFormat)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions")
@@ -66,7 +67,6 @@ find_package(
 
 find_package(LibArchive REQUIRED)
 
-include(KDEClangFormat)
 file(GLOB_RECURSE ALL_SOURCE_FILES *.cpp *.h)
 kde_clang_format(${ALL_SOURCE_FILES})
 
