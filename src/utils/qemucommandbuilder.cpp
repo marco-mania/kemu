@@ -149,29 +149,18 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         args << u"-device"_s << u"%1,drive=%2"_s.arg(VMConfig::toQemuString(config.diskInterface()), driveId);
 
     // --- ISO ---
-    if (config.machineType() == VMSpecs::MachineType::Q35) {
-        args << u"-device"_s << u"virtio-scsi-pci,id=scsi0"_s;
-
-        if (!config.isoPath().isEmpty()) {
-            args << u"-drive"_s
-                 << u"file=%1,format=raw,if=none,id=drive-cdrom0,media=cdrom,readonly=on"_s.arg(relativePaths ? QFileInfo(config.isoPath()).fileName()
-                                                                                                              : config.isoPath());
-            args << u"-device"_s << u"scsi-cd,drive=drive-cdrom0,id=cdrom0"_s;
-        } else {
-            args << u"-drive"_s << u"if=none,id=drive-cdrom0,media=cdrom"_s;
-            args << u"-device"_s << u"scsi-cd,drive=drive-cdrom0,id=cdrom0"_s;
-        }
+    // Always AHCI/IDE, never virtio-scsi: Windows has no inbox virtio-scsi
+    // driver, so an installer medium on that bus disappears as soon as WinPE
+    // takes over from the firmware. Every guest OS we support can read an
+    // AHCI CD-ROM out of the box.
+    if (!config.isoPath().isEmpty()) {
+        args << u"-drive"_s
+             << u"file=%1,format=raw,if=none,id=drive-cdrom0,media=cdrom,readonly=on"_s.arg(relativePaths ? QFileInfo(config.isoPath()).fileName()
+                                                                                                          : config.isoPath());
     } else {
-        if (!config.isoPath().isEmpty()) {
-            args << u"-drive"_s
-                 << u"file=%1,format=raw,if=none,id=drive-cdrom0,media=cdrom,readonly=on"_s.arg(relativePaths ? QFileInfo(config.isoPath()).fileName()
-                                                                                                              : config.isoPath());
-            args << u"-device"_s << u"ide-cd,drive=drive-cdrom0,id=cdrom0"_s;
-        } else {
-            args << u"-drive"_s << u"if=none,id=drive-cdrom0,media=cdrom"_s;
-            args << u"-device"_s << u"ide-cd,drive=drive-cdrom0,id=cdrom0"_s;
-        }
+        args << u"-drive"_s << u"if=none,id=drive-cdrom0,media=cdrom"_s;
     }
+    args << u"-device"_s << u"ide-cd,drive=drive-cdrom0,id=cdrom0"_s;
 
     // --- Floppy ---
     if (config.machineType() != VMSpecs::MachineType::Q35) {
@@ -188,10 +177,9 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     // --- Cloud-Init NoCloud ISO ---
     const QString cidataIso = vmDir.absoluteFilePath(u"cidata.iso"_s);
     if (QFile::exists(cidataIso)) {
-        const QString ciDevType = (config.machineType() == VMSpecs::MachineType::Q35) ? u"scsi-cd"_s : u"ide-cd"_s;
         args << u"-drive"_s
              << u"file=%1,format=raw,if=none,id=drive-cidata,media=cdrom,readonly=on"_s.arg(relativePaths ? QFileInfo(cidataIso).fileName() : cidataIso);
-        args << u"-device"_s << u"%1,drive=drive-cidata,id=cidata"_s.arg(ciDevType);
+        args << u"-device"_s << u"ide-cd,drive=drive-cidata,id=cidata"_s;
     }
 
     // Boot order: Floppy (a), Disk (c) or ISO (d).
