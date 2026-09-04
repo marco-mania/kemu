@@ -98,10 +98,11 @@ sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
   qt6-qtmultimedia-devel kf6-kconfig-devel kf6-kcoreaddons-devel kf6-ki18n-devel \
   kf6-kio-devel kf6-kcrash-devel kf6-kxmlgui-devel kf6-kwidgetsaddons-devel \
   kf6-kiconthemes-devel kf6-ktexttemplate-devel kf6-kdbusaddons-devel \
-  extra-cmake-modules qemu-system-x86 mesa-libEGL-devel libarchive-devel passt \
-  libmnl-devel libnftnl-devel systemd-devel gcc-c++ make cmake \
-  wayland-devel wayland-protocols-devel qt6-qtbase-private-devel \
-  libmnl-devel libnftnl-devel systemd-devel gcc-c++ make cmake
+  extra-cmake-modules qemu-system-x86 qemu-img edk2-ovmf swtpm swtpm-tools \
+  mesa-libEGL-devel libarchive-devel passt libmnl-devel libnftnl-devel \
+  systemd-devel gcc-c++ make cmake wayland-devel wayland-protocols-devel \
+  qt6-qtbase-private-devel libmnl-devel libnftnl-devel systemd-devel \
+  gcc-c++ make cmake
 ```
 
 Optional:
