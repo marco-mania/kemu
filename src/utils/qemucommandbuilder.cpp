@@ -226,11 +226,8 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
 
         } else {
             // -- 9p / VirtFS (for Linux/BSD/Unix guests) --
-            // No additional daemon required.
-            args << u"-virtfs"_s
-                 << u"local,path=%1,mount_tag=%2,security_model=none,id=fs0"_s.arg(relativePaths ? QFileInfo(config.sharedPath()).fileName()
-                                                                                                 : config.sharedPath(),
-                                                                                   mountTag);
+            // No additional daemon required. Always an absolute path.
+            args << u"-virtfs"_s << u"local,path=%1,mount_tag=%2,security_model=none,id=fs0"_s.arg(config.sharedPath(), mountTag);
         }
     }
 

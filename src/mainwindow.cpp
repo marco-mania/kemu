@@ -20,7 +20,6 @@
 #include "jobs/ovaexportjob.h"
 #include "jobs/ovaimportjob.h"
 #include "jobs/shrinkjob.h"
-#include "kemu_debug.h"
 #include "runtime/vmruntimeinfo.h"
 #include "utils/asynchelperprocess.h"
 #include "utils/cloudimagedeployer.h"
@@ -32,6 +31,8 @@
 #include "utils/usbenumerator.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
+
+#include "kemu_debug.h"
 
 extern "C" {
 #include <fcntl.h>
