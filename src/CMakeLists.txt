@@ -21,14 +21,16 @@ function(kemu_add_wayland_protocol basename xml)
   target_sources(${PROJECT_NAME} PRIVATE ${header} ${source})
 endfunction()
 
-kemu_add_wayland_protocol(
-  pointer-constraints-unstable-v1
-  ${WAYLAND_PROTOCOLS_DIR}/unstable/pointer-constraints/pointer-constraints-unstable-v1.xml
-)
-kemu_add_wayland_protocol(
-  relative-pointer-unstable-v1
-  ${WAYLAND_PROTOCOLS_DIR}/unstable/relative-pointer/relative-pointer-unstable-v1.xml
-)
+if(TARGET Qt6::GuiPrivate)
+  kemu_add_wayland_protocol(
+    pointer-constraints-unstable-v1
+    ${WAYLAND_PROTOCOLS_DIR}/unstable/pointer-constraints/pointer-constraints-unstable-v1.xml
+  )
+  kemu_add_wayland_protocol(
+    relative-pointer-unstable-v1
+    ${WAYLAND_PROTOCOLS_DIR}/unstable/relative-pointer/relative-pointer-unstable-v1.xml
+  )
+endif()
 
 ecm_qt_declare_logging_category(
   ${PROJECT_NAME}
@@ -196,7 +198,6 @@ target_link_libraries(
   PkgConfig::WAYLAND_CLIENT
   Qt6::Core
   Qt6::Gui
-  Qt6::GuiPrivate
   Qt6::Widgets
   Qt6::Network
   Qt6::Svg
@@ -217,5 +218,9 @@ target_link_libraries(
   KF6::TextTemplate
   KF6::DBusAddons
   KF6::Crash)
+
+if(TARGET Qt6::GuiPrivate)
+  target_link_libraries(${PROJECT_NAME} Qt6::GuiPrivate)
+endif()
 
 install(TARGETS ${PROJECT_NAME} ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})

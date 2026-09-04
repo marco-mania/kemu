@@ -6,6 +6,8 @@
 
 #include "waylandpointerlock.h"
 
+#ifdef KEMU_HAVE_QT_GUI_PRIVATE
+
 #include <QGuiApplication>
 #include <QWindow>
 
@@ -182,3 +184,33 @@ void WaylandPointerLock::setLocked(bool locked)
     m_locked = locked;
     Q_EMIT lockedChanged(locked);
 }
+
+#else // !KEMU_HAVE_QT_GUI_PRIVATE
+
+// Reaching a QWindow's wl_surface requires Qt's private QPA headers, which
+// are not available in this build (see the top-level CMakeLists.txt). Real
+// pointer confinement is therefore compiled out. m_constraints and
+// m_relativeManager stay null, so isSupported() already reports false and
+// callers - which must handle a compositor lacking the protocols anyway -
+// need no extra branching for this case.
+//
+// Keep this in sync with the declarations in waylandpointerlock.h: the
+// private helpers are never reached here and are deliberately left undefined.
+
+WaylandPointerLock::WaylandPointerLock(QObject *parent)
+    : QObject(parent)
+{
+}
+
+WaylandPointerLock::~WaylandPointerLock() = default;
+
+bool WaylandPointerLock::lock(QWindow *)
+{
+    return false;
+}
+
+void WaylandPointerLock::unlock()
+{
+}
+
+#endif // KEMU_HAVE_QT_GUI_PRIVATE

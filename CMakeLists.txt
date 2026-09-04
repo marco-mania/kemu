@@ -42,7 +42,6 @@ find_package(
   Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED
   COMPONENTS Core
              Gui
-             GuiPrivate
              Widgets
              Network
              Svg
@@ -50,6 +49,24 @@ find_package(
              Multimedia
              OpenGL
              OpenGLWidgets)
+
+# GuiPrivate exposes Qt's QPA/native-interface headers. WaylandPointerLock needs
+# it to reach a QWindow's wl_surface - there is currently no public Qt API for
+# that. Several distributions ship these headers in a separate,
+# not-always-installed "-private-dev" package, so this stays out of the REQUIRED
+# call above: without it, pointer confinement is compiled out instead of failing
+# the whole configure.
+find_package(Qt6 ${QT_MIN_VERSION} CONFIG QUIET COMPONENTS GuiPrivate)
+if(TARGET Qt6::GuiPrivate)
+  add_compile_definitions(KEMU_HAVE_QT_GUI_PRIVATE)
+  set(KEMU_HAVE_QT_GUI_PRIVATE TRUE)
+endif()
+add_feature_info(
+  "Wayland pointer lock"
+  KEMU_HAVE_QT_GUI_PRIVATE
+  "requires Qt6 private headers (e.g. qt6-base-private-dev / qt6-qtbase-private-devel)"
+)
+
 find_package(
   KF6 ${KF_MIN_VERSION} REQUIRED
   COMPONENTS CoreAddons
