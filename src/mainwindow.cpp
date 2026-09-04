@@ -146,6 +146,11 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
+    // The window is going away: nothing left to update, and onVmExited() must
+    // not open dialogs while the destructor runs.
+    if (m_runtimeManager)
+        m_runtimeManager->disconnect(this);
+
     for (auto job : std::as_const(creatingVMs)) {
         if (job) {
             job->disconnect();
@@ -167,14 +172,13 @@ MainWindow::~MainWindow()
         if (!e)
             continue;
 
-        // Stop the QEMU process; Qt's parent-child cleanup deletes it
-        if (e->qemuProcess) {
-            e->qemuProcess->disconnect(this);
-            if (e->qemuProcess->state() == KProcess::Running) {
-                e->qemuProcess->terminate();
-                if (!e->qemuProcess->waitForFinished(2000))
-                    e->qemuProcess->kill();
-            }
+        // Own reference: clearRuntimeState() nulls the entry's pointer while
+        // finished() is emitted from inside waitForFinished().
+        const QPointer<KProcess> process = e->qemuProcess;
+        if (process && process->state() == KProcess::Running) {
+            process->terminate();
+            if (!process->waitForFinished(2000))
+                process->kill();
         }
 
         m_runtimeManager->tearDown(name);
@@ -2169,6 +2173,14 @@ void MainWindow::onVmStartFailed(const QString &vmName, const QString &reason, i
 
 void MainWindow::onVmExited(const VmRuntimeManager::ExitInfo &info)
 {
+    // A deployment the user aborted: we killed QEMU ourselves, so this is not
+    // a failure. abortDeployment() started this, finish it now that the
+    // process is gone and the runtime has been torn down.
+    if (m_pendingDeploymentAbort.contains(info.vmName)) {
+        finishDeploymentAbort(info.vmName, m_pendingDeploymentAbort.take(info.vmName));
+        return;
+    }
+
     if (info.wasDeploying && info.abnormal && !info.userInitiated) {
         showQemuFailureDialog(info.vmName, /*startupFailed=*/false, info.exitCode, info.exitStatus, info.stderrTail);
         abortDeployment(info.vmName, false);
@@ -3758,22 +3770,15 @@ void MainWindow::startDeployment(const QString &vmName)
         return;
     }
 
-    // Pre-flight: bail out before starting helpers if QEMU is missing,
-    // so we don't leave half-set-up helpers running.
-    if (!requireTool(ExternalTools::QemuSystem)) {
-        abortDeployment(vmName, false);
-        return;
-    }
-
     // --- Helper chain ---
     auto *chain = new StartupChain(this);
 
-    if (currentConfig.useTpm()) {
+    if (config.useTpm()) {
         chain->then([this, vmName](auto done) {
             m_runtimeManager->startSwtpmAsync(vmName, reportingDone(vmName, std::move(done)));
         });
     }
-    if (!currentConfig.sharedPath().isEmpty() && currentConfig.osType() == VMSpecs::OsType::Windows) {
+    if (!config.sharedPath().isEmpty() && config.osType() == VMSpecs::OsType::Windows) {
         chain->then([this, vmName](auto done) {
             m_runtimeManager->startVirtiofsdAsync(vmName, reportingDone(vmName, std::move(done)));
         });
@@ -3786,7 +3791,7 @@ void MainWindow::startDeployment(const QString &vmName)
     if (config.networkCard() != VMSpecs::NetworkCard::None) {
         if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
             QString reason;
-            resolvedTap = m_runtimeManager->ensureNetworkRunning(currentConfig.virtualNetworkName(), vmName, &reason);
+            resolvedTap = m_runtimeManager->ensureNetworkRunning(config.virtualNetworkName(), vmName, &reason);
             if (resolvedTap.isEmpty() && !reason.isEmpty())
                 KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
             if (resolvedTap.isEmpty()) {
@@ -3794,8 +3799,8 @@ void MainWindow::startDeployment(const QString &vmName)
                 abortDeployment(vmName, false);
                 return;
             }
-        } else if (m_runtimeManager->usePasstFor(currentConfig)) {
-            const auto pf = currentConfig.portForwards();
+        } else if (m_runtimeManager->usePasstFor(config)) {
+            const auto pf = config.portForwards();
             chain->then([this, vmName, pf](auto done) {
                 m_runtimeManager->startPasstAsync(vmName, pf, reportingDone(vmName, std::move(done)));
             });
@@ -3851,76 +3856,80 @@ void MainWindow::finalizeDeployment(const QString &vmName)
 
 void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
 {
+    // Reentrancy guard: killing QEMU makes onVmExited() call back into the
+    // abort, and onVmExited() may itself ask for an abort on an abnormal exit.
+    if (m_pendingDeploymentAbort.contains(vmName))
+        return;
+
     if (auto *rt = m_runtimeManager->runtime(vmName))
         rt->deployment.reset();
 
     const VmEntry *entry = veModel->entryByName(vmName);
-    if (!entry)
+    if (!entry) {
+        finishDeploymentAbort(vmName, deleteVm);
         return;
+    }
 
+    // Close the viewer before the guest disappears underneath it.
     stopDbusViewer(vmName);
 
-    if (entry->qemuProcess) {
-        entry->qemuProcess->disconnect(this);
-        if (entry->qemuProcess->state() == KProcess::Running) {
-            entry->qemuProcess->kill();
-            entry->qemuProcess->waitForFinished(3000);
-        }
-        entry->qemuProcess->deleteLater();
+    // Own reference: the model nulls entry->qemuProcess as soon as the exit
+    // path runs, and `entry` itself points into the model's QVector, which
+    // loadVmList() reallocates.
+    const QPointer<KProcess> process = entry->qemuProcess;
+
+    if (!process || process->state() != KProcess::Running) {
+        // Nothing to kill: either the pre-flight checks failed before QEMU was
+        // launched, or QEMU has already exited and onQemuExit() has cleaned up.
+        if (entry->state != VmEntry::State::Stopped)
+            m_runtimeManager->tearDown(vmName);
+        finishDeploymentAbort(vmName, deleteVm);
+        return;
     }
 
-    // Clean up helper processes
-    if (entry->qmpClient) {
-        entry->qmpClient->disconnectFromVm();
-        entry->qmpClient->deleteLater();
-    }
+    // Marks the upcoming CrashExit as ours, so onVmExited() does not report it
+    // as a QEMU failure.
+    m_runtimeManager->runtimeFor(vmName).userInitiatedShutdown = true;
 
-    if (entry->swtpmProcess) {
-        entry->swtpmProcess->terminate();
-        if (!entry->swtpmProcess->waitForFinished(3000))
-            entry->swtpmProcess->kill();
-        delete entry->swtpmProcess;
-        QFile::remove(getVmBaseDir().filePath(vmName) + u'/' + KEMUConst::SwtpmSocketFileName);
-    }
+    m_pendingDeploymentAbort.insert(vmName, deleteVm);
 
-    if (entry->virtiofsdProcess) {
-        entry->virtiofsdProcess->terminate();
-        if (!entry->virtiofsdProcess->waitForFinished(3000))
-            entry->virtiofsdProcess->kill();
-        delete entry->virtiofsdProcess;
-        QFile::remove(getVmBaseDir().filePath(vmName) + u'/' + KEMUConst::VirtiofsdPidFileName);
-    }
+    // Deliberately no waitForFinished(): QProcess emits finished() from inside
+    // it, so teardown, dialogs and this function would all run nested in this
+    // stack frame. Let the signal arrive through the event loop instead;
+    // onVmExited() picks the abort up from m_pendingDeploymentAbort.
+    process->kill();
+}
 
-    if (entry->passtProcess) {
-        entry->passtProcess->terminate();
-        if (!entry->passtProcess->waitForFinished(3000))
-            entry->passtProcess->kill();
-        delete entry->passtProcess;
-        QFile::remove(getVmBaseDir().filePath(vmName) + u'/' + KEMUConst::PasstSocketFileName);
-    }
+void MainWindow::finishDeploymentAbort(const QString &vmName, bool deleteVm)
+{
+    // Everything process related is gone by now: VmRuntimeManager::tearDown()
+    // has stopped the helpers, removed the sockets, released the network and
+    // reset the model's runtime state.
+    if (auto *rt = m_runtimeManager->runtime(vmName))
+        rt->deployment.reset();
 
-    QFile::remove(getVmDir(vmName).absoluteFilePath(KEMUConst::QemuMonitorSocketFileName));
-
-    m_runtimeManager->releaseNetwork(entry->config);
-
-    if (deleteVm) {
-        {
-            QDir vmDir = getVmDir(vmName);
-            if (!isManagedVmDir(vmDir)) {
-                qCWarning(KEMU) << "Refusing to remove a directory outside the VM store:" << vmDir.absolutePath();
-            } else {
-                vmDir.removeRecursively();
-            }
-        }
-        loadVmList();
-        onVmSelectionChanged();
-        statusBar()->showMessage(i18n("Deployment of '%1' cancelled. VM deleted.", vmName));
-    } else {
+    if (!deleteVm) {
         veModel->clearRuntimeState(vmName);
         updateDetails();
         updateActionStates();
         statusBar()->showMessage(i18n("Deployment of '%1' cancelled.", vmName));
+        return;
     }
+
+    QDir vmDir = getVmDir(vmName);
+    if (!isManagedVmDir(vmDir)) {
+        qCWarning(KEMU) << "Refusing to remove a directory outside the VM store:" << vmDir.absolutePath();
+    } else {
+        vmDir.removeRecursively();
+    }
+
+    // Same cleanup deleteVM() does; the old abort path leaked both.
+    removeViewerPrefs(vmName);
+    m_runtimeManager->dropRuntime(vmName);
+
+    loadVmList();
+    onVmSelectionChanged();
+    statusBar()->showMessage(i18n("Deployment of '%1' cancelled. VM deleted.", vmName));
 }
 
 void MainWindow::deployCloudImage(const QString &vmName)

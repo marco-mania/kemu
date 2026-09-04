@@ -223,6 +223,12 @@ private:
     void startDeployment(const QString &vmName);
     void finalizeDeployment(const QString &vmName);
     void abortDeployment(const QString &vmName, bool deleteVm);
+    void finishDeploymentAbort(const QString &vmName, bool deleteVm);
+
+    // Deployments whose QEMU process has been killed and whose cleanup is
+    // waiting for the exit signal. Value = delete the VM directory as well.
+    // Doubles as a reentrancy guard for abortDeployment().
+    QMap<QString, bool> m_pendingDeploymentAbort;
 
     void deployCloudImage(const QString &vmName);
 
