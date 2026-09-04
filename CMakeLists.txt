@@ -67,7 +67,10 @@ find_package(
 
 find_package(LibArchive REQUIRED)
 
-file(GLOB_RECURSE ALL_SOURCE_FILES *.cpp *.h)
+# Only our own sources. A recursive glob from the top level also picks up build
+# trees such as .flatpak-builder/, whose vendored third-party sources collide on
+# kde_clang_format's per-file target names.
+file(GLOB_RECURSE ALL_SOURCE_FILES src/*.cpp src/*.h)
 kde_clang_format(${ALL_SOURCE_FILES})
 
 pkg_check_modules(MNL REQUIRED libmnl)
