@@ -719,13 +719,13 @@ void QemuDisplayWidget::setGuestAbsolute(bool absolute)
     Q_EMIT pointerModeChanged(absolute);
 }
 
-void QemuDisplayWidget::beginRelativeGrab()
+bool QemuDisplayWidget::beginRelativeGrab()
 {
     if (m_relativeGrabActive)
-        return;
+        return true;
     if (!m_pointerLock->lock(window()->windowHandle())) {
         qCWarning(KEMU_DBUSDISPLAY) << "Pointer capture unavailable on this compositor";
-        return;
+        return false;
     }
     m_relativeGrabActive = true;
 
@@ -736,6 +736,7 @@ void QemuDisplayWidget::beginRelativeGrab()
     m_motionAccum = {};
 
     Q_EMIT relativeGrabChanged(true);
+    return true;
 }
 
 void QemuDisplayWidget::endRelativeGrab()
@@ -1008,8 +1009,12 @@ void QemuDisplayWidget::mousePressEvent(QMouseEvent *event)
 
     // Relative: first click captures the pointer (SDL-style).
     if (!m_guestAbsolute && !m_relativeGrabActive) {
-        beginRelativeGrab();
-        return; // grab click is not forwarded
+        if (beginRelativeGrab()) {
+            m_grabClickPending = true;
+            return; // grab click is not forwarded
+        }
+        // Capture unavailable: forward the click after all. Swallowing it
+        // would leave a relative-pointer guest with no mouse input at all.
     }
 
     if (m_guestAbsolute)
@@ -1027,9 +1032,10 @@ void QemuDisplayWidget::mouseReleaseEvent(QMouseEvent *event)
     if (m_dimmed)
         return;
 
-    // Relative + not grabbed: the press was the grab click – swallow its release.
-    if (!m_guestAbsolute && !m_relativeGrabActive)
-        return;
+    if (m_grabClickPending) {
+        m_grabClickPending = false;
+        return; // belongs to the swallowed capture click
+    }
 
     flushMotion();
 
@@ -1158,10 +1164,18 @@ void QemuDisplayWidget::sendCtrlAltDel()
 void QemuDisplayWidget::setPointerCaptured(bool capture)
 {
     // Public entry point for the menu toggle; works for both pointer modes.
-    if (capture)
-        beginRelativeGrab();
-    else
+    if (!capture) {
         endRelativeGrab();
+        return;
+    }
+
+    if (beginRelativeGrab())
+        return;
+
+    // The request failed - no surface yet, no pointer on the seat, or no
+    // capture support at all. Report the state we are actually in, otherwise
+    // the menu toggle stays checked while nothing is captured.
+    Q_EMIT relativeGrabChanged(false);
 }
 
 bool QemuDisplayWidget::isPointerCaptureSupported() const

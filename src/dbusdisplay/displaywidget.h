@@ -113,7 +113,7 @@ private:
 
     void queryPointerMode();
     void setGuestAbsolute(bool absolute);
-    void beginRelativeGrab();
+    [[nodiscard]] bool beginRelativeGrab();
     void endRelativeGrab();
 
     void scheduleRepaint();
@@ -193,6 +193,10 @@ private:
     QPointF m_absVirtual; // synthetic absolute position while captured (abs guests)
     bool m_guestAbsolute = true; // from QEMU IsAbsolute; default = absolute
     bool m_relativeGrabActive = false; // pointer captured?
+    // Set when a press was consumed as the capture click, so the matching
+    // release can be swallowed too. m_relativeGrabActive cannot serve here:
+    // the press has already flipped it by the time the release arrives.
+    bool m_grabClickPending = false;
     bool m_pointerModeProbed = false; // IsAbsolute re-checked after first scanout
 
     bool m_dimmed = false;

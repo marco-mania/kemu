@@ -776,7 +776,8 @@ void DbusViewerWindow::updateMouseStatus()
 
 void DbusViewerWindow::onPointerCaptureChanged(bool active)
 {
-    // Keep the menu toggle in sync without re-triggering its toggled() signal.
+    const bool wasChecked = m_actGrabMouse && m_actGrabMouse->isChecked();
+
     if (m_actGrabMouse) {
         QSignalBlocker block(m_actGrabMouse);
         m_actGrabMouse->setChecked(active);
@@ -784,8 +785,11 @@ void DbusViewerWindow::onPointerCaptureChanged(bool active)
 
     if (active) {
         showOsd(i18nc("@info:status", "Pointer captured - press Ctrl+Alt+G to release"), 3000);
-    } else {
+    } else if (wasChecked) {
+        // Only report a release if we were actually holding the pointer.
         showOsd(i18nc("@info:status", "Pointer released"), 1500);
+    } else {
+        showOsd(i18nc("@info:status", "Pointer capture is not available"), 2500);
     }
 
     updateMouseStatus();
