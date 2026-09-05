@@ -139,12 +139,25 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         args << u"-device"_s << (config.machineType() == VMSpecs::MachineType::Q35 ? u"tpm-crb,tpmdev=tpm0"_s : u"tpm-tis,tpmdev=tpm0"_s);
     }
 
+    // Q35 uses ich9-ahci, where every port is a separate bus holding exactly
+    // one unit; the pc chipsets use two IDE buses of two units each. QEMU's
+    // automatic placement always picks ide.0, so a second device fails with
+    // "bus supports only 1 units". Hand out the slots ourselves.
+    const bool ahci = config.machineType() == VMSpecs::MachineType::Q35;
+    int nextIdeSlot = 0;
+    const auto takeIdeSlot = [&ahci, &nextIdeSlot]() {
+        const int slot = nextIdeSlot++;
+        return ahci ? u"bus=ide.%1"_s.arg(slot) : u"bus=ide.%1,unit=%2"_s.arg(slot / 2).arg(slot % 2);
+    };
+
     // --- Disk ---
     const QString driveId = u"sysdisk"_s;
     args << u"-drive"_s << u"file=%1,format=qcow2,if=none,id=%2"_s.arg(relativePaths ? QFileInfo(config.diskPath()).fileName() : config.diskPath(), driveId);
 
     if (config.diskInterface() == VMSpecs::DiskInterface::Nvme)
         args << u"-device"_s << u"%1,drive=%2,serial=serial0"_s.arg(VMConfig::toQemuString(config.diskInterface()), driveId);
+    else if (config.diskInterface() == VMSpecs::DiskInterface::SataIde)
+        args << u"-device"_s << u"%1,drive=%2,%3"_s.arg(VMConfig::toQemuString(config.diskInterface()), driveId, takeIdeSlot());
     else
         args << u"-device"_s << u"%1,drive=%2"_s.arg(VMConfig::toQemuString(config.diskInterface()), driveId);
 
@@ -160,7 +173,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     } else {
         args << u"-drive"_s << u"if=none,id=drive-cdrom0,media=cdrom"_s;
     }
-    args << u"-device"_s << u"ide-cd,drive=drive-cdrom0,id=cdrom0"_s;
+    args << u"-device"_s << u"ide-cd,drive=drive-cdrom0,id=cdrom0,%1"_s.arg(takeIdeSlot());
 
     // --- Floppy ---
     if (config.machineType() != VMSpecs::MachineType::Q35) {
@@ -179,7 +192,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     if (QFile::exists(cidataIso)) {
         args << u"-drive"_s
              << u"file=%1,format=raw,if=none,id=drive-cidata,media=cdrom,readonly=on"_s.arg(relativePaths ? QFileInfo(cidataIso).fileName() : cidataIso);
-        args << u"-device"_s << u"ide-cd,drive=drive-cidata,id=cidata"_s;
+        args << u"-device"_s << u"ide-cd,drive=drive-cidata,id=cidata,%1"_s.arg(takeIdeSlot());
     }
 
     // Boot order: Floppy (a), Disk (c) or ISO (d).
