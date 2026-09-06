@@ -121,6 +121,8 @@ void SandboxCapabilities::refresh()
 {
     m_terminalProgram.clear();
 
+    m_isFlatpak = QFileInfo::exists(u"/.flatpak-info"_s);
+
     const auto store = [this](Capability capability, const ProbeResult &result) {
         m_states.insert(capability, {result.ok, result.reason});
     };

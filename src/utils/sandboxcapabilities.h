@@ -43,6 +43,13 @@ public:
     static bool parseCapability(const QString &name, Capability *capability);
     static QList<Capability> allCapabilities();
 
+    // Direct environment fact, not a probed capability: whether KEMU runs
+    // inside a Flatpak sandbox.
+    [[nodiscard]] bool isFlatpak() const
+    {
+        return m_isFlatpak;
+    }
+
 private:
     SandboxCapabilities() = default;
 
@@ -53,4 +60,6 @@ private:
 
     QHash<int, State> m_states;
     QString m_terminalProgram;
+
+    bool m_isFlatpak = false;
 };
