@@ -53,7 +53,7 @@ public:
         QString tapDevice;
 
         // Deployment keeps the VM in state Deploying, may write a serial log,
-        // and skips savestate handling and the performance samples.
+        // skips savestate handling, and samples CPU and I/O but not memory.
         bool deployment = false;
     };
     void launch(const LaunchRequest &request);
@@ -149,6 +149,10 @@ Q_SIGNALS:
     // Forwarded QMP events; MainWindow::onQMPEvent() stays where it is.
     void qmpEvent(const QString &vmName, const QString &eventName, const QJsonObject &data);
 
+    // The QMP performance timer has started and samples are about to flow.
+    // Fires for deployments too, unlike qmpReady().
+    void perfMonitoringStarted(const QString &vmName);
+
     // channel matches VirtualEnvironmentModel::appendPerfSample().
     void perfSample(const QString &vmName, int channel, double value);
 
@@ -162,7 +166,7 @@ private:
 
     bool openTapFdFor(const VMConfig &config, const QString &vmName, const QString &tapDevice, int *tapFd, QString *reason);
     void setUpQmpClient(const LaunchRequest &req, const QString &sockPath, bool isResume);
-    void connectPerfSignals(QMPClient *client, const QString &vmName);
+    void connectPerfSignals(QMPClient *client, const QString &vmName, bool includeMemory);
 };
 
 Q_DECLARE_METATYPE(VmRuntimeManager::ExitInfo)

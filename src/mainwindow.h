@@ -157,6 +157,7 @@ private:
     void setupActions();
     void updateDetails();
     void updateActionStates();
+    void activatePerfMonitorFor(const QString &vmName);
 
     VmRuntimeManager *m_runtimeManager = nullptr;
     // Adapts the manager's HelperResult to StartupChain's done(bool) and

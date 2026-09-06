@@ -852,7 +852,8 @@ void VirtualEnvironmentModel::rebuildTree(const QMap<QString, QString> &folderAs
 void VirtualEnvironmentModel::recomputeIcon(VmEntry &e) const
 {
     VMConfig::VmVisualState vs = VMConfig::VmVisualState::Stopped;
-    if (e.state == VmEntry::State::Running)
+    // Deploying is a live VM: QEMU is up and the guest is installing itself.
+    if (e.state == VmEntry::State::Running || e.state == VmEntry::State::Deploying)
         vs = VMConfig::VmVisualState::Running;
     else if (e.state == VmEntry::State::Saving || e.state == VmEntry::State::Saved)
         vs = VMConfig::VmVisualState::Saved;

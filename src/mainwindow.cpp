@@ -65,6 +65,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_runtimeManager, &VmRuntimeManager::startFailed, this, &MainWindow::onVmStartFailed);
     connect(m_runtimeManager, &VmRuntimeManager::vmExited, this, &MainWindow::onVmExited);
     connect(m_runtimeManager, &VmRuntimeManager::perfSample, this, &MainWindow::onPerfSample);
+    connect(m_runtimeManager, &VmRuntimeManager::perfMonitoringStarted, this, &MainWindow::activatePerfMonitorFor);
 
     const QDir dir = getVmBaseDir();
     if (!dir.exists())
@@ -981,6 +982,21 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_network_shell"_s)->setEnabled(hasActiveNamespace && SandboxCapabilities::instance().has(SandboxCapabilities::HostTerminal));
 }
 
+void MainWindow::activatePerfMonitorFor(const QString &vmName)
+{
+    if (selectedVmName() != vmName || !perfMonitor)
+        return;
+
+    const VmEntry *e = veModel->entryByName(vmName);
+    if (!e)
+        return;
+
+    perfMonitor->setHistory(PerformanceMonitorWidget::Cpu, e->cpuHistory);
+    perfMonitor->setHistory(PerformanceMonitorWidget::Ram, e->ramHistory);
+    perfMonitor->setHistory(PerformanceMonitorWidget::Io, e->ioHistory);
+    perfMonitor->setActive(true);
+}
+
 VmRuntimeManager::HelperResult MainWindow::reportingDone(const QString &vmName, std::function<void(bool)> done)
 {
     return [this, vmName, done = std::move(done)](bool ok, const QString &error) {
@@ -1066,7 +1082,10 @@ void MainWindow::updateDetails()
     const bool isCloning = entry && entry->state == VmEntry::State::Cloning;
 
     if (perfMonitor) {
-        const bool vmLive = entry && entry->state == VmEntry::State::Running && entry->qmpClient && entry->qmpClient->isPerformanceTimerActive();
+        // Deploying counts as live here, same as in hasLiveQemu(): QEMU is
+        // running and the QMP performance timer is sampling it.
+        const bool vmLive = entry && (entry->state == VmEntry::State::Running || entry->state == VmEntry::State::Deploying) && entry->qmpClient
+            && entry->qmpClient->isPerformanceTimerActive();
         perfMonitor->setActive(vmLive);
     }
 
@@ -1402,7 +1421,7 @@ void MainWindow::onVmSelectionChanged()
 
     if (perfMonitor) {
         const VmEntry *entry = veModel->entryByName(name);
-        if (entry && entry->state == VmEntry::State::Running) {
+        if (entry && (entry->state == VmEntry::State::Running || entry->state == VmEntry::State::Deploying)) {
             perfMonitor->setHistory(PerformanceMonitorWidget::Cpu, entry->cpuHistory);
             perfMonitor->setHistory(PerformanceMonitorWidget::Ram, entry->ramHistory);
             perfMonitor->setHistory(PerformanceMonitorWidget::Io, entry->ioHistory);
@@ -2232,6 +2251,17 @@ void MainWindow::onTreeDoubleClicked(const QModelIndex &index)
     const QString vmName = index.data(VirtualEnvironmentModel::VmNameRole).toString();
     const VmEntry *entry = veModel->entryByName(vmName);
     const bool isRunning = entry && entry->state == VmEntry::State::Running;
+    const bool isDeploying = entry && entry->state == VmEntry::State::Deploying;
+
+    if (isDeploying) {
+        KMessageBox::information(this,
+                                 i18n("The viewer is locked while '%1' is being deployed.\n\n"
+                                      "Unattended installation output is not meant to be watched live; "
+                                      "the VM will be available once deployment finishes.",
+                                      vmName),
+                                 i18n("Viewer Not Available"));
+        return;
+    }
 
     // VM is not running yet: start normally
     if (!isRunning) {
@@ -2643,13 +2673,6 @@ void MainWindow::onQmpReady(const QString &vmName)
     // QEMU always starts with the link up; restore a persisted "cable out".
     if (e->config.networkCard() != VMSpecs::NetworkCard::None && !loadViewerPrefs(vmName).networkLinkUp)
         e->qmpClient->setNetworkLink(KEMUConst::NetdevId, false);
-
-    if (selectedVmName() == vmName && perfMonitor) {
-        perfMonitor->setHistory(PerformanceMonitorWidget::Cpu, e->cpuHistory);
-        perfMonitor->setHistory(PerformanceMonitorWidget::Ram, e->ramHistory);
-        perfMonitor->setHistory(PerformanceMonitorWidget::Io, e->ioHistory);
-        perfMonitor->setActive(true);
-    }
 }
 
 void MainWindow::onUsbMenuAboutToShow()

@@ -567,6 +567,7 @@ void VmRuntimeManager::setUpQmpClient(const LaunchRequest &req, const QString &s
 
     connect(client, &QMPClient::connected, this, [this, client, vmName, deployment = req.deployment, isResume]() {
         client->startPerformanceTimer(1000);
+        Q_EMIT perfMonitoringStarted(vmName);
 
         if (deployment)
             return;
@@ -603,8 +604,11 @@ void VmRuntimeManager::setUpQmpClient(const LaunchRequest &req, const QString &s
         }
     });
 
-    if (!req.deployment)
-        connectPerfSignals(client, vmName);
+    // Deployments get CPU and I/O: both are measured entirely host-side and
+    // show whether the installation is making progress. Memory is left out -
+    // the balloon driver is not up in the guest yet and the guest-stats
+    // qom-set above is skipped, so query-balloon would report a flat 100%.
+    connectPerfSignals(client, vmName, /*includeMemory=*/!req.deployment);
 
     QPointer<QMPClient> safeClient(client);
     AsyncHelperProcess::waitForSocket(this, sockPath, 2000, 50, [safeClient, vmName, sockPath](bool ok) {
@@ -617,7 +621,7 @@ void VmRuntimeManager::setUpQmpClient(const LaunchRequest &req, const QString &s
     });
 }
 
-void VmRuntimeManager::connectPerfSignals(QMPClient *client, const QString &vmName)
+void VmRuntimeManager::connectPerfSignals(QMPClient *client, const QString &vmName, bool includeMemory)
 {
     connect(client, &QMPClient::cpuUsageUpdated, this, [this, vmName](const VmCpuUsage &usage) {
         if (!usage.isValid)
@@ -626,12 +630,14 @@ void VmRuntimeManager::connectPerfSignals(QMPClient *client, const QString &vmNa
         Q_EMIT perfSample(vmName, 0, usage.averagePercent);
     });
 
-    connect(client, &QMPClient::memoryUsageUpdated, this, [this, vmName](const VmMemoryUsage &usage) {
-        if (!usage.isValid)
-            return;
-        m_model->appendPerfSample(vmName, 1, usage.usagePercent);
-        Q_EMIT perfSample(vmName, 1, usage.usagePercent);
-    });
+    if (includeMemory) {
+        connect(client, &QMPClient::memoryUsageUpdated, this, [this, vmName](const VmMemoryUsage &usage) {
+            if (!usage.isValid)
+                return;
+            m_model->appendPerfSample(vmName, 1, usage.usagePercent);
+            Q_EMIT perfSample(vmName, 1, usage.usagePercent);
+        });
+    }
 
     connect(client, &QMPClient::blockStatsUpdated, this, [this, vmName](const VmBlockStats &stats) {
         if (!stats.isValid)
