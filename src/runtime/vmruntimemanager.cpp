@@ -67,8 +67,9 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     // Unattended runs only: an interactive installer's UI could move to the
     // serial console once one is present, which would defeat an attended
     // installation. cloud-init has no such UI, so this is safe unconditionally
-    // for headless deployments - a few kilobytes of log cost nothing.
-    if (req.deployment && req.headless)
+    // - and independent of whether a window is shown, which since the GTK/SDL
+    // change no longer follows from the same flag.
+    if (req.unattendedDeployment)
         args << u"-serial"_s << u"file:%1"_s.arg(path + u'/' + KEMUConst::DeploySerialLogFileName);
 
     KProcess *process = createQemuProcess(vmName, args, tapFd);

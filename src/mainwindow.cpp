@@ -942,7 +942,18 @@ void MainWindow::updateActionStates()
 
     // A VM can be started if it is not busy OR if it is currently in 'Saved' state (it will resume).
     actionCollection()->action(u"vm_start"_s)->setEnabled(hasSelection && (!isBusy || isSavedOnly));
-    actionCollection()->action(u"vm_start_headless"_s)->setEnabled(hasSelection && (!isBusy || isSavedOnly));
+
+    // GTK/SDL open a real display or none at all - fixed at QEMU's start,
+    // with no way to attach one afterwards. Only the integrated viewer can
+    // be reconnected later, so only it may be started headless.
+    const bool supportsHeadless = entry && entry->config.displayType() == VMSpecs::DisplayType::Dbus;
+
+    QAction *startHeadlessAction = actionCollection()->action(u"vm_start_headless"_s);
+    startHeadlessAction->setEnabled(hasSelection && supportsHeadless && (!isBusy || isSavedOnly));
+    startHeadlessAction->setToolTip(supportsHeadless ? QString()
+                                                     : i18n("Not available for GTK/SDL displays: once started without a "
+                                                            "window, none can be attached later. Switch to the integrated "
+                                                            "viewer in the VM's settings to use this."));
 
     actionCollection()->action(u"vm_shutdown"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
     actionCollection()->action(u"vm_reset"_s)->setEnabled(hasSelection && isRunning);
@@ -2255,23 +2266,27 @@ void MainWindow::onTreeDoubleClicked(const QModelIndex &index)
 
     const QString vmName = index.data(VirtualEnvironmentModel::VmNameRole).toString();
     const VmEntry *entry = veModel->entryByName(vmName);
-    const bool isRunning = entry && entry->state == VmEntry::State::Running;
-    const bool isDeploying = entry && entry->state == VmEntry::State::Deploying;
 
-    if (isDeploying) {
-        KMessageBox::information(this,
-                                 i18n("The viewer is locked while '%1' is being deployed.\n\n"
-                                      "Unattended installation output is not meant to be watched live; "
-                                      "the VM will be available once deployment finishes.",
-                                      vmName),
-                                 i18n("Viewer Not Available"));
+    // Deploying counts as live: QEMU is up. Falling through to startVM() would
+    // only produce a "busy" error, when what the user wants is to watch.
+    const bool isLive = entry && (entry->state == VmEntry::State::Running || entry->state == VmEntry::State::Deploying);
+
+    if (!isLive) {
+        startVM();
         return;
     }
 
-    // VM is not running yet: start normally
-    if (!isRunning) {
-        startVM();
-        return;
+    if (entry->state == VmEntry::State::Deploying) {
+        const auto *rt = m_runtimeManager->runtime(vmName);
+        const bool unattended = rt && rt->deployment && rt->deployment->type == VmRuntimeInfo::PendingDeployment::Type::CloudImage;
+        if (unattended) {
+            // Nothing to interact with on an unattended run: the serial log is
+            // the thing to watch, whether or not a window happens to be open.
+            showDeploymentLog(vmName);
+            return;
+        }
+        // Installer ISO: the viewer is either already open or reconnecting
+        // below is the right answer, same as for a normally running VM.
     }
 
     // VM is running headless: reconnect viewer
@@ -3856,12 +3871,14 @@ void MainWindow::startDeployment(const QString &vmName)
     }
 
     // Headless is a cloud-init concept: the guest configures itself and signals
-    // completion by shutting down. An installer ISO needs a display.
+    // completion by shutting down. An installer ISO needs a display, and so do
+    // GTK/SDL - "-display none" cannot be undone once QEMU has started, only
+    // the integrated viewer can attach later.
     const auto *rt = m_runtimeManager->runtime(vmName);
     const bool unattended = rt && rt->deployment && rt->deployment->type == VmRuntimeInfo::PendingDeployment::Type::CloudImage;
-    const bool headless = unattended && SettingsDialog::deployHeadless();
+    const bool headless = unattended && SettingsDialog::deployHeadless() && config.displayType() == VMSpecs::DisplayType::Dbus;
 
-    chain->run([this, vmName, headless, resolvedTap](bool ok) {
+    chain->run([this, vmName, headless, unattended, resolvedTap](bool ok) {
         if (!ok) {
             m_runtimeManager->tearDown(vmName);
             return;
@@ -3872,6 +3889,7 @@ void MainWindow::startDeployment(const QString &vmName)
         req.headless = headless;
         req.tapDevice = resolvedTap;
         req.deployment = true;
+        req.unattendedDeployment = unattended;
         m_runtimeManager->launch(req);
     });
 }

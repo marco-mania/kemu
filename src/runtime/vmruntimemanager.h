@@ -52,9 +52,15 @@ public:
         bool headless = false;
         QString tapDevice;
 
-        // Deployment keeps the VM in state Deploying, may write a serial log,
-        // skips savestate handling, and samples CPU and I/O but not memory.
+        // Deployment keeps the VM in state Deploying, skips savestate
+        // handling, and samples CPU and I/O but not memory.
         bool deployment = false;
+
+        // Unattended (cloud-image) deployment: writes a serial log regardless
+        // of whether a window happens to be shown. Never set for an attended
+        // ISO install, where an interactive installer could move its UI to the
+        // serial console once one is present.
+        bool unattendedDeployment = false;
     };
     void launch(const LaunchRequest &request);
 

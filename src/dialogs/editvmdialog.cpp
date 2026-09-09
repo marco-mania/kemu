@@ -361,10 +361,17 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     hwLayout->addRow(i18n("Keyboard:"), keyboardCombo);
 
     displayCombo = new QComboBox();
-    for (const auto type : {VMSpecs::DisplayType::Gtk, VMSpecs::DisplayType::Sdl, VMSpecs::DisplayType::Dbus}) {
+    // Integrated Viewer first: it is the recommended default, GTK/SDL are the
+    // fallback for a QEMU build without dbus-display support, or for running
+    // the exported qemu.sh script standalone, without KEMU as its peer.
+    for (const auto type : {VMSpecs::DisplayType::Dbus, VMSpecs::DisplayType::Gtk, VMSpecs::DisplayType::Sdl}) {
         if (VMConfig::isDisplayTypeAvailable(type))
             displayCombo->addItem(VMConfig::toUIString(type), static_cast<int>(type));
     }
+    displayCombo->setToolTip(
+        i18n("The integrated viewer is recommended for everyday use. GTK and SDL open "
+             "a native QEMU window outside KEMU - useful for the standalone qemu.sh "
+             "script, or if your QEMU build lacks dbus-display support."));
     hwLayout->addRow(i18n("Display:"), displayCombo);
 
     gpuCombo = new QComboBox();
