@@ -64,9 +64,11 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
 
     QStringList args = QemuCommandBuilder::build(config, vmDir(vmName), sockPath, netCtx, /*relativePaths=*/false, req.headless, savestatePath);
 
-    // Unattended runs only: a serial console makes some installers move their
-    // UI off the display, which would defeat an attended installation.
-    if (req.deployment && req.headless && SettingsDialog::deploySerialLog())
+    // Unattended runs only: an interactive installer's UI could move to the
+    // serial console once one is present, which would defeat an attended
+    // installation. cloud-init has no such UI, so this is safe unconditionally
+    // for headless deployments - a few kilobytes of log cost nothing.
+    if (req.deployment && req.headless)
         args << u"-serial"_s << u"file:%1"_s.arg(path + u'/' + KEMUConst::DeploySerialLogFileName);
 
     KProcess *process = createQemuProcess(vmName, args, tapFd);

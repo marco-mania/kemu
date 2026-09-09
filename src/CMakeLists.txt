@@ -148,6 +148,8 @@ target_sources(
           dialogs/cloudconfigdialog.h
           dialogs/missingtoolsdialog.cpp
           dialogs/missingtoolsdialog.h
+          dialogs/deploymentlogwindow.cpp
+          dialogs/deploymentlogwindow.h
           widgets/virtualenvironmentitemdelegate.cpp
           widgets/virtualenvironmentitemdelegate.h
           widgets/virtualenvironmenttreeview.h

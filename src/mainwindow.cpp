@@ -2158,6 +2158,11 @@ void MainWindow::onVmStarted(const QString &vmName, bool headless, bool deployme
     if (deployment) {
         statusBar()->showMessage(headless ? i18n("Deploying '%1' - unattended installation running...", vmName)
                                           : i18n("Installing '%1' - finish the installation in the VM window, then shut the guest down.", vmName));
+
+        // Auto-open is only useful for the unattended case: with an installer
+        // ISO the viewer is already the thing to watch.
+        if (headless && SettingsDialog::autoOpenDeploymentLog())
+            showDeploymentLog(vmName);
     } else {
         statusBar()->showMessage(i18n("VM '%1' started.", vmName));
     }
@@ -2309,10 +2314,14 @@ void MainWindow::showContextMenu(const QPoint &pos)
                 auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"view-refresh"_s), i18n("Compacting disk..."));
                 infoAction->setEnabled(false);
             } else if (isDeploying) {
+                auto *logAction = contextMenu.addAction(QIcon::fromTheme(u"text-x-log"_s), i18n("Show Deployment Log"));
+                connect(logAction, &QAction::triggered, this, [this, vmName]() {
+                    showDeploymentLog(vmName);
+                });
+                contextMenu.addSeparator();
                 const QAction *originalPoweroffAction = actionCollection()->action(u"vm_poweroff"_s);
                 QAction *customPoweroffAction = contextMenu.addAction(originalPoweroffAction->icon(), i18n("Abort Deployment"));
                 connect(customPoweroffAction, &QAction::triggered, originalPoweroffAction, &QAction::trigger);
-                contextMenu.addAction(customPoweroffAction);
             } else if (entry && entry->state == VmEntry::State::Cloning) {
                 auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"edit-copy"_s), i18n("Cloning..."));
                 infoAction->setEnabled(false);
@@ -2328,6 +2337,15 @@ void MainWindow::showContextMenu(const QPoint &pos)
                 contextMenu.addAction(actionCollection()->action(u"vm_manage_snapshots"_s));
                 contextMenu.addSeparator();
                 contextMenu.addAction(actionCollection()->action(u"vm_delete"_s));
+                // The log outlives the deployment: keep it reachable for a
+                // post-mortem on a cloud-init run that never finished.
+                if (QFile::exists(deploymentLogPath(vmName))) {
+                    contextMenu.addSeparator();
+                    auto *logAction = contextMenu.addAction(QIcon::fromTheme(u"text-x-log"_s), i18n("Show Deployment Log"));
+                    connect(logAction, &QAction::triggered, this, [this, vmName]() {
+                        showDeploymentLog(vmName);
+                    });
+                }
             } else {
                 if (actionCollection()->action(u"vm_reconnect"_s)->isEnabled())
                     contextMenu.addAction(actionCollection()->action(u"vm_reconnect"_s));
@@ -3489,6 +3507,12 @@ void MainWindow::deleteVM()
 
         removeViewerPrefs(currentConfig.name());
         m_runtimeManager->dropRuntime(currentConfig.name());
+
+        // The log file went with the directory above; close the window before
+        // it starts polling a path that no longer exists.
+        if (auto logWindow = m_deploymentLogWindows.take(currentConfig.name()))
+            logWindow->close();
+
         currentConfig = VMConfig();
         loadVmList();
         onVmSelectionChanged();
@@ -3951,9 +3975,43 @@ void MainWindow::finishDeploymentAbort(const QString &vmName, bool deleteVm)
     removeViewerPrefs(vmName);
     m_runtimeManager->dropRuntime(vmName);
 
+    // The log file went with the directory above; close the window before it
+    // starts polling a path that no longer exists.
+    if (auto logWindow = m_deploymentLogWindows.take(vmName))
+        logWindow->close();
+
     loadVmList();
     onVmSelectionChanged();
     statusBar()->showMessage(i18n("Deployment of '%1' cancelled. VM deleted.", vmName));
+}
+
+QString MainWindow::deploymentLogPath(const QString &vmName) const
+{
+    return getVmDir(vmName).absoluteFilePath(KEMUConst::DeploySerialLogFileName);
+}
+
+void MainWindow::showDeploymentLog(const QString &vmName)
+{
+    if (auto existing = m_deploymentLogWindows.value(vmName)) {
+        existing->show();
+        existing->raise();
+        existing->activateWindow();
+        return;
+    }
+
+    const QString path = deploymentLogPath(vmName);
+    if (!QFile::exists(path)) {
+        KMessageBox::information(this,
+                                 i18n("No deployment log is available for '%1'.\n\n"
+                                      "Serial output is only recorded for unattended cloud-image deployments.",
+                                      vmName),
+                                 i18nc("@title:window", "No Deployment Log"));
+        return;
+    }
+
+    auto *window = new DeploymentLogWindow(vmName, path, this);
+    m_deploymentLogWindows.insert(vmName, window);
+    window->show();
 }
 
 void MainWindow::deployCloudImage(const QString &vmName)

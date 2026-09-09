@@ -379,15 +379,15 @@ void SettingsDialog::setupAutomatedDeployPage()
     deployHeadlessCheck->setChecked(deployHeadless());
     behaviourLayout->addRow(deployHeadlessCheck);
 
-    deploySerialLogCheck = new QCheckBox(i18n("Write serial console log during deployment"));
-    deploySerialLogCheck->setToolTip(
-        i18n("Writes kernel and installer output to '%1' "
-             "in the VM directory. Useful for diagnosing failed installations.\n"
-             "Note: some installers (e.g. Debian) redirect their UI to the "
-             "serial console when enabled, making the QEMU window appear blank.",
+    autoOpenDeploymentLogCheck = new QCheckBox(i18n("Open the deployment log automatically"));
+    autoOpenDeploymentLogCheck->setToolTip(
+        i18n("KEMU always records kernel and cloud-init output to '%1' "
+             "in the VM directory. This opens that log in its own window as "
+             "soon as an unattended deployment starts, instead of only on "
+             "request from the context menu.",
              KEMUConst::DeploySerialLogFileName));
-    deploySerialLogCheck->setChecked(deploySerialLog());
-    behaviourLayout->addRow(deploySerialLogCheck);
+    autoOpenDeploymentLogCheck->setChecked(autoOpenDeploymentLog());
+    behaviourLayout->addRow(autoOpenDeploymentLogCheck);
 
     layout->addWidget(behaviourGroup);
 
@@ -539,7 +539,7 @@ void SettingsDialog::saveSettings()
     general.writeEntry("CloneRegenerateMac", cloneRegenerateMacCheck->isChecked());
     general.writeEntry("ImportRegenerateMac", importRegenerateMacCheck->isChecked());
     general.writeEntry("DeployHeadless", deployHeadlessCheck->isChecked());
-    general.writeEntry("DeploySerialLog", deploySerialLogCheck->isChecked());
+    general.writeEntry("AutoOpenDeploymentLog", autoOpenDeploymentLogCheck->isChecked());
 
     general.writeEntry("DeployUser", deployUserEdit->text().trimmed());
     general.writeEntry("DeploySshKeys", deploySshKeysEdit->toPlainText().trimmed());
@@ -629,11 +629,11 @@ bool SettingsDialog::deployHeadless()
     return general.readEntry("DeployHeadless", true);
 }
 
-bool SettingsDialog::deploySerialLog()
+bool SettingsDialog::autoOpenDeploymentLog()
 {
     KConfig config(u"kemurc"_s);
     const KConfigGroup general = config.group(u"General"_s);
-    return general.readEntry("DeploySerialLog", false);
+    return general.readEntry("AutoOpenDeploymentLog", false);
 }
 
 bool SettingsDialog::useSlirpNetworking()

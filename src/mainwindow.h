@@ -46,6 +46,7 @@
 #include <KXmlGuiWindow>
 
 #include "dbusdisplay/dbusviewerwindow.h"
+#include "dialogs/deploymentlogwindow.h"
 #include "dialogs/settingsdialog.h"
 #include "jobs/createvmjob.h"
 #include "models/virtualenvironmentmodel.h"
@@ -225,6 +226,12 @@ private:
     void finalizeDeployment(const QString &vmName);
     void abortDeployment(const QString &vmName, bool deleteVm);
     void finishDeploymentAbort(const QString &vmName, bool deleteVm);
+    void showDeploymentLog(const QString &vmName);
+    [[nodiscard]] QString deploymentLogPath(const QString &vmName) const;
+
+    // At most one log window per VM. QPointer clears the entry by itself when
+    // the user closes the window (WA_DeleteOnClose).
+    QMap<QString, QPointer<DeploymentLogWindow>> m_deploymentLogWindows;
 
     // Deployments whose QEMU process has been killed and whose cleanup is
     // waiting for the exit signal. Value = delete the VM directory as well.

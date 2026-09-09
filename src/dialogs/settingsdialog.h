@@ -70,7 +70,7 @@ public:
     static bool cloneRegenerateMac();
     static bool importRegenerateMac();
     static bool deployHeadless();
-    static bool deploySerialLog();
+    static bool autoOpenDeploymentLog();
     static bool useSlirpNetworking();
 
     static bool inhibitScreensaverAlways();
@@ -119,7 +119,7 @@ private:
     void updateToolVersion(int index);
 
     QCheckBox *deployHeadlessCheck = nullptr;
-    QCheckBox *deploySerialLogCheck = nullptr;
+    QCheckBox *autoOpenDeploymentLogCheck = nullptr;
 
     QLineEdit *deployUserEdit = nullptr;
     QPlainTextEdit *deploySshKeysEdit = nullptr;
