@@ -20,6 +20,7 @@
 #include <QSet>
 #include <QString>
 #include <QTimeZone>
+#include <QTimer>
 
 #include "qmpclient.h"
 
@@ -48,35 +49,29 @@ class SnapshotManager : public QObject
 
 public:
     explicit SnapshotManager(QObject *parent = nullptr);
+    ~SnapshotManager();
 
     // Synchronous Operations (Offline / qemu-img)
 
     QList<SnapshotInfo> listSnapshots(const QString &diskPath) const;
 
-    bool createOfflineSnapshot(const QString &diskPath, const QString &name, QString *errorOut = nullptr);
-
-    bool revertOfflineSnapshot(const QString &diskPath, const QString &name, QString *errorOut = nullptr);
-
-    bool deleteOfflineSnapshot(const QString &diskPath, const QString &name, QString *errorOut = nullptr);
+    // Offline operations run qemu-img asynchronously. Never call these while
+    // QEMU or a helper has the image open.
+    void createOfflineSnapshot(const QString &diskPath, const QString &name, std::function<void(bool, QString)> callback);
+    void revertOfflineSnapshot(const QString &diskPath, const QString &name, std::function<void(bool, QString)> callback);
+    void deleteOfflineSnapshot(const QString &diskPath, const QString &name, std::function<void(bool, QString)> callback);
 
     // Asynchronous Operations (Online / QMP)
-
     void createLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback);
-
     void revertLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback);
-
     void deleteLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback);
 
-    // Combined Helper Methods (auto-detect online/offline)
-
-    void createSnapshot(const QString &diskPath,
-                        const QString &name,
-                        QMPClient *qmp, // can be nullptr
-                        std::function<void(bool, QString)> callback);
-
-    void revertSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, std::function<void(bool, QString)> callback);
-
-    void deleteSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, std::function<void(bool, QString)> callback);
+    // imageInUse: QEMU or a helper currently owns the image. Without a usable
+    // QMP connection there is then no safe way to touch it, and the call fails
+    // instead of falling back to qemu-img.
+    void createSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback);
+    void revertSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback);
+    void deleteSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback);
 
     // Sidecar JSON next to .qcow2
     void saveDescription(const QString &diskPath, const QString &snapshotName, const QString &description) const;
@@ -112,6 +107,9 @@ private:
         QString err;
     };
     ProcResult runQemuImg(const QStringList &args) const;
+    void runQemuImgAsync(const QStringList &args, std::function<void(bool, QString)> callback);
+
+    static constexpr int kOfflineOpTimeoutMs = 120000;
 
     QList<SnapshotInfo> parseSnapshotListJson(const QString &output) const;
 

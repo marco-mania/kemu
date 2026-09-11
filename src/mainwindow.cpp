@@ -3240,11 +3240,17 @@ void MainWindow::manageSnapshotsForVm(const QString &vmName)
     }
 
     const VmEntry *entry = veModel->entryByName(vmName);
-    const QPointer<QMPClient> qmp = entry ? entry->qmpClient : nullptr;
 
-    auto *dlg = new SnapshotDialog(vmName, cfg.diskPath(), qmp, dialogParentFor(vmName));
+    // Anything but a cleanly stopped or saved VM means QEMU, a shrink job or an
+    // export has the image open.
+    const bool imageInUse = entry && entry->state != VmEntry::State::Stopped && entry->state != VmEntry::State::Saved;
+
+    // No exec(): dialogParentFor() may return the viewer window, which
+    // stopDbusViewer() deletes when the VM exits - taking its children with it.
+    auto *dlg = new SnapshotDialog(vmName, cfg.diskPath(), entry ? entry->qmpClient.data() : nullptr, imageInUse, dialogParentFor(vmName));
     dlg->setAttribute(Qt::WA_DeleteOnClose);
-    dlg->exec();
+    dlg->setModal(true);
+    dlg->show();
 }
 
 void MainWindow::createNewVM()

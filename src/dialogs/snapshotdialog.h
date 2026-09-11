@@ -9,6 +9,7 @@
 #include <QDialog>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPointer>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSplitter>
@@ -28,7 +29,10 @@ class SnapshotDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit SnapshotDialog(const QString &vmName, const QString &diskPath, QMPClient *qmp, QWidget *parent = nullptr);
+    explicit SnapshotDialog(const QString &vmName, const QString &diskPath, QMPClient *qmp, bool imageInUse, QWidget *parent = nullptr);
+
+public Q_SLOTS:
+    void reject() override;
 
 private Q_SLOTS:
     void onTakeSnapshot();
@@ -37,19 +41,28 @@ private Q_SLOTS:
     void onSelectionChanged();
 
 private:
+    SnapshotManager m_manager;
+
+    // The client belongs to the VM and can die while this dialog is open.
+    QPointer<QMPClient> m_qmp;
+    bool m_imageInUse = false;
+    bool m_busy = false;
+
+    void setBusy(bool busy);
+
     void loadSnapshots();
     void updateButtonStates();
     QString formatSize(quint64 bytes) const;
 
     QString m_vmName;
     QString m_diskPath;
-    QMPClient *m_qmp = nullptr;
-    SnapshotManager m_manager;
 
     QTreeWidget *m_tree = nullptr;
     QTextBrowser *m_detailsBrowser = nullptr;
     QPushButton *m_takeBtn = nullptr;
     QPushButton *m_revertBtn = nullptr;
     QPushButton *m_deleteBtn = nullptr;
+    QPushButton *m_closeBtn = nullptr;
+    QLabel *m_hintLabel = nullptr;
     QProgressBar *m_progressBar = nullptr;
 };

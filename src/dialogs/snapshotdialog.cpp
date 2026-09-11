@@ -11,11 +11,12 @@
 static constexpr int SnapshotInfoRole = Qt::UserRole;
 static constexpr int IsCurrentStateRole = Qt::UserRole + 1;
 
-SnapshotDialog::SnapshotDialog(const QString &vmName, const QString &diskPath, QMPClient *qmp, QWidget *parent)
+SnapshotDialog::SnapshotDialog(const QString &vmName, const QString &diskPath, QMPClient *qmp, bool imageInUse, QWidget *parent)
     : QDialog(parent)
+    , m_qmp(qmp)
+    , m_imageInUse(imageInUse)
     , m_vmName(vmName)
     , m_diskPath(diskPath)
-    , m_qmp(qmp)
 {
     setWindowTitle(i18n("Snapshot Manager – %1", vmName));
     resize(820, 520);
@@ -59,8 +60,8 @@ SnapshotDialog::SnapshotDialog(const QString &vmName, const QString &diskPath, Q
     m_takeBtn = new QPushButton(QIcon::fromTheme(u"camera-photo"_s), i18n("Take Snapshot..."));
     m_revertBtn = new QPushButton(QIcon::fromTheme(u"edit-undo"_s), i18n("Revert To..."));
     m_deleteBtn = new QPushButton(QIcon::fromTheme(u"edit-delete"_s), i18n("Delete"));
-    auto *closeBtn = new QPushButton(i18n("Close"));
-    closeBtn->setDefault(true);
+    m_closeBtn = new QPushButton(i18n("Close"));
+    m_closeBtn->setDefault(true);
 
     m_progressBar = new QProgressBar;
     m_progressBar->setRange(0, 0);
@@ -75,16 +76,36 @@ SnapshotDialog::SnapshotDialog(const QString &vmName, const QString &diskPath, Q
     btnLayout->addWidget(m_progressBar);
 
     btnLayout->addStretch();
-    btnLayout->addWidget(closeBtn);
+    btnLayout->addWidget(m_closeBtn);
+
+    m_hintLabel = new QLabel;
+    m_hintLabel->setWordWrap(true);
+    m_hintLabel->hide();
+    mainLayout->addWidget(m_hintLabel);
+
     mainLayout->addLayout(btnLayout);
 
     connect(m_takeBtn, &QPushButton::clicked, this, &SnapshotDialog::onTakeSnapshot);
     connect(m_revertBtn, &QPushButton::clicked, this, &SnapshotDialog::onRevertSnapshot);
     connect(m_deleteBtn, &QPushButton::clicked, this, &SnapshotDialog::onDeleteSnapshot);
-    connect(closeBtn, &QPushButton::clicked, this, &QDialog::accept);
+    connect(m_closeBtn, &QPushButton::clicked, this, &QDialog::accept);
     connect(m_tree, &QTreeWidget::currentItemChanged, this, &SnapshotDialog::onSelectionChanged);
 
     loadSnapshots();
+
+    if (m_qmp) {
+        connect(m_qmp, &QMPClient::disconnected, this, [this] {
+            setBusy(false);
+            loadSnapshots();
+        });
+    }
+
+    if (m_imageInUse && !(m_qmp && m_qmp->isConnected())) {
+        m_hintLabel->setText(
+            i18n("This VM is busy and its QEMU monitor is not reachable. "
+                 "Snapshots are read-only until it has stopped."));
+        m_hintLabel->show();
+    }
 }
 
 // Loading & displaying snapshots
@@ -169,6 +190,15 @@ void SnapshotDialog::onSelectionChanged()
     m_detailsBrowser->setHtml(html);
 }
 
+void SnapshotDialog::reject()
+{
+    // A running job holds a callback into this dialog. Closing now would drop
+    // it and leave the job behind in QEMU.
+    if (m_busy)
+        return;
+    QDialog::reject();
+}
+
 // Taking a snapshot
 
 void SnapshotDialog::onTakeSnapshot()
@@ -182,18 +212,20 @@ void SnapshotDialog::onTakeSnapshot()
     if (name.isEmpty())
         return;
 
-    m_progressBar->show();
-    setEnabled(false);
+    setBusy(true);
 
-    m_manager.createSnapshot(m_diskPath, name, m_qmp, [this, name, desc](bool ok, QString err) {
-        m_progressBar->hide();
-        setEnabled(true);
+    m_manager.createSnapshot(m_diskPath, name, m_qmp, m_imageInUse, [this, name, desc](bool ok, QString err) {
+        setBusy(false);
 
         if (ok && !desc.isEmpty())
             m_manager.saveDescription(m_diskPath, name, desc);
 
-        if (!ok)
-            KMessageBox::error(this, i18n("Could not create snapshot \"%1\":\n%2", name, err), i18n("Snapshot Error"));
+        if (!ok) {
+            // Keep the message box off the QMP teardown stack.
+            QTimer::singleShot(0, this, [this, name, err] {
+                KMessageBox::error(this, i18n("Could not create snapshot \"%1\":\n%2", name, err), i18n("Snapshot Error"));
+            });
+        }
 
         loadSnapshots();
     });
@@ -229,16 +261,17 @@ void SnapshotDialog::onRevertSnapshot()
         != KMessageBox::PrimaryAction)
         return;
 
-    m_progressBar->show();
-    setEnabled(false);
+    setBusy(true);
 
-    m_manager.revertSnapshot(m_diskPath, snap.name, m_qmp, [this, snap](bool ok, QString err) {
-        m_progressBar->hide();
-        setEnabled(true);
+    m_manager.revertSnapshot(m_diskPath, snap.name, m_qmp, m_imageInUse, [this, snap](bool ok, QString err) {
+        setBusy(false);
 
-        if (!ok)
-            KMessageBox::error(this, i18n("Could not revert to \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
-        else
+        if (!ok) {
+            // Keep the message box off the QMP teardown stack.
+            QTimer::singleShot(0, this, [this, snap, err] {
+                KMessageBox::error(this, i18n("Could not create snapshot \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
+            });
+        } else
             KMessageBox::information(this, i18n("Successfully reverted to snapshot \"%1\".", snap.name), i18n("Snapshot Restored"));
 
         loadSnapshots();
@@ -267,16 +300,16 @@ void SnapshotDialog::onDeleteSnapshot()
         != KMessageBox::PrimaryAction)
         return;
 
-    m_progressBar->show();
-    setEnabled(false);
+    setBusy(true);
 
-    m_manager.deleteSnapshot(m_diskPath, snap.name, m_qmp, [this, snap](bool ok, QString err) {
-        m_progressBar->hide();
-        setEnabled(true);
+    m_manager.deleteSnapshot(m_diskPath, snap.name, m_qmp, m_imageInUse, [this, snap](bool ok, QString err) {
+        setBusy(false);
 
-        if (!ok)
-            KMessageBox::error(this, i18n("Could not delete snapshot \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
-        else
+        if (!ok) {
+            QTimer::singleShot(0, this, [this, snap, err] {
+                KMessageBox::error(this, i18n("Could not delete snapshot \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
+            });
+        } else
             // Also remove sidecar entry
             m_manager.saveDescription(m_diskPath, snap.name, {});
 
@@ -288,13 +321,19 @@ void SnapshotDialog::onDeleteSnapshot()
 
 void SnapshotDialog::updateButtonStates()
 {
+    if (m_busy)
+        return; // setBusy() owns the buttons while a job runs
+
     const QTreeWidgetItem *item = m_tree->currentItem();
     const bool isCurrent = item && item->data(0, IsCurrentStateRole).toBool();
     const bool isSnap = item && !isCurrent;
 
-    m_revertBtn->setEnabled(isSnap);
-    m_deleteBtn->setEnabled(isSnap);
-    m_takeBtn->setEnabled(true); // Always possible
+    // A busy image can only be snapshotted through the QEMU monitor.
+    const bool writable = !m_imageInUse || (m_qmp && m_qmp->isConnected());
+
+    m_takeBtn->setEnabled(writable);
+    m_revertBtn->setEnabled(isSnap && writable);
+    m_deleteBtn->setEnabled(isSnap && writable);
 }
 
 QString SnapshotDialog::formatSize(quint64 bytes) const
@@ -308,4 +347,20 @@ QString SnapshotDialog::formatSize(quint64 bytes) const
     if (bytes < 1 << 30)
         return i18n("%1 MB", bytes / (1 << 20));
     return i18n("%1 GB", bytes / (1 << 30));
+}
+
+void SnapshotDialog::setBusy(bool busy)
+{
+    m_busy = busy;
+    m_progressBar->setVisible(busy);
+    m_tree->setEnabled(!busy);
+    m_closeBtn->setEnabled(!busy);
+
+    if (busy) {
+        m_takeBtn->setEnabled(false);
+        m_revertBtn->setEnabled(false);
+        m_deleteBtn->setEnabled(false);
+    } else {
+        updateButtonStates();
+    }
 }

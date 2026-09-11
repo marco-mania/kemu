@@ -6,11 +6,32 @@
 
 #include "snapshotmanager.h"
 
+#include "utils/externaltools.h"
+
 #include "kemu_debug.h"
+
+namespace
+{
+QString imageBusyError()
+{
+    return i18n(
+        "The virtual machine is busy and its QEMU monitor is not reachable. "
+        "Snapshots of a live VM go through the monitor; qemu-img must never "
+        "touch an image that is currently open.");
+}
+}
 
 SnapshotManager::SnapshotManager(QObject *parent)
     : QObject(parent)
 {
+}
+
+SnapshotManager::~SnapshotManager()
+{
+    for (auto it = m_pendingJobs.cbegin(); it != m_pendingJobs.cend(); ++it) {
+        if (it->qmp)
+            it->qmp->sendCommand(u"job-dismiss"_s, {{u"id"_s, it.key()}}, nullptr);
+    }
 }
 
 // Offline (qemu-img)
@@ -29,41 +50,37 @@ QList<SnapshotInfo> SnapshotManager::listSnapshots(const QString &diskPath) cons
     return list;
 }
 
-bool SnapshotManager::createOfflineSnapshot(const QString &diskPath, const QString &name, QString *errorOut)
+void SnapshotManager::createOfflineSnapshot(const QString &diskPath, const QString &name, std::function<void(bool, QString)> callback)
 {
-    auto res = runQemuImg({u"snapshot"_s, u"-c"_s, name, diskPath});
-    if (res.exitCode != 0 && errorOut)
-        *errorOut = res.err.trimmed();
-    return res.exitCode == 0;
+    runQemuImgAsync({u"snapshot"_s, u"-c"_s, name, diskPath}, std::move(callback));
 }
 
-bool SnapshotManager::revertOfflineSnapshot(const QString &diskPath, const QString &name, QString *errorOut)
+void SnapshotManager::revertOfflineSnapshot(const QString &diskPath, const QString &name, std::function<void(bool, QString)> callback)
 {
-    auto res = runQemuImg({u"snapshot"_s, u"-a"_s, name, diskPath});
-    if (res.exitCode != 0 && errorOut)
-        *errorOut = res.err.trimmed();
-    return res.exitCode == 0;
+    runQemuImgAsync({u"snapshot"_s, u"-a"_s, name, diskPath}, std::move(callback));
 }
 
-bool SnapshotManager::deleteOfflineSnapshot(const QString &diskPath, const QString &name, QString *errorOut)
+void SnapshotManager::deleteOfflineSnapshot(const QString &diskPath, const QString &name, std::function<void(bool, QString)> callback)
 {
-    auto res = runQemuImg({u"snapshot"_s, u"-d"_s, name, diskPath});
-    if (res.exitCode != 0 && errorOut)
-        *errorOut = res.err.trimmed();
-    return res.exitCode == 0;
+    runQemuImgAsync({u"snapshot"_s, u"-d"_s, name, diskPath}, std::move(callback));
 }
 
 void SnapshotManager::createLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback)
 {
-    queryWritableQcow2Nodes(qmp, [this, qmp, name, callback](QStringList nodes, QString err) {
+    // QMPClient owns the reply callbacks, so neither it nor we are guaranteed
+    // to still exist when the answer arrives.
+    const QPointer<SnapshotManager> self(this);
+    const QPointer<QMPClient> client(qmp);
+
+    queryWritableQcow2Nodes(qmp, [this, self, client, name, callback](QStringList nodes, QString err) {
+        if (!self || !client)
+            return;
         if (!err.isEmpty()) {
             callback(false, err);
             return;
         }
         if (nodes.isEmpty()) {
-            callback(false,
-                     i18n("No writable qcow2 device found "
-                          "(snapshots require qcow2)"));
+            callback(false, i18n("No writable qcow2 device found (snapshots require qcow2)"));
             return;
         }
 
@@ -74,15 +91,24 @@ void SnapshotManager::createLiveSnapshot(QMPClient *qmp, const QString &name, st
             {u"vmstate"_s, nodes.first()}, // RAM state target
             {u"devices"_s, QJsonArray::fromStringList(nodes)},
         };
-        startSnapshotJob(qmp, u"snapshot-save"_s, args, jobId, name, callback);
+        startSnapshotJob(client, u"snapshot-save"_s, args, jobId, name, callback);
     });
 }
 
 void SnapshotManager::revertLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback)
 {
-    queryWritableQcow2Nodes(qmp, [this, qmp, name, callback](QStringList nodes, QString err) {
-        if (!err.isEmpty() || nodes.isEmpty()) {
-            callback(false, err.isEmpty() ? i18n("No writable qcow2 device found") : err);
+    const QPointer<SnapshotManager> self(this);
+    const QPointer<QMPClient> client(qmp);
+
+    queryWritableQcow2Nodes(qmp, [this, self, client, name, callback](QStringList nodes, QString err) {
+        if (!self || !client)
+            return;
+        if (!err.isEmpty()) {
+            callback(false, err);
+            return;
+        }
+        if (nodes.isEmpty()) {
+            callback(false, i18n("No writable qcow2 device found (snapshots require qcow2)"));
             return;
         }
 
@@ -93,15 +119,24 @@ void SnapshotManager::revertLiveSnapshot(QMPClient *qmp, const QString &name, st
             {u"vmstate"_s, nodes.first()},
             {u"devices"_s, QJsonArray::fromStringList(nodes)},
         };
-        startSnapshotJob(qmp, u"snapshot-load"_s, args, jobId, name, callback);
+        startSnapshotJob(client, u"snapshot-load"_s, args, jobId, name, callback);
     });
 }
 
 void SnapshotManager::deleteLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback)
 {
-    queryWritableQcow2Nodes(qmp, [this, qmp, name, callback](QStringList nodes, QString err) {
-        if (!err.isEmpty() || nodes.isEmpty()) {
-            callback(false, err.isEmpty() ? i18n("No writable qcow2 device found") : err);
+    const QPointer<SnapshotManager> self(this);
+    const QPointer<QMPClient> client(qmp);
+
+    queryWritableQcow2Nodes(qmp, [this, self, client, name, callback](QStringList nodes, QString err) {
+        if (!self || !client)
+            return;
+        if (!err.isEmpty()) {
+            callback(false, err);
+            return;
+        }
+        if (nodes.isEmpty()) {
+            callback(false, i18n("No writable qcow2 device found (snapshots require qcow2)"));
             return;
         }
 
@@ -111,43 +146,49 @@ void SnapshotManager::deleteLiveSnapshot(QMPClient *qmp, const QString &name, st
             {u"tag"_s, name},
             {u"devices"_s, QJsonArray::fromStringList(nodes)},
         };
-        startSnapshotJob(qmp, u"snapshot-delete"_s, args, jobId, name, callback);
+        startSnapshotJob(client, u"snapshot-delete"_s, args, jobId, name, callback);
     });
 }
 
 // Combined (auto-detect)
 
-void SnapshotManager::createSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, std::function<void(bool, QString)> callback)
+void SnapshotManager::createSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback)
 {
     if (qmp && qmp->isConnected()) {
-        createLiveSnapshot(qmp, name, callback);
-    } else {
-        QString err;
-        const bool ok = createOfflineSnapshot(diskPath, name, &err);
-        callback(ok, err);
+        createLiveSnapshot(qmp, name, std::move(callback));
+        return;
     }
+    if (imageInUse) {
+        callback(false, imageBusyError());
+        return;
+    }
+    createOfflineSnapshot(diskPath, name, std::move(callback));
 }
 
-void SnapshotManager::revertSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, std::function<void(bool, QString)> callback)
+void SnapshotManager::revertSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback)
 {
     if (qmp && qmp->isConnected()) {
         revertLiveSnapshot(qmp, name, callback);
-    } else {
-        QString err;
-        const bool ok = revertOfflineSnapshot(diskPath, name, &err);
-        callback(ok, err);
+        return;
     }
+    if (imageInUse) {
+        callback(false, imageBusyError());
+        return;
+    }
+    revertOfflineSnapshot(diskPath, name, std::move(callback));
 }
 
-void SnapshotManager::deleteSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, std::function<void(bool, QString)> callback)
+void SnapshotManager::deleteSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback)
 {
     if (qmp && qmp->isConnected()) {
         deleteLiveSnapshot(qmp, name, callback);
-    } else {
-        QString err;
-        const bool ok = deleteOfflineSnapshot(diskPath, name, &err);
-        callback(ok, err);
+        return;
     }
+    if (imageInUse) {
+        callback(false, imageBusyError());
+        return;
+    }
+    deleteOfflineSnapshot(diskPath, name, std::move(callback));
 }
 
 // Descriptions (Sidecar JSON)
@@ -228,7 +269,10 @@ void SnapshotManager::onQmpEvent(const QString &eventName, const QJsonObject &ev
 
     // Concluded says "done", not "succeeded" -- must inspect query-jobs for the
     // error field, then dismiss the job slot.
-    qmp->sendCommand(u"query-jobs"_s, {}, [this, jobId](QMPResult r) {
+    const QPointer<SnapshotManager> self(this);
+    qmp->sendCommand(u"query-jobs"_s, {}, [this, self, jobId](QMPResult r) {
+        if (!self)
+            return;
         bool success = false;
         QString error;
 
@@ -295,10 +339,11 @@ void SnapshotManager::startSnapshotJob(QMPClient *qmp,
     // UniqueConnection: subscribe once per QMPClient regardless of call count.
     connect(qmp, &QMPClient::eventReceived, this, &SnapshotManager::onQmpEvent, Qt::UniqueConnection);
 
-    qmp->sendCommand(qmpCommand, args, [this, jobId](QMPResult r) {
+    const QPointer<SnapshotManager> self(this);
+    qmp->sendCommand(qmpCommand, args, [self, jobId](QMPResult r) {
         // Synchronous error path: job was rejected before it ever started.
-        if (!r.success)
-            finishJob(jobId, false, r.errorMessage);
+        if (self && !r.success)
+            self->finishJob(jobId, false, r.errorMessage);
     });
 }
 
@@ -317,6 +362,58 @@ SnapshotManager::ProcResult SnapshotManager::runQemuImg(const QStringList &args)
     proc.start(u"qemu-img"_s, args);
     proc.waitForFinished(15000);
     return {proc.exitCode(), QString::fromUtf8(proc.readAllStandardOutput()), QString::fromUtf8(proc.readAllStandardError())};
+}
+
+void SnapshotManager::runQemuImgAsync(const QStringList &args, std::function<void(bool, QString)> callback)
+{
+    const QString program = ExternalTools::instance().path(ExternalTools::QemuImg);
+    if (program.isEmpty()) {
+        callback(false, i18n("qemu-img was not found."));
+        return;
+    }
+
+    auto *proc = new QProcess(this);
+    proc->setProgram(program);
+    proc->setArguments(args);
+
+    auto timedOut = std::make_shared<bool>(false);
+
+    auto *limit = new QTimer(proc);
+    limit->setSingleShot(true);
+    limit->setInterval(kOfflineOpTimeoutMs);
+    connect(limit, &QTimer::timeout, proc, [proc, timedOut] {
+        *timedOut = true;
+        proc->kill();
+    });
+
+    // `this` as context: if the manager dies first, the callback - which holds
+    // the dialog - is never invoked and the process dies as our child.
+    connect(proc, &QProcess::finished, this, [proc, timedOut, callback](int exitCode, QProcess::ExitStatus status) {
+        const QString err = QString::fromUtf8(proc->readAllStandardError()).trimmed();
+        proc->deleteLater();
+
+        if (*timedOut) {
+            callback(false, i18n("qemu-img did not finish in time and was terminated."));
+            return;
+        }
+        if (status != QProcess::NormalExit) {
+            callback(false, i18n("qemu-img crashed."));
+            return;
+        }
+        callback(exitCode == 0, err);
+    });
+
+    // FailedToStart never emits finished(), so it needs its own exit.
+    connect(proc, &QProcess::errorOccurred, this, [proc, callback](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart)
+            return;
+        const QString message = proc->errorString();
+        proc->deleteLater();
+        callback(false, message);
+    });
+
+    proc->start();
+    limit->start();
 }
 
 QList<SnapshotInfo> SnapshotManager::parseSnapshotListJson(const QString &output) const
