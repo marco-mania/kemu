@@ -13,6 +13,9 @@ QMPClient::QMPClient(QObject *parent)
 {
     connect(&m_socket, &QLocalSocket::readyRead, this, &QMPClient::onReadyRead);
     connect(&m_socket, &QLocalSocket::errorOccurred, this, &QMPClient::onSocketError);
+    connect(&m_socket, &QLocalSocket::disconnected, this, [this] {
+        failPendingRequests(i18n("The connection to the QEMU monitor was lost."));
+    });
     connect(&m_socket, &QLocalSocket::disconnected, this, &QMPClient::disconnected);
 
     m_screenshotTimer.setTimerType(Qt::CoarseTimer);
@@ -38,7 +41,7 @@ void QMPClient::connectToVm(const QString &socketPath)
         m_socket.abort();
     }
     m_handshakeComplete = false;
-    m_buffer.clear();
+    failPendingRequests(i18n("The connection to the QEMU monitor was reset."));
     m_pendingRequests.clear();
     m_socket.connectToServer(socketPath);
 }
@@ -55,6 +58,7 @@ void QMPClient::disconnectFromVm()
     if (m_socket.isOpen()) {
         m_socket.disconnectFromServer();
     }
+    failPendingRequests(i18n("The connection to the QEMU monitor was closed."));
 }
 
 bool QMPClient::isConnected() const
@@ -96,13 +100,21 @@ QMPResult QMPClient::sendCommandSync(const QString &command, const QJsonObject &
     timeoutTimer.setSingleShot(true);
     connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
 
-    sendCommand(command, args, [&](QMPResult result) {
+    // The callback outlives this frame if the command times out, so it must
+    // not touch the stack objects afterwards.
+    auto waiting = std::make_shared<bool>(true);
+
+    sendCommand(command, args, [waiting, &finalResult, &loop](QMPResult result) {
+        if (!*waiting)
+            return;
         finalResult = result;
         loop.quit();
     });
 
     timeoutTimer.start(timeoutMs);
     loop.exec();
+
+    *waiting = false;
 
     if (timeoutTimer.isActive()) {
         timeoutTimer.stop();
@@ -949,4 +961,21 @@ void QMPClient::processLine(const QByteArray &line)
 void QMPClient::onSocketError(QLocalSocket::LocalSocketError /*socketError*/)
 {
     Q_EMIT errorOccurred(m_socket.errorString());
+}
+
+void QMPClient::failPendingRequests(const QString &reason)
+{
+    // Take the map first: a callback may send a new command, which would
+    // otherwise re-enter the container we are iterating.
+    const auto pending = std::exchange(m_pendingRequests, {});
+
+    for (const auto &callback : pending) {
+        if (callback)
+            callback({false, reason, {}, QJsonArray()});
+    }
+
+    m_screenshotInFlight = false;
+    m_cpuUsageInFlight = false;
+    m_blockStatsInFlight = false;
+    m_memorySampleState = MemorySampleState::Idle;
 }

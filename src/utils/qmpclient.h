@@ -220,6 +220,10 @@ private:
     bool m_blockStatsInFlight = false;
     void performBlockStatsSample();
 
+    // Answers every outstanding request with a failure. Used when the socket
+    // goes away, so no caller is left waiting forever.
+    void failPendingRequests(const QString &reason);
+
     // Combined performance timer (drives CPU, RAM, and I/O sampling)
     QTimer m_perfTimer;
     void performAllSamples();
