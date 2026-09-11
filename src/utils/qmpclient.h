@@ -198,7 +198,6 @@ private:
     };
     MemorySampleState m_memorySampleState = MemorySampleState::Idle;
     qint64 m_maxMemoryBytes = 0; // cached from first balloon query
-    // bool m_memoryInFlight = false;
     bool m_guestStatsEnabled = false;
     QString m_balloonPath;
     void performMemorySample();
