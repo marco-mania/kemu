@@ -2167,13 +2167,15 @@ void MainWindow::reconnectViewer()
 void MainWindow::onVmStarted(const QString &vmName, bool headless, bool deployment)
 {
     if (deployment) {
-        statusBar()->showMessage(headless ? i18n("Deploying '%1' - unattended installation running...", vmName)
-                                          : i18n("Installing '%1' - finish the installation in the VM window, then shut the guest down.", vmName));
+        const bool unattended = isUnattendedDeployment(vmName);
 
-        // Auto-open is only useful for the unattended case: with an installer
-        // ISO the viewer is already the thing to watch.
-        if (headless && SettingsDialog::autoOpenDeploymentLog())
-            showDeploymentLog(vmName);
+        statusBar()->showMessage(unattended ? i18n("Deploying '%1' - unattended installation running...", vmName)
+                                            : i18n("Installing '%1' - finish the installation in the VM window, then shut the guest down.", vmName));
+
+        // The serial log is the only progress view an unattended run has, and
+        // it is written whether or not a window is shown.
+        if (unattended)
+            showDeploymentLog(vmName, /*allowMissing=*/true);
     } else {
         statusBar()->showMessage(i18n("VM '%1' started.", vmName));
     }
@@ -2276,17 +2278,11 @@ void MainWindow::onTreeDoubleClicked(const QModelIndex &index)
         return;
     }
 
-    if (entry->state == VmEntry::State::Deploying) {
-        const auto *rt = m_runtimeManager->runtime(vmName);
-        const bool unattended = rt && rt->deployment && rt->deployment->type == VmRuntimeInfo::PendingDeployment::Type::CloudImage;
-        if (unattended) {
-            // Nothing to interact with on an unattended run: the serial log is
-            // the thing to watch, whether or not a window happens to be open.
-            showDeploymentLog(vmName);
-            return;
-        }
-        // Installer ISO: the viewer is either already open or reconnecting
-        // below is the right answer, same as for a normally running VM.
+    if (entry->state == VmEntry::State::Deploying && isUnattendedDeployment(vmName)) {
+        // Nothing to interact with on an unattended run: the serial log is
+        // the thing to watch, whether or not a window happens to be open.
+        showDeploymentLog(vmName);
+        return;
     }
 
     // VM is running headless: reconnect viewer
@@ -3874,9 +3870,8 @@ void MainWindow::startDeployment(const QString &vmName)
     // completion by shutting down. An installer ISO needs a display, and so do
     // GTK/SDL - "-display none" cannot be undone once QEMU has started, only
     // the integrated viewer can attach later.
-    const auto *rt = m_runtimeManager->runtime(vmName);
-    const bool unattended = rt && rt->deployment && rt->deployment->type == VmRuntimeInfo::PendingDeployment::Type::CloudImage;
-    const bool headless = unattended && SettingsDialog::deployHeadless() && config.displayType() == VMSpecs::DisplayType::Dbus;
+    const bool unattended = isUnattendedDeployment(vmName);
+    const bool headless = unattended && config.displayType() == VMSpecs::DisplayType::Dbus;
 
     chain->run([this, vmName, headless, unattended, resolvedTap](bool ok) {
         if (!ok) {
@@ -4008,7 +4003,13 @@ QString MainWindow::deploymentLogPath(const QString &vmName) const
     return getVmDir(vmName).absoluteFilePath(KEMUConst::DeploySerialLogFileName);
 }
 
-void MainWindow::showDeploymentLog(const QString &vmName)
+bool MainWindow::isUnattendedDeployment(const QString &vmName) const
+{
+    const auto *rt = m_runtimeManager->runtime(vmName);
+    return rt && rt->deployment && rt->deployment->type == VmRuntimeInfo::PendingDeployment::Type::CloudImage;
+}
+
+void MainWindow::showDeploymentLog(const QString &vmName, bool allowMissing)
 {
     if (auto existing = m_deploymentLogWindows.value(vmName)) {
         existing->show();
@@ -4018,7 +4019,7 @@ void MainWindow::showDeploymentLog(const QString &vmName)
     }
 
     const QString path = deploymentLogPath(vmName);
-    if (!QFile::exists(path)) {
+    if (!allowMissing && !QFile::exists(path)) {
         KMessageBox::information(this,
                                  i18n("No deployment log is available for '%1'.\n\n"
                                       "Serial output is only recorded for unattended cloud-image deployments.",

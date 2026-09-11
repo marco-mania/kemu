@@ -371,24 +371,6 @@ void SettingsDialog::setupAutomatedDeployPage()
     allArchCheck->setChecked(showAllArchitectures());
     behaviourLayout->addRow(allArchCheck);
 
-    deployHeadlessCheck = new QCheckBox(i18n("Run cloud image deployment in background (headless)"));
-    deployHeadlessCheck->setToolTip(
-        i18n("Cloud images configure themselves through cloud-init and need no "
-             "display. Installations from an ISO always open a window, "
-             "regardless of this setting."));
-    deployHeadlessCheck->setChecked(deployHeadless());
-    behaviourLayout->addRow(deployHeadlessCheck);
-
-    autoOpenDeploymentLogCheck = new QCheckBox(i18n("Open the deployment log automatically"));
-    autoOpenDeploymentLogCheck->setToolTip(
-        i18n("KEMU always records kernel and cloud-init output to '%1' "
-             "in the VM directory. This opens that log in its own window as "
-             "soon as an unattended deployment starts, instead of only on "
-             "request from the context menu.",
-             KEMUConst::DeploySerialLogFileName));
-    autoOpenDeploymentLogCheck->setChecked(autoOpenDeploymentLog());
-    behaviourLayout->addRow(autoOpenDeploymentLogCheck);
-
     layout->addWidget(behaviourGroup);
 
     // --- Guest Defaults ---
@@ -538,8 +520,6 @@ void SettingsDialog::saveSettings()
     general.writeEntry("ShowAllArchitectures", allArchCheck->isChecked());
     general.writeEntry("CloneRegenerateMac", cloneRegenerateMacCheck->isChecked());
     general.writeEntry("ImportRegenerateMac", importRegenerateMacCheck->isChecked());
-    general.writeEntry("DeployHeadless", deployHeadlessCheck->isChecked());
-    general.writeEntry("AutoOpenDeploymentLog", autoOpenDeploymentLogCheck->isChecked());
 
     general.writeEntry("DeployUser", deployUserEdit->text().trimmed());
     general.writeEntry("DeploySshKeys", deploySshKeysEdit->toPlainText().trimmed());
@@ -620,20 +600,6 @@ bool SettingsDialog::importRegenerateMac()
     KConfig config(u"kemurc"_s);
     const KConfigGroup general = config.group(u"General"_s);
     return general.readEntry("ImportRegenerateMac", false);
-}
-
-bool SettingsDialog::deployHeadless()
-{
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
-    return general.readEntry("DeployHeadless", true);
-}
-
-bool SettingsDialog::autoOpenDeploymentLog()
-{
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
-    return general.readEntry("AutoOpenDeploymentLog", false);
 }
 
 bool SettingsDialog::useSlirpNetworking()

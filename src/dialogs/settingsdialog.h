@@ -69,8 +69,6 @@ public:
     static bool showAllArchitectures();
     static bool cloneRegenerateMac();
     static bool importRegenerateMac();
-    static bool deployHeadless();
-    static bool autoOpenDeploymentLog();
     static bool useSlirpNetworking();
 
     static bool inhibitScreensaverAlways();
@@ -117,9 +115,6 @@ private:
     };
     QList<ToolWidgets> m_toolWidgets;
     void updateToolVersion(int index);
-
-    QCheckBox *deployHeadlessCheck = nullptr;
-    QCheckBox *autoOpenDeploymentLogCheck = nullptr;
 
     QLineEdit *deployUserEdit = nullptr;
     QPlainTextEdit *deploySshKeysEdit = nullptr;

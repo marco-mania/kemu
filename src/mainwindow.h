@@ -226,8 +226,11 @@ private:
     void finalizeDeployment(const QString &vmName);
     void abortDeployment(const QString &vmName, bool deleteVm);
     void finishDeploymentAbort(const QString &vmName, bool deleteVm);
-    void showDeploymentLog(const QString &vmName);
+    void showDeploymentLog(const QString &vmName, bool allowMissing = false);
     [[nodiscard]] QString deploymentLogPath(const QString &vmName) const;
+
+    // Cloud-image runs configure themselves; an ISO install needs the user.
+    [[nodiscard]] bool isUnattendedDeployment(const QString &vmName) const;
 
     // At most one log window per VM. QPointer clears the entry by itself when
     // the user closes the window (WA_DeleteOnClose).
