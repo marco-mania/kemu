@@ -205,6 +205,7 @@ private:
     bool isCurrentItemFolder() const;
     void saveFolderStructure() const;
     QMap<QString, QString> loadFolderAssignments() const;
+    QStringList loadFolderNames() const;
 
     ViewerDevicePrefs loadViewerPrefs(const QString &vmName) const;
     void saveViewerPrefs(const QString &vmName, const ViewerDevicePrefs &prefs) const;

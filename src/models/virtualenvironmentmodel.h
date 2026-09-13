@@ -161,8 +161,11 @@ public:
     QStringList vmNames() const;
 
     // Loading
-    void loadFromDisk(const QDir &baseDir, const QMap<QString, QString> &folderAssignments, std::function<VMConfig(const QString &vmPath)> loader);
-    void reload(const QDir &baseDir, const QMap<QString, QString> &folderAssignments, std::function<VMConfig(const QString &vmPath)> loader);
+    // folderNames carries folders that hold no VM; they exist only here.
+    void reload(const QDir &baseDir,
+                const QStringList &folderNames,
+                const QMap<QString, QString> &folderAssignments,
+                std::function<VMConfig(const QString &vmPath)> loader);
 
     // State management (emits dataChanged)
     void setVmState(const QString &name, VmEntry::State state);
@@ -185,6 +188,7 @@ public:
     // Folder management
     QModelIndex createFolder(const QString &name);
     bool removeFolder(const QModelIndex &index);
+    // Returns false when another folder already uses that name.
     bool renameFolder(const QModelIndex &index, const QString &newName);
     void moveVmToFolder(const QString &vmName, const QString &folderName);
     void moveVmToRoot(const QString &vmName);
@@ -229,7 +233,7 @@ private:
     Node *findVmNode(const QString &name) const;
     Node *findFolderNode(const QString &folderName) const;
     void emitVmChanged(const QString &name);
-    void rebuildTree(const QMap<QString, QString> &folderAssignments);
+    void rebuildTree(const QStringList &folderNames, const QMap<QString, QString> &folderAssignments);
 
     QTimer *m_uptimeTimer = nullptr;
 

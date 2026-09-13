@@ -319,45 +319,10 @@ QStringList VirtualEnvironmentModel::vmNames() const
 
 // -- Loading --
 
-void VirtualEnvironmentModel::loadFromDisk(const QDir &baseDir,
-                                           const QMap<QString, QString> &folderAssignments,
-                                           std::function<VMConfig(const QString &)> loader)
-{
-    beginResetModel();
-
-    m_vms.clear();
-    m_folders.clear();
-    delete m_root;
-    m_root = new Node;
-    m_root->type = Node::RootNode;
-
-    const QStringList vmDirs = baseDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
-
-    for (const QString &d : vmDirs) {
-        QString vmPath = baseDir.filePath(d);
-        if (!QFile::exists(vmPath + u"/config.json"_s))
-            continue;
-
-        VmEntry entry(d, QDir(vmPath));
-        entry.config = loader(vmPath);
-        entry.folderName = folderAssignments.value(d);
-        entry.hasSavestateFile = SaveStateManager::hasSavestate(vmPath, d);
-        if (entry.hasSavestateFile) {
-            const QFileInfo fi(SaveStateManager::savestateFilePath(vmPath, d));
-            if (fi.exists())
-                entry.savestateTime = fi.lastModified();
-            entry.state = VmEntry::State::Saved;
-        }
-        recomputeIcon(entry);
-        m_vms.append(std::move(entry));
-    }
-
-    rebuildTree(folderAssignments);
-    endResetModel();
-    updateUptimeTimer();
-}
-
-void VirtualEnvironmentModel::reload(const QDir &baseDir, const QMap<QString, QString> &folderAssignments, std::function<VMConfig(const QString &)> loader)
+void VirtualEnvironmentModel::reload(const QDir &baseDir,
+                                     const QStringList &folderNames,
+                                     const QMap<QString, QString> &folderAssignments,
+                                     std::function<VMConfig(const QString &vmPath)> loader)
 {
     QMap<QString, VmEntry> stateBackup;
     for (const auto &vm : std::as_const(m_vms)) {
@@ -404,7 +369,7 @@ void VirtualEnvironmentModel::reload(const QDir &baseDir, const QMap<QString, QS
         m_vms.append(std::move(entry));
     }
 
-    rebuildTree(folderAssignments);
+    rebuildTree(folderNames, folderAssignments);
     endResetModel();
     updateUptimeTimer();
 }
@@ -559,8 +524,8 @@ bool VirtualEnvironmentModel::isHeadless(const QString &name) const
 QModelIndex VirtualEnvironmentModel::createFolder(const QString &name)
 {
     for (const auto &f : std::as_const(m_folders))
-        if (f.name == name)
-            return indexForFolder(name);
+        if (f.name.compare(name, Qt::CaseInsensitive) == 0)
+            return indexForFolder(f.name);
 
     int insertRow = 0;
     for (int i = 0; i < m_root->children.size(); ++i) {
@@ -624,6 +589,16 @@ bool VirtualEnvironmentModel::renameFolder(const QModelIndex &index, const QStri
     Node *node = nodeFromIndex(index);
     if (!node || node->type != Node::FolderNode)
         return false;
+
+    if (m_folders.at(node->folderIndex).name == newName)
+        return true;
+
+    // Two folders of one name are indistinguishable to findFolderNode() and to
+    // the assignments on disk.
+    for (int i = 0; i < m_folders.size(); ++i) {
+        if (i != node->folderIndex && m_folders.at(i).name.compare(newName, Qt::CaseInsensitive) == 0)
+            return false;
+    }
 
     m_folders[node->folderIndex].name = newName;
     for (const Node *child : std::as_const(node->children)) {
@@ -787,9 +762,13 @@ void VirtualEnvironmentModel::emitVmChanged(const QString &name)
         Q_EMIT dataChanged(idx, idx);
 }
 
-void VirtualEnvironmentModel::rebuildTree(const QMap<QString, QString> &folderAssignments)
+void VirtualEnvironmentModel::rebuildTree(const QStringList &folderNames, const QMap<QString, QString> &folderAssignments)
 {
-    QSet<QString> fNames;
+    QSet<QString> fNames(folderNames.cbegin(), folderNames.cend());
+    fNames.remove(QString());
+
+    // An assignment to a folder missing from the list still gets one, so no VM
+    // silently drops back to the root.
     for (auto it = folderAssignments.cbegin(); it != folderAssignments.cend(); ++it)
         if (!it.value().isEmpty())
             fNames.insert(it.value());

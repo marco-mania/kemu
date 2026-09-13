@@ -1530,9 +1530,10 @@ VMConfig MainWindow::loadVmConfig(const QString &vmPath) const
 
 void MainWindow::loadVmList()
 {
+    const QStringList folders = loadFolderNames();
     const QMap<QString, QString> assignments = loadFolderAssignments();
 
-    veModel->reload(getVmBaseDir(), assignments, [this](const QString &vmPath) {
+    veModel->reload(getVmBaseDir(), folders, assignments, [this](const QString &vmPath) {
         return loadVmConfig(vmPath);
     });
 
@@ -3657,6 +3658,11 @@ void MainWindow::createFolder()
     if (!ok || name.trimmed().isEmpty())
         return;
 
+    if (veModel->folderNames().contains(name.trimmed(), Qt::CaseInsensitive)) {
+        KMessageBox::error(this, i18n("A folder named \"%1\" already exists.", name.trimmed()), i18nc("@title:window", "Cannot Create Folder"));
+        return;
+    }
+
     const QModelIndex idx = veModel->createFolder(name.trimmed());
     if (idx.isValid()) {
         veTreeView->expand(idx);
@@ -3682,7 +3688,10 @@ void MainWindow::renameFolder()
     bool ok = false;
     const QString newName = QInputDialog::getText(this, i18n("Rename Folder"), i18n("New name:"), QLineEdit::Normal, idx.data(Qt::DisplayRole).toString(), &ok);
     if (ok && !newName.trimmed().isEmpty()) {
-        veModel->renameFolder(idx, newName.trimmed());
+        if (!veModel->renameFolder(idx, newName.trimmed())) {
+            KMessageBox::error(this, i18n("A folder named \"%1\" already exists.", newName.trimmed()), i18nc("@title:window", "Cannot Rename Folder"));
+            return;
+        }
         saveFolderStructure();
     }
 }
@@ -3720,14 +3729,31 @@ QMap<QString, QString> MainWindow::loadFolderAssignments() const
 {
     QMap<QString, QString> map;
     KConfig config(u"kemurc"_s);
-    const KConfigGroup grp = config.group(u"Folders"_s);
 
+    const KConfigGroup grp = config.group(u"FolderAssignments"_s);
     const QStringList keys = grp.keyList();
-    for (const QString &key : keys) {
-        if (key != u"order"_s)
-            map.insert(key, grp.readEntry(key, {}));
+    for (const QString &key : keys)
+        map.insert(key, grp.readEntry(key, QString()));
+
+    if (!map.isEmpty())
+        return map;
+
+    // Legacy layout: assignments sat next to "collapsed" and "order" in
+    // [Folders], so "collapsed" was read as a VM and its value became a folder.
+    const KConfigGroup legacy = config.group(u"Folders"_s);
+    const QStringList legacyKeys = legacy.keyList();
+    for (const QString &key : legacyKeys) {
+        if (key == u"order"_s || key == u"collapsed"_s || key == u"list"_s)
+            continue;
+        map.insert(key, legacy.readEntry(key, QString()));
     }
     return map;
+}
+
+QStringList MainWindow::loadFolderNames() const
+{
+    KConfig config(u"kemurc"_s);
+    return config.group(u"Folders"_s).readEntry(u"list"_s, QStringList());
 }
 
 ViewerDevicePrefs MainWindow::loadViewerPrefs(const QString &vmName) const
@@ -3767,23 +3793,36 @@ void MainWindow::removeViewerPrefs(const QString &vmName) const
 void MainWindow::saveFolderStructure() const
 {
     KConfig config(u"kemurc"_s);
-    KConfigGroup grp = config.group(u"Folders"_s);
 
-    for (const QString &key : grp.keyList())
-        grp.deleteEntry(key);
+    KConfigGroup assignGrp = config.group(u"FolderAssignments"_s);
+    for (const QString &key : assignGrp.keyList())
+        assignGrp.deleteEntry(key);
 
     const QMap<QString, QString> assignments = veModel->folderAssignments();
     for (auto it = assignments.cbegin(); it != assignments.cend(); ++it)
-        grp.writeEntry(it.key(), it.value());
+        assignGrp.writeEntry(it.key(), it.value());
+
+    KConfigGroup grp = config.group(u"Folders"_s);
+
+    // Sweep out legacy assignment keys on the first save after the migration.
+    for (const QString &key : grp.keyList()) {
+        if (key != u"collapsed"_s && key != u"list"_s)
+            grp.deleteEntry(key);
+    }
+
+    // The list is the only record of a folder that holds no VM.
+    const QStringList folders = veModel->folderNames();
+    grp.writeEntry(u"list"_s, folders);
 
     QStringList collapsedFolders;
-    for (const QString &name : veModel->folderNames()) {
+    for (const QString &name : folders) {
         const QModelIndex idx = veModel->indexForFolder(name);
         if (idx.isValid() && !veTreeView->isExpanded(idx))
             collapsedFolders << name;
     }
     grp.writeEntry(u"collapsed"_s, collapsedFolders);
-    grp.sync();
+
+    config.sync();
 }
 
 void MainWindow::showQemuFailureDialog(const QString &vmName, bool startupFailed, int exitCode, KProcess::ExitStatus exitStatus, const QByteArray &stderrTail)
