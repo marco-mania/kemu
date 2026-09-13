@@ -605,7 +605,12 @@ bool VirtualEnvironmentModel::renameFolder(const QModelIndex &index, const QStri
         if (child->type == Node::VmNode)
             m_vms[child->vmIndex].folderName = newName;
     }
-    Q_EMIT dataChanged(index, index);
+
+    moveFolderNodeIntoOrder(node);
+
+    // `index` still carries the old row if the node has moved.
+    const QModelIndex renamed = indexFromNode(node);
+    Q_EMIT dataChanged(renamed, renamed);
     return true;
 }
 
@@ -807,6 +812,42 @@ void VirtualEnvironmentModel::rebuildTree(const QStringList &folderNames, const 
             m_root->children.append(node);
         }
     }
+}
+
+void VirtualEnvironmentModel::moveFolderNodeIntoOrder(Node *node)
+{
+    const int from = m_root->children.indexOf(node);
+    if (from < 0)
+        return;
+
+    // Folder nodes are kept sorted and always precede the VM rows.
+    int folderCount = 0;
+    while (folderCount < m_root->children.size() && m_root->children.at(folderCount)->type == Node::FolderNode)
+        ++folderCount;
+
+    const QString name = m_folders.at(node->folderIndex).name;
+
+    int target = 0;
+    for (int i = 0; i < folderCount; ++i) {
+        if (i == from)
+            continue;
+        if (m_folders.at(m_root->children.at(i)->folderIndex).name.compare(name, Qt::CaseInsensitive) < 0)
+            ++target;
+        else
+            break;
+    }
+
+    if (target == from)
+        return;
+
+    // beginMoveRows() wants the destination in pre-move coordinates: one past
+    // the target when moving down, the target itself when moving up.
+    const int destination = (target > from) ? target + 1 : target;
+    if (!beginMoveRows({}, from, from, {}, destination))
+        return;
+
+    m_root->children.move(from, target);
+    endMoveRows();
 }
 
 void VirtualEnvironmentModel::recomputeIcon(VmEntry &e) const

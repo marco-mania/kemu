@@ -192,6 +192,7 @@ public:
     bool renameFolder(const QModelIndex &index, const QString &newName);
     void moveVmToFolder(const QString &vmName, const QString &folderName);
     void moveVmToRoot(const QString &vmName);
+    // Moves a folder node back to its sorted position after a rename.
 
     // Persistence
     QMap<QString, QString> folderAssignments() const;
@@ -234,6 +235,7 @@ private:
     Node *findFolderNode(const QString &folderName) const;
     void emitVmChanged(const QString &name);
     void rebuildTree(const QStringList &folderNames, const QMap<QString, QString> &folderAssignments);
+    void moveFolderNodeIntoOrder(Node *node);
 
     QTimer *m_uptimeTimer = nullptr;
 
