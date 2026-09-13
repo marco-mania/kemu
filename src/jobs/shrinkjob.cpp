@@ -48,7 +48,7 @@ void ShrinkJob::start()
                              m_tmpPath});
 
     connect(m_process, &KProcess::readyReadStandardOutput, this, &ShrinkJob::onReadyReadStdout);
-    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&KProcess::finished), this, &ShrinkJob::onProcessFinished);
+    connect(m_process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, &ShrinkJob::onProcessFinished);
 
     m_process->start();
 
@@ -116,9 +116,9 @@ void ShrinkJob::onReadyReadStdout()
     }
 }
 
-void ShrinkJob::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
+void ShrinkJob::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus)
 {
-    if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+    if (exitStatus != KProcess::NormalExit || exitCode != 0) {
         QFile::remove(m_tmpPath);
         setError(2);
         setErrorText(i18n("qemu-img convert failed (exit code %1)", exitCode));
@@ -153,7 +153,7 @@ void ShrinkJob::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
 
 bool ShrinkJob::doKill()
 {
-    if (m_process && m_process->state() != QProcess::NotRunning) {
+    if (m_process && m_process->state() != KProcess::NotRunning) {
         m_process->terminate();
         if (!m_process->waitForFinished(3000))
             m_process->kill();

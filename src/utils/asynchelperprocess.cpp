@@ -93,7 +93,7 @@ AsyncHelperProcess::~AsyncHelperProcess()
     // before finished() fired), make sure we don't leak a running process.
     // Once emitSuccess() has handed ownership over, m_process is null and
     // this is a no-op.
-    if (m_process && m_process->state() != QProcess::NotRunning) {
+    if (m_process && m_process->state() != KProcess::NotRunning) {
         m_process->disconnect(this);
         m_process->terminate();
         if (!m_process->waitForFinished(200))
@@ -115,12 +115,12 @@ void AsyncHelperProcess::start(const Options &options)
     if (m_opts.setParentDeathSignal)
         Utils::setDiesWithParent(m_process);
 
-    // Hook all signals BEFORE start(). In Qt6 every QProcess signal is
+    // Hook all signals BEFORE start(). In Qt6 every KProcess signal is
     // delivered through the event loop, so we cannot miss one this way
     // even if start() fails before returning.
-    connect(m_process, &QProcess::started, this, &AsyncHelperProcess::onStarted);
-    connect(m_process, &QProcess::errorOccurred, this, &AsyncHelperProcess::onErrorOccurred);
-    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &AsyncHelperProcess::onFinished);
+    connect(m_process, &KProcess::started, this, &AsyncHelperProcess::onStarted);
+    connect(m_process, &KProcess::errorOccurred, this, &AsyncHelperProcess::onErrorOccurred);
+    connect(m_process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, &AsyncHelperProcess::onFinished);
 
     // Start deadline. errorOccurred (with FailedToStart) covers the
     // "executable not found / not executable" cases, but a wedged fork()
@@ -166,7 +166,7 @@ void AsyncHelperProcess::onStarted()
     m_socketDeadlineTimer->start();
 }
 
-void AsyncHelperProcess::onErrorOccurred(QProcess::ProcessError error)
+void AsyncHelperProcess::onErrorOccurred(KProcess::ProcessError error)
 {
     if (m_done)
         return;
@@ -174,7 +174,7 @@ void AsyncHelperProcess::onErrorOccurred(QProcess::ProcessError error)
     emitFailure(m_process->errorString());
 }
 
-void AsyncHelperProcess::onFinished(int exitCode, QProcess::ExitStatus status)
+void AsyncHelperProcess::onFinished(int exitCode, KProcess::ExitStatus status)
 {
     if (m_done)
         return;
@@ -182,7 +182,7 @@ void AsyncHelperProcess::onFinished(int exitCode, QProcess::ExitStatus status)
     // never reached the "running" state, or it bailed out before the
     // socket appeared. Either way, it's a startup failure for our caller.
     const QString why =
-        (status == QProcess::CrashExit) ? i18n("Process crashed before becoming ready") : i18n("Process exited (code %1) before becoming ready", exitCode);
+        (status == KProcess::CrashExit) ? i18n("Process crashed before becoming ready") : i18n("Process exited (code %1) before becoming ready", exitCode);
     emitFailure(why);
 }
 
@@ -205,7 +205,7 @@ void AsyncHelperProcess::onStartDeadline()
 {
     if (m_done)
         return;
-    if (m_process && m_process->state() == QProcess::Running) {
+    if (m_process && m_process->state() == KProcess::Running) {
         // started signal is queued behind this one; let it run.
         return;
     }
@@ -267,7 +267,7 @@ void AsyncHelperProcess::killProcessNow()
     // Detach so the dying process can't re-enter our slots during teardown.
     m_process->disconnect(this);
 
-    if (m_process->state() != QProcess::NotRunning) {
+    if (m_process->state() != KProcess::NotRunning) {
         m_process->terminate();
         if (!m_process->waitForFinished(200))
             m_process->kill();

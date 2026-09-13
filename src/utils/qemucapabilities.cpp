@@ -103,8 +103,8 @@ QSet<QString> QemuCapabilities::collectProbe(KProcess &process, int remainingMs)
 {
     QSet<QString> result;
 
-    if (process.state() != QProcess::NotRunning && !process.waitForFinished(qMax(0, remainingMs))) {
-        // Never leave a running process behind: ~QProcess would block and warn.
+    if (process.state() != KProcess::NotRunning && !process.waitForFinished(qMax(0, remainingMs))) {
+        // Never leave a running process behind: ~KProcess would block and warn.
         process.kill();
         process.waitForFinished(200);
         return result;

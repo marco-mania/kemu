@@ -43,7 +43,7 @@ protected:
 
 private Q_SLOTS:
     void onReadyReadStdout();
-    void onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus);
 
 private:
     bool copyMetadataFiles();

@@ -49,7 +49,7 @@ public:
         // spawned daemon (swtpm control socket, virtiofsd socket, etc).
         QString socketPath;
 
-        // Hard ceiling on QProcess::started. If the kernel hasn't put us
+        // Hard ceiling on KProcess::started. If the kernel hasn't put us
         // into the running state within this window, we give up.
         int startTimeoutMs = 3000;
 
@@ -99,8 +99,8 @@ Q_SIGNALS:
 
 private:
     void onStarted();
-    void onErrorOccurred(QProcess::ProcessError error);
-    void onFinished(int exitCode, QProcess::ExitStatus status);
+    void onErrorOccurred(KProcess::ProcessError error);
+    void onFinished(int exitCode, KProcess::ExitStatus status);
     void onSocketPoll();
     void onSocketDeadline();
     void onStartDeadline();

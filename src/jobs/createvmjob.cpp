@@ -45,7 +45,7 @@ void CreateVmJob::start()
 
     m_process->setArguments(args);
 
-    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&KProcess::finished), this, &CreateVmJob::onProcessFinished);
+    connect(m_process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, &CreateVmJob::onProcessFinished);
 
     m_process->start();
 
@@ -58,12 +58,12 @@ void CreateVmJob::start()
     }
 }
 
-void CreateVmJob::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
+void CreateVmJob::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus)
 {
     if (m_killed)
         return;
 
-    if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+    if (exitStatus != KProcess::NormalExit || exitCode != 0) {
         QFile::remove(m_diskPath);
         setError(2);
         setErrorText(i18n("qemu-img create failed (exit code %1)", exitCode));
@@ -76,7 +76,7 @@ bool CreateVmJob::doKill()
 {
     m_killed = true;
 
-    if (m_process && m_process->state() != QProcess::NotRunning) {
+    if (m_process && m_process->state() != KProcess::NotRunning) {
         m_process->terminate();
         if (!m_process->waitForFinished(3000))
             m_process->kill();

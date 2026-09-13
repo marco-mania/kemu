@@ -36,7 +36,7 @@ protected:
     bool doKill() override;
 
 private Q_SLOTS:
-    void onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus);
 
 private:
     VMConfig m_config;

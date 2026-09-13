@@ -3960,7 +3960,7 @@ void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
 
     m_pendingDeploymentAbort.insert(vmName, deleteVm);
 
-    // Deliberately no waitForFinished(): QProcess emits finished() from inside
+    // Deliberately no waitForFinished(): KProcess emits finished() from inside
     // it, so teardown, dialogs and this function would all run nested in this
     // stack frame. Let the signal arrive through the event loop instead;
     // onVmExited() picks the abort up from m_pendingDeploymentAbort.

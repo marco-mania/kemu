@@ -17,6 +17,7 @@
 #include <QUuid>
 
 #include <KLocalizedString>
+#include <KProcess>
 
 #include <KTextTemplate/Context>
 #include <KTextTemplate/Engine>

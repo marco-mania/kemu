@@ -57,7 +57,7 @@ Q_SIGNALS:
 
 private:
     void handleStdout();
-    void handleFinished(int exitCode, QProcess::ExitStatus status);
+    void handleFinished(int exitCode, KProcess::ExitStatus status);
 
     KProcess *m_process = nullptr;
     QByteArray m_stdoutBuffer;

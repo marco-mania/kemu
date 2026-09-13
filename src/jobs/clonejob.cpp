@@ -61,7 +61,7 @@ void CloneJob::start()
     m_process->setArguments({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, srcDisk, dstDisk});
 
     connect(m_process, &KProcess::readyReadStandardOutput, this, &CloneJob::onReadyReadStdout);
-    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&KProcess::finished), this, &CloneJob::onProcessFinished);
+    connect(m_process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, &CloneJob::onProcessFinished);
 
     m_process->start();
 
@@ -140,12 +140,12 @@ void CloneJob::onReadyReadStdout()
         emitPercent(qRound(lastPercent * 10), 1000);
 }
 
-void CloneJob::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
+void CloneJob::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus)
 {
     if (m_killed)
         return;
 
-    if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+    if (exitStatus != KProcess::NormalExit || exitCode != 0) {
         QDir(m_dstPath).removeRecursively();
         setError(5);
         setErrorText(i18n("qemu-img convert failed (exit code %1)", exitCode));
@@ -161,7 +161,7 @@ bool CloneJob::doKill()
 {
     m_killed = true;
 
-    if (m_process && m_process->state() != QProcess::NotRunning) {
+    if (m_process && m_process->state() != KProcess::NotRunning) {
         m_process->terminate();
         if (!m_process->waitForFinished(3000))
             m_process->kill();

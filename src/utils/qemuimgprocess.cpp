@@ -60,7 +60,7 @@ bool QemuImgProcess::start(const QStringList &arguments)
             m_stderrTail.remove(0, m_stderrTail.size() - kStderrTailBytes);
     });
 
-    connect(m_process, &KProcess::errorOccurred, this, [this](QProcess::ProcessError) {
+    connect(m_process, &KProcess::errorOccurred, this, [this](KProcess::ProcessError) {
         if (m_reported)
             return;
         m_reported = true;
@@ -90,13 +90,13 @@ void QemuImgProcess::handleStdout()
         Q_EMIT progress(percent);
 }
 
-void QemuImgProcess::handleFinished(int exitCode, QProcess::ExitStatus status)
+void QemuImgProcess::handleFinished(int exitCode, KProcess::ExitStatus status)
 {
     if (m_reported)
         return;
     m_reported = true;
 
-    const bool ok = status == QProcess::NormalExit && exitCode == 0;
+    const bool ok = status == KProcess::NormalExit && exitCode == 0;
     if (!ok) {
         const QString tail = QString::fromUtf8(m_stderrTail).trimmed();
         m_errorText = tail.isEmpty() ? i18n("qemu-img failed (exit code %1).", exitCode) : i18n("qemu-img failed (exit code %1):\n%2", exitCode, tail);
@@ -110,7 +110,7 @@ void QemuImgProcess::abort()
     // Suppress signals for a deliberate kill.
     m_reported = true;
 
-    if (m_process && m_process->state() != QProcess::NotRunning) {
+    if (m_process && m_process->state() != KProcess::NotRunning) {
         m_process->kill();
         m_process->waitForFinished(2000);
     }
@@ -130,7 +130,7 @@ QemuImgProcess::ImageInfo QemuImgProcess::inspect(const QString &imagePath, int 
     process.setArguments({u"info"_s, u"--output=json"_s, u"--force-share"_s, imagePath});
     process.start();
 
-    if (!process.waitForFinished(timeoutMs) || process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0)
+    if (!process.waitForFinished(timeoutMs) || process.exitStatus() != KProcess::NormalExit || process.exitCode() != 0)
         return info;
 
     const QJsonObject obj = QJsonDocument::fromJson(process.readAllStandardOutput()).object();

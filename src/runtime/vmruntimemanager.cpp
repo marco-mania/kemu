@@ -80,7 +80,7 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
 
     // Error-during-start path (e.g. exec failure). We never reach the probe
     // in that case.
-    connect(process, &QProcess::errorOccurred, this, [this, process, vmName, deployment = req.deployment](QProcess::ProcessError) {
+    connect(process, &KProcess::errorOccurred, this, [this, process, vmName, deployment = req.deployment](KProcess::ProcessError) {
         const VmEntry *e = m_model->entryByName(vmName);
         if (e && e->qemuProcess == process)
             return; // onQemuExit() will own this.
@@ -102,7 +102,7 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     process->start();
 
     // start() can fail synchronously; errorOccurred has already cleaned up.
-    if (process->state() == QProcess::NotRunning)
+    if (process->state() == KProcess::NotRunning)
         return;
 
     // Optimistic registration: if QEMU dies inside the probe window, the probe
@@ -166,11 +166,11 @@ KProcess *VmRuntimeManager::createQemuProcess(const QString &vmName, const QStri
     process->setOutputChannelMode(KProcess::SeparateChannels);
 
     constexpr int kStderrTailLimit = 65536;
-    connect(process, &QProcess::readyReadStandardError, this, [this, process, vmName]() {
+    connect(process, &KProcess::readyReadStandardError, this, [this, process, vmName]() {
         Utils::appendTail(runtimeFor(vmName).stderrTail, process->readAllStandardError(), kStderrTailLimit);
     });
 
-    // Never combine this with QProcess::UnixProcessParameters::CloseFileDescriptors:
+    // Never combine this with KProcess::UnixProcessParameters::CloseFileDescriptors:
     // it would close the tap descriptor despite the cleared CLOEXEC flag.
     Utils::setDiesWithParent(process, tapFd);
 

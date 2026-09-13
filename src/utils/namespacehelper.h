@@ -7,7 +7,6 @@
 #pragma once
 
 #include <QFile>
-#include <QProcess>
 #include <QString>
 #include <QStringList>
 
@@ -47,10 +46,10 @@ public:
     // ---- Process Launch in Namespace ----
 
     /**
-     * Configure a QProcess so that its child enters the given namespace
-     * before exec(). Uses QProcess::setChildProcessModifier() with setns().
+     * Configure a KProcess so that its child enters the given namespace
+     * before exec(). Uses KProcess::setChildProcessModifier() with setns().
      *
-     * Call BEFORE process->start(). Works with both QProcess and KProcess.
+     * Call BEFORE process->start().
      */
     static bool prepareProcessForNamespace(KProcess *process, qint64 nsPid);
 

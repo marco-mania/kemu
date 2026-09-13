@@ -61,22 +61,22 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage, const QDir &vm
 {
     diskPathOut = vmDir.absoluteFilePath(u"disk.qcow2"_s);
 
-    // If source is raw, convert to qcow2; otherwise copy
-    QProcess proc;
     const QString qemuImg = ExternalTools::instance().path(ExternalTools::QemuImg);
     if (qemuImg.isEmpty()) {
         errorOut = i18n("qemu-img not found.");
         return false;
     }
 
+    KProcess proc;
+    proc.setOutputChannelMode(KProcess::SeparateChannels);
+
     // Detect source format
-    proc.start(qemuImg, {u"info"_s, u"--output=json"_s, sourceImage});
-    if (!proc.waitForFinished(10000)) {
-        proc.kill();
-        errorOut = i18n("qemu-img info timed out.");
+    proc.setProgram(qemuImg, {u"info"_s, u"--output=json"_s, sourceImage});
+    if (proc.execute(10000) < 0) {
+        errorOut = i18n("qemu-img info timed out or failed to start.");
         return false;
     }
-    if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0) {
+    if (proc.exitStatus() != KProcess::NormalExit || proc.exitCode() != 0) {
         errorOut = i18n("Could not read the source image: %1", QString::fromUtf8(proc.readAllStandardError()).trimmed());
         return false;
     }
@@ -99,16 +99,16 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage, const QDir &vm
         // Ensure writable
         QFile::setPermissions(diskPathOut, QFile::ReadOwner | QFile::WriteOwner | QFile::ReadGroup);
     } else {
-        proc.start(qemuImg, {u"convert"_s, u"-f"_s, srcFormat, u"-O"_s, u"qcow2"_s, sourceImage, diskPathOut});
-        if (!proc.waitForFinished(120000) || proc.exitCode() != 0) {
+        proc.setProgram(qemuImg, {u"convert"_s, u"-f"_s, srcFormat, u"-O"_s, u"qcow2"_s, sourceImage, diskPathOut});
+        if (proc.execute(120000) != 0) {
             errorOut = i18n("qemu-img convert failed: %1", QString::fromUtf8(proc.readAllStandardError()).trimmed());
             return false;
         }
     }
 
     // Resize to target size
-    proc.start(qemuImg, {u"resize"_s, diskPathOut, u"%1G"_s.arg(diskSizeGb)});
-    if (!proc.waitForFinished(30000) || proc.exitCode() != 0) {
+    proc.setProgram(qemuImg, {u"resize"_s, diskPathOut, u"%1G"_s.arg(diskSizeGb)});
+    if (proc.execute(30000) != 0) {
         errorOut = i18n("qemu-img resize failed: %1", QString::fromUtf8(proc.readAllStandardError()).trimmed());
         return false;
     }
@@ -240,17 +240,17 @@ bool CloudImageDeployer::createNoCloudIso(const QDir &vmDir,
         args << u"-as"_s << u"genisoimage"_s;
     args << u"-output"_s << outputIso << u"-volid"_s << u"cidata"_s << u"-joliet"_s << u"-rock"_s << tmpDir.path();
 
-    QProcess proc;
-    proc.setProgram(tool);
-    proc.setArguments(args);
-    proc.start();
-    if (!proc.waitForFinished(15000)) {
-        proc.kill();
+    KProcess proc;
+    proc.setOutputChannelMode(KProcess::SeparateChannels);
+    proc.setProgram(tool, args);
+
+    const int exitCode = proc.execute(15000);
+    if (exitCode < 0) {
         errorOut = i18n("ISO creation timed out.");
         return false;
     }
 
-    if (proc.exitCode() != 0 || !QFile::exists(outputIso)) {
+    if (exitCode != 0 || !QFile::exists(outputIso)) {
         errorOut = i18n("ISO creation failed: %1", QString::fromUtf8(proc.readAllStandardError()).trimmed());
         return false;
     }
