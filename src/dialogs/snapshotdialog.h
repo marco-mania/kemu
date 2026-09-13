@@ -50,6 +50,11 @@ private:
 
     void setBusy(bool busy);
 
+    void updateHint(const QString &listError);
+
+    // Names of the currently listed snapshots, for the uniqueness check.
+    QStringList m_snapshotNames;
+
     void loadSnapshots();
     void updateButtonStates();
     QString formatSize(quint64 bytes) const;

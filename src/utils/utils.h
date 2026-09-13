@@ -36,6 +36,13 @@ enum class ChecksumType {
     MD5
 };
 
+// QEMU reports epoch seconds, parsed as UTC; the user wants local time in
+// their own format.
+inline QString formatTimestamp(const QDateTime &dt)
+{
+    return QLocale::system().toString(dt.toLocalTime(), QLocale::ShortFormat);
+}
+
 inline QString toString(ChecksumType type)
 {
     switch (type) {

@@ -7,6 +7,7 @@
 #include "snapshotdialog.h"
 
 #include "dialogs/takesnapshotdialog.h"
+#include "utils/utils.h"
 
 static constexpr int SnapshotInfoRole = Qt::UserRole;
 static constexpr int IsCurrentStateRole = Qt::UserRole + 1;
@@ -114,15 +115,18 @@ void SnapshotDialog::loadSnapshots()
 {
     m_tree->clear();
     m_detailsBrowser->clear();
+    m_snapshotNames.clear();
 
-    const QList<SnapshotInfo> snaps = m_manager.listSnapshots(m_diskPath);
+    QString listError;
+    const QList<SnapshotInfo> snaps = m_manager.listSnapshots(m_diskPath, &listError);
 
     QTreeWidgetItem *lastItem = nullptr;
 
     for (const SnapshotInfo &snap : snaps) {
+        m_snapshotNames << snap.name;
         auto *item = new QTreeWidgetItem;
         item->setText(0, snap.name);
-        item->setText(1, snap.dateTime.toString(u"dd.MM.yyyy  HH:mm"_s));
+        item->setText(1, Utils::formatTimestamp(snap.dateTime));
         item->setText(2, snap.vmStateSizeBytes > 0 ? formatSize(snap.vmStateSizeBytes) : i18n("--"));
         item->setIcon(0, QIcon::fromTheme(u"camera-photo"_s));
         item->setData(0, SnapshotInfoRole, QVariant::fromValue(snap));
@@ -135,7 +139,7 @@ void SnapshotDialog::loadSnapshots()
     // snapshot
     auto *currentItem = new QTreeWidgetItem;
     currentItem->setText(0, i18n("Current State"));
-    currentItem->setText(1, QDateTime::currentDateTime().toString(u"dd.MM.yyyy  HH:mm"_s));
+    currentItem->setText(1, Utils::formatTimestamp(QDateTime::currentDateTime()));
     currentItem->setIcon(0, QIcon::fromTheme(u"system-run"_s));
     currentItem->setData(0, IsCurrentStateRole, true);
 
@@ -147,6 +151,7 @@ void SnapshotDialog::loadSnapshots()
     }
     m_tree->setCurrentItem(currentItem);
 
+    updateHint(listError);
     updateButtonStates();
 }
 
@@ -180,7 +185,7 @@ void SnapshotDialog::onSelectionChanged()
                           i18n("Name:"),
                           snap.name.toHtmlEscaped(),
                           i18n("Created:"),
-                          snap.dateTime.toString(u"dd.MM.yyyy HH:mm:ss"_s),
+                          Utils::formatTimestamp(snap.dateTime),
                           i18n("VM State:"),
                           snap.vmStateSizeBytes > 0 ? formatSize(snap.vmStateSizeBytes) : i18n("Offline snapshot (no RAM state)"));
 
@@ -203,7 +208,7 @@ void SnapshotDialog::reject()
 
 void SnapshotDialog::onTakeSnapshot()
 {
-    TakeSnapshotDialog dlg(m_vmName, this);
+    TakeSnapshotDialog dlg(m_vmName, m_snapshotNames, this);
     if (dlg.exec() != QDialog::Accepted)
         return;
 
@@ -217,10 +222,9 @@ void SnapshotDialog::onTakeSnapshot()
     m_manager.createSnapshot(m_diskPath, name, m_qmp, m_imageInUse, [this, name, desc](bool ok, QString err) {
         setBusy(false);
 
-        if (ok && !desc.isEmpty())
+        if (ok) {
             m_manager.saveDescription(m_diskPath, name, desc);
-
-        if (!ok) {
+        } else {
             // Keep the message box off the QMP teardown stack.
             QTimer::singleShot(0, this, [this, name, err] {
                 KMessageBox::error(this, i18n("Could not create snapshot \"%1\":\n%2", name, err), i18n("Snapshot Error"));
@@ -305,13 +309,13 @@ void SnapshotDialog::onDeleteSnapshot()
     m_manager.deleteSnapshot(m_diskPath, snap.name, m_qmp, m_imageInUse, [this, snap](bool ok, QString err) {
         setBusy(false);
 
-        if (!ok) {
+        if (ok) {
+            m_manager.removeDescription(m_diskPath, snap.name);
+        } else {
             QTimer::singleShot(0, this, [this, snap, err] {
                 KMessageBox::error(this, i18n("Could not delete snapshot \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
             });
-        } else
-            // Also remove sidecar entry
-            m_manager.saveDescription(m_diskPath, snap.name, {});
+        }
 
         loadSnapshots();
     });
@@ -363,4 +367,23 @@ void SnapshotDialog::setBusy(bool busy)
     } else {
         updateButtonStates();
     }
+}
+
+void SnapshotDialog::updateHint(const QString &listError)
+{
+    if (!listError.isEmpty()) {
+        m_hintLabel->setText(listError);
+        m_hintLabel->show();
+        return;
+    }
+
+    if (m_imageInUse && !(m_qmp && m_qmp->isConnected())) {
+        m_hintLabel->setText(
+            i18n("This VM is busy and its QEMU monitor is not reachable. "
+                 "Snapshots are read-only until it has stopped."));
+        m_hintLabel->show();
+        return;
+    }
+
+    m_hintLabel->hide();
 }

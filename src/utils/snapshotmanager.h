@@ -15,12 +15,13 @@
 #include <QList>
 #include <QObject>
 #include <QPointer>
-#include <QProcess>
 #include <QSaveFile>
 #include <QSet>
 #include <QString>
 #include <QTimeZone>
 #include <QTimer>
+
+#include <KProcess>
 
 #include "qmpclient.h"
 
@@ -53,7 +54,7 @@ public:
 
     // Synchronous Operations (Offline / qemu-img)
 
-    QList<SnapshotInfo> listSnapshots(const QString &diskPath) const;
+    QList<SnapshotInfo> listSnapshots(const QString &diskPath, QString *errorOut = nullptr) const;
 
     // Offline operations run qemu-img asynchronously. Never call these while
     // QEMU or a helper has the image open.
@@ -75,7 +76,7 @@ public:
 
     // Sidecar JSON next to .qcow2
     void saveDescription(const QString &diskPath, const QString &snapshotName, const QString &description) const;
-
+    void removeDescription(const QString &diskPath, const QString &snapshotName) const;
     QString loadDescription(const QString &diskPath, const QString &snapshotName) const;
 
 private Q_SLOTS:
@@ -114,4 +115,9 @@ private:
     QList<SnapshotInfo> parseSnapshotListJson(const QString &output) const;
 
     QString sidecarPath(const QString &diskPath) const;
+    // corruptOut distinguishes "no file" from "file we must not overwrite".
+    QJsonObject readSidecar(const QString &diskPath, bool *corruptOut = nullptr) const;
+    bool writeSidecar(const QString &diskPath, const QJsonObject &root) const;
+
+    static constexpr int kListTimeoutMs = 15000;
 };

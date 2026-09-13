@@ -6,8 +6,9 @@
 
 #include "takesnapshotdialog.h"
 
-TakeSnapshotDialog::TakeSnapshotDialog(const QString &vmName, QWidget *parent)
+TakeSnapshotDialog::TakeSnapshotDialog(const QString &vmName, const QStringList &existingNames, QWidget *parent)
     : QDialog(parent)
+    , m_existingNames(existingNames)
 {
     setWindowTitle(i18n("Take Snapshot – %1", vmName));
     setMinimumWidth(440);
@@ -30,10 +31,10 @@ TakeSnapshotDialog::TakeSnapshotDialog(const QString &vmName, QWidget *parent)
     m_nameHintLabel = new QLabel(this);
     {
         const KColorScheme scheme(QPalette::Active, KColorScheme::View);
-        const QString col = scheme.foreground(KColorScheme::InactiveText).color().name();
-        m_nameHintLabel->setStyleSheet(u"color: %1; font-size: 11px;"_s.arg(col));
+        m_hintColor = scheme.foreground(KColorScheme::InactiveText).color().name();
+        m_errorColor = scheme.foreground(KColorScheme::NegativeText).color().name();
     }
-    m_nameHintLabel->setText(i18n("Spaces will be replaced by underscores."));
+    setHint(i18n("Spaces will be replaced by underscores."), false);
     form->addRow({}, m_nameHintLabel);
 
     m_descriptionEdit = new QTextEdit(this);
@@ -53,23 +54,6 @@ TakeSnapshotDialog::TakeSnapshotDialog(const QString &vmName, QWidget *parent)
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 }
 
-void TakeSnapshotDialog::onNameChanged(const QString &text)
-{
-    // Only alphanumeric, -, _ allowed (QEMU restriction)
-    static const QRegularExpression validChars(u"[^A-Za-z0-9_-]"_s);
-    const bool valid = !text.trimmed().isEmpty();
-    m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(valid);
-
-    QString cleaned = text;
-    cleaned.replace(u' ', u'_');
-    cleaned.remove(validChars);
-
-    if (cleaned != text && !text.isEmpty())
-        m_nameHintLabel->setText(i18n("Will be saved as: <b>%1</b>", cleaned));
-    else
-        m_nameHintLabel->setText(i18n("Spaces will be replaced by underscores."));
-}
-
 QString TakeSnapshotDialog::snapshotName() const
 {
     static const QRegularExpression invalidChars(u"[^A-Za-z0-9_-]"_s);
@@ -82,4 +66,36 @@ QString TakeSnapshotDialog::snapshotName() const
 QString TakeSnapshotDialog::snapshotDescription() const
 {
     return m_descriptionEdit->toPlainText().trimmed();
+}
+
+void TakeSnapshotDialog::onNameChanged()
+{
+    // Validate what will actually be written, not what was typed.
+    const QString raw = m_nameEdit->text();
+    const QString cleaned = snapshotName();
+
+    if (cleaned.isEmpty()) {
+        setHint(raw.trimmed().isEmpty() ? i18n("Spaces will be replaced by underscores.") : i18n("This name contains no usable characters."),
+                !raw.trimmed().isEmpty());
+        m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
+        return;
+    }
+
+    // qcow2 does not enforce unique tags: qemu-img would happily create a
+    // second snapshot of the same name, while the QMP path replaces the
+    // existing one.
+    if (m_existingNames.contains(cleaned)) {
+        setHint(i18n("A snapshot named <b>%1</b> already exists.", cleaned), true);
+        m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
+        return;
+    }
+
+    setHint(cleaned != raw ? i18n("Will be saved as: <b>%1</b>", cleaned) : i18n("Spaces will be replaced by underscores."), false);
+    m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(true);
+}
+
+void TakeSnapshotDialog::setHint(const QString &text, bool isError)
+{
+    m_nameHintLabel->setStyleSheet(u"color: %1; font-size: 11px;"_s.arg(isError ? m_errorColor : m_hintColor));
+    m_nameHintLabel->setText(text);
 }

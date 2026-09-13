@@ -36,17 +36,23 @@ SnapshotManager::~SnapshotManager()
 
 // Offline (qemu-img)
 
-QList<SnapshotInfo> SnapshotManager::listSnapshots(const QString &diskPath) const
+QList<SnapshotInfo> SnapshotManager::listSnapshots(const QString &diskPath, QString *errorOut) const
 {
     // qemu-img info --output=json returns a top-level object whose
     // "snapshots" array carries the internal qcow2 snapshots.
     const auto res = runQemuImg({u"info"_s, u"--force-share"_s, u"--output=json"_s, diskPath});
-    if (res.exitCode != 0)
+    if (res.exitCode != 0) {
+        if (errorOut)
+            *errorOut = res.err.trimmed().isEmpty() ? i18n("Could not read the snapshot list.") : res.err.trimmed();
         return {};
+    }
 
     QList<SnapshotInfo> list = parseSnapshotListJson(res.out);
+
+    const QJsonObject descriptions = readSidecar(diskPath);
     for (SnapshotInfo &snap : list)
-        snap.description = loadDescription(diskPath, snap.name);
+        snap.description = descriptions.value(snap.name).toString();
+
     return list;
 }
 
@@ -198,54 +204,87 @@ QString SnapshotManager::sidecarPath(const QString &diskPath) const
     return diskPath + u".snapshots.json"_s;
 }
 
-void SnapshotManager::saveDescription(const QString &diskPath, const QString &snapshotName, const QString &description) const
+QJsonObject SnapshotManager::readSidecar(const QString &diskPath, bool *corruptOut) const
+{
+    if (corruptOut)
+        *corruptOut = false;
+
+    QFile f(sidecarPath(diskPath));
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+
+    const QByteArray data = f.readAll();
+    if (data.isEmpty())
+        return {};
+
+    QJsonParseError error;
+    const QJsonDocument doc = QJsonDocument::fromJson(data, &error);
+    if (error.error != QJsonParseError::NoError || !doc.isObject()) {
+        if (corruptOut)
+            *corruptOut = true;
+        return {};
+    }
+    return doc.object();
+}
+
+bool SnapshotManager::writeSidecar(const QString &diskPath, const QJsonObject &root) const
 {
     const QString path = sidecarPath(diskPath);
-    QJsonObject root;
-    QFile f(path);
 
-    if (f.open(QIODevice::ReadOnly)) {
-        const QByteArray data = f.readAll();
-        f.close();
-
-        if (!data.isEmpty()) {
-            QJsonParseError error;
-            const QJsonDocument doc = QJsonDocument::fromJson(data, &error);
-
-            if (error.error == QJsonParseError::NoError && doc.isObject()) {
-                root = doc.object();
-            } else {
-                // If the file contains data but is corrupt, log and abort
-                // to avoid destroying the rest of the (potentially recoverable) file.
-                qCWarning(KEMU) << "Sidecar JSON is corrupt. Aborting to prevent data loss:" << path;
-                return;
-            }
-        }
+    // Drop the file rather than leaving an empty object behind.
+    if (root.isEmpty()) {
+        QFile::remove(path);
+        return true;
     }
 
-    root.insert(snapshotName, description);
-
-    // Atomic save using QSaveFile
     QSaveFile saveFile(path);
-    if (saveFile.open(QIODevice::WriteOnly)) {
-        saveFile.write(QJsonDocument(root).toJson());
-
-        // commit() performs the atomic rename instead of close()
-        if (!saveFile.commit()) {
-            qCWarning(KEMU) << "Failed to commit snapshot descriptions:" << saveFile.errorString();
-        }
-    } else {
+    if (!saveFile.open(QIODevice::WriteOnly)) {
         qCWarning(KEMU) << "Could not open sidecar file for writing:" << path << saveFile.errorString();
+        return false;
     }
+
+    saveFile.write(QJsonDocument(root).toJson());
+
+    // commit() performs the atomic rename instead of close()
+    if (!saveFile.commit()) {
+        qCWarning(KEMU) << "Failed to commit snapshot descriptions:" << saveFile.errorString();
+        return false;
+    }
+    return true;
+}
+
+void SnapshotManager::saveDescription(const QString &diskPath, const QString &snapshotName, const QString &description) const
+{
+    bool corrupt = false;
+    QJsonObject root = readSidecar(diskPath, &corrupt);
+    if (corrupt) {
+        // Never overwrite a file we could not parse.
+        qCWarning(KEMU) << "Sidecar JSON is corrupt, refusing to write:" << sidecarPath(diskPath);
+        return;
+    }
+
+    if (description.isEmpty())
+        root.remove(snapshotName);
+    else
+        root.insert(snapshotName, description);
+
+    writeSidecar(diskPath, root);
+}
+
+void SnapshotManager::removeDescription(const QString &diskPath, const QString &snapshotName) const
+{
+    bool corrupt = false;
+    QJsonObject root = readSidecar(diskPath, &corrupt);
+    if (corrupt || !root.contains(snapshotName))
+        return;
+
+    root.remove(snapshotName);
+    writeSidecar(diskPath, root);
 }
 
 QString SnapshotManager::loadDescription(const QString &diskPath, const QString &snapshotName) const
 {
-    QFile f(sidecarPath(diskPath));
-    if (!f.open(QIODevice::ReadOnly))
-        return {};
-    const QJsonObject root = QJsonDocument::fromJson(f.readAll()).object();
-    return root.value(snapshotName).toString();
+    return readSidecar(diskPath).value(snapshotName).toString();
 }
 
 // Private
@@ -358,9 +397,21 @@ void SnapshotManager::finishJob(const QString &jobId, bool success, const QStrin
 
 SnapshotManager::ProcResult SnapshotManager::runQemuImg(const QStringList &args) const
 {
-    QProcess proc;
-    proc.start(u"qemu-img"_s, args);
-    proc.waitForFinished(15000);
+    const QString program = ExternalTools::instance().path(ExternalTools::QemuImg);
+    if (program.isEmpty())
+        return {-1, {}, i18n("qemu-img was not found.")};
+
+    KProcess proc;
+    proc.setOutputChannelMode(KProcess::SeparateChannels);
+    proc.setProgram(program, args);
+
+    if (proc.execute(kListTimeoutMs) < 0) {
+        return {-1, {}, i18n("qemu-img did not finish in time or failed to start.")};
+    }
+
+    if (proc.exitStatus() != KProcess::NormalExit)
+        return {-1, {}, i18n("qemu-img crashed.")};
+
     return {proc.exitCode(), QString::fromUtf8(proc.readAllStandardOutput()), QString::fromUtf8(proc.readAllStandardError())};
 }
 
@@ -372,9 +423,9 @@ void SnapshotManager::runQemuImgAsync(const QStringList &args, std::function<voi
         return;
     }
 
-    auto *proc = new QProcess(this);
-    proc->setProgram(program);
-    proc->setArguments(args);
+    auto *proc = new KProcess(this);
+    proc->setOutputChannelMode(KProcess::SeparateChannels);
+    proc->setProgram(program, args);
 
     auto timedOut = std::make_shared<bool>(false);
 
@@ -388,7 +439,7 @@ void SnapshotManager::runQemuImgAsync(const QStringList &args, std::function<voi
 
     // `this` as context: if the manager dies first, the callback - which holds
     // the dialog - is never invoked and the process dies as our child.
-    connect(proc, &QProcess::finished, this, [proc, timedOut, callback](int exitCode, QProcess::ExitStatus status) {
+    connect(proc, &KProcess::finished, this, [proc, timedOut, callback](int exitCode, KProcess::ExitStatus status) {
         const QString err = QString::fromUtf8(proc->readAllStandardError()).trimmed();
         proc->deleteLater();
 
@@ -396,7 +447,7 @@ void SnapshotManager::runQemuImgAsync(const QStringList &args, std::function<voi
             callback(false, i18n("qemu-img did not finish in time and was terminated."));
             return;
         }
-        if (status != QProcess::NormalExit) {
+        if (status != KProcess::NormalExit) {
             callback(false, i18n("qemu-img crashed."));
             return;
         }
@@ -404,8 +455,8 @@ void SnapshotManager::runQemuImgAsync(const QStringList &args, std::function<voi
     });
 
     // FailedToStart never emits finished(), so it needs its own exit.
-    connect(proc, &QProcess::errorOccurred, this, [proc, callback](QProcess::ProcessError error) {
-        if (error != QProcess::FailedToStart)
+    connect(proc, &KProcess::errorOccurred, this, [proc, callback](KProcess::ProcessError error) {
+        if (error != KProcess::FailedToStart)
             return;
         const QString message = proc->errorString();
         proc->deleteLater();
