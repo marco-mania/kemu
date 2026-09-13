@@ -1100,7 +1100,7 @@ void MainWindow::updateDetails()
         perfMonitor->setActive(vmLive);
     }
 
-    const QemuImgProcess::ImageInfo dInfo = QemuImgProcess::inspect(currentConfig.diskPath());
+    const QemuImgProcess::ImageInfo dInfo = diskInfoFor(currentConfig.diskPath());
     QString diskVal;
     if (dInfo.isValid) {
         const QString diskInterfaceStr = VMConfig::toUIString(currentConfig.diskInterface());
@@ -1530,9 +1530,10 @@ VMConfig MainWindow::loadVmConfig(const QString &vmPath) const
 
 void MainWindow::loadVmList()
 {
+    m_diskInfoCache.clear();
+
     const QStringList folders = loadFolderNames();
     const QMap<QString, QString> assignments = loadFolderAssignments();
-
     veModel->reload(getVmBaseDir(), folders, assignments, [this](const QString &vmPath) {
         return loadVmConfig(vmPath);
     });
@@ -1827,7 +1828,7 @@ void MainWindow::shrinkDisk()
     if (veModel->isBusy(currentConfig.name()))
         return;
 
-    const QemuImgProcess::ImageInfo dInfo = QemuImgProcess::inspect(currentConfig.diskPath());
+    const QemuImgProcess::ImageInfo dInfo = diskInfoFor(currentConfig.diskPath());
     QString sizeInfo;
     if (dInfo.isValid) {
         sizeInfo = i18n("\n\nCurrent size: %1 GB (virtual), %2 GB (actual on disk)",
@@ -1868,7 +1869,7 @@ void MainWindow::shrinkDisk()
             statusBar()->showMessage(i18n("Disk compaction of VM '%1' failed: %2", vmName, shrinkJob->errorText()));
         } else {
             const VMConfig config = loadVmConfig(getVmDir(vmName).absolutePath());
-            const QemuImgProcess::ImageInfo dInfo = QemuImgProcess::inspect(config.diskPath());
+            const QemuImgProcess::ImageInfo dInfo = diskInfoFor(config.diskPath());
 
             QString newSizeMsg = u"."_s;
             if (dInfo.isValid) {
@@ -2795,7 +2796,7 @@ void MainWindow::importOVA(const QString &filePath)
 
 void MainWindow::exportOVA(const QString &filePath)
 {
-    const QemuImgProcess::ImageInfo dInfo = QemuImgProcess::inspect(currentConfig.diskPath());
+    const QemuImgProcess::ImageInfo dInfo = diskInfoFor(currentConfig.diskPath());
 
     const int diskGb = dInfo.isValid ? qRound(dInfo.virtualSizeGb()) : currentConfig.diskSizeGb();
 
@@ -3420,7 +3421,7 @@ void MainWindow::editVM()
     // looking at, so open the dialog read-only instead of refusing.
     const bool readOnly = veModel->isBusy(currentConfig.name());
 
-    const QemuImgProcess::ImageInfo dInfo = QemuImgProcess::inspect(currentConfig.diskPath());
+    const QemuImgProcess::ImageInfo dInfo = diskInfoFor(currentConfig.diskPath());
     if (dInfo.isValid)
         currentConfig.setDiskSizeGb(qRound(dInfo.virtualSizeGb()));
 
@@ -4275,4 +4276,27 @@ QWidget *MainWindow::dialogParentFor(const QString &vmName)
     if (win && win->isVisible())
         return win;
     return this;
+}
+
+QemuImgProcess::ImageInfo MainWindow::diskInfoFor(const QString &diskPath) const
+{
+    if (diskPath.isEmpty())
+        return {};
+
+    const QFileInfo fi(diskPath);
+    if (!fi.exists()) {
+        m_diskInfoCache.remove(diskPath);
+        return {};
+    }
+
+    const auto it = m_diskInfoCache.constFind(diskPath);
+    if (it != m_diskInfoCache.cend() && it->lastModified == fi.lastModified() && it->fileSize == fi.size())
+        return it->info;
+
+    DiskInfoCacheEntry entry;
+    entry.lastModified = fi.lastModified();
+    entry.fileSize = fi.size();
+    entry.info = diskInfoFor(diskPath);
+    m_diskInfoCache.insert(diskPath, entry);
+    return entry.info;
 }

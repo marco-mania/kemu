@@ -53,6 +53,7 @@
 #include "runtime/vmruntimemanager.h"
 #include "utils/externaltools.h"
 #include "utils/imagedatabase.h"
+#include "utils/qemuimgprocess.h"
 #include "utils/savestatemanager.h"
 #include "utils/sessionguard.h"
 #include "utils/virtualnetworkmanager.h"
@@ -270,4 +271,14 @@ private:
     bool m_closingFromSession = false;
 
     QWidget *dialogParentFor(const QString &vmName);
+
+    // qemu-img info is a fork per call. Keyed by the image's write time and
+    // size, so it re-reads exactly when the image has actually changed.
+    struct DiskInfoCacheEntry {
+        QDateTime lastModified;
+        qint64 fileSize = 0;
+        QemuImgProcess::ImageInfo info;
+    };
+    mutable QHash<QString, DiskInfoCacheEntry> m_diskInfoCache;
+    [[nodiscard]] QemuImgProcess::ImageInfo diskInfoFor(const QString &diskPath) const;
 };
