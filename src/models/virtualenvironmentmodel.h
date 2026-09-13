@@ -58,7 +58,6 @@ struct VmEntry {
     QPointer<KProcess> swtpmProcess;
     QPointer<KProcess> virtiofsdProcess;
     QPointer<KProcess> passtProcess;
-    QPointer<KProcess> dbusDaemonProcess;
 
     QVector<double> cpuHistory;
     QVector<double> ramHistory;
@@ -74,6 +73,42 @@ struct VmEntry {
     QDateTime startedAt; // wall-clock when the VM entered Running; null otherwise
     QDateTime savestateTime; // mtime of the savestate file; null when none
     QIcon styledIcon; // cached composed icon (visual state + headless emblem)
+
+    // Everything that only exists while the VM is live. Kept in one place so a
+    // reload cannot silently drop a field.
+    void adoptRuntimeStateFrom(const VmEntry &other)
+    {
+        state = other.state;
+        isHeadless = other.isHeadless;
+        startedAt = other.startedAt;
+        qemuProcess = other.qemuProcess;
+        swtpmProcess = other.swtpmProcess;
+        virtiofsdProcess = other.virtiofsdProcess;
+        passtProcess = other.passtProcess;
+        qmpClient = other.qmpClient;
+        attachedUsb = other.attachedUsb;
+        cpuHistory = other.cpuHistory;
+        ramHistory = other.ramHistory;
+        ioHistory = other.ioHistory;
+        ioPeakBytesPerSec = other.ioPeakBytesPerSec;
+    }
+
+    void resetRuntimeState()
+    {
+        state = State::Stopped;
+        isHeadless = false;
+        startedAt = {};
+        qemuProcess = nullptr;
+        swtpmProcess = nullptr;
+        virtiofsdProcess = nullptr;
+        passtProcess = nullptr;
+        qmpClient = nullptr;
+        attachedUsb.clear();
+        cpuHistory.clear();
+        ramHistory.clear();
+        ioHistory.clear();
+        ioPeakBytesPerSec = 0.0;
+    }
 };
 
 struct FolderEntry {
@@ -136,7 +171,6 @@ public:
     void setSwtpmProcess(const QString &name, KProcess *process);
     void setVirtiofsdProcess(const QString &name, KProcess *process);
     void setPasstProcess(const QString &name, KProcess *process);
-    void setDBusDaemonProcess(const QString &name, KProcess *process);
     void setQmpClient(const QString &name, QMPClient *client);
     void updateConfig(const QString &name, const VMConfig &config);
     void appendPerfSample(const QString &name, int channel, double value);

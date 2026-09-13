@@ -384,20 +384,9 @@ void VirtualEnvironmentModel::reload(const QDir &baseDir, const QMap<QString, QS
         entry.config = loader(vmPath);
         entry.folderName = folderAssignments.value(d);
 
-        if (stateBackup.contains(d)) {
-            const VmEntry &old = stateBackup[d];
-            entry.state = old.state;
-            entry.startedAt = old.startedAt;
-            entry.qemuProcess = old.qemuProcess;
-            entry.swtpmProcess = old.swtpmProcess;
-            entry.virtiofsdProcess = old.virtiofsdProcess;
-            entry.passtProcess = old.passtProcess;
-            entry.qmpClient = old.qmpClient;
-            entry.cpuHistory = old.cpuHistory;
-            entry.ramHistory = old.ramHistory;
-            entry.ioHistory = old.ioHistory;
-            entry.ioPeakBytesPerSec = old.ioPeakBytesPerSec;
-        }
+        const auto backup = stateBackup.constFind(d);
+        if (backup != stateBackup.cend())
+            entry.adoptRuntimeStateFrom(*backup);
 
         entry.hasSavestateFile = SaveStateManager::hasSavestate(vmPath, d);
 
@@ -480,12 +469,6 @@ void VirtualEnvironmentModel::setPasstProcess(const QString &name, KProcess *pro
         e->passtProcess = process;
 }
 
-void VirtualEnvironmentModel::setDBusDaemonProcess(const QString &name, KProcess *process)
-{
-    if (VmEntry *e = entryByName(name))
-        e->dbusDaemonProcess = process;
-}
-
 void VirtualEnvironmentModel::setQmpClient(const QString &name, QMPClient *c)
 {
     if (VmEntry *e = entryByName(name))
@@ -557,18 +540,7 @@ void VirtualEnvironmentModel::clearRuntimeState(const QString &name)
     if (!e)
         return;
 
-    e->state = VmEntry::State::Stopped;
-    e->qemuProcess = nullptr;
-    e->swtpmProcess = nullptr;
-    e->virtiofsdProcess = nullptr;
-    e->passtProcess = nullptr;
-    e->qmpClient = nullptr;
-    e->cpuHistory.clear();
-    e->ramHistory.clear();
-    e->ioHistory.clear();
-    e->ioPeakBytesPerSec = 0.0;
-    e->attachedUsb.clear();
-    e->startedAt = {};
+    e->resetRuntimeState();
     recomputeIcon(*e);
 
     emitVmChanged(name);
@@ -619,7 +591,7 @@ bool VirtualEnvironmentModel::removeFolder(const QModelIndex &index)
 {
     if (!index.isValid())
         return false;
-    const Node *node = nodeFromIndex(index);
+    Node *node = nodeFromIndex(index);
     if (!node || node->type != Node::FolderNode || !node->children.isEmpty())
         return false;
 
@@ -627,10 +599,21 @@ bool VirtualEnvironmentModel::removeFolder(const QModelIndex &index)
     if (row < 0)
         return false;
 
+    const int folderIndex = node->folderIndex;
+
     beginRemoveRows({}, row, row);
     m_root->children.removeAt(row);
     delete node;
     endRemoveRows();
+
+    // Node::folderIndex is a position in m_folders, so dropping an entry
+    // shifts every folder behind it.
+    m_folders.removeAt(folderIndex);
+    for (Node *child : std::as_const(m_root->children)) {
+        if (child->type == Node::FolderNode && child->folderIndex > folderIndex)
+            --child->folderIndex;
+    }
+
     return true;
 }
 
