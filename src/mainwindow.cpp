@@ -4296,7 +4296,7 @@ QemuImgProcess::ImageInfo MainWindow::diskInfoFor(const QString &diskPath) const
     DiskInfoCacheEntry entry;
     entry.lastModified = fi.lastModified();
     entry.fileSize = fi.size();
-    entry.info = diskInfoFor(diskPath);
+    entry.info = QemuImgProcess::inspect(diskPath);
     m_diskInfoCache.insert(diskPath, entry);
     return entry.info;
 }
