@@ -127,7 +127,7 @@ void SnapshotDialog::loadSnapshots()
         auto *item = new QTreeWidgetItem;
         item->setText(0, snap.name);
         item->setText(1, Utils::formatTimestamp(snap.dateTime));
-        item->setText(2, snap.vmStateSizeBytes > 0 ? formatSize(snap.vmStateSizeBytes) : i18n("--"));
+        item->setText(2, snap.vmStateSizeBytes > 0 ? m_format.formatByteSize(snap.vmStateSizeBytes) : i18n("--"));
         item->setIcon(0, QIcon::fromTheme(u"camera-photo"_s));
         item->setData(0, SnapshotInfoRole, QVariant::fromValue(snap));
         item->setData(0, IsCurrentStateRole, false);
@@ -187,7 +187,7 @@ void SnapshotDialog::onSelectionChanged()
                           i18n("Created:"),
                           Utils::formatTimestamp(snap.dateTime),
                           i18n("VM State:"),
-                          snap.vmStateSizeBytes > 0 ? formatSize(snap.vmStateSizeBytes) : i18n("Offline snapshot (no RAM state)"));
+                          snap.vmStateSizeBytes > 0 ? m_format.formatByteSize(snap.vmStateSizeBytes) : i18n("Offline snapshot (no RAM state)"));
 
     if (!snap.description.isEmpty())
         html += u"<p><i>%1</i></p>"_s.arg(snap.description.toHtmlEscaped());
@@ -338,19 +338,6 @@ void SnapshotDialog::updateButtonStates()
     m_takeBtn->setEnabled(writable);
     m_revertBtn->setEnabled(isSnap && writable);
     m_deleteBtn->setEnabled(isSnap && writable);
-}
-
-QString SnapshotDialog::formatSize(quint64 bytes) const
-{
-    if (bytes == 0)
-        return i18n("0 B");
-    if (bytes < 1024)
-        return i18n("%1 B", bytes);
-    if (bytes < 1 << 20)
-        return i18n("%1 KB", bytes / 1024);
-    if (bytes < 1 << 30)
-        return i18n("%1 MB", bytes / (1 << 20));
-    return i18n("%1 GB", bytes / (1 << 30));
 }
 
 void SnapshotDialog::setBusy(bool busy)

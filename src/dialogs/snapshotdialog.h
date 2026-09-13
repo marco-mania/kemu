@@ -17,6 +17,7 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include <KFormat>
 #include <KLocalizedString>
 #include <KMessageBox>
 
@@ -57,7 +58,7 @@ private:
 
     void loadSnapshots();
     void updateButtonStates();
-    QString formatSize(quint64 bytes) const;
+    KFormat m_format;
 
     QString m_vmName;
     QString m_diskPath;

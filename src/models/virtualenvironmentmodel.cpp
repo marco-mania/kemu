@@ -8,8 +8,6 @@
 
 #include <QFileInfo>
 
-#include <KFormat>
-
 #include "const.h"
 #include "utils/savestatemanager.h"
 
