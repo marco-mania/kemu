@@ -66,7 +66,9 @@ VirtualEnvironmentModel::VirtualEnvironmentModel(ImageDatabase *imageDb, QObject
     m_root->type = Node::RootNode;
 
     m_uptimeTimer = new QTimer(this);
-    m_uptimeTimer->setInterval(1000);
+    // formatUptime() resolves to minutes, so a second-resolution tick would
+    // repaint 59 times for nothing.
+    m_uptimeTimer->setInterval(15000);
     connect(m_uptimeTimer, &QTimer::timeout, this, [this] {
         tickUptime();
     });
@@ -739,17 +741,20 @@ QModelIndex VirtualEnvironmentModel::indexFromNode(Node *node) const
 
 VirtualEnvironmentModel::Node *VirtualEnvironmentModel::findVmNode(const QString &name) const
 {
-    std::function<Node *(Node *)> search = [&](Node *parent) -> Node * {
-        for (Node *child : std::as_const(parent->children)) {
-            if (child->type == Node::VmNode && m_vms.at(child->vmIndex).name == name)
+    // The tree is exactly two levels deep: a VM row sits at the root or inside
+    // one folder.
+    for (Node *child : std::as_const(m_root->children)) {
+        if (child->type == Node::VmNode) {
+            if (m_vms.at(child->vmIndex).name == name)
                 return child;
-            if (child->type == Node::FolderNode)
-                if (Node *found = search(child))
-                    return found;
+            continue;
         }
-        return nullptr;
-    };
-    return search(m_root);
+        for (Node *grandChild : std::as_const(child->children)) {
+            if (grandChild->type == Node::VmNode && m_vms.at(grandChild->vmIndex).name == name)
+                return grandChild;
+        }
+    }
+    return nullptr;
 }
 
 VirtualEnvironmentModel::Node *VirtualEnvironmentModel::findFolderNode(const QString &folderName) const
