@@ -124,6 +124,23 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     setUpQmpClient(req, sockPath, isResume);
 }
 
+void VmRuntimeManager::setPerfMonitoringEnabled(bool enabled)
+{
+    const QStringList names = m_model->vmNames();
+    for (const QString &name : names) {
+        VmEntry *e = m_model->entryByName(name);
+        if (!e || !e->qmpClient || !e->qmpClient->isConnected())
+            continue;
+
+        if (enabled && !e->qmpClient->isPerformanceTimerActive()) {
+            e->qmpClient->startPerformanceTimer(kPerfSampleIntervalMs);
+            Q_EMIT perfMonitoringStarted(name);
+        } else if (!enabled && e->qmpClient->isPerformanceTimerActive()) {
+            e->qmpClient->stopPerformanceTimer();
+        }
+    }
+}
+
 VmRuntimeInfo &VmRuntimeManager::runtimeFor(const QString &vmName)
 {
     auto it = m_runtimes.find(vmName);
@@ -569,8 +586,11 @@ void VmRuntimeManager::setUpQmpClient(const LaunchRequest &req, const QString &s
     });
 
     connect(client, &QMPClient::connected, this, [this, client, vmName, deployment = req.deployment, isResume]() {
-        client->startPerformanceTimer(1000);
-        Q_EMIT perfMonitoringStarted(vmName);
+        // The monitor widget is the only consumer of these samples.
+        if (SettingsDialog::isPerformanceMonitorEnabled()) {
+            client->startPerformanceTimer(kPerfSampleIntervalMs);
+            Q_EMIT perfMonitoringStarted(vmName);
+        }
 
         if (deployment)
             return;

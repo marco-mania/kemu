@@ -96,6 +96,9 @@ public:
     [[nodiscard]] bool usePasstFor(const VMConfig &config) const;
     [[nodiscard]] QemuNetworkContext createQemuNetworkContext(const VMConfig &config, const QString &tapDevice = {}, int tapFd = -1) const;
 
+    // Applies a changed monitoring preference to the VMs already running.
+    void setPerfMonitoringEnabled(bool enabled);
+
     // Misc helper functions
     [[nodiscard]] bool hasLiveQemu(const QString &vmName) const;
     // Returns the tap device name, or an empty string on failure. `reason` is
@@ -173,6 +176,8 @@ private:
     bool openTapFdFor(const VMConfig &config, const QString &vmName, const QString &tapDevice, int *tapFd, QString *reason);
     void setUpQmpClient(const LaunchRequest &req, const QString &sockPath, bool isResume);
     void connectPerfSignals(QMPClient *client, const QString &vmName, bool includeMemory);
+
+    static constexpr int kPerfSampleIntervalMs = 1000;
 };
 
 Q_DECLARE_METATYPE(VmRuntimeManager::ExitInfo)

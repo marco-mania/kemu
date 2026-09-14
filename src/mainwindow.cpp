@@ -1461,8 +1461,12 @@ void MainWindow::openSettingsPage(SettingsDialog::Page page)
             dir.mkpath(u"."_s);
         loadVmList();
         onVmSelectionChanged();
+
+        const bool perfEnabled = SettingsDialog::isPerformanceMonitorEnabled();
         if (perfMonitor)
-            perfMonitor->setVisible(SettingsDialog::isPerformanceMonitorEnabled());
+            perfMonitor->setVisible(perfEnabled);
+        m_runtimeManager->setPerfMonitoringEnabled(perfEnabled);
+
         updateSessionInhibitors();
     }
 }
