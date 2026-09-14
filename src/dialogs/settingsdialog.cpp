@@ -498,8 +498,8 @@ void SettingsDialog::browseOvmfDir()
 
 void SettingsDialog::saveSettings()
 {
-    KConfig config(u"kemurc"_s);
-    KConfigGroup general = config.group(u"General"_s);
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    KConfigGroup general = config->group(u"General"_s);
     general.writeEntry("VmBasePath", pathEdit->text());
     general.writeEntry("OvmfPath", ovmfEdit->text());
     // Never persist sandbox paths as user overrides; an empty entry means
@@ -542,7 +542,7 @@ void SettingsDialog::saveSettings()
     if (slirpNetworkingCheck->isEnabled())
         general.writeEntry("PreferSlirpNetworking", slirpNetworkingCheck->isChecked());
 
-    config.sync();
+    config->sync();
 
     ExternalTools::instance().refresh();
     QemuCapabilities::instance().refresh();
@@ -552,30 +552,30 @@ void SettingsDialog::saveSettings()
 
 QString SettingsDialog::getVmBasePath()
 {
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
     const QString defaultPath = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + u"/kemu/vms"_s;
     return general.readEntry("VmBasePath", defaultPath);
 }
 
 QString SettingsDialog::getOvmfPath()
 {
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
     return general.readEntry("OvmfPath", {});
 }
 
 bool SettingsDialog::isPerformanceMonitorEnabled()
 {
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
     return general.readEntry("PerformanceMonitorEnabled", true);
 }
 
 QSize SettingsDialog::getDefaultResolution()
 {
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
     const int w = general.readEntry("DisplayWidth", KEMUConst::DefaultDisplaySize.width());
     const int h = general.readEntry("DisplayHeight", KEMUConst::DefaultDisplaySize.height());
     return QSize(w, h);
@@ -583,22 +583,22 @@ QSize SettingsDialog::getDefaultResolution()
 
 bool SettingsDialog::showAllArchitectures()
 {
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
     return general.readEntry("ShowAllArchitectures", false);
 }
 
 bool SettingsDialog::cloneRegenerateMac()
 {
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
     return general.readEntry("CloneRegenerateMac", true);
 }
 
 bool SettingsDialog::importRegenerateMac()
 {
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
     return general.readEntry("ImportRegenerateMac", false);
 }
 
@@ -606,36 +606,36 @@ bool SettingsDialog::useSlirpNetworking()
 {
     if (!ExternalTools::instance().isPasstUsable())
         return true;
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
     return general.readEntry("PreferSlirpNetworking", false);
 }
 
 bool SettingsDialog::inhibitScreensaverAlways()
 {
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
     return general.readEntry("InhibitScreensaverAlways", false);
 }
 
 bool SettingsDialog::inhibitScreensaverFullscreen()
 {
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
     return general.readEntry("InhibitScreensaverFullscreen", true);
 }
 
 bool SettingsDialog::inhibitScreensaverPointerGrab()
 {
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
     return general.readEntry("InhibitScreensaverPointerGrab", true);
 }
 
 CloudDeployConfig SettingsDialog::deploymentDefaults()
 {
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup general = config.group(u"General"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
 
     CloudDeployConfig cfg;
     cfg.username = general.readEntry("DeployUser", KUser().loginName());

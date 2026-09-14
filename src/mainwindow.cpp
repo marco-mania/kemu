@@ -1559,8 +1559,8 @@ void MainWindow::loadVmList()
         veModel->updateConfig(name, healed);
     }
 
-    KConfig kconfig(u"kemurc"_s);
-    const QStringList collapsed = kconfig.group(u"Folders"_s).readEntry(u"collapsed"_s, QStringList());
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const QStringList collapsed = config->group(u"Folders"_s).readEntry(u"collapsed"_s, QStringList());
 
     for (const QString &folder : veModel->folderNames()) {
         const QModelIndex idx = veModel->indexForFolder(folder);
@@ -3475,16 +3475,16 @@ void MainWindow::editVM()
                 newConfig.setDiskPath(oldDiskPath.replace(oldPath, newPath));
             }
 
-            KConfig kconfig(u"kemurc"_s);
-            KConfigGroup grp = kconfig.group(u"Folders"_s);
+            KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+            KConfigGroup grp = config->group(u"Folders"_s);
             const QString folder = grp.readEntry(oldName, {});
             if (!folder.isEmpty()) {
                 grp.deleteEntry(oldName);
                 grp.writeEntry(newName, folder);
-                grp.sync();
+                config->sync();
             }
             // migrate per-VM viewer preferences to the new name
-            if (kconfig.group(u"ViewerState"_s).hasGroup(oldName)) {
+            if (config->group(u"ViewerState"_s).hasGroup(oldName)) {
                 const ViewerDevicePrefs vp = loadViewerPrefs(oldName);
                 saveViewerPrefs(newName, vp);
                 removeViewerPrefs(oldName);
@@ -3733,9 +3733,10 @@ bool MainWindow::isCurrentItemFolder() const
 QMap<QString, QString> MainWindow::loadFolderAssignments() const
 {
     QMap<QString, QString> map;
-    KConfig config(u"kemurc"_s);
 
-    const KConfigGroup grp = config.group(u"FolderAssignments"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup grp = config->group(u"FolderAssignments"_s);
+
     const QStringList keys = grp.keyList();
     for (const QString &key : keys)
         map.insert(key, grp.readEntry(key, QString()));
@@ -3745,7 +3746,7 @@ QMap<QString, QString> MainWindow::loadFolderAssignments() const
 
     // Legacy layout: assignments sat next to "collapsed" and "order" in
     // [Folders], so "collapsed" was read as a VM and its value became a folder.
-    const KConfigGroup legacy = config.group(u"Folders"_s);
+    const KConfigGroup legacy = config->group(u"Folders"_s);
     const QStringList legacyKeys = legacy.keyList();
     for (const QString &key : legacyKeys) {
         if (key == u"order"_s || key == u"collapsed"_s || key == u"list"_s)
@@ -3757,15 +3758,16 @@ QMap<QString, QString> MainWindow::loadFolderAssignments() const
 
 QStringList MainWindow::loadFolderNames() const
 {
-    KConfig config(u"kemurc"_s);
-    return config.group(u"Folders"_s).readEntry(u"list"_s, QStringList());
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    return config->group(u"Folders"_s).readEntry(u"list"_s, QStringList());
 }
 
 ViewerDevicePrefs MainWindow::loadViewerPrefs(const QString &vmName) const
 {
     ViewerDevicePrefs prefs;
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup grp = config.group(u"ViewerState"_s).group(vmName);
+
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup grp = config->group(u"ViewerState"_s).group(vmName);
 
     prefs.audioOut = grp.readEntry(u"AudioOut"_s, prefs.audioOut);
     prefs.audioIn = grp.readEntry(u"AudioIn"_s, prefs.audioIn);
@@ -3776,30 +3778,30 @@ ViewerDevicePrefs MainWindow::loadViewerPrefs(const QString &vmName) const
 
 void MainWindow::saveViewerPrefs(const QString &vmName, const ViewerDevicePrefs &prefs) const
 {
-    KConfig config(u"kemurc"_s);
-    KConfigGroup grp = config.group(u"ViewerState"_s).group(vmName);
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    KConfigGroup grp = config->group(u"ViewerState"_s).group(vmName);
 
     grp.writeEntry(u"AudioOut"_s, prefs.audioOut);
     grp.writeEntry(u"AudioIn"_s, prefs.audioIn);
     grp.writeEntry(u"Clipboard"_s, clipboardDirToString(prefs.clipboard));
     grp.writeEntry(u"NetworkLinkUp"_s, prefs.networkLinkUp);
 
-    grp.sync();
+    config->sync();
 }
 
 void MainWindow::removeViewerPrefs(const QString &vmName) const
 {
-    KConfig config(u"kemurc"_s);
-    KConfigGroup parent = config.group(u"ViewerState"_s);
-    parent.deleteGroup(vmName);
-    parent.sync();
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    KConfigGroup grp = config->group(u"ViewerState"_s);
+    grp.deleteGroup(vmName);
+    config->sync();
 }
 
 void MainWindow::saveFolderStructure() const
 {
-    KConfig config(u"kemurc"_s);
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    KConfigGroup assignGrp = config->group(u"FolderAssignments"_s);
 
-    KConfigGroup assignGrp = config.group(u"FolderAssignments"_s);
     for (const QString &key : assignGrp.keyList())
         assignGrp.deleteEntry(key);
 
@@ -3807,7 +3809,7 @@ void MainWindow::saveFolderStructure() const
     for (auto it = assignments.cbegin(); it != assignments.cend(); ++it)
         assignGrp.writeEntry(it.key(), it.value());
 
-    KConfigGroup grp = config.group(u"Folders"_s);
+    KConfigGroup grp = config->group(u"Folders"_s);
 
     // Sweep out legacy assignment keys on the first save after the migration.
     for (const QString &key : grp.keyList()) {
@@ -3827,7 +3829,7 @@ void MainWindow::saveFolderStructure() const
     }
     grp.writeEntry(u"collapsed"_s, collapsedFolders);
 
-    config.sync();
+    config->sync();
 }
 
 void MainWindow::showQemuFailureDialog(const QString &vmName, bool startupFailed, int exitCode, KProcess::ExitStatus exitStatus, const QByteArray &stderrTail)

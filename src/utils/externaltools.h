@@ -19,6 +19,7 @@
 #include <KConfigGroup>
 #include <KLocalizedString>
 #include <KProcess>
+#include <KSharedConfig>
 
 using namespace Qt::StringLiterals;
 

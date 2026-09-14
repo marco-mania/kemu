@@ -42,6 +42,7 @@
 #include <KLocalizedString>
 #include <KMessageBox>
 #include <KProcess>
+#include <KSharedConfig>
 #include <KUiServerV2JobTracker>
 #include <KXmlGuiWindow>
 

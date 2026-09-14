@@ -151,7 +151,6 @@ OvmfPaths findOvmfPaths(bool secureBoot, const QString &customDir)
 QString detectHostKeyboardLayout()
 {
     const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kxkbrc"_s);
-
     const KConfigGroup layoutGroup(config, u"Layout"_s);
 
     const QStringList layouts = layoutGroup.readEntry(u"LayoutList"_s, QStringList());

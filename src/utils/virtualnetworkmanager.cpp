@@ -48,12 +48,13 @@ QString VirtualNetworkManager::configGroupName(const QString &networkName)
 void VirtualNetworkManager::load()
 {
     m_networks.clear();
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup root = config.group(u"VirtualNetworks"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup root = config->group(u"VirtualNetworks"_s);
+
     const QStringList names = root.readEntry(u"Names"_s, QStringList());
 
     for (const QString &name : names) {
-        const KConfigGroup grp = config.group(configGroupName(name));
+        const KConfigGroup grp = config->group(configGroupName(name));
         VirtualNetwork net;
         net.name = name;
         net.gateway = grp.readEntry(u"Gateway"_s, {});
@@ -70,24 +71,24 @@ void VirtualNetworkManager::load()
 
 void VirtualNetworkManager::save() const
 {
-    KConfig config(u"kemurc"_s);
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
 
     QStringList names;
     for (const auto &net : m_networks)
         names << net.name;
 
     // Remove config groups for networks that no longer exist.
-    KConfigGroup root = config.group(u"VirtualNetworks"_s);
+    KConfigGroup root = config->group(u"VirtualNetworks"_s);
     const QStringList oldNames = root.readEntry(u"Names"_s, QStringList());
     for (const QString &old : oldNames) {
         if (!names.contains(old))
-            config.deleteGroup(configGroupName(old));
+            config->deleteGroup(configGroupName(old));
     }
 
     root.writeEntry(u"Names"_s, names);
 
     for (const auto &net : m_networks) {
-        KConfigGroup grp = config.group(configGroupName(net.name));
+        KConfigGroup grp = config->group(configGroupName(net.name));
         grp.writeEntry(u"Gateway"_s, net.gateway);
         grp.writeEntry(u"PrefixLength"_s, net.prefixLength);
         grp.writeEntry(u"EnableDhcp"_s, net.enableDhcp);
@@ -97,7 +98,7 @@ void VirtualNetworkManager::save() const
         grp.writeEntry(u"PortForwards"_s, net.portForwards);
     }
 
-    config.sync();
+    config->sync();
 }
 
 // ============================================================================

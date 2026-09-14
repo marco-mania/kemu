@@ -35,6 +35,7 @@
 #include <KMessageBox>
 #include <KPageDialog>
 #include <KPageWidgetItem>
+#include <KSharedConfig>
 #include <KUser>
 
 #include "utils/cloudimagedeployer.h"

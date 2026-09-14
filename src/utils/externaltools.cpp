@@ -50,10 +50,10 @@ void ExternalTools::refresh()
     // Read the overrides once instead of reopening kemurc per tool. An
     // invalid group means "no overrides", which is what a self-contained
     // build without the ExternalToolPaths capability wants.
-    KConfig config(u"kemurc"_s);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
     KConfigGroup overrides;
     if (SandboxCapabilities::instance().has(SandboxCapabilities::ExternalToolPaths))
-        overrides = config.group(u"General"_s);
+        overrides = config->group(u"General"_s);
 
     for (auto it = m_tools.begin(); it != m_tools.end(); ++it)
         detectPath(it.value(), overrides);
@@ -326,17 +326,19 @@ QString ExternalTools::suppressionConfigKey(FeatureGroupId id)
 
 bool ExternalTools::isWarningSuppressed(FeatureGroupId id)
 {
-    KConfig config(u"kemurc"_s);
-    const KConfigGroup g = config.group(u"MissingToolWarnings"_s);
-    return g.readEntry(suppressionConfigKey(id), false);
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup grp = config->group(u"MissingToolWarnings"_s);
+
+    return grp.readEntry(suppressionConfigKey(id), false);
 }
 
 void ExternalTools::setWarningSuppressed(FeatureGroupId id, bool suppressed)
 {
-    KConfig config(u"kemurc"_s);
-    KConfigGroup g = config.group(u"MissingToolWarnings"_s);
-    g.writeEntry(suppressionConfigKey(id), suppressed);
-    config.sync();
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    KConfigGroup grp = config->group(u"MissingToolWarnings"_s);
+
+    grp.writeEntry(suppressionConfigKey(id), suppressed);
+    config->sync();
 }
 
 QList<ExternalTools::FeatureGroupId> ExternalTools::suppressedFeatureGroups()
@@ -351,7 +353,7 @@ QList<ExternalTools::FeatureGroupId> ExternalTools::suppressedFeatureGroups()
 
 void ExternalTools::resetAllSuppressions()
 {
-    KConfig config(u"kemurc"_s);
-    config.deleteGroup(u"MissingToolWarnings"_s);
-    config.sync();
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    config->deleteGroup(u"MissingToolWarnings"_s);
+    config->sync();
 }

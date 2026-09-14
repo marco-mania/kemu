@@ -17,10 +17,10 @@
 #include <QString>
 #include <QThread>
 
-#include <KConfig>
 #include <KConfigGroup>
 #include <KLocalizedString>
 #include <KProcess>
+#include <KSharedConfig>
 
 #include "utils/virtualnetwork.h"
 
