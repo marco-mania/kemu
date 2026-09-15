@@ -213,6 +213,21 @@ bool MainWindow::queryClose()
             return false;
     }
 
+    if (!m_cloudDeployJobs.isEmpty()) {
+        const auto result = KMessageBox::warningTwoActions(this,
+                                                           i18n("A cloud image is still being prepared. "
+                                                                "Closing the window will wait for the running "
+                                                                "qemu-img operation to finish, which can take "
+                                                                "several minutes.\n\n"
+                                                                "Do you really want to proceed?"),
+                                                           i18nc("@title:window", "Confirm Exit"),
+                                                           KStandardGuiItem::close(),
+                                                           KStandardGuiItem::cancel());
+
+        if (result != KMessageBox::PrimaryAction)
+            return false;
+    }
+
     if (hasRunning && !m_exitPolicyDone) {
         const ExitChoice choice = m_closingFromSession ? ExitChoice::ApplyPolicy : askExitChoice();
 
@@ -4090,46 +4105,62 @@ void MainWindow::deployCloudImage(const QString &vmName)
     auto *rt = m_runtimeManager->runtime(vmName);
     if (!rt || !rt->deployment)
         return;
+    if (m_cloudDeployJobs.contains(vmName))
+        return;
 
     const VmRuntimeInfo::PendingDeployment pd = *rt->deployment;
-    QDir vmDir = getVmDir(vmName);
-    VMConfig config = loadVmConfig(vmDir.absolutePath());
+    const QDir vmDir = getVmDir(vmName);
+    const VMConfig config = loadVmConfig(vmDir.absolutePath());
 
     statusBar()->showMessage(i18n("Deploying '%1'. Preparing cloud image...", vmName));
 
-    auto result = CloudImageDeployer::deploy(pd.imageLocalPath, vmDir, config.diskSizeGb(), pd.cloudConfig);
+    auto *job = new CloudDeployJob(vmName, pd.imageLocalPath, vmDir, config.diskSizeGb(), pd.cloudConfig, this);
+    m_cloudDeployJobs.insert(vmName, job);
 
-    if (!result.success) {
-        rt->deployment.reset();
+    if (jobTracker)
+        jobTracker->registerJob(job);
 
-        if (selectedVmName() == vmName) {
-            veTreeView->clearSelection();
-            currentConfig = VMConfig();
+    connect(job, &CloudDeployJob::statusMessage, this, [this](const QString &msg) {
+        statusBar()->showMessage(msg);
+    });
+
+    connect(job, &KJob::finished, this, [this](KJob *kjob) {
+        auto *deployJob = qobject_cast<CloudDeployJob *>(kjob);
+        if (!deployJob)
+            return;
+
+        const QString name = deployJob->vmName();
+        const int error = deployJob->error();
+        const QString errorText = deployJob->errorText();
+        const CloudImageDeployer::Result result = deployJob->result();
+
+        m_cloudDeployJobs.remove(name);
+        deployJob->deleteLater();
+
+        // The user can abort while the worker runs; the VM directory may be
+        // gone by now. qemu-img keeps writing into an unlinked file until it
+        // exits, which costs nothing but temporary space.
+        auto *rt = m_runtimeManager->runtime(name);
+        if (!rt || !rt->deployment)
+            return;
+
+        if (error) {
+            statusBar()->showMessage(i18n("Deployment of '%1' failed.", name));
+            KMessageBox::error(this, i18n("Cloud image deployment failed:\n%1", errorText));
+            abortDeployment(name, /*deleteVm=*/true);
+            return;
         }
 
-        {
-            if (!isManagedVmDir(vmDir)) {
-                qCWarning(KEMU) << "Refusing to remove a directory outside the VM store:" << vmDir.absolutePath();
-                return;
-            } else {
-                vmDir.removeRecursively();
-            }
-        }
-        loadVmList();
-        updateDetails();
-        updateActionStates();
+        const QDir vmDir = getVmDir(name);
+        VMConfig config = loadVmConfig(vmDir.absolutePath());
+        config.setDiskPath(result.diskPath);
+        config.setBootFromIso(false);
+        saveVmConfig(vmDir.absolutePath(), config);
 
-        statusBar()->showMessage(i18n("Deployment of '%1' failed.", vmName));
+        startDeployment(name);
+    });
 
-        KMessageBox::error(this, i18n("Cloud image deployment failed:\n%1", result.errorMessage));
-        return;
-    }
-
-    config.setDiskPath(result.diskPath);
-    config.setBootFromIso(false);
-    saveVmConfig(vmDir.absolutePath(), config);
-
-    startDeployment(vmName);
+    job->start();
 }
 
 void MainWindow::populateUsbMenuFor(const QString &vmName, QMenu *target)

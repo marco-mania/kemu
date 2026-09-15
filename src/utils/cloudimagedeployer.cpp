@@ -13,13 +13,20 @@
 
 using namespace Qt::StringLiterals;
 
-CloudImageDeployer::Result CloudImageDeployer::deploy(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, const CloudDeployConfig &config)
+CloudImageDeployer::Result
+CloudImageDeployer::deploy(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, const CloudDeployConfig &config, const ProgressReport &progress)
 {
     Result result;
 
-    if (!prepareImage(sourceImage, vmDir, diskSizeGb, result.diskPath, result.errorMessage)) {
+    if (progress)
+        progress(0, i18n("Preparing the disk image..."));
+
+    if (!prepareImage(sourceImage, vmDir, diskSizeGb, result.diskPath, result.errorMessage, progress)) {
         return result;
     }
+
+    if (progress)
+        progress(2, i18n("Building the cloud-init image..."));
 
     const QByteArray userData = generateUserData(config, result.errorMessage);
     if (userData.isEmpty())
@@ -57,7 +64,12 @@ QString CloudImageDeployer::noCloudIsoPath(const QDir &vmDir)
     return vmDir.absoluteFilePath(u"cidata.iso"_s);
 }
 
-bool CloudImageDeployer::prepareImage(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, QString &diskPathOut, QString &errorOut)
+bool CloudImageDeployer::prepareImage(const QString &sourceImage,
+                                      const QDir &vmDir,
+                                      int diskSizeGb,
+                                      QString &diskPathOut,
+                                      QString &errorOut,
+                                      const ProgressReport &progress)
 {
     diskPathOut = vmDir.absoluteFilePath(u"disk.qcow2"_s);
 
@@ -105,6 +117,10 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage, const QDir &vm
             return false;
         }
     }
+
+    // Resize to target size
+    if (progress)
+        progress(1, i18n("Resizing the disk image..."));
 
     // Resize to target size
     proc.setProgram(qemuImg, {u"resize"_s, diskPathOut, u"%1G"_s.arg(diskSizeGb)});

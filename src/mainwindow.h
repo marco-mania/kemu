@@ -49,6 +49,7 @@
 #include "dbusdisplay/dbusviewerwindow.h"
 #include "dialogs/deploymentlogwindow.h"
 #include "dialogs/settingsdialog.h"
+#include "jobs/clouddeployjob.h"
 #include "jobs/createvmjob.h"
 #include "models/virtualenvironmentmodel.h"
 #include "runtime/vmruntimemanager.h"
@@ -245,6 +246,10 @@ private:
     QMap<QString, bool> m_pendingDeploymentAbort;
 
     void deployCloudImage(const QString &vmName);
+
+    // Cloud deployments whose image preparation is still running in a worker
+    // thread, keyed by VM name.
+    QMap<QString, QPointer<CloudDeployJob>> m_cloudDeployJobs;
 
     void populateUsbMenuFor(const QString &vmName, QMenu *target);
 

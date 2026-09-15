@@ -51,7 +51,12 @@ public:
         QString noCloudIsoPath;
     };
 
-    static Result deploy(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, const CloudDeployConfig &config);
+    // Reports the phase the deployment has reached. Called from whatever
+    // thread deploy() runs on.
+    static constexpr int ProgressSteps = 3;
+    using ProgressReport = std::function<void(int step, const QString &message)>;
+
+    static Result deploy(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, const CloudDeployConfig &config, const ProgressReport &progress = {});
 
     static void removeNoCloudIso(const QDir &vmDir);
     static bool hasNoCloudIso(const QDir &vmDir);
@@ -60,7 +65,8 @@ public:
 private:
     CloudImageDeployer() = delete;
 
-    static bool prepareImage(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, QString &diskPathOut, QString &errorOut);
+    static bool
+    prepareImage(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, QString &diskPathOut, QString &errorOut, const ProgressReport &progress);
 
     static QByteArray generateUserData(const CloudDeployConfig &config, QString &errorOut);
     static QByteArray generateMetaData(const CloudDeployConfig &config);
