@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
 #include <QScopeGuard>
@@ -167,6 +168,7 @@ Q_SIGNALS:
 
 private:
     static constexpr int kQemuStartupProbeMs = 750;
+    static constexpr int kHelperShutdownMs = 3000;
 
     VirtualEnvironmentModel *m_model = nullptr;
     VirtualNetworkManager *m_network_manager = nullptr;

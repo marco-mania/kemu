@@ -214,19 +214,36 @@ void VmRuntimeManager::tearDown(const QString &vmName)
     // Direct connection: it has to be gone before the helpers below.
     Q_EMIT runtimeTearingDown(vmName);
 
-    auto stopHelper = [](QPointer<KProcess> &p, int waitMs) {
+    auto terminateHelper = [](QPointer<KProcess> &p) {
         if (!p)
             return;
         p->disconnect();
         p->terminate();
+    };
+
+    auto reapHelper = [](QPointer<KProcess> &p, int waitMs) {
+        if (!p)
+            return;
         if (!p->waitForFinished(waitMs))
             p->kill();
         delete p; // QPointer auto-nullifies
     };
 
-    stopHelper(entry->swtpmProcess, 3000);
-    stopHelper(entry->virtiofsdProcess, 3000);
-    stopHelper(entry->passtProcess, 3000);
+    // Signal all three first, then share one deadline: they shut down in
+    // parallel instead of one after the other.
+    terminateHelper(entry->swtpmProcess);
+    terminateHelper(entry->virtiofsdProcess);
+    terminateHelper(entry->passtProcess);
+
+    QElapsedTimer deadline;
+    deadline.start();
+    const auto remaining = [&deadline] {
+        return static_cast<int>(qMax(qint64(0), qint64(kHelperShutdownMs) - deadline.elapsed()));
+    };
+
+    reapHelper(entry->swtpmProcess, remaining());
+    reapHelper(entry->virtiofsdProcess, remaining());
+    reapHelper(entry->passtProcess, remaining());
 
     QFile::remove(swtpmSocketPath(vmName));
     QFile::remove(virtiofsdPidPath(vmName));
