@@ -25,7 +25,6 @@
 #include <GL/gl.h>
 
 #include "dbusdisplay/controlconnection.h"
-#include "dbusdisplay/glibeventbridge.h"
 #include "dbusdisplay/listener.h"
 #include "dbusdisplay/waylandpointerlock.h"
 
@@ -38,14 +37,6 @@ class QemuDisplayWidget : public QOpenGLWidget, protected QOpenGLFunctions
 public:
     QemuDisplayWidget(QemuDisplayListener *listener, QemuControlConnection *ctrl, const QString &consolePath, QWidget *parent = nullptr);
     ~QemuDisplayWidget() override;
-
-    // Monitor GLib socket FD (instead of polling timer).
-    // Call for each GDBus socketpair FD (Display, AudioOut, AudioIn).
-    void watchGLibFd(int fd, GMainContext *ctx);
-
-    // Immediately deactivate all GLib socket notifiers.
-    // Must be called BEFORE listeners are destroyed.
-    void stopAllGLibWatching();
 
     void setScale(float scale);
 
@@ -143,8 +134,6 @@ private:
     QPointer<QemuControlConnection> m_ctrl = nullptr;
     QString m_consolePath;
     guint m_propsSubscription = 0;
-
-    QList<GLibEventBridge *> m_glibBridges;
 
     bool m_pendingRepaint = false;
 

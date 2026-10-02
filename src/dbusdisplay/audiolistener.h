@@ -21,6 +21,7 @@
 #include <QObject>
 #include <QTimer>
 
+#include "dbusdisplay/glibeventbridge.h"
 #include "dbusdisplay/pcmringbuffer.h"
 
 using namespace Qt::StringLiterals;
@@ -113,11 +114,13 @@ private:
 
     GDBusConnection *m_conn = nullptr;
     GMainContext *m_context = nullptr;
+    GLibEventBridge *m_bridge = nullptr;
     guint m_registrationId = 0;
     int m_ourFd = -1;
     int m_socketFd = -1;
 
     void cleanupConnection();
+    void startDispatching();
 
     QHash<quint64, AudioStream *> m_streams;
     bool m_muted = false;

@@ -24,6 +24,7 @@
 #include <array>
 #include <cstdint>
 
+#include "dbusdisplay/glibeventbridge.h"
 #include "dbusdisplay/uniquefd.h"
 
 using namespace Qt::StringLiterals;
@@ -78,10 +79,10 @@ struct CursorInfo {
 //
 // Threading model:
 //   All public methods (currentImage(), cursorInfo(), takeDmaBufScanout(),
-//   isDmaBuf()) and all GDBus method handlers run on the GUI thread.
-//   GDBus dispatch is driven by QSocketNotifier::activated -> dispatchContext(),
-//   which fires in the thread that owns the notifier - that is the parent
-//   QemuDisplayWidget, which lives on the GUI thread.
+//   isDmaBuf()) and all GDBus callbacks run on the GUI thread. The
+//   connection, its exported objects and its "closed" signal are bound to the
+//   private m_context, which the listener's own GLibEventBridge drives from
+//   the Qt event loop. Nothing goes through the global default GMainContext.
 //
 //   Therefore no internal synchronisation is required. Do NOT call methods
 //   of this class from any other thread without revisiting this assumption.
@@ -176,9 +177,11 @@ private:
 
     void cleanupConnection();
     guint registerInterface(const gchar *introspectionXml, bool advertise);
+    void startDispatching();
 
     GDBusConnection *m_listenerConn = nullptr;
     GMainContext *m_context = nullptr;
+    GLibEventBridge *m_bridge = nullptr;
     guint m_registrationId = 0;
     guint m_registrationIdUnixMap = 0;
     guint m_registrationIdDmabuf2 = 0;

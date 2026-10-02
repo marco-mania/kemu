@@ -565,7 +565,6 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                                                              nullptr);
                          state.window->setWindowTitle(vmName);
                          state.window->setAttribute(Qt::WA_DeleteOnClose, false);
-                         state.window->displayWidget()->watchGLibFd(state.displayListener->socketFd(), state.displayListener->mainContext());
                          state.window->show();
 
                          // --- Teardown triggers ---
@@ -702,7 +701,6 @@ void MainWindow::stopDbusViewer(const QString &vmName)
     rt->viewer.reset();
 
     if (state.window) {
-        state.window->displayWidget()->stopAllGLibWatching();
         disconnect(state.window, &DbusViewerWindow::viewerClosed, this, nullptr);
         state.window->close();
         state.window->deleteLater();

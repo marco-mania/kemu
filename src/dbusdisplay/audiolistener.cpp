@@ -147,6 +147,8 @@ bool QemuAudioListener::connectListener()
         return false;
     }
 
+    // Bind method dispatch to m_context, not the global default context.
+    g_main_context_push_thread_default(m_context);
     m_registrationId = g_dbus_connection_register_object(m_conn,
                                                          KemuDbusDisplayConst::AudioOutListenerPath.constData(),
                                                          nodeInfo->interfaces[0],
@@ -154,6 +156,7 @@ bool QemuAudioListener::connectListener()
                                                          this,
                                                          nullptr,
                                                          &error);
+    g_main_context_pop_thread_default(m_context);
     g_dbus_node_info_unref(nodeInfo);
 
     if (!m_registrationId) {
@@ -163,8 +166,21 @@ bool QemuAudioListener::connectListener()
         return false;
     }
 
+    startDispatching();
     qCDebug(KEMU_DBUSDISPLAY) << "Audio: Listener ready";
     return true;
+}
+
+void QemuAudioListener::startDispatching()
+{
+    // Deferred to the event loop, so no handler runs inside connectListener().
+    QMetaObject::invokeMethod(
+        this,
+        [this] {
+            if (!m_bridge && m_context && !m_closed)
+                m_bridge = new GLibEventBridge(m_context, this);
+        },
+        Qt::QueuedConnection);
 }
 
 // =============================================================================
@@ -174,6 +190,8 @@ void QemuAudioListener::onConnectionClosed(GDBusConnection *, gboolean remote_pe
 {
     auto *self = static_cast<QemuAudioListener *>(user_data);
     self->m_closed = true;
+    if (self->m_bridge)
+        self->m_bridge->stop();
     qCDebug(KEMU_DBUSDISPLAY) << "Audio: Connection closed" << (remote_peer_vanished ? "(QEMU terminated)" : "(local)") << (error ? error->message : "");
     Q_EMIT self->connectionLost();
 }
@@ -480,6 +498,8 @@ void QemuAudioListener::flushStream(quint64 id)
 
 void QemuAudioListener::cleanupConnection()
 {
+    if (m_bridge)
+        m_bridge->stop();
     if (m_registrationId && m_conn) {
         g_dbus_connection_unregister_object(m_conn, m_registrationId);
         m_registrationId = 0;

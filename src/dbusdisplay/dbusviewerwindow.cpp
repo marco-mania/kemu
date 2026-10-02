@@ -889,10 +889,7 @@ void DbusViewerWindow::setClipboardMode(ClipboardDirection dir)
 // =============================================================================
 void DbusViewerWindow::onQemuDisconnected()
 {
-    // IMMEDIATELY deactivate all socket notifiers – prevents further
-    // g_main_context_iteration() calls on the dead connection.
-    m_display->stopAllGLibWatching();
-
+    // The listeners have already stopped their own dispatching.
     // Delayed close – we might still be inside a GLib callback.
     // Calling close() directly would destroy Qt widgets from within a GLib stack
     // frame.
@@ -914,10 +911,6 @@ void DbusViewerWindow::audioOutReady()
 
     m_actAudioOut->setStatusTip(i18n("Toggle audio output (playback)"));
 
-    if (m_audioOut) {
-        m_display->watchGLibFd(m_audioOut->socketFd(), m_audioOut->mainContext());
-    }
-
     updateStatusBar();
     statusBar()->showMessage(i18n("Audio output connected"), 3000);
     qCDebug(KEMU_DBUSDISPLAY) << "DbusViewerWindow: Audio output activated subsequently";
@@ -933,10 +926,6 @@ void DbusViewerWindow::audioInReady()
     m_actAudioIn->setChecked(m_prefs.audioIn);
 
     m_actAudioIn->setStatusTip(i18n("Toggle audio input (microphone)"));
-
-    if (m_audioIn) {
-        m_display->watchGLibFd(m_audioIn->socketFd(), m_audioIn->mainContext());
-    }
 
     updateStatusBar();
     statusBar()->showMessage(i18n("Audio input connected"), 3000);

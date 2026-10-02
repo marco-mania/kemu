@@ -285,6 +285,7 @@ bool QemuDisplayListener::connectListener()
     m_registrationIdDmabuf2 = registerInterface(listenerDmabuf2IntrospectionXml, true);
 
     g_dbus_connection_start_message_processing(m_listenerConn);
+    startDispatching();
 
     qCDebug(KEMU_DBUSDISPLAY) << "Display listener ready, extra interfaces:" << m_extraInterfaces;
     return true;
@@ -300,7 +301,10 @@ guint QemuDisplayListener::registerInterface(const gchar *introspectionXml, bool
         return 0;
     }
 
+    // Method calls are dispatched in the thread-default context at
+    // registration time; bind them to m_context, not the global default.
     GDBusInterfaceInfo *info = nodeInfo->interfaces[0];
+    g_main_context_push_thread_default(m_context);
     const guint id = g_dbus_connection_register_object(m_listenerConn,
                                                        KemuDbusDisplayConst::ListenerPath.constData(),
                                                        info,
@@ -308,6 +312,7 @@ guint QemuDisplayListener::registerInterface(const gchar *introspectionXml, bool
                                                        this,
                                                        nullptr,
                                                        &error);
+    g_main_context_pop_thread_default(m_context);
     if (!id) {
         qCWarning(KEMU_DBUSDISPLAY) << "Display: registering" << info->name << "failed:" << error->message;
         g_error_free(error);
@@ -319,6 +324,19 @@ guint QemuDisplayListener::registerInterface(const gchar *introspectionXml, bool
     return id;
 }
 
+void QemuDisplayListener::startDispatching()
+{
+    // Deferred to the event loop: dispatching inside connectListener() would
+    // emit the initial scanout before the caller has connected its widget.
+    QMetaObject::invokeMethod(
+        this,
+        [this] {
+            if (!m_bridge && m_context && !m_closed)
+                m_bridge = new GLibEventBridge(m_context, this);
+        },
+        Qt::QueuedConnection);
+}
+
 // =============================================================================
 // Connection-Closed Handler
 // =============================================================================
@@ -326,6 +344,8 @@ void QemuDisplayListener::onConnectionClosed(GDBusConnection *, gboolean remote_
 {
     auto *self = static_cast<QemuDisplayListener *>(user_data);
     self->m_closed = true;
+    if (self->m_bridge)
+        self->m_bridge->stop();
     qCDebug(KEMU_DBUSDISPLAY) << "Display: Connection closed" << (remote_peer_vanished ? "(QEMU terminated)" : "(local)") << (error ? error->message : "");
     Q_EMIT self->connectionLost();
 }
@@ -884,6 +904,8 @@ QImage::Format QemuDisplayListener::pixmanFormatToQt(uint32_t pf)
 
 void QemuDisplayListener::cleanupConnection()
 {
+    if (m_bridge)
+        m_bridge->stop();
     ackPendingFrame();
     if (m_registrationIdDmabuf2 && m_listenerConn) {
         g_dbus_connection_unregister_object(m_listenerConn, m_registrationIdDmabuf2);

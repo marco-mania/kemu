@@ -156,7 +156,6 @@ QemuDisplayWidget::~QemuDisplayWidget()
 {
     if (m_ctrl)
         m_ctrl->unsubscribeSignal(m_propsSubscription);
-    stopAllGLibWatching();
     makeCurrent();
     destroyEglImage();
     if (m_importTexture)
@@ -170,24 +169,6 @@ QemuDisplayWidget::~QemuDisplayWidget()
     delete m_shader;
     delete m_cursorShader;
     doneCurrent();
-}
-
-void QemuDisplayWidget::watchGLibFd(int /*fd*/, GMainContext *ctx)
-{
-    if (!ctx)
-        return;
-    m_glibBridges.append(new GLibEventBridge(ctx, this));
-    qCDebug(KEMU_DBUSDISPLAY) << "Bridging GLib context" << ctx;
-}
-
-void QemuDisplayWidget::stopAllGLibWatching()
-{
-    // Only detach, do not delete: we may be inside a handler dispatched by
-    // one of these bridges. They are cleaned up as children of the widget.
-    for (auto *bridge : std::as_const(m_glibBridges))
-        bridge->stop();
-    m_glibBridges.clear();
-    qCDebug(KEMU_DBUSDISPLAY) << "All GLib bridges detached";
 }
 
 // =============================================================================

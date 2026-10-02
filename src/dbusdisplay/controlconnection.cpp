@@ -271,7 +271,10 @@ guint QemuControlConnection::registerObject(const QString &path,
         g_error_free(error);
         return 0;
     }
+    // Bind method dispatch to the bridged m_context, not the global default.
+    g_main_context_push_thread_default(m_context);
     const guint id = g_dbus_connection_register_object(m_conn, path.toUtf8().constData(), nodeInfo->interfaces[0], vtable, userData, nullptr, &error);
+    g_main_context_pop_thread_default(m_context);
     g_dbus_node_info_unref(nodeInfo);
     if (!id) {
         if (errorMsg)
