@@ -9,6 +9,7 @@
 #include <cstring>
 #include <glib.h>
 #include <unistd.h>
+#include <utility>
 
 // GL_BGRA_EXT - not defined in all GLES2 headers,
 // but supported by practically all desktop GPUs.
@@ -763,9 +764,8 @@ void QemuDisplayWidget::endRelativeGrab()
     m_pointerLock->unlock();
     flushMotion(); // do not swallow the last delta
 
-    // Release modifiers so Ctrl/Alt cannot stick in the guest.
-    for (uint32_t evdev : {29u /*LCtrl*/, 97u /*RCtrl*/, 56u /*LAlt*/, 100u /*RAlt*/})
-        m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, u"Release"_s, g_variant_new("(u)", evdevToQnum(evdev)));
+    // The ungrab chord (Ctrl+Alt+G) is still held: release it in the guest.
+    releaseAllKeys();
 
     updateCursor();
     Q_EMIT relativeGrabChanged(false);
@@ -862,7 +862,7 @@ void QemuDisplayWidget::keyPressEvent(QKeyEvent *event)
     uint32_t evdev = event->nativeScanCode();
     if (evdev >= 8)
         evdev -= 8;
-    m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, u"Press"_s, g_variant_new("(u)", evdevToQnum(evdev)));
+    sendKey(evdevToQnum(evdev), true);
 }
 
 void QemuDisplayWidget::keyReleaseEvent(QKeyEvent *event)
@@ -882,7 +882,37 @@ void QemuDisplayWidget::keyReleaseEvent(QKeyEvent *event)
     uint32_t evdev = event->nativeScanCode();
     if (evdev >= 8)
         evdev -= 8;
-    m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, u"Release"_s, g_variant_new("(u)", evdevToQnum(evdev)));
+    sendKey(evdevToQnum(evdev), false);
+}
+
+void QemuDisplayWidget::focusOutEvent(QFocusEvent *event)
+{
+    // Keys held while focus leaves (Alt+Tab, Meta, a popup) never see their
+    // release here and would stay pressed in the guest.
+    releaseAllKeys();
+    QOpenGLWidget::focusOutEvent(event);
+}
+
+void QemuDisplayWidget::sendKey(uint32_t qnum, bool down)
+{
+    if (!m_ctrl)
+        return;
+
+    if (down) {
+        m_pressedKeys.insert(qnum);
+    } else if (!m_pressedKeys.remove(qnum)) {
+        return; // the press never reached the guest, or was released already
+    }
+    m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, down ? u"Press"_s : u"Release"_s, g_variant_new("(u)", qnum));
+}
+
+void QemuDisplayWidget::releaseAllKeys()
+{
+    const QSet<uint32_t> keys = std::exchange(m_pressedKeys, {});
+    if (!m_ctrl)
+        return;
+    for (uint32_t qnum : keys)
+        m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, u"Release"_s, g_variant_new("(u)", qnum));
 }
 
 // Qt intercepts Tab/Shift+Tab in QWidget::event() for focus navigation
@@ -1160,6 +1190,8 @@ void QemuDisplayWidget::setDimmed(bool dimmed)
     if (m_dimmed == dimmed)
         return;
     m_dimmed = dimmed;
+    if (dimmed)
+        releaseAllKeys(); // key releases are swallowed while dimmed
     scheduleRepaint();
 }
 

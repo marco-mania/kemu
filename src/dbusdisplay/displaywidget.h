@@ -15,6 +15,7 @@
 #include <QOpenGLWidget>
 #include <QPainter>
 #include <QPixmap>
+#include <QSet>
 #include <QSize>
 #include <QSocketNotifier>
 #include <QTimer>
@@ -72,6 +73,7 @@ protected:
 
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
+    void focusOutEvent(QFocusEvent *event) override;
     bool focusNextPrevChild(bool next) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void onRelativeMotion(double dx, double dy);
@@ -128,6 +130,12 @@ private:
     bool m_hasPendingRel = false;
 
     void sendWheelClick(uint button);
+
+    // Every key press sent to the guest, so it can be released again when
+    // the matching release never reaches us.
+    void sendKey(uint32_t qnum, bool down);
+    void releaseAllKeys();
+    QSet<uint32_t> m_pressedKeys;
     QPoint m_wheelAccum;
 
     QemuDisplayListener *m_listener;
