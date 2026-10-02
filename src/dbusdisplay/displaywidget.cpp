@@ -18,6 +18,7 @@
 #endif
 
 #include "dbusdisplay/dbusdisplayconst.h"
+#include "dbusdisplay/linuxtoqnum.h"
 #include "kemu_dbusdisplay_debug.h"
 
 // ~125 Hz - below the rate any guest input driver samples at.
@@ -895,7 +896,7 @@ void QemuDisplayWidget::focusOutEvent(QFocusEvent *event)
 
 void QemuDisplayWidget::sendKey(uint32_t qnum, bool down)
 {
-    if (!m_ctrl)
+    if (!m_ctrl || qnum == 0) // 0: key has no qnum (or synthetic event)
         return;
 
     if (down) {
@@ -1134,32 +1135,7 @@ void QemuDisplayWidget::wheelEvent(QWheelEvent *event)
 
 uint32_t QemuDisplayWidget::evdevToQnum(uint32_t evdev)
 {
-    if (evdev <= 88)
-        return evdev;
-    static const uint32_t map[][2] = {
-        {96, 0x9C},
-        {97, 0x9D},
-        {98, 0xB5},
-        {100, 0xB8},
-        {102, 0xC7},
-        {103, 0xC8},
-        {104, 0xC9},
-        {105, 0xCB},
-        {106, 0xCD},
-        {107, 0xCF},
-        {108, 0xD0},
-        {109, 0xD1},
-        {110, 0xD2},
-        {111, 0xD3},
-        {119, 0xC6},
-        {125, 0xDB},
-        {126, 0xDC},
-        {127, 0xDD},
-    };
-    for (const auto &e : map)
-        if (e[0] == evdev)
-            return e[1];
-    return evdev;
+    return KemuKeymap::linuxToQnum(evdev);
 }
 
 int QemuDisplayWidget::qtButtonToQemu(Qt::MouseButton button)
