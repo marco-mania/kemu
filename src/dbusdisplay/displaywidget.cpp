@@ -833,6 +833,22 @@ void QemuDisplayWidget::onRegionUpdated(const QRect &)
 // Keyboard
 // =============================================================================
 
+bool QemuDisplayWidget::event(QEvent *event)
+{
+    // Window shortcuts (Ctrl+W, zoom, ...) would otherwise take keys away
+    // from the guest. Accepting ShortcutOverride delivers them as plain key
+    // events instead. F11 stays with the host as the way in and out of
+    // fullscreen; while dimmed, all host shortcuts keep working.
+    if (event->type() == QEvent::ShortcutOverride && !m_dimmed) {
+        const auto *keyEvent = static_cast<QKeyEvent *>(event);
+        if (keyEvent->key() != Qt::Key_F11 || keyEvent->modifiers() != Qt::NoModifier) {
+            event->accept();
+            return true;
+        }
+    }
+    return QOpenGLWidget::event(event);
+}
+
 void QemuDisplayWidget::keyPressEvent(QKeyEvent *event)
 {
     // While dimmed (e.g. during a save-state), the guest is paused or
@@ -850,9 +866,8 @@ void QemuDisplayWidget::keyPressEvent(QKeyEvent *event)
         return;
     }
 
-    // Reclaim F11 from the guest while fullscreen, so the user
-    // always has a way out. In windowed mode F11 keeps reaching
-    // the guest, and the QAction shortcut handles toggling.
+    // F11 is left to the host (see event()). In fullscreen the hidden menu
+    // bar may disable the action's shortcut, so toggle from here as well.
     if (window()->isFullScreen() && event->key() == Qt::Key_F11 && event->modifiers() == Qt::NoModifier) {
         Q_EMIT fullscreenToggleRequested();
         event->accept();

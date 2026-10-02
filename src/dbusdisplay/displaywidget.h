@@ -71,6 +71,8 @@ protected:
     void initializeGL() override;
     void paintGL() override;
 
+    bool event(QEvent *event) override;
+
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
     void focusOutEvent(QFocusEvent *event) override;
