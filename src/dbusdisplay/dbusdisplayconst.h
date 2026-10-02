@@ -21,7 +21,8 @@ inline constexpr auto AudioPath = "/org/qemu/Display1/Audio"_L1;
 inline constexpr auto ClipboardPath = "/org/qemu/Display1/Clipboard"_L1;
 
 inline constexpr auto ListenerIface = "org.qemu.Display1.Listener"_L1;
-inline constexpr auto ListenerUnixIface = "org.qemu.Display1.Listener.Unix"_L1;
+inline constexpr auto ListenerUnixMapIface = "org.qemu.Display1.Listener.Unix.Map"_L1;
+inline constexpr auto ListenerScanoutDmabuf2Iface = "org.qemu.Display1.Listener.Unix.ScanoutDMABUF2"_L1;
 
 // D-Bus interface names
 inline constexpr auto ConsoleIface = "org.qemu.Display1.Console"_L1;

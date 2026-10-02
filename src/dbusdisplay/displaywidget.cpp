@@ -16,10 +16,6 @@
 #define GL_BGRA_EXT 0x80E1
 #endif
 
-#ifndef DRM_FORMAT_MOD_INVALID
-#define DRM_FORMAT_MOD_INVALID 0x00ffffffffffffffULL
-#endif
-
 #include "dbusdisplay/dbusdisplayconst.h"
 #include "kemu_dbusdisplay_debug.h"
 
@@ -352,8 +348,11 @@ bool QemuDisplayWidget::initEglFunctions()
     if (!m_eglCreateImageKHR || !m_eglDestroyImageKHR || !m_glEGLImageTargetTexture2DOES)
         return false;
 
-    const char *ext = eglQueryString(m_eglDisplay, EGL_EXTENSIONS);
-    return ext && strstr(ext, "EGL_EXT_image_dma_buf_import");
+    // Whole-token match: a substring search for the base extension would
+    // also hit the _modifiers one.
+    const QList<QByteArray> extensions = QByteArray(eglQueryString(m_eglDisplay, EGL_EXTENSIONS)).split(' ');
+    m_hasDmaBufModifiers = extensions.contains(QByteArrayLiteral("EGL_EXT_image_dma_buf_import_modifiers"));
+    return extensions.contains(QByteArrayLiteral("EGL_EXT_image_dma_buf_import"));
 }
 
 // =============================================================================
@@ -362,46 +361,67 @@ bool QemuDisplayWidget::initEglFunctions()
 
 bool QemuDisplayWidget::importDmaBuf()
 {
+    // buf owns the fds; EGL dups what it needs, so they close on return.
     DmaBufScanout buf;
     if (!m_listener->takeDmaBufScanout(buf))
         return false;
 
-    // buf.fd is now a UniqueFd that we own. It will be closed at the end
-    // of this function by RAII regardless of which path we take.
-    // EGL_DMA_BUF_PLANE0_FD_EXT requires the raw FD value; EGL dup's it
-    // internally on success, so closing our copy afterwards is correct.
-
     makeCurrent();
     destroyEglImage();
 
-    EGLint attribs[17];
+    const bool hasModifier = buf.modifier != DRM_FORMAT_MOD_INVALID;
+    const bool passModifier = hasModifier && m_hasDmaBufModifiers;
+    if ((hasModifier && !passModifier && buf.modifier != DRM_FORMAT_MOD_LINEAR) || (buf.numPlanes > 3 && !m_hasDmaBufModifiers)) {
+        qCWarning(KEMU_DBUSDISPLAY).nospace() << "DMA-BUF needs EGL_EXT_image_dma_buf_import_modifiers: modifier=0x" << Qt::hex << buf.modifier << Qt::dec
+                                              << " planes=" << buf.numPlanes;
+        return false;
+    }
+
+    static constexpr EGLint kPlaneAttribs[DmaBufScanout::kMaxPlanes][5] = {
+        {EGL_DMA_BUF_PLANE0_FD_EXT, EGL_DMA_BUF_PLANE0_OFFSET_EXT, EGL_DMA_BUF_PLANE0_PITCH_EXT, EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT},
+        {EGL_DMA_BUF_PLANE1_FD_EXT, EGL_DMA_BUF_PLANE1_OFFSET_EXT, EGL_DMA_BUF_PLANE1_PITCH_EXT, EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT},
+        {EGL_DMA_BUF_PLANE2_FD_EXT, EGL_DMA_BUF_PLANE2_OFFSET_EXT, EGL_DMA_BUF_PLANE2_PITCH_EXT, EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT},
+        {EGL_DMA_BUF_PLANE3_FD_EXT, EGL_DMA_BUF_PLANE3_OFFSET_EXT, EGL_DMA_BUF_PLANE3_PITCH_EXT, EGL_DMA_BUF_PLANE3_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE3_MODIFIER_HI_EXT},
+    };
+
+    EGLint attribs[6 + DmaBufScanout::kMaxPlanes * 10 + 1];
     int i = 0;
     attribs[i++] = EGL_WIDTH;
-    attribs[i++] = buf.width;
+    attribs[i++] = EGLint(buf.backingWidth);
     attribs[i++] = EGL_HEIGHT;
-    attribs[i++] = buf.height;
+    attribs[i++] = EGLint(buf.backingHeight);
     attribs[i++] = EGL_LINUX_DRM_FOURCC_EXT;
-    attribs[i++] = buf.fourcc;
-    attribs[i++] = EGL_DMA_BUF_PLANE0_FD_EXT;
-    attribs[i++] = buf.fd.get(); // <-- .get(), still owned by buf
-    attribs[i++] = EGL_DMA_BUF_PLANE0_OFFSET_EXT;
-    attribs[i++] = 0;
-    attribs[i++] = EGL_DMA_BUF_PLANE0_PITCH_EXT;
-    attribs[i++] = buf.stride;
+    attribs[i++] = EGLint(buf.fourcc);
 
-    if (buf.modifier != DRM_FORMAT_MOD_INVALID) {
-        attribs[i++] = EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT;
-        attribs[i++] = static_cast<EGLint>(buf.modifier & 0xFFFFFFFF);
-        attribs[i++] = EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT;
-        attribs[i++] = static_cast<EGLint>(buf.modifier >> 32);
+    for (int p = 0; p < buf.numPlanes; ++p) {
+        attribs[i++] = kPlaneAttribs[p][0];
+        attribs[i++] = buf.planeFd(p);
+        attribs[i++] = kPlaneAttribs[p][1];
+        attribs[i++] = EGLint(buf.offsets[p]);
+        attribs[i++] = kPlaneAttribs[p][2];
+        attribs[i++] = EGLint(buf.strides[p]);
+        if (passModifier) {
+            attribs[i++] = kPlaneAttribs[p][3];
+            attribs[i++] = EGLint(buf.modifier & 0xffffffff);
+            attribs[i++] = kPlaneAttribs[p][4];
+            attribs[i++] = EGLint(buf.modifier >> 32);
+        }
     }
     attribs[i++] = EGL_NONE;
 
-    m_eglImage = m_eglCreateImageKHR(m_eglDisplay, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
-    // buf.fd's destructor will close the FD when 'buf' goes out of scope.
+    if (buf.fourcc != m_importFourcc || buf.modifier != m_importModifier || buf.numPlanes != m_importPlanes) {
+        qCDebug(KEMU_DBUSDISPLAY).nospace() << "DMA-BUF layout: fourcc=0x" << Qt::hex << buf.fourcc << " modifier=0x" << buf.modifier << Qt::dec
+                                            << " planes=" << buf.numPlanes << " backing=" << buf.backingWidth << "x" << buf.backingHeight
+                                            << " rect=" << buf.x << "," << buf.y << " " << buf.width << "x" << buf.height;
+        m_importFourcc = buf.fourcc;
+        m_importModifier = buf.modifier;
+        m_importPlanes = buf.numPlanes;
+    }
 
+    m_eglImage = m_eglCreateImageKHR(m_eglDisplay, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
     if (m_eglImage == EGL_NO_IMAGE_KHR) {
-        qCWarning(KEMU_DBUSDISPLAY) << "EGLImage failed: fourcc=0x" << Qt::hex << buf.fourcc;
+        qCWarning(KEMU_DBUSDISPLAY).nospace() << "EGLImage import failed: EGL error 0x" << Qt::hex << eglGetError() << " fourcc=0x" << buf.fourcc
+                                              << " modifier=0x" << buf.modifier << Qt::dec << " planes=" << buf.numPlanes;
         return false;
     }
 
@@ -415,9 +435,21 @@ bool QemuDisplayWidget::importDmaBuf()
     } else {
         glBindTexture(GL_TEXTURE_2D, m_importTexture);
     }
-    m_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, m_eglImage);
 
-    m_fbSize = QSize(buf.width, buf.height);
+    for (int n = 0; n < 8 && glGetError() != GL_NO_ERROR; ++n) { }
+    m_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, m_eglImage);
+    if (const GLenum err = glGetError(); err != GL_NO_ERROR) {
+        // Typically a format/modifier pair the driver supports only as
+        // GL_TEXTURE_EXTERNAL_OES.
+        qCWarning(KEMU_DBUSDISPLAY).nospace() << "Binding DMA-BUF image failed: GL error 0x" << Qt::hex << err << " fourcc=0x" << buf.fourcc
+                                              << " modifier=0x" << buf.modifier << Qt::dec;
+        destroyEglImage();
+        return false;
+    }
+
+    m_fbSize = QSize(int(buf.width), int(buf.height));
+    m_importOrigin = QPoint(int(buf.x), int(buf.y));
+    m_importBackingSize = QSize(int(buf.backingWidth), int(buf.backingHeight));
     m_texAllocSize = QSize(); // force present-texture realloc on next blit
     m_usingDmaBuf = true;
     m_flipY = buf.y0_top;
@@ -457,7 +489,9 @@ void QemuDisplayWidget::blitImportToPresent()
         return;
     }
 
-    glViewport(0, 0, m_fbSize.width(), m_fbSize.height());
+    // Crop the visible rect: draw the whole backing buffer shifted by the
+    // origin and let the present texture's bounds clip the rest.
+    glViewport(-m_importOrigin.x(), -m_importOrigin.y(), m_importBackingSize.width(), m_importBackingSize.height());
 
     m_shader->bind();
     glActiveTexture(GL_TEXTURE0);

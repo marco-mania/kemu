@@ -18,18 +18,48 @@
 #include <QRect>
 #include <QRegion>
 
+#include <QByteArrayList>
+
+#include <algorithm>
+#include <array>
+#include <cstdint>
+
 #include "dbusdisplay/uniquefd.h"
 
 using namespace Qt::StringLiterals;
 
+#ifndef DRM_FORMAT_MOD_INVALID
+#define DRM_FORMAT_MOD_INVALID 0x00ffffffffffffffULL
+#endif
+#ifndef DRM_FORMAT_MOD_LINEAR
+#define DRM_FORMAT_MOD_LINEAR 0ULL
+#endif
+
 struct DmaBufScanout {
-    UniqueFd fd;
+    static constexpr int kMaxPlanes = 4;
+
+    std::array<UniqueFd, kMaxPlanes> fds;
+    std::array<uint32_t, kMaxPlanes> offsets = {};
+    std::array<uint32_t, kMaxPlanes> strides = {};
+    int numFds = 0; // planes beyond numFds share the last fd
+    int numPlanes = 0;
+
+    // Visible scanout rect inside the backing buffer
+    uint32_t x = 0;
+    uint32_t y = 0;
     uint32_t width = 0;
     uint32_t height = 0;
-    uint32_t stride = 0;
+    uint32_t backingWidth = 0;
+    uint32_t backingHeight = 0;
+
     uint32_t fourcc = 0;
-    uint64_t modifier = 0;
+    uint64_t modifier = DRM_FORMAT_MOD_INVALID;
     bool y0_top = true;
+
+    int planeFd(int plane) const
+    {
+        return numFds > 0 ? fds[std::min(plane, numFds - 1)].get() : -1;
+    }
 };
 
 struct CursorInfo {
@@ -101,6 +131,13 @@ public:
                              GVariant *parameters,
                              GDBusMethodInvocation *invocation,
                              gpointer user_data);
+    static GVariant *onGetProperty(GDBusConnection *connection,
+                                   const gchar *sender,
+                                   const gchar *object_path,
+                                   const gchar *interface_name,
+                                   const gchar *property_name,
+                                   GError **error,
+                                   gpointer user_data);
     static void onConnectionClosed(GDBusConnection *connection, gboolean remote_peer_vanished, GError *error, gpointer user_data);
 
     GMainContext *mainContext() const
@@ -120,6 +157,8 @@ private:
     void handleScanout(GVariant *parameters, GDBusMethodInvocation *invocation);
     void handleScanoutMap(GVariant *parameters, GDBusMethodInvocation *invocation);
     void handleScanoutDMABUF(GVariant *parameters, GDBusMethodInvocation *invocation);
+    void handleScanoutDMABUF2(GVariant *parameters, GDBusMethodInvocation *invocation);
+    void acceptDmaBuf(DmaBufScanout &&buf, GDBusMethodInvocation *invocation);
     void handleUpdate(GVariant *parameters, GDBusMethodInvocation *invocation);
     void handleUpdateMap(GVariant *parameters, GDBusMethodInvocation *invocation);
     void handleUpdateDMABUF(GVariant *parameters, GDBusMethodInvocation *invocation);
@@ -136,11 +175,16 @@ private:
     GDBusMethodInvocation *m_pendingFrameAck = nullptr;
 
     void cleanupConnection();
+    guint registerInterface(const gchar *introspectionXml, bool advertise);
 
     GDBusConnection *m_listenerConn = nullptr;
     GMainContext *m_context = nullptr;
     guint m_registrationId = 0;
-    guint m_registrationIdUnix = 0;
+    guint m_registrationIdUnixMap = 0;
+    guint m_registrationIdDmabuf2 = 0;
+
+    // Optional interfaces reported to QEMU via the "Interfaces" property
+    QByteArrayList m_extraInterfaces;
 
     QRegion m_dirtyRegion;
 

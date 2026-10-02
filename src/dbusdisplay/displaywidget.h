@@ -187,6 +187,16 @@ private:
     typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(GLenum, void *);
     PFNGLEGLIMAGETARGETTEXTURE2DOESPROC m_glEGLImageTargetTexture2DOES = nullptr;
     bool m_eglAvailable = false;
+    bool m_hasDmaBufModifiers = false;
+
+    // Visible rect of the imported buffer, cropped out in blitImportToPresent()
+    QPoint m_importOrigin;
+    QSize m_importBackingSize;
+
+    // Last imported layout, to log format changes once instead of per frame
+    uint32_t m_importFourcc = 0;
+    uint64_t m_importModifier = 0;
+    int m_importPlanes = 0;
 
     qreal m_scale = 1.0f;
 

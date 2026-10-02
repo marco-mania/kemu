@@ -70,34 +70,35 @@ static const gchar listenerIntrospectionXml[] =
       <arg type="u" name="fourcc" direction="in"/>
       <arg type="t" name="modifier" direction="in"/>
       <arg type="b" name="y0_top" direction="in"/>
-      </method>
-      <method name="UpdateDMABUF">
+    </method>
+    <method name="UpdateDMABUF">
       <arg type="i" name="x" direction="in"/>
       <arg type="i" name="y" direction="in"/>
       <arg type="i" name="w" direction="in"/>
       <arg type="i" name="h" direction="in"/>
-      </method>
-      <method name="Disable"/>
-      <method name="MouseSet">
+    </method>
+    <method name="Disable"/>
+    <method name="MouseSet">
       <arg type="i" name="x" direction="in"/>
       <arg type="i" name="y" direction="in"/>
       <arg type="i" name="on" direction="in"/>
-      </method>
-      <method name="CursorDefine">
+    </method>
+    <method name="CursorDefine">
       <arg type="i" name="width" direction="in"/>
       <arg type="i" name="height" direction="in"/>
       <arg type="i" name="hot_x" direction="in"/>
       <arg type="i" name="hot_y" direction="in"/>
       <arg type="ay" name="data" direction="in"/>
-      </method>
-      </interface>
-      </node>
-      )XML";
+    </method>
+    <property name="Interfaces" type="as" access="read"/>
+  </interface>
+</node>
+)XML";
 
-static const gchar listenerUnixIntrospectionXml[] =
+static const gchar listenerUnixMapIntrospectionXml[] =
     R"XML(
 <node>
-  <interface name="org.qemu.Display1.Listener.Unix">
+  <interface name="org.qemu.Display1.Listener.Unix.Map">
     <method name="ScanoutMap">
       <arg type="h" name="handle" direction="in"/>
       <arg type="u" name="offset" direction="in"/>
@@ -116,7 +117,30 @@ static const gchar listenerUnixIntrospectionXml[] =
 </node>
 )XML";
 
-static const GDBusInterfaceVTable listenerVTable = {QemuDisplayListener::onMethodCall, nullptr, nullptr, {}};
+static const gchar listenerDmabuf2IntrospectionXml[] =
+    R"XML(
+<node>
+  <interface name="org.qemu.Display1.Listener.Unix.ScanoutDMABUF2">
+    <method name="ScanoutDMABUF2">
+      <arg type="ah" name="dmabuf" direction="in"/>
+      <arg type="u" name="x" direction="in"/>
+      <arg type="u" name="y" direction="in"/>
+      <arg type="u" name="width" direction="in"/>
+      <arg type="u" name="height" direction="in"/>
+      <arg type="au" name="offset" direction="in"/>
+      <arg type="au" name="stride" direction="in"/>
+      <arg type="u" name="num_planes" direction="in"/>
+      <arg type="u" name="fourcc" direction="in"/>
+      <arg type="u" name="backing_width" direction="in"/>
+      <arg type="u" name="backing_height" direction="in"/>
+      <arg type="t" name="modifier" direction="in"/>
+      <arg type="b" name="y0_top" direction="in"/>
+    </method>
+  </interface>
+</node>
+)XML";
+
+static const GDBusInterfaceVTable listenerVTable = {QemuDisplayListener::onMethodCall, QemuDisplayListener::onGetProperty, nullptr, {}};
 
 // =============================================================================
 // Constructor / Destructor
@@ -153,7 +177,7 @@ QRegion QemuDisplayListener::takeDirtyRegion()
 
 bool QemuDisplayListener::isDmaBuf() const
 {
-    return m_dmaBuf.fd.isValid();
+    return m_dmaBuf.numFds > 0 && m_dmaBuf.fds[0].isValid();
 }
 
 CursorInfo QemuDisplayListener::cursorInfo() const
@@ -171,19 +195,11 @@ void QemuDisplayListener::ackPendingFrame()
 
 bool QemuDisplayListener::takeDmaBufScanout(DmaBufScanout &out)
 {
-    if (!isDmaBuf() || !m_dmaBuf.fd.isValid())
+    if (!isDmaBuf())
         return false;
 
-    // Move all members. The FD moves out (m_dmaBuf.fd becomes invalid),
-    // the other plain-old-data members get copied.
-    out.fd = std::move(m_dmaBuf.fd);
-    out.width = m_dmaBuf.width;
-    out.height = m_dmaBuf.height;
-    out.stride = m_dmaBuf.stride;
-    out.fourcc = m_dmaBuf.fourcc;
-    out.modifier = m_dmaBuf.modifier;
-    out.y0_top = m_dmaBuf.y0_top;
-
+    out = std::move(m_dmaBuf);
+    m_dmaBuf = DmaBufScanout();
     return true;
 }
 
@@ -238,8 +254,12 @@ bool QemuDisplayListener::connectListener()
         return false;
     }
 
+    // QEMU reads the Interfaces property right after the handshake, so hold
+    // back all incoming messages until every interface is exported.
+    const auto flags = static_cast<GDBusConnectionFlags>(G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT | G_DBUS_CONNECTION_FLAGS_DELAY_MESSAGE_PROCESSING);
+
     g_main_context_push_thread_default(m_context);
-    m_listenerConn = g_dbus_connection_new_sync(G_IO_STREAM(sockConn), nullptr, G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT, nullptr, nullptr, &error);
+    m_listenerConn = g_dbus_connection_new_sync(G_IO_STREAM(sockConn), nullptr, flags, nullptr, nullptr, &error);
     g_main_context_pop_thread_default(m_context);
     g_object_unref(sockConn);
 
@@ -253,47 +273,50 @@ bool QemuDisplayListener::connectListener()
     g_dbus_connection_set_exit_on_close(m_listenerConn, FALSE);
     g_signal_connect(m_listenerConn, "closed", G_CALLBACK(QemuDisplayListener::onConnectionClosed), this);
 
-    GDBusNodeInfo *nodeInfo = g_dbus_node_info_new_for_xml(listenerIntrospectionXml, &error);
+    m_extraInterfaces.clear();
+    m_registrationId = registerInterface(listenerIntrospectionXml, false);
+    if (!m_registrationId) {
+        cleanupConnection();
+        return false;
+    }
+
+    // Optional: without them QEMU falls back to the base interface.
+    m_registrationIdUnixMap = registerInterface(listenerUnixMapIntrospectionXml, true);
+    m_registrationIdDmabuf2 = registerInterface(listenerDmabuf2IntrospectionXml, true);
+
+    g_dbus_connection_start_message_processing(m_listenerConn);
+
+    qCDebug(KEMU_DBUSDISPLAY) << "Display listener ready, extra interfaces:" << m_extraInterfaces;
+    return true;
+}
+
+guint QemuDisplayListener::registerInterface(const gchar *introspectionXml, bool advertise)
+{
+    GError *error = nullptr;
+    GDBusNodeInfo *nodeInfo = g_dbus_node_info_new_for_xml(introspectionXml, &error);
     if (!nodeInfo) {
         qCCritical(KEMU_DBUSDISPLAY) << "Display: introspection XML error:" << error->message;
         g_error_free(error);
-        cleanupConnection();
-        return false;
+        return 0;
     }
-    m_registrationId = g_dbus_connection_register_object(m_listenerConn,
-                                                         KemuDbusDisplayConst::ListenerPath.constData(),
-                                                         nodeInfo->interfaces[0],
-                                                         &listenerVTable,
-                                                         this,
-                                                         nullptr,
-                                                         &error);
-    g_dbus_node_info_unref(nodeInfo);
-    if (!m_registrationId) {
-        qCCritical(KEMU_DBUSDISPLAY) << "Display: register_object failed:" << error->message;
+
+    GDBusInterfaceInfo *info = nodeInfo->interfaces[0];
+    const guint id = g_dbus_connection_register_object(m_listenerConn,
+                                                       KemuDbusDisplayConst::ListenerPath.constData(),
+                                                       info,
+                                                       &listenerVTable,
+                                                       this,
+                                                       nullptr,
+                                                       &error);
+    if (!id) {
+        qCWarning(KEMU_DBUSDISPLAY) << "Display: registering" << info->name << "failed:" << error->message;
         g_error_free(error);
-        cleanupConnection();
-        return false;
+    } else if (advertise) {
+        m_extraInterfaces.append(QByteArray(info->name));
     }
 
-    GDBusNodeInfo *unixNode = g_dbus_node_info_new_for_xml(listenerUnixIntrospectionXml, &error);
-    if (unixNode) {
-        m_registrationIdUnix = g_dbus_connection_register_object(m_listenerConn,
-                                                                 KemuDbusDisplayConst::ListenerPath.constData(),
-                                                                 unixNode->interfaces[0],
-                                                                 &listenerVTable,
-                                                                 this,
-                                                                 nullptr,
-                                                                 &error);
-        g_dbus_node_info_unref(unixNode);
-        if (!m_registrationIdUnix) {
-            qCWarning(KEMU_DBUSDISPLAY) << "Display: Unix interface register failed:" << error->message;
-            g_error_free(error);
-            // Note: not fatal - the Unix interface is optional
-        }
-    }
-
-    qCDebug(KEMU_DBUSDISPLAY) << "Display listener ready";
-    return true;
+    g_dbus_node_info_unref(nodeInfo);
+    return id;
 }
 
 // =============================================================================
@@ -346,14 +369,59 @@ void QemuDisplayListener::onMethodCall(GDBusConnection *,
             self->handleCursorDefine(parameters, invocation);
         else
             g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "Unknown: %s", method_name);
-    } else if (iface == KemuDbusDisplayConst::ListenerUnixIface) {
+    } else if (iface == KemuDbusDisplayConst::ListenerUnixMapIface) {
         if (method == u"ScanoutMap"_s)
             self->handleScanoutMap(parameters, invocation);
         else if (method == u"UpdateMap"_s)
             self->handleUpdateMap(parameters, invocation);
         else
             g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "Unknown: %s", method_name);
+    } else if (iface == KemuDbusDisplayConst::ListenerScanoutDmabuf2Iface) {
+        if (method == u"ScanoutDMABUF2"_s)
+            self->handleScanoutDMABUF2(parameters, invocation);
+        else
+            g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "Unknown: %s", method_name);
+    } else {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_INTERFACE, "Unknown: %s", interface_name);
     }
+}
+
+GVariant *QemuDisplayListener::onGetProperty(GDBusConnection *,
+                                             const gchar *,
+                                             const gchar *,
+                                             const gchar *interface_name,
+                                             const gchar *property_name,
+                                             GError **error,
+                                             gpointer user_data)
+{
+    auto *self = static_cast<QemuDisplayListener *>(user_data);
+
+    if (QLatin1StringView(interface_name) == KemuDbusDisplayConst::ListenerIface && g_strcmp0(property_name, "Interfaces") == 0) {
+        GVariantBuilder builder;
+        g_variant_builder_init(&builder, G_VARIANT_TYPE_STRING_ARRAY);
+        for (const QByteArray &name : std::as_const(self->m_extraInterfaces))
+            g_variant_builder_add(&builder, "s", name.constData());
+        return g_variant_builder_end(&builder);
+    }
+
+    g_set_error(error, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_PROPERTY, "Unknown property %s.%s", interface_name, property_name);
+    return nullptr;
+}
+
+// Takes ownership of a duplicate of the fd at index in the message's fd list.
+static UniqueFd takeInvocationFd(GDBusMethodInvocation *invocation, gint32 index)
+{
+    GUnixFDList *fdList = g_dbus_message_get_unix_fd_list(g_dbus_method_invocation_get_message(invocation));
+    if (!fdList || index < 0 || index >= g_unix_fd_list_get_length(fdList))
+        return UniqueFd();
+
+    GError *error = nullptr;
+    UniqueFd fd(g_unix_fd_list_get(fdList, index, &error));
+    if (!fd.isValid()) {
+        qCWarning(KEMU_DBUSDISPLAY) << "DMA-BUF: fd extraction failed:" << (error ? error->message : "unknown");
+        g_clear_error(&error);
+    }
+    return fd;
 }
 
 // =============================================================================
@@ -362,43 +430,110 @@ void QemuDisplayListener::onMethodCall(GDBusConnection *,
 void QemuDisplayListener::handleScanoutDMABUF(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     ackPendingFrame();
-    guint32 fdIndex, width, height, stride, fourcc;
+    gint32 fdIndex;
+    guint32 width, height, stride, fourcc;
     guint64 modifier;
     gboolean y0_top;
     g_variant_get(parameters, "(huuuutb)", &fdIndex, &width, &height, &stride, &fourcc, &modifier, &y0_top);
 
-    GDBusMessage *msg = g_dbus_method_invocation_get_message(invocation);
-    GUnixFDList *fdList = g_dbus_message_get_unix_fd_list(msg);
-    if (!fdList) {
-        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "No FD list");
-        return;
-    }
-
-    GError *error = nullptr;
-    // Take ownership immediately. From this point on, any return path
-    // (early or successful) frees the FD correctly via UniqueFd's destructor.
-    UniqueFd newFd(g_unix_fd_list_get(fdList, fdIndex, &error));
-    if (!newFd.isValid()) {
-        const QString msg = error ? QString::fromUtf8(error->message) : QStringLiteral("unknown");
-        qCWarning(KEMU_DBUSDISPLAY) << "ScanoutDMABUF: FD extraction failed:" << msg;
-        if (error)
-            g_error_free(error);
+    DmaBufScanout buf;
+    buf.fds[0] = takeInvocationFd(invocation, fdIndex);
+    if (!buf.fds[0].isValid()) {
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "FD error");
         return;
     }
 
-    // Drop previous state (any old DMA-BUF FD, any software mapping).
-    unmapMemory();
-    closeDmaBuf();
-    m_image = {}; // software backbuffer is stale once the GPU path takes over
+    // v1 carries no sub-rect: the visible area is the whole buffer.
+    buf.numFds = 1;
+    buf.numPlanes = 1;
+    buf.strides[0] = stride;
+    buf.width = buf.backingWidth = width;
+    buf.height = buf.backingHeight = height;
+    buf.fourcc = fourcc;
+    buf.modifier = modifier;
+    buf.y0_top = bool(y0_top);
 
-    m_dmaBuf.fd = std::move(newFd); // ownership now in m_dmaBuf
-    m_dmaBuf.width = width;
-    m_dmaBuf.height = height;
-    m_dmaBuf.stride = stride;
-    m_dmaBuf.fourcc = fourcc;
-    m_dmaBuf.modifier = modifier;
-    m_dmaBuf.y0_top = bool(y0_top);
+    acceptDmaBuf(std::move(buf), invocation);
+}
+
+void QemuDisplayListener::handleScanoutDMABUF2(GVariant *parameters, GDBusMethodInvocation *invocation)
+{
+    ackPendingFrame();
+    GVariant *rawHandles = nullptr;
+    GVariant *rawOffsets = nullptr;
+    GVariant *rawStrides = nullptr;
+    guint32 x, y, width, height, numPlanes, fourcc, backingWidth, backingHeight;
+    guint64 modifier;
+    gboolean y0_top;
+    g_variant_get(parameters,
+                  "(@ahuuuu@au@auuuuutb)",
+                  &rawHandles,
+                  &x,
+                  &y,
+                  &width,
+                  &height,
+                  &rawOffsets,
+                  &rawStrides,
+                  &numPlanes,
+                  &fourcc,
+                  &backingWidth,
+                  &backingHeight,
+                  &modifier,
+                  &y0_top);
+    const GVariantPtr handlesVariant(rawHandles);
+    const GVariantPtr offsetsVariant(rawOffsets);
+    const GVariantPtr stridesVariant(rawStrides);
+
+    gsize nHandles = 0, nOffsets = 0, nStrides = 0;
+    const auto *handles = static_cast<const gint32 *>(g_variant_get_fixed_array(handlesVariant.get(), &nHandles, sizeof(gint32)));
+    const auto *offsets = static_cast<const guint32 *>(g_variant_get_fixed_array(offsetsVariant.get(), &nOffsets, sizeof(guint32)));
+    const auto *strides = static_cast<const guint32 *>(g_variant_get_fixed_array(stridesVariant.get(), &nStrides, sizeof(guint32)));
+
+    if (numPlanes < 1 || numPlanes > guint32(DmaBufScanout::kMaxPlanes) || nHandles < 1 || nHandles > numPlanes || nOffsets < numPlanes
+        || nStrides < numPlanes || width == 0 || height == 0 || x >= backingWidth || y >= backingHeight) {
+        qCWarning(KEMU_DBUSDISPLAY) << "ScanoutDMABUF2: invalid arguments: planes" << numPlanes << "fds" << nHandles << "rect" << x << y << width << height
+                                    << "backing" << backingWidth << backingHeight;
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid ScanoutDMABUF2 arguments");
+        return;
+    }
+
+    DmaBufScanout buf;
+    for (gsize i = 0; i < nHandles; ++i) {
+        buf.fds[i] = takeInvocationFd(invocation, handles[i]);
+        if (!buf.fds[i].isValid()) {
+            g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "FD error");
+            return;
+        }
+    }
+    buf.numFds = int(nHandles);
+    buf.numPlanes = int(numPlanes);
+    for (guint32 i = 0; i < numPlanes; ++i) {
+        buf.offsets[i] = offsets[i];
+        buf.strides[i] = strides[i];
+    }
+
+    buf.x = x;
+    buf.y = y;
+    buf.width = std::min(width, backingWidth - x);
+    buf.height = std::min(height, backingHeight - y);
+    buf.backingWidth = backingWidth;
+    buf.backingHeight = backingHeight;
+    buf.fourcc = fourcc;
+    buf.modifier = modifier;
+    buf.y0_top = bool(y0_top);
+
+    acceptDmaBuf(std::move(buf), invocation);
+}
+
+void QemuDisplayListener::acceptDmaBuf(DmaBufScanout &&buf, GDBusMethodInvocation *invocation)
+{
+    // Drop previous state: any old DMA-BUF fds and any software mapping.
+    unmapMemory();
+    m_image = {};
+    m_dmaBuf = std::move(buf);
+
+    const int width = int(m_dmaBuf.width);
+    const int height = int(m_dmaBuf.height);
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT dmaBufScanout(width, height);
@@ -600,7 +735,9 @@ void QemuDisplayListener::handleUpdateMap(GVariant *parameters, GDBusMethodInvoc
     // GPU upload still needs to know which rect changed.
     addDirtyRect(QRect(x, y, w, h));
 
-    deferFrameAck(invocation);
+    // QEMU fires UpdateMap without waiting for the reply, so deferring it
+    // would throttle nothing.
+    g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT regionUpdated(QRect(x, y, w, h));
 }
 
@@ -704,9 +841,7 @@ void QemuDisplayListener::unmapMemory()
 
 void QemuDisplayListener::closeDmaBuf()
 {
-    // UniqueFd::reset() closes the FD if valid and resets to -1.
-    // We also clear the bool so the state stays consistent.
-    m_dmaBuf.fd.reset();
+    m_dmaBuf = DmaBufScanout();
 }
 
 void QemuDisplayListener::deferFrameAck(GDBusMethodInvocation *invocation)
@@ -750,9 +885,13 @@ QImage::Format QemuDisplayListener::pixmanFormatToQt(uint32_t pf)
 void QemuDisplayListener::cleanupConnection()
 {
     ackPendingFrame();
-    if (m_registrationIdUnix && m_listenerConn) {
-        g_dbus_connection_unregister_object(m_listenerConn, m_registrationIdUnix);
-        m_registrationIdUnix = 0;
+    if (m_registrationIdDmabuf2 && m_listenerConn) {
+        g_dbus_connection_unregister_object(m_listenerConn, m_registrationIdDmabuf2);
+        m_registrationIdDmabuf2 = 0;
+    }
+    if (m_registrationIdUnixMap && m_listenerConn) {
+        g_dbus_connection_unregister_object(m_listenerConn, m_registrationIdUnixMap);
+        m_registrationIdUnixMap = 0;
     }
     if (m_registrationId && m_listenerConn) {
         g_dbus_connection_unregister_object(m_listenerConn, m_registrationId);
