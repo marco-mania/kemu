@@ -920,6 +920,9 @@ void QemuDisplayListener::cleanupConnection()
         m_registrationId = 0;
     }
     if (m_listenerConn) {
+        // Drop the closed handler first: it carries a bare pointer to us
+        // and can still fire from the close below.
+        g_signal_handlers_disconnect_by_data(m_listenerConn, this);
         g_dbus_connection_close_sync(m_listenerConn, nullptr, nullptr);
         g_object_unref(m_listenerConn);
         m_listenerConn = nullptr;

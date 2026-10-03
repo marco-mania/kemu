@@ -641,6 +641,9 @@ void QemuAudioOutWorker::cleanupConnection()
         m_registrationId = 0;
     }
     if (m_conn) {
+        // Drop the closed handler first: it carries a bare pointer to us
+        // and can still fire from the close below.
+        g_signal_handlers_disconnect_by_data(m_conn, this);
         g_dbus_connection_close_sync(m_conn, nullptr, nullptr);
         g_object_unref(m_conn);
         m_conn = nullptr;

@@ -127,6 +127,11 @@ private:
     void blitImportToPresent();
     void presentDmaBufFrame();
     void destroyEglImage();
+    // Drops every GL object. releaseGL() expects the context to be
+    // current; onContextLost() makes it current and is what the
+    // context's aboutToBeDestroyed() is wired to.
+    void releaseGL();
+    void onContextLost();
     void uploadSoftwareFrame();
     void setupQuad();
     void renderQuad();
@@ -137,6 +142,7 @@ private:
 
     void queryPointerMode();
     void setGuestAbsolute(bool absolute);
+    void onPointerLockChanged(bool locked);
     [[nodiscard]] bool beginRelativeGrab();
     void endRelativeGrab();
 
@@ -217,6 +223,12 @@ private:
     bool m_eglAvailable = false;
     bool m_hasDmaBufModifiers = false;
 
+    // The context aboutToBeDestroyed() is hooked on. Kept so the hook can
+    // be taken off again: the base classes tear the context down long
+    // after ~QemuDisplayWidget has run, and a slot of this class must not
+    // be reached from there.
+    QPointer<QOpenGLContext> m_glContext;
+
     // Visible rect of the imported buffer, cropped out in blitImportToPresent()
     QPoint m_importOrigin;
     QSize m_importBackingSize;
@@ -230,7 +242,11 @@ private:
 
     QPointF m_absVirtual; // synthetic absolute position while captured (abs guests)
     bool m_guestAbsolute = true; // from QEMU IsAbsolute; default = absolute
-    bool m_relativeGrabActive = false; // pointer captured?
+    bool m_relativeGrabActive = false; // capture requested by the user
+    // Whether the compositor currently holds the lock. A PERSISTENT lock
+    // is deactivated and re-engaged on its own, for instance across a
+    // focus change, without the request itself going away.
+    bool m_pointerLocked = false;
     // Set when a press was consumed as the capture click, so the matching
     // release can be swallowed too. m_relativeGrabActive cannot serve here:
     // the press has already flipped it by the time the release arrives.

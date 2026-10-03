@@ -136,12 +136,7 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QemuControlC
 
     m_pointerLock = new WaylandPointerLock(this);
     connect(m_pointerLock, &WaylandPointerLock::relativeMotion, this, &QemuDisplayWidget::onRelativeMotion);
-    connect(m_pointerLock, &WaylandPointerLock::lockedChanged, this, [this](bool locked) {
-        // The compositor drops the lock on focus loss. Treat that as an
-        // ungrab instead of pretending we still capture.
-        if (!locked && m_relativeGrabActive)
-            endRelativeGrab();
-    });
+    connect(m_pointerLock, &WaylandPointerLock::lockedChanged, this, &QemuDisplayWidget::onPointerLockChanged);
 
     // Opt-in for now: the zero-copy path changes how frames reach the screen
     // and depends on compositor support, so it must be asked for explicitly.
@@ -160,20 +155,16 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QemuControlC
 
 QemuDisplayWidget::~QemuDisplayWidget()
 {
+    // The pointer lock is a child, so ~QObject destroys it after this body
+    // has finished - and its destructor unlocks, which emits
+    // lockedChanged() into a slot of a class that no longer exists.
+    if (m_pointerLock)
+        disconnect(m_pointerLock, nullptr, this, nullptr);
+
     if (m_ctrl)
         m_ctrl->unsubscribeSignal(m_propsSubscription);
     makeCurrent();
-    destroyEglImage();
-    if (m_importTexture)
-        glDeleteTextures(1, &m_importTexture);
-    if (m_blitFbo)
-        glDeleteFramebuffers(1, &m_blitFbo);
-    if (m_textureId)
-        glDeleteTextures(1, &m_textureId);
-    if (m_cursorTextureId)
-        glDeleteTextures(1, &m_cursorTextureId);
-    delete m_shader;
-    delete m_cursorShader;
+    releaseGL();
     doneCurrent();
 }
 
@@ -323,9 +314,11 @@ void QemuDisplayWidget::hideEvent(QHideEvent *event)
 
 void QemuDisplayWidget::updateCursor()
 {
-    if (m_relativeGrabActive) {
-        // Captured (relative or absolute): hide the host cursor; the overlay
-        // (or the guest's framebuffer cursor) shows where the pointer is.
+    if (m_pointerLocked) {
+        // The compositor is holding the pointer: hide the host cursor, the
+        // overlay (or the guest's framebuffer cursor) shows where it is.
+        // Keyed on the lock rather than on the request - while the lock is
+        // suspended the host cursor has to be visible again.
         setCursor(Qt::BlankCursor);
         return;
     }
@@ -414,6 +407,13 @@ void QemuDisplayWidget::initializeGL()
     initializeOpenGLFunctions();
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
+    // Reparenting the widget into another window hands QOpenGLWidget a new
+    // context and runs this function a second time. Everything built below
+    // belongs to the context being replaced and has to go with it.
+    m_glContext = context();
+    if (m_glContext)
+        connect(m_glContext, &QOpenGLContext::aboutToBeDestroyed, this, &QemuDisplayWidget::onContextLost, Qt::UniqueConnection);
+
     m_shader = new QOpenGLShaderProgram(this);
     m_shader->addShaderFromSourceCode(QOpenGLShader::Vertex, vertexShaderSource);
     m_shader->addShaderFromSourceCode(QOpenGLShader::Fragment, fragmentShaderSource);
@@ -467,6 +467,75 @@ void QemuDisplayWidget::setupQuad()
     glGenBuffers(1, &m_vbo);
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+}
+
+void QemuDisplayWidget::releaseGL()
+{
+    // Unhook the context we are letting go of. ~QOpenGLWidget destroys it
+    // well after ~QemuDisplayWidget has run, and Qt 6.4 and later assert
+    // when a signal reaches a slot of a class whose destructor is done.
+    if (m_glContext) {
+        disconnect(m_glContext, nullptr, this, nullptr);
+        m_glContext = nullptr;
+    }
+
+    destroyEglImage();
+
+    if (m_importTexture) {
+        glDeleteTextures(1, &m_importTexture);
+        m_importTexture = 0;
+    }
+    if (m_blitFbo) {
+        glDeleteFramebuffers(1, &m_blitFbo);
+        m_blitFbo = 0;
+    }
+    if (m_textureId) {
+        glDeleteTextures(1, &m_textureId);
+        m_textureId = 0;
+    }
+    if (m_cursorTextureId) {
+        glDeleteTextures(1, &m_cursorTextureId);
+        m_cursorTextureId = 0;
+    }
+    if (m_vbo) {
+        glDeleteBuffers(1, &m_vbo);
+        m_vbo = 0;
+    }
+
+    delete m_shader;
+    m_shader = nullptr;
+    delete m_cursorShader;
+    m_cursorShader = nullptr;
+
+    // Everything cached about the old context is meaningless now, so the
+    // next initializeGL() starts from scratch instead of trusting names
+    // that belonged to a context which no longer exists.
+    m_textureReady = false;
+    m_texAllocSize = {};
+    m_cursorTexKey = -1;
+    m_cursorTexSize = {};
+    m_importFourcc = 0;
+    m_importModifier = 0;
+    m_importPlanes = 0;
+
+    m_eglDisplay = EGL_NO_DISPLAY;
+    m_eglCreateImageKHR = nullptr;
+    m_eglDestroyImageKHR = nullptr;
+    m_glEGLImageTargetTexture2DOES = nullptr;
+    m_eglAvailable = false;
+    m_hasDmaBufModifiers = false;
+}
+
+void QemuDisplayWidget::onContextLost()
+{
+    // Nothing left to release, e.g. when the signal arrives after our own
+    // destructor has already cleaned up.
+    if (!m_shader && !m_cursorShader && !m_textureId && !m_vbo)
+        return;
+
+    makeCurrent();
+    releaseGL();
+    doneCurrent();
 }
 
 bool QemuDisplayWidget::initEglFunctions()
@@ -819,8 +888,9 @@ void QemuDisplayWidget::drawUnitQuad(QOpenGLShaderProgram *program)
 
 void QemuDisplayWidget::renderCursorQuad()
 {
-    // While captured, the host cursor is hidden -> draw the guest cursor.
-    if (!m_relativeGrabActive || m_fbSize.isEmpty())
+    // While the lock is engaged the host cursor is hidden -> draw the guest
+    // cursor. A suspended lock shows the host cursor, so no overlay then.
+    if (!m_pointerLocked || m_fbSize.isEmpty())
         return;
     if (!m_cursorShader || !m_cursorShader->isLinked())
         return;
@@ -908,6 +978,29 @@ void QemuDisplayWidget::setGuestAbsolute(bool absolute)
     Q_EMIT pointerModeChanged(absolute);
 }
 
+// The compositor engages and suspends a PERSISTENT lock on its own, for
+// instance across a focus change. A suspension is not an ungrab: tearing
+// the lock down here would throw away exactly the re-engagement that
+// lifetime was asked for. Only the effective state changes - the request
+// stands until the user drops it.
+void QemuDisplayWidget::onPointerLockChanged(bool locked)
+{
+    if (m_pointerLocked == locked)
+        return;
+    m_pointerLocked = locked;
+    qCDebug(KEMU_DBUSDISPLAY) << "Pointer lock" << (locked ? "engaged" : "suspended by the compositor");
+
+    if (!locked) {
+        // No deltas until it comes back; the ordinary mouse events take
+        // over again in the meantime.
+        flushMotion();
+        m_motionAccum = {};
+    }
+
+    updateCursor();
+    scheduleRepaint(); // the guest-cursor overlay appears or disappears
+}
+
 bool QemuDisplayWidget::beginRelativeGrab()
 {
     if (m_relativeGrabActive)
@@ -918,7 +1011,9 @@ bool QemuDisplayWidget::beginRelativeGrab()
     }
     m_relativeGrabActive = true;
 
-    setCursor(Qt::BlankCursor);
+    // The host cursor goes away in updateCursor() once the compositor has
+    // really engaged the lock, not already on the request.
+    updateCursor();
     setFocus(Qt::MouseFocusReason);
 
     m_absVirtual = QPointF(rect().center());
@@ -1212,11 +1307,14 @@ void QemuDisplayWidget::mouseMoveEvent(QMouseEvent *event)
     if (m_dimmed)
         return;
 
-    if (m_relativeGrabActive)
+    if (m_pointerLocked)
         return; // locked: motion arrives via onRelativeMotion()
 
-    // Not captured: absolute guests track the host pointer 1:1.
+    // Not captured, or captured while the lock is suspended: absolute
+    // guests track the host pointer 1:1. The virtual cursor follows along,
+    // so a lock that re-engages carries on from where the pointer is.
     if (m_guestAbsolute) {
+        m_absVirtual = event->position();
         const auto fb = mapToFramebuffer(event->position());
         queueAbsMotion(static_cast<uint>(fb.x()), static_cast<uint>(fb.y()));
     }
