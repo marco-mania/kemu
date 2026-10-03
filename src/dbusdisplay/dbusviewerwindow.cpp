@@ -159,6 +159,7 @@ void DbusViewerWindow::createActions()
 
     m_actZoomReset = new QAction(QIcon::fromTheme(u"zoom-original"_s), i18n("&Zoom to 100%"), this);
     m_actZoomReset->setStatusTip(i18n("Show the guest display at its native pixel size"));
+    connect(m_actZoomReset, &QAction::triggered, this, &DbusViewerWindow::onZoomReset);
 
     m_actGrabMouse = new QAction(QIcon::fromTheme(u"input-mouse"_s), i18n("&Capture Mouse"), this);
     m_actGrabMouse->setCheckable(true);

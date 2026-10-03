@@ -897,6 +897,11 @@ void QemuDisplayWidget::setGuestAbsolute(bool absolute)
     m_guestAbsolute = absolute;
     qCDebug(KEMU_DBUSDISPLAY) << "Pointer mode changed: IsAbsolute =" << absolute;
 
+    // The carry in onRelativeMotion() is kept in the unit of whichever target
+    // the mode selects, so a leftover from the old mode is dropped rather
+    // than reinterpreted.
+    m_motionAccum = {};
+
     if (m_guestAbsolute && m_relativeGrabActive)
         endRelativeGrab(); // switched to absolute while grabbed
     updateCursor();
@@ -1223,9 +1228,16 @@ void QemuDisplayWidget::onRelativeMotion(double dx, double dy)
     if (!m_relativeGrabActive || m_dimmed)
         return;
 
-    // Deltas arrive in 1/256 px and in widget coordinates. Carry the
-    // remainder so slow movement is not rounded away.
-    m_motionAccum += QPointF(dx, dy) / m_scale;
+    // The compositor reports logical widget pixels (the 1/256 fixed point is
+    // already undone in WaylandPointerLock). Two different targets follow:
+    // the virtual cursor lives in that same logical space and takes the
+    // deltas unchanged, while the guest counts its own pixels - one logical
+    // pixel spans devicePixelRatio() physical ones, and m_scale physical
+    // pixels make up one guest pixel.
+    const qreal toTarget = m_guestAbsolute ? 1.0 : devicePixelRatio() / m_scale;
+
+    // Carry the remainder so slow movement is not rounded away.
+    m_motionAccum += QPointF(dx, dy) * toTarget;
     const int ix = int(m_motionAccum.x());
     const int iy = int(m_motionAccum.y());
     if (!ix && !iy)

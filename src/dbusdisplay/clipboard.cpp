@@ -367,6 +367,18 @@ void QemuClipboardManager::onHostClipboardChanged()
     if (!mimeData || !mimeData->hasText())
         return;
 
+    // Late echo: a clipboard manager (Klipper) can re-announce the very text
+    // we just took from the guest, long after the window above has closed.
+    // Identical content never travels back. Anything else means the host
+    // clipboard has genuinely moved on, so the guard is dropped and the same
+    // text can be sent again later.
+    const QString hostText = mimeData->text();
+    if (!m_lastTextFromGuest.isEmpty() && hostText == m_lastTextFromGuest) {
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: dataChanged ignored (late echo of guest content)";
+        return;
+    }
+    m_lastTextFromGuest.clear();
+
     const QStringList mimesToSend = {
         u"text/plain;charset=utf-8"_s,
         u"text/plain"_s,
