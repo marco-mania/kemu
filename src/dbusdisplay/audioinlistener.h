@@ -11,16 +11,23 @@
 #include <gio/gio.h>
 #pragma pop_macro("signals")
 
+#include <QAudioDevice>
 #include <QAudioFormat>
 #include <QAudioSource>
 #include <QHash>
 #include <QIODevice>
+#include <QMediaDevices>
 #include <QObject>
+#include <QThread>
+
+#include <atomic>
 
 #include "dbusdisplay/glibeventbridge.h"
 #include "dbusdisplay/pcmringbuffer.h"
 
 using namespace Qt::StringLiterals;
+
+class QemuAudioInWorker;
 
 // =============================================================================
 // QemuAudioInListener
@@ -31,6 +38,12 @@ using namespace Qt::StringLiterals;
 //    - QEMU calls Init/Fini/SetEnabled on our listener
 //    - QEMU calls Read(id, size) to fetch data
 //    - We buffer the microphone data and return it during Read()
+//
+// Threading: Read() is a *synchronous* D-Bus call - QEMU's audio timer waits
+// for our reply. Dispatching it on the GUI thread meant a repaint could stall
+// the guest's capture path, so the dispatch, the ring and the QAudioSource
+// all live on a private audio thread (QemuAudioInWorker). This class is the
+// GUI-thread face of it.
 // =============================================================================
 
 class QemuAudioInListener : public QObject
@@ -49,13 +62,73 @@ public:
     }
 
     // Stummschaltung: Wenn muted, gibt Read() nur Stille zurück.
-    void setMuted(bool muted)
-    {
-        m_muted = muted;
-    }
+    void setMuted(bool muted);
     bool isMuted() const
     {
         return m_muted;
+    }
+
+    // Valid once connectListener() has returned true. The context is driven
+    // by the audio thread - do not dispatch it from anywhere else.
+    GMainContext *mainContext() const
+    {
+        return m_context;
+    }
+
+Q_SIGNALS:
+    void connectionLost();
+
+private:
+    friend class QemuAudioInWorker;
+
+    // Qt brings its media backend up on the first QMediaDevices use. Keeping
+    // that on the GUI thread leaves the backend's object affinity where the
+    // rest of the application expects it; the worker never queries devices
+    // itself and is handed the current default instead.
+    void pushDefaultDevice();
+    void notifyConnectionLost()
+    {
+        Q_EMIT connectionLost();
+    }
+
+    QThread *m_thread = nullptr;
+    QemuAudioInWorker *m_worker = nullptr;
+    QMediaDevices *m_devices = nullptr;
+
+    GMainContext *m_context = nullptr;
+    int m_ourFd = -1;
+    int m_socketFd = -1;
+    bool m_muted = false;
+};
+
+// =============================================================================
+// QemuAudioInWorker - the audio-thread half of QemuAudioInListener
+// =============================================================================
+// Owns the private GMainContext, the GDBus registration and every
+// QAudioSource. All members are touched on the audio thread only.
+// =============================================================================
+
+class QemuAudioInWorker : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit QemuAudioInWorker(QemuAudioInListener *facade);
+    ~QemuAudioInWorker() override;
+
+    // Called from the GUI thread via Qt::BlockingQueuedConnection.
+    bool setup(int fd, const QAudioDevice &device);
+    void shutdown();
+
+    // Thread-safe, called straight from the GUI thread: it only stores an
+    // atomic, so a mute takes effect on the very next Read.
+    void setMuted(bool muted);
+    // Called from the GUI thread via Qt::QueuedConnection.
+    void setDevice(const QAudioDevice &device);
+
+    GMainContext *mainContext() const
+    {
+        return m_context;
     }
 
     static void onMethodCall(GDBusConnection *connection,
@@ -67,14 +140,6 @@ public:
                              GDBusMethodInvocation *invocation,
                              gpointer user_data);
     static void onConnectionClosed(GDBusConnection *connection, gboolean remote_peer_vanished, GError *error, gpointer user_data);
-
-    GMainContext *mainContext() const
-    {
-        return m_context;
-    }
-
-Q_SIGNALS:
-    void connectionLost();
 
 private:
     void handleInit(GVariant *parameters, GDBusMethodInvocation *invocation);
@@ -111,17 +176,18 @@ private:
         }
     };
 
+    void cleanupConnection();
+    void startDispatching();
+
+    QemuAudioInListener *m_facade = nullptr;
+
     GDBusConnection *m_conn = nullptr;
     GMainContext *m_context = nullptr;
     GLibEventBridge *m_bridge = nullptr;
     guint m_registrationId = 0;
-    int m_ourFd = -1;
-    int m_socketFd = -1;
 
+    QAudioDevice m_device;
     QHash<quint64, AudioInStream *> m_streams;
-    bool m_muted = false;
+    std::atomic<bool> m_muted{false}; // written by the GUI thread
     bool m_closed = false;
-
-    void cleanupConnection();
-    void startDispatching();
 };

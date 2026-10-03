@@ -59,25 +59,52 @@ static const gchar audioInListenerXml[] =
 </node>
     )XML";
 
-static const GDBusInterfaceVTable audioInVTable = {QemuAudioInListener::onMethodCall, nullptr, nullptr, {}};
+static const GDBusInterfaceVTable audioInVTable = {QemuAudioInWorker::onMethodCall, nullptr, nullptr, {}};
 
 // =============================================================================
-// Constructor / Destructor
+// QemuAudioInListener - GUI-thread facade
 // =============================================================================
 
 QemuAudioInListener::QemuAudioInListener(QObject *parent)
     : QObject(parent)
 {
+    m_thread = new QThread;
+    m_thread->setObjectName(u"kemu-audio-in"_s);
+
+    m_worker = new QemuAudioInWorker(this);
+    m_worker->moveToThread(m_thread);
+
+    m_thread->start();
 }
 
 QemuAudioInListener::~QemuAudioInListener()
 {
-    m_closed = true;
+    if (m_worker && m_thread && m_thread->isRunning()) {
+        // Tear down where everything was built: the sources and the GDBus
+        // registration belong to the audio thread. The thread ends its own
+        // loop afterwards - calling quit() from here could interrupt the
+        // loop before the teardown call has been dequeued.
+        QMetaObject::invokeMethod(
+            m_worker,
+            [w = m_worker] {
+                w->shutdown();
+                w->thread()->quit();
+            },
+            Qt::QueuedConnection);
 
-    qDeleteAll(m_streams);
-    m_streams.clear();
+        // Bounded, so closing a window can never hang the GUI on an audio
+        // thread that is stuck somewhere in the platform backend.
+        if (!m_thread->wait(5000)) {
+            qCWarning(KEMU_DBUSDISPLAY) << "AudioIn: worker thread did not stop, leaving it behind";
+            m_worker = nullptr;
+            m_thread = nullptr;
+        }
+    }
 
-    cleanupConnection();
+    delete m_worker; // the thread has stopped, nothing can race us here
+    m_worker = nullptr;
+    delete m_thread;
+    m_thread = nullptr;
 
     if (m_ourFd >= 0)
         close(m_ourFd);
@@ -100,25 +127,107 @@ int QemuAudioInListener::createSocketPair()
 }
 
 // =============================================================================
-// Phase 2: GDBus connection + interface registration
+// Phase 2: hand the socket to the audio thread and wait for the handshake
 // =============================================================================
 bool QemuAudioInListener::connectListener()
 {
-    if (m_ourFd < 0)
+    if (m_ourFd < 0 || !m_worker || !m_thread || !m_thread->isRunning())
         return false;
 
     const int ourFd = m_ourFd;
     m_ourFd = -1;
     m_socketFd = ourFd;
 
+    if (!m_devices) {
+        m_devices = new QMediaDevices(this);
+        connect(m_devices, &QMediaDevices::audioInputsChanged, this, &QemuAudioInListener::pushDefaultDevice);
+    }
+    // Handed over with the socket, so the worker already has a device when
+    // the first Init arrives.
+    const QAudioDevice device = QMediaDevices::defaultAudioInput();
+
+    bool ok = false;
+    QMetaObject::invokeMethod(
+        m_worker,
+        [w = m_worker, ourFd, device, &ok] {
+            ok = w->setup(ourFd, device);
+        },
+        Qt::BlockingQueuedConnection);
+
+    if (ok)
+        m_context = m_worker->mainContext();
+
+    return ok;
+}
+
+void QemuAudioInListener::pushDefaultDevice()
+{
+    if (!m_worker)
+        return;
+    const QAudioDevice device = QMediaDevices::defaultAudioInput();
+    QMetaObject::invokeMethod(
+        m_worker,
+        [w = m_worker, device] {
+            w->setDevice(device);
+        },
+        Qt::QueuedConnection);
+}
+
+void QemuAudioInListener::setMuted(bool muted)
+{
+    m_muted = muted;
+    if (m_worker)
+        m_worker->setMuted(muted); // atomic store, no thread hop
+}
+
+// =============================================================================
+// QemuAudioInWorker - audio thread
+// =============================================================================
+
+QemuAudioInWorker::QemuAudioInWorker(QemuAudioInListener *facade)
+    : m_facade(facade)
+{
+}
+
+QemuAudioInWorker::~QemuAudioInWorker()
+{
+    if (QThread::currentThread() == thread()) {
+        shutdown();
+    } else if (m_conn || m_context || !m_streams.isEmpty()) {
+        // Releasing the GLib context or deleting a source from a thread that
+        // does not own them is worse than leaking them, so say so and leak.
+        qCWarning(KEMU_DBUSDISPLAY) << "AudioIn: worker destroyed off its own thread, leaving its state behind";
+    }
+}
+
+void QemuAudioInWorker::setDevice(const QAudioDevice &device)
+{
+    // Picked up by the next Init; running streams keep the source they opened.
+    m_device = device;
+}
+
+void QemuAudioInWorker::setMuted(bool muted)
+{
+    // Called straight from the GUI thread: muting the microphone has to bite
+    // now, not after a round trip through the audio thread's event queue.
+    m_muted.store(muted);
+}
+
+// =============================================================================
+// GDBus connection + interface registration
+// =============================================================================
+bool QemuAudioInWorker::setup(int fd, const QAudioDevice &device)
+{
+    m_device = device;
+
     m_context = g_main_context_new();
 
     GError *error = nullptr;
-    GSocket *gsock = g_socket_new_from_fd(ourFd, &error);
+    GSocket *gsock = g_socket_new_from_fd(fd, &error);
     if (!gsock) {
         qCCritical(KEMU_DBUSDISPLAY) << "AudioIn: g_socket_new_from_fd:" << error->message;
         g_error_free(error);
-        close(ourFd);
+        close(fd);
         g_main_context_unref(m_context);
         m_context = nullptr;
         return false;
@@ -148,7 +257,7 @@ bool QemuAudioInListener::connectListener()
     }
 
     g_dbus_connection_set_exit_on_close(m_conn, FALSE);
-    g_signal_connect(m_conn, "closed", G_CALLBACK(QemuAudioInListener::onConnectionClosed), this);
+    g_signal_connect(m_conn, "closed", G_CALLBACK(QemuAudioInWorker::onConnectionClosed), this);
 
     GDBusNodeInfo *nodeInfo = g_dbus_node_info_new_for_xml(audioInListenerXml, &error);
     if (!nodeInfo) {
@@ -178,13 +287,14 @@ bool QemuAudioInListener::connectListener()
     }
 
     startDispatching();
-    qCDebug(KEMU_DBUSDISPLAY) << "AudioIn: Listener ready";
+    qCDebug(KEMU_DBUSDISPLAY) << "AudioIn: Listener ready on" << QThread::currentThread()->objectName();
     return true;
 }
 
-void QemuAudioInListener::startDispatching()
+void QemuAudioInWorker::startDispatching()
 {
-    // Deferred to the event loop, so no handler runs inside connectListener().
+    // Deferred to the event loop, so no handler runs inside setup() while
+    // the GUI thread is still blocked on it.
     QMetaObject::invokeMethod(
         this,
         [this] {
@@ -194,32 +304,51 @@ void QemuAudioInListener::startDispatching()
         Qt::QueuedConnection);
 }
 
+void QemuAudioInWorker::shutdown()
+{
+    m_closed = true;
+
+    // Stop dispatching before the streams go away, otherwise a queued call
+    // could still reach a half-deleted stream.
+    cleanupConnection();
+
+    qDeleteAll(m_streams);
+    m_streams.clear();
+}
+
 // =============================================================================
 // Connection-Closed Handler
 // =============================================================================
-void QemuAudioInListener::onConnectionClosed(GDBusConnection *, gboolean remote_peer_vanished, GError *error, gpointer user_data)
+void QemuAudioInWorker::onConnectionClosed(GDBusConnection *, gboolean remote_peer_vanished, GError *error, gpointer user_data)
 {
-    auto *self = static_cast<QemuAudioInListener *>(user_data);
+    auto *self = static_cast<QemuAudioInWorker *>(user_data);
     self->m_closed = true;
     if (self->m_bridge)
         self->m_bridge->stop();
     qCDebug(KEMU_DBUSDISPLAY) << "AudioIn: Connection closed" << (remote_peer_vanished ? "(QEMU terminated)" : "(local)") << (error ? error->message : "");
-    Q_EMIT self->connectionLost();
+
+    // Back to the GUI thread, where the listener's users live.
+    QMetaObject::invokeMethod(
+        self->m_facade,
+        [f = self->m_facade] {
+            f->notifyConnectionLost();
+        },
+        Qt::QueuedConnection);
 }
 
 // =============================================================================
 // GDBus Dispatcher
 // =============================================================================
-void QemuAudioInListener::onMethodCall(GDBusConnection *,
-                                       const gchar *,
-                                       const gchar *,
-                                       const gchar *,
-                                       const gchar *method_name,
-                                       GVariant *parameters,
-                                       GDBusMethodInvocation *invocation,
-                                       gpointer user_data)
+void QemuAudioInWorker::onMethodCall(GDBusConnection *,
+                                     const gchar *,
+                                     const gchar *,
+                                     const gchar *,
+                                     const gchar *method_name,
+                                     GVariant *parameters,
+                                     GDBusMethodInvocation *invocation,
+                                     gpointer user_data)
 {
-    auto *self = static_cast<QemuAudioInListener *>(user_data);
+    auto *self = static_cast<QemuAudioInWorker *>(user_data);
     if (self->m_closed) {
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_DISCONNECTED, "Connection closed");
         return;
@@ -244,7 +373,7 @@ void QemuAudioInListener::onMethodCall(GDBusConnection *,
 // =============================================================================
 // Init – Configure recording stream
 // =============================================================================
-void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation *invocation)
+void QemuAudioInWorker::handleInit(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint64 id;
     guint8 bits, nchannels;
@@ -297,7 +426,9 @@ void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation
     stream->format = format;
     stream->enabled = false;
 
-    const QAudioDevice inputDevice = QMediaDevices::defaultAudioInput();
+    // Pushed in from the GUI thread; querying QMediaDevices from here would
+    // move Qt's media backend onto the audio thread.
+    const QAudioDevice inputDevice = m_device;
     if (inputDevice.isNull()) {
         // No device at all - tell QEMU instead of pretending to accept the stream.
         delete stream;
@@ -311,8 +442,9 @@ void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation
     }
 
     stream->source = new QAudioSource(inputDevice, format);
-    // Same reasoning as the sink: capture callbacks land on the GUI thread,
-    // which has no latency guarantee, so the source needs slack of its own.
+    // Same reasoning as the sink: capture callbacks land on the audio thread,
+    // whose wakeups the host scheduler still does not guarantee, so the
+    // source keeps slack of its own.
     stream->source->setBufferSize(format.bytesForDuration(100'000));
 
     // Capture cushion. The ring holds clearly more than the prime level so a
@@ -329,7 +461,7 @@ void QemuAudioInListener::handleInit(GVariant *parameters, GDBusMethodInvocation
 // =============================================================================
 // Fini
 // =============================================================================
-void QemuAudioInListener::handleFini(GVariant *parameters, GDBusMethodInvocation *invocation)
+void QemuAudioInWorker::handleFini(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint64 id;
     g_variant_get(parameters, "(t)", &id);
@@ -342,7 +474,7 @@ void QemuAudioInListener::handleFini(GVariant *parameters, GDBusMethodInvocation
 // =============================================================================
 // SetEnabled – Start/stop recording
 // =============================================================================
-void QemuAudioInListener::handleSetEnabled(GVariant *parameters, GDBusMethodInvocation *invocation)
+void QemuAudioInWorker::handleSetEnabled(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint64 id;
     gboolean enabled;
@@ -379,7 +511,7 @@ void QemuAudioInListener::handleSetEnabled(GVariant *parameters, GDBusMethodInvo
 // =============================================================================
 // SetVolume
 // =============================================================================
-void QemuAudioInListener::handleSetVolume(GVariant *parameters, GDBusMethodInvocation *invocation)
+void QemuAudioInWorker::handleSetVolume(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint64 id;
     gboolean mute;
@@ -409,7 +541,7 @@ void QemuAudioInListener::handleSetVolume(GVariant *parameters, GDBusMethodInvoc
 // =============================================================================
 // Read – QEMU requests microphone data
 // =============================================================================
-void QemuAudioInListener::handleRead(GVariant *parameters, GDBusMethodInvocation *invocation)
+void QemuAudioInWorker::handleRead(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     guint64 id = 0, size = 0;
     g_variant_get(parameters, "(tt)", &id, &size);
@@ -455,10 +587,15 @@ void QemuAudioInListener::handleRead(GVariant *parameters, GDBusMethodInvocation
     g_dbus_method_invocation_return_value(invocation, g_variant_new_tuple(&result, 1));
 }
 
-void QemuAudioInListener::cleanupConnection()
+void QemuAudioInWorker::cleanupConnection()
 {
-    if (m_bridge)
+    // The bridge holds the context acquired for this thread, so it has to be
+    // destroyed here and not by the facade's thread later on.
+    if (m_bridge) {
         m_bridge->stop();
+        delete m_bridge;
+        m_bridge = nullptr;
+    }
     if (m_registrationId && m_conn) {
         g_dbus_connection_unregister_object(m_conn, m_registrationId);
         m_registrationId = 0;
