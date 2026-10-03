@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <QImage>
 #include <QPropertyAnimation>
 #include <QString>
 #include <QTimer>
@@ -42,6 +43,15 @@ public:
         return m_opacity;
     }
     void setOsdOpacity(qreal opacity);
+
+    // Renders the pill into an image, for mirroring into a Wayland
+    // sub-surface when a zero-copy guest frame covers this widget.
+    QImage renderToImage();
+
+Q_SIGNALS:
+    // Emitted whenever the pill's content, geometry or opacity changed, so a
+    // mirror can be refreshed.
+    void appearanceChanged();
 
 protected:
     void paintEvent(QPaintEvent *event) override;

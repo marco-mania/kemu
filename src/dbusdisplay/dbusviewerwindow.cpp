@@ -46,6 +46,17 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
     // while m_display can be much larger than the window.
     m_osd = new OsdOverlay(m_scrollArea->viewport());
 
+    // On the zero-copy display path the guest frame sits in a sub-surface
+    // above the whole widget stack, so the pill has to be mirrored into a
+    // sub-surface of its own. A no-op while that path is inactive.
+    connect(m_osd, &OsdOverlay::appearanceChanged, this, [this] {
+        if (!m_display || !m_display->isZeroCopyActive()) {
+            return;
+        }
+        const bool visible = m_osd->isVisible();
+        m_display->setOverlayImage(visible ? m_osd->renderToImage() : QImage(), m_osd->mapTo(this, QPoint(0, 0)), visible);
+    });
+
     createActions();
     createMenus();
     createStatusBar();

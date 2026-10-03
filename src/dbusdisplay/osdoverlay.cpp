@@ -35,6 +35,7 @@ OsdOverlay::OsdOverlay(QWidget *parent)
     connect(m_fade, &QPropertyAnimation::finished, this, [this] {
         if (qFuzzyIsNull(m_opacity)) {
             hide();
+            Q_EMIT appearanceChanged();
         }
     });
 
@@ -54,6 +55,7 @@ void OsdOverlay::showMessage(const QString &text, int holdMs)
     m_fade->start();
 
     m_holdTimer.start(holdMs);
+    Q_EMIT appearanceChanged();
 }
 
 void OsdOverlay::hideMessage()
@@ -69,6 +71,23 @@ void OsdOverlay::setOsdOpacity(qreal opacity)
 {
     m_opacity = opacity;
     update();
+    Q_EMIT appearanceChanged();
+}
+
+// The zero-copy display path puts the guest frame in a sub-surface above this
+// widget, so the pill has to be handed to the compositor as its own buffer.
+QImage OsdOverlay::renderToImage()
+{
+    if (size().isEmpty()) {
+        return {};
+    }
+
+    const qreal dpr = devicePixelRatioF();
+    QImage image(size() * dpr, QImage::Format_ARGB32_Premultiplied);
+    image.setDevicePixelRatio(dpr);
+    image.fill(Qt::transparent);
+    render(&image, QPoint(), QRegion(), QWidget::DrawChildren);
+    return image;
 }
 
 void OsdOverlay::reposition()
