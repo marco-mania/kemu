@@ -18,6 +18,9 @@ using namespace Qt::StringLiterals;
  *   - an in-memory L2 switch (VirtualSwitch) that QEMU instances connect to
  *     via "-netdev stream" over a unix socket
  *   - optionally a built-in DHCP server (DhcpServer)
+ *   - optionally a built-in DNS server (DnsServer) resolving the VMs'
+ *     hostnames in "<network>.lan" (requires the DHCP server: its lease
+ *     table is the only name -> address source)
  *   - optionally an embedded libslirp instance (SlirpUplink) for
  *     NAT / internet access
  *
@@ -50,6 +53,11 @@ struct VirtualNetwork {
 
     /// Last address of the DHCP range, e.g. "192.168.100.200".
     QString dhcpRangeEnd;
+
+    /// When true (and enableDhcp is true), a built-in DNS server resolves
+    /// the VMs' hostnames in "<network>.lan" from the DHCP lease table and
+    /// forwards other queries to the host resolver.
+    bool enableDns = true;
 
     // --- NAT / Internet ---
 

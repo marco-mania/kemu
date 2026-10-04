@@ -7,6 +7,7 @@
 #pragma once
 
 #include <QApplication>
+#include <QByteArray>
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
@@ -123,6 +124,14 @@ QString detectHostKeyboardLayout();
 
 QString generateRandomMac(const QStringList &excludes = {});
 bool isValidMacAddress(const QString &mac);
+
+// Parses "52:54:00:12:34:56" into its 6 raw bytes. Returns an empty
+// array for invalid input.
+QByteArray macAddressToBytes(const QString &mac);
+
+// Single-label RFC 1123 host name: [a-z0-9-], 1-63 chars, no leading or
+// trailing '-'. Used for the per-network DNS names of VMs.
+bool isValidDnsHostname(const QString &hostname);
 
 QString quoteShellArg(const QString &arg);
 

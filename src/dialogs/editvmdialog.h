@@ -159,11 +159,13 @@ private:
     QPushButton *removePortFwdButton = nullptr;
     QComboBox *networkModeCombo = nullptr;
     QComboBox *virtualNetworkCombo = nullptr;
+    QLineEdit *hostnameEdit = nullptr;
     QWidget *passtGroup = nullptr;
     QWidget *vdeGroup = nullptr;
 
     QLabel *nameWarningLabel = nullptr;
     QLabel *macWarningLabel = nullptr;
+    QLabel *hostnameWarningLabel = nullptr;
 
     QDialogButtonBox *buttonBox = nullptr;
 
@@ -176,6 +178,7 @@ private:
     Mode m_mode = Mode::Edit;
     bool m_readOnly = false;
     VMConfig m_original;
+    QString m_lastAutoHostname;
 
     void applyModeConstraints();
 

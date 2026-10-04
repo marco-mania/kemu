@@ -245,6 +245,7 @@ struct MacUsageInfo {
     QString mac;
     VMSpecs::NetworkMode networkMode = VMSpecs::NetworkMode::Passt;
     QString virtualNetworkName;
+    QString dnsHostname; // effective (explicit or derived from the VM name)
 };
 
 class VMConfig
@@ -457,6 +458,14 @@ public:
     {
         return m_virtualNetworkName;
     }
+    /// Explicit DNS hostname for virtual networks; empty = derived from the
+    /// VM name.
+    [[nodiscard]] QString dnsHostname() const
+    {
+        return m_dnsHostname;
+    }
+    /// dnsHostname() if set, otherwise derived from the VM name.
+    [[nodiscard]] QString effectiveDnsHostname() const;
 
     [[nodiscard]] QList<PortForwardRule> portForwards() const
     {
@@ -683,6 +692,10 @@ public:
     {
         m_virtualNetworkName = name;
     }
+    void setDnsHostname(const QString &hostname)
+    {
+        m_dnsHostname = hostname;
+    }
 
     void setPortForwards(const QList<PortForwardRule> &rules)
     {
@@ -873,6 +886,7 @@ private:
     VMSpecs::NetworkMode m_networkMode = GlobalDefaults.networkMode;
     QString m_macAddress = GlobalDefaults.macAddress;
     QString m_virtualNetworkName;
+    QString m_dnsHostname;
 
     QList<PortForwardRule> m_portForwards;
 

@@ -6,12 +6,12 @@
 
 #pragma once
 
+#include <QByteArray>
 #include <QDir>
 #include <QHash>
 #include <QList>
 #include <QObject>
 #include <QPointer>
-#include <QSet>
 #include <QStandardPaths>
 #include <QString>
 
@@ -24,6 +24,7 @@
 using namespace Qt::StringLiterals;
 
 class DhcpServer;
+class DnsServer;
 class GatewayResponder;
 class SlirpUplink;
 class VirtualSwitch;
@@ -39,6 +40,7 @@ class VirtualSwitch;
  *   │    ├── QLocalSocket  ←──── QEMU VM 1 (-netdev stream, unix)    │
  *   │    ├── QLocalSocket  ←──── QEMU VM 2                           │
  *   │    ├── DhcpServer         (internal port, optional)            │
+ *   │    ├── DnsServer          (internal port, optional)            │
  *   │    ├── SlirpUplink        (internal port, optional NAT)        │
  *   │    └── GatewayResponder   (internal port, only without NAT)    │
  *   │                                                                │
@@ -98,10 +100,14 @@ public:
     /**
      * Register a VM with the network. Call this before launching QEMU.
      *
+     * @param dnsHostname Hostname for the in-process DNS server
+     *        ("<hostname>.<network>.lan"), may be empty.
+     * @param macAddress  MAC of the VM's NIC, used to map the hostname to
+     *        the DHCP-assigned address.
      * @return The switch socket path for "-netdev stream,...,addr.path=",
      *         or empty on failure.
      */
-    QString attachVm(const QString &networkName, const QString &vmName);
+    QString attachVm(const QString &networkName, const QString &vmName, const QString &dnsHostname, const QByteArray &macAddress);
 
     /**
      * Remove the VM from the network and decrement the ref count.
@@ -137,9 +143,10 @@ private:
     struct RuntimeState {
         QPointer<VirtualSwitch> vswitch;
         QPointer<DhcpServer> dhcp;
+        QPointer<DnsServer> dns;
         QPointer<GatewayResponder> gatewayResponder;
         QPointer<SlirpUplink> uplink;
-        QSet<QString> attachedVms;
+        QHash<QString, QByteArray> attachedVms; // vm name -> NIC MAC
     };
 
     QList<VirtualNetwork> m_networks;

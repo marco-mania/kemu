@@ -11,8 +11,10 @@
 
 #include "const.h"
 #include "utils/dhcpserver.h"
+#include "utils/dnsserver.h"
 #include "utils/gatewayresponder.h"
 #include "utils/slirpuplink.h"
+#include "utils/utils.h"
 #include "utils/virtualswitch.h"
 
 #include "kemu_debug.h"
@@ -41,15 +43,15 @@ quint32 prefixToMask(int prefixLength)
 }
 
 /// Address for an in-process network service: next to the gateway, inside the
-/// subnet, distinct from gateway and 'avoid'. Returns 0 if none fits.
-quint32 deriveServiceAddress(quint32 gateway, quint32 network, quint32 broadcast, quint32 offset, quint32 avoid)
+/// subnet, distinct from gateway, 'avoid' and 'avoid2'. Returns 0 if none fits.
+quint32 deriveServiceAddress(quint32 gateway, quint32 network, quint32 broadcast, quint32 offset, quint32 avoid, quint32 avoid2 = 0)
 {
     const quint32 up = gateway + offset;
-    if (up > network && up < broadcast && up != gateway && up != avoid)
+    if (up > network && up < broadcast && up != gateway && up != avoid && up != avoid2)
         return up;
     if (offset < gateway) {
         const quint32 down = gateway - offset;
-        if (down > network && down < broadcast && down != gateway && down != avoid)
+        if (down > network && down < broadcast && down != gateway && down != avoid && down != avoid2)
             return down;
     }
     return 0;
@@ -97,6 +99,7 @@ void VirtualNetworkManager::load()
         net.gateway = grp.readEntry(u"Gateway"_s, {});
         net.prefixLength = grp.readEntry(u"PrefixLength"_s, 24);
         net.enableDhcp = grp.readEntry(u"EnableDhcp"_s, true);
+        net.enableDns = grp.readEntry(u"EnableDns"_s, true);
         net.dhcpRangeStart = grp.readEntry(u"DhcpRangeStart"_s, {});
         net.dhcpRangeEnd = grp.readEntry(u"DhcpRangeEnd"_s, {});
         net.enableNat = grp.readEntry(u"EnableNat"_s, true);
@@ -129,6 +132,7 @@ void VirtualNetworkManager::save() const
         grp.writeEntry(u"Gateway"_s, net.gateway);
         grp.writeEntry(u"PrefixLength"_s, net.prefixLength);
         grp.writeEntry(u"EnableDhcp"_s, net.enableDhcp);
+        grp.writeEntry(u"EnableDns"_s, net.enableDns);
         grp.writeEntry(u"DhcpRangeStart"_s, net.dhcpRangeStart);
         grp.writeEntry(u"DhcpRangeEnd"_s, net.dhcpRangeEnd);
         grp.writeEntry(u"EnableNat"_s, net.enableNat);
@@ -289,6 +293,12 @@ bool VirtualNetworkManager::startNetwork(const QString &name)
         qCDebug(KEMU) << "VirtualNetworkManager: gateway responder attached (no NAT)";
     }
 
+    // Own service addresses so unicast traffic reaches the in-process servers.
+    const quint32 dhcpIp = deriveServiceAddress(gatewayIp, networkAddr, broadcastAddr, 2, dnsIp);
+    // DNS requires DHCP: the lease table is its only name->address source.
+    const bool runDns = net.enableDhcp && net.enableDns;
+    const quint32 nameDnsIp = runDns ? deriveServiceAddress(gatewayIp, networkAddr, broadcastAddr, 3, dnsIp, dhcpIp) : 0;
+
     if (net.enableDhcp) {
         quint32 rangeStart = QHostAddress(net.dhcpRangeStart).toIPv4Address();
         quint32 rangeEnd = QHostAddress(net.dhcpRangeEnd).toIPv4Address();
@@ -305,15 +315,29 @@ bool VirtualNetworkManager::startNetwork(const QString &name)
             }
         }
 
-        // Own service address so unicast lease renewals reach this server.
-        const quint32 dhcpIp = deriveServiceAddress(gatewayIp, networkAddr, broadcastAddr, 2, dnsIp);
-
         auto *dhcp = new DhcpServer(serviceMac(name + u"-dhcp"_s), this);
-        dhcp->configure(gatewayIp, dhcpIp, net.prefixLength, rangeStart, rangeEnd, net.enableNat ? dnsIp : 0);
+        dhcp->configure(gatewayIp, dhcpIp, net.prefixLength, rangeStart, rangeEnd, nameDnsIp != 0 ? nameDnsIp : (net.enableNat ? dnsIp : 0));
         vswitch->addInternalPort(dhcp);
         state.dhcp = dhcp;
         qCDebug(KEMU) << "VirtualNetworkManager: DHCP server attached, pool" << QHostAddress(rangeStart).toString() << "-"
                       << QHostAddress(rangeEnd).toString();
+    }
+
+    // In-process DNS server: resolves VM hostnames in "<network>.lan" from
+    // the DHCP lease table and forwards everything else to the host resolver.
+    if (nameDnsIp != 0) {
+        const QString dnsZone = Utils::vmNameToHostname(name) + u".lan"_s;
+        auto *dns = new DnsServer(serviceMac(name + u"-dns"_s), this);
+        dns->configure(nameDnsIp, dnsZone);
+        if (state.dhcp)
+            dns->setDhcpServer(state.dhcp);
+        vswitch->addInternalPort(dns);
+        state.dns = dns;
+        qCDebug(KEMU) << "VirtualNetworkManager: DNS server attached at" << QHostAddress(nameDnsIp).toString() << "zone" << dnsZone;
+    } else if (runDns) {
+        qCDebug(KEMU) << "VirtualNetworkManager: no address left for the DNS server (subnet too small)";
+    } else {
+        qCDebug(KEMU) << "VirtualNetworkManager: DNS server disabled for this network";
     }
 
     if (state.uplink)
@@ -332,7 +356,7 @@ void VirtualNetworkManager::stopNetwork(const QString &name)
     qCDebug(KEMU) << "VirtualNetworkManager: stopping network" << name;
 
     // Notify all attached VMs that they are being detached.
-    const QList<QString> vmNames = it->attachedVms.values();
+    const QList<QString> vmNames = it->attachedVms.keys();
     for (const QString &vm : vmNames)
         Q_EMIT vmDetached(name, vm);
 
@@ -341,6 +365,7 @@ void VirtualNetworkManager::stopNetwork(const QString &name)
 
     // Ports first (their destruction detaches them), then the switch.
     delete state.dhcp;
+    delete state.dns;
     delete state.gatewayResponder;
     delete state.uplink;
     delete state.vswitch;
@@ -360,7 +385,10 @@ bool VirtualNetworkManager::isRunning(const QString &name) const
 // Per-VM Integration
 // ============================================================================
 
-QString VirtualNetworkManager::attachVm(const QString &networkName, const QString &vmName)
+QString VirtualNetworkManager::attachVm(const QString &networkName,
+                                        const QString &vmName,
+                                        const QString &dnsHostname,
+                                        const QByteArray &macAddress)
 {
     resetError();
 
@@ -373,7 +401,12 @@ QString VirtualNetworkManager::attachVm(const QString &networkName, const QStrin
     if (it->attachedVms.contains(vmName))
         return it->vswitch->socketPath();
 
-    it->attachedVms.insert(vmName);
+    it->attachedVms.insert(vmName, macAddress);
+
+    if (it->dns && !dnsHostname.isEmpty() && !macAddress.isEmpty()) {
+        it->dns->addHost(dnsHostname, macAddress);
+        qCDebug(KEMU) << "VirtualNetworkManager: DNS record" << dnsHostname << "registered for" << vmName;
+    }
 
     const QString path = it->vswitch->socketPath();
     qCDebug(KEMU) << "VirtualNetworkManager: VM" << vmName << "attached to" << networkName << "-" << path;
@@ -387,8 +420,12 @@ void VirtualNetworkManager::detachVm(const QString &networkName, const QString &
     if (it == m_runtime.end())
         return;
 
+    const QByteArray mac = it->attachedVms.value(vmName);
     if (!it->attachedVms.remove(vmName))
         return;
+
+    if (it->dns && !mac.isEmpty())
+        it->dns->removeHost(mac);
 
     qCDebug(KEMU) << "VirtualNetworkManager: VM" << vmName << "detached from" << networkName;
     Q_EMIT vmDetached(networkName, vmName);

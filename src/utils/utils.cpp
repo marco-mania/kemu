@@ -180,6 +180,25 @@ bool isValidMacAddress(const QString &mac)
     return re.match(mac).hasMatch();
 }
 
+QByteArray macAddressToBytes(const QString &mac)
+{
+    if (!isValidMacAddress(mac))
+        return {};
+
+    QByteArray result;
+    result.reserve(6);
+    const QStringList parts = mac.split(u':');
+    for (const QString &part : parts)
+        result.append(char(part.toUInt(nullptr, 16)));
+    return result;
+}
+
+bool isValidDnsHostname(const QString &hostname)
+{
+    static const QRegularExpression re(u"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"_s);
+    return re.match(hostname).hasMatch();
+}
+
 QString quoteShellArg(const QString &arg)
 {
     const QStringView view = arg;

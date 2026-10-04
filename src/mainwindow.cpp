@@ -2473,7 +2473,11 @@ void MainWindow::startVM(bool headless)
     if (currentConfig.networkCard() != VMSpecs::NetworkCard::None) {
         if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
             QString reason;
-            resolvedNetworkSocket = m_runtimeManager->ensureNetworkRunning(currentConfig.virtualNetworkName(), vmName, &reason);
+            resolvedNetworkSocket = m_runtimeManager->ensureNetworkRunning(currentConfig.virtualNetworkName(),
+                                                                           vmName,
+                                                                           currentConfig.effectiveDnsHostname(),
+                                                                           Utils::macAddressToBytes(currentConfig.macAddress()),
+                                                                           &reason);
             if (resolvedNetworkSocket.isEmpty() && !reason.isEmpty())
                 KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
             if (resolvedNetworkSocket.isEmpty()) {
@@ -3830,7 +3834,11 @@ void MainWindow::startDeployment(const QString &vmName)
     if (config.networkCard() != VMSpecs::NetworkCard::None) {
         if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
             QString reason;
-            resolvedNetworkSocket = m_runtimeManager->ensureNetworkRunning(config.virtualNetworkName(), vmName, &reason);
+            resolvedNetworkSocket = m_runtimeManager->ensureNetworkRunning(config.virtualNetworkName(),
+                                                                           vmName,
+                                                                           config.effectiveDnsHostname(),
+                                                                           Utils::macAddressToBytes(config.macAddress()),
+                                                                           &reason);
             if (resolvedNetworkSocket.isEmpty() && !reason.isEmpty())
                 KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
             if (resolvedNetworkSocket.isEmpty()) {

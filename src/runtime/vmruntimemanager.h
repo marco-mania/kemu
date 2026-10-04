@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <QByteArray>
 #include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
@@ -103,8 +104,13 @@ public:
     [[nodiscard]] bool hasLiveQemu(const QString &vmName) const;
     // Returns the network's switch socket path, or an empty string on
     // failure. `reason` is filled on failure and is meant for the caller to
-    // display.
-    QString ensureNetworkRunning(const QString &networkName, const QString &vmName, QString *reason);
+    // display. `dnsHostname`/`macAddress` are used to register the VM's
+    // DNS record with the in-process DNS server (both may be empty).
+    QString ensureNetworkRunning(const QString &networkName,
+                                 const QString &vmName,
+                                 const QString &dnsHostname,
+                                 const QByteArray &macAddress,
+                                 QString *reason);
     void releaseNetwork(const VMConfig &config);
 
     // Single source of truth for VM store locations.

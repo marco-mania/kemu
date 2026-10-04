@@ -143,6 +143,11 @@ void VMConfig::ensureMacAddress(const QStringList &usedMacs)
     m_macAddress = Utils::generateRandomMac(usedMacs);
 }
 
+QString VMConfig::effectiveDnsHostname() const
+{
+    return m_dnsHostname.isEmpty() ? Utils::vmNameToHostname(m_name) : m_dnsHostname;
+}
+
 // --- Bus Type Helpers ---
 
 bool VMConfig::isIsaDevice(VMSpecs::GpuType type)
@@ -1567,6 +1572,7 @@ QJsonObject VMConfig::toJson() const
     j[u"mac_address"_s] = m_macAddress;
     j[u"network_mode"_s] = toString(m_networkMode);
     j[u"virtual_network"_s] = m_virtualNetworkName;
+    j[u"dns_hostname"_s] = m_dnsHostname;
 
     if (!m_portForwards.isEmpty()) {
         QJsonArray portFwdArray;
@@ -1661,6 +1667,7 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
     c.m_macAddress = j[u"mac_address"_s].toString();
     c.m_networkMode = parseNetworkMode(j[u"network_mode"_s].toString());
     c.m_virtualNetworkName = j[u"virtual_network"_s].toString();
+    c.m_dnsHostname = j[u"dns_hostname"_s].toString();
 
     if (j.contains(u"port_forwards"_s)) {
         const QJsonArray arr = j[u"port_forwards"_s].toArray();

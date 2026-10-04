@@ -701,6 +701,7 @@ QList<MacUsageInfo> VirtualEnvironmentModel::macUsageInfo() const
         info.mac = e.config.macAddress();
         info.networkMode = e.config.networkMode();
         info.virtualNetworkName = e.config.virtualNetworkName();
+        info.dnsHostname = e.config.effectiveDnsHostname();
         result << info;
     }
 

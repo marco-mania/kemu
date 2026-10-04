@@ -120,6 +120,8 @@ target_sources(
           utils/virtualswitch.h
           utils/dhcpserver.cpp
           utils/dhcpserver.h
+          utils/dnsserver.cpp
+          utils/dnsserver.h
           utils/gatewayresponder.cpp
           utils/gatewayresponder.h
           utils/slirpuplink.cpp

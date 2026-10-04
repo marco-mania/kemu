@@ -443,13 +443,14 @@ void SettingsDialog::setupVirtualNetworksPage()
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
 
-    networkTable = new QTableWidget(0, 5);
-    networkTable->setHorizontalHeaderLabels({i18n("Name"), i18n("Gateway"), i18n("DHCP"), i18n("NAT"), i18n("Status")});
+    networkTable = new QTableWidget(0, 6);
+    networkTable->setHorizontalHeaderLabels({i18n("Name"), i18n("Gateway"), i18n("DHCP"), i18n("DNS"), i18n("NAT"), i18n("Status")});
     networkTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     networkTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     networkTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     networkTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
     networkTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    networkTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
     networkTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     networkTable->setSelectionMode(QAbstractItemView::SingleSelection);
     networkTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -723,11 +724,20 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     auto *dhcpEndLabel = new QLabel(i18n("DHCP range end:"));
     form->addRow(dhcpEndLabel, dhcpEndEdit);
 
+    // --- DNS ---
+    auto *dnsCheck = new QCheckBox(i18n("Enable DNS server"));
+    dnsCheck->setChecked(net.enableDns);
+    dnsCheck->setToolTip(i18n("Resolves the VMs' hostnames inside this network "
+                              "(\"<hostname>.<network>.lan\") and forwards other queries "
+                              "to the host resolver. Requires DHCP."));
+    form->addRow(dnsCheck);
+
     auto updateDhcpWidgets = [=](bool checked) {
         dhcpStartEdit->setEnabled(checked);
         dhcpStartLabel->setEnabled(checked);
         dhcpEndEdit->setEnabled(checked);
         dhcpEndLabel->setEnabled(checked);
+        dnsCheck->setEnabled(checked);
     };
     updateDhcpWidgets(dhcpCheck->isChecked());
     QObject::connect(dhcpCheck, &QCheckBox::toggled, updateDhcpWidgets);
@@ -780,6 +790,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     net.gateway = gatewayEdit->text().trimmed();
     net.prefixLength = prefixSpin->value();
     net.enableDhcp = dhcpCheck->isChecked();
+    net.enableDns = dnsCheck->isChecked();
     net.dhcpRangeStart = dhcpStartEdit->text().trimmed();
     net.dhcpRangeEnd = dhcpEndEdit->text().trimmed();
     net.enableNat = natCheck->isChecked();
@@ -892,7 +903,9 @@ void SettingsDialog::refreshNetworkTable()
             dhcpText = u"%1 – %2"_s.arg(net.dhcpRangeStart, net.dhcpRangeEnd);
         networkTable->setItem(row, 2, new QTableWidgetItem(dhcpText));
 
-        networkTable->setItem(row, 3, new QTableWidgetItem(net.enableNat ? i18n("Yes") : i18n("No")));
+        networkTable->setItem(row, 3, new QTableWidgetItem(net.enableDhcp && net.enableDns ? i18n("Yes") : i18n("No")));
+
+        networkTable->setItem(row, 4, new QTableWidgetItem(net.enableNat ? i18n("Yes") : i18n("No")));
 
         QString statusText;
         if (m_networkManager->isRunning(net.name)) {
@@ -901,7 +914,7 @@ void SettingsDialog::refreshNetworkTable()
         } else {
             statusText = i18n("Stopped");
         }
-        networkTable->setItem(row, 4, new QTableWidgetItem(statusText));
+        networkTable->setItem(row, 5, new QTableWidgetItem(statusText));
     }
 }
 

@@ -40,6 +40,10 @@ public:
 
     void receiveFrame(const QByteArray &frame) override;
 
+    /// Current lease address for a client MAC, 0 if none or expired.
+    /// Used by the DNS server to resolve VM hostnames.
+    [[nodiscard]] quint32 leaseIpForMac(const QByteArray &clientMac) const;
+
 private:
     struct Lease {
         quint32 ip = 0;

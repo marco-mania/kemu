@@ -269,6 +269,14 @@ void DhcpServer::releaseLease(const QByteArray &clientMac, quint32 ip)
         m_leases.erase(it);
 }
 
+quint32 DhcpServer::leaseIpForMac(const QByteArray &clientMac) const
+{
+    const auto it = m_leases.constFind(clientMac);
+    if (it == m_leases.constEnd() || it->expiresAtMs <= m_clock.elapsed())
+        return 0;
+    return it->ip;
+}
+
 bool DhcpServer::isInPool(quint32 ip) const
 {
     return ip >= m_rangeStart && ip <= m_rangeEnd;

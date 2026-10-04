@@ -454,7 +454,11 @@ bool VmRuntimeManager::hasLiveQemu(const QString &vmName) const
     return entry && (entry->state == VmEntry::State::Running || entry->state == VmEntry::State::Deploying);
 }
 
-QString VmRuntimeManager::ensureNetworkRunning(const QString &networkName, const QString &vmName, QString *reason)
+QString VmRuntimeManager::ensureNetworkRunning(const QString &networkName,
+                                               const QString &vmName,
+                                               const QString &dnsHostname,
+                                               const QByteArray &macAddress,
+                                               QString *reason)
 {
     const auto fail = [reason](const QString &text) {
         if (reason)
@@ -471,7 +475,7 @@ QString VmRuntimeManager::ensureNetworkRunning(const QString &networkName, const
     if (!m_network_manager->startNetwork(networkName))
         return fail(i18n("Failed to start virtual network '%1': %2", networkName, m_network_manager->lastError()));
 
-    const QString socketPath = m_network_manager->attachVm(networkName, vmName);
+    const QString socketPath = m_network_manager->attachVm(networkName, vmName, dnsHostname, macAddress);
     if (socketPath.isEmpty())
         return fail(i18n("Failed to attach VM '%1' to the network: %2", vmName, m_network_manager->lastError()));
 

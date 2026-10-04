@@ -520,6 +520,18 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     vdeLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     virtualNetworkCombo = new QComboBox();
     vdeLayout->addRow(i18n("Network:"), virtualNetworkCombo);
+
+    hostnameEdit = new QLineEdit();
+    hostnameEdit->setClearButtonEnabled(false);
+    hostnameEdit->setToolTip(i18n("DNS hostname of this VM inside the virtual network (\"<hostname>.<network>.lan\")"));
+    vdeLayout->addRow(i18n("Hostname:"), hostnameEdit);
+
+    hostnameWarningLabel = new QLabel();
+    hostnameWarningLabel->setStyleSheet(u"QLabel { color: %1; font-size: 11px; }"_s.arg(scheme.foreground(KColorScheme::NegativeText).color().name()));
+    hostnameWarningLabel->setWordWrap(false);
+    hostnameWarningLabel->setFixedHeight(hostnameWarningLabel->fontMetrics().height() + 2);
+    vdeLayout->addRow({}, hostnameWarningLabel);
+
     netMainLayout->addWidget(vdeGroup);
 
     passtGroup->setVisible(true);
@@ -724,6 +736,15 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         auto mode = static_cast<VMSpecs::NetworkMode>(networkModeCombo->currentData().toInt());
         passtGroup->setVisible(mode == VMSpecs::NetworkMode::Passt);
         vdeGroup->setVisible(mode == VMSpecs::NetworkMode::VirtualNetwork);
+        validateForm();
+    });
+
+    connect(virtualNetworkCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
+        validateForm();
+    });
+
+    connect(hostnameEdit, &QLineEdit::textEdited, this, [this]() {
+        validateForm();
     });
 
     connect(netCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
@@ -860,6 +881,8 @@ void EditVmDialog::setConfig(const VMConfig &config)
         if (vnIdx >= 0)
             virtualNetworkCombo->setCurrentIndex(vnIdx);
     }
+    m_lastAutoHostname = Utils::vmNameToHostname(config.name());
+    hostnameEdit->setText(config.dnsHostname().isEmpty() ? m_lastAutoHostname : config.dnsHostname());
     setCombo(diskInterfaceCombo, config.diskInterface());
     setCombo(usbCombo, config.usbController());
     setCombo(mouseCombo, config.pointerDevice());
@@ -1018,6 +1041,13 @@ void EditVmDialog::onNameChanged(const QString &text)
         if (variantIndex >= 0 && osNameCombo->currentIndex() != variantIndex)
             osNameCombo->setCurrentIndex(variantIndex);
         updateIconForOs();
+    }
+
+    // Keep the DNS hostname in sync with the VM name as long as the user
+    // has not changed it away from the auto-generated value.
+    if (hostnameEdit && (hostnameEdit->text().isEmpty() || hostnameEdit->text() == m_lastAutoHostname)) {
+        m_lastAutoHostname = Utils::vmNameToHostname(text);
+        hostnameEdit->setText(m_lastAutoHostname);
     }
 
     validateForm();
@@ -1204,6 +1234,11 @@ VMConfig EditVmDialog::getResult() const
     c.setMacAddress(macEdit->text());
     c.setNetworkMode(static_cast<VMSpecs::NetworkMode>(networkModeCombo->currentData().toInt()));
     c.setVirtualNetworkName(virtualNetworkCombo->currentData().toString());
+    if (static_cast<VMSpecs::NetworkMode>(networkModeCombo->currentData().toInt()) == VMSpecs::NetworkMode::VirtualNetwork) {
+        // Store only explicit overrides; empty means "derive from the VM name".
+        const QString hostname = hostnameEdit->text().trimmed().toLower();
+        c.setDnsHostname(hostname == Utils::vmNameToHostname(nameEdit->text().trimmed()) ? QString() : hostname);
+    }
     QList<PortForwardRule> rules;
     for (int row = 0; row < portForwardTable->rowCount(); ++row) {
         auto *protocolCombo = qobject_cast<QComboBox *>(portForwardTable->cellWidget(row, 0));
@@ -1547,6 +1582,36 @@ void EditVmDialog::validateForm()
         macWarningLabel->setText(macWarningText);
     } else {
         macWarningLabel->clear();
+    }
+
+    // DNS hostname: only relevant (and visible) in VirtualNetwork mode.
+    QString hostnameWarningText;
+    if (static_cast<VMSpecs::NetworkMode>(networkModeCombo->currentData().toInt()) == VMSpecs::NetworkMode::VirtualNetwork) {
+        const QString hostname = hostnameEdit->text().trimmed().toLower();
+        if (hostname.isEmpty() || !Utils::isValidDnsHostname(hostname)) {
+            hostnameWarningText = i18n("Invalid DNS hostname.");
+            valid = false;
+        } else {
+            // Must be unique per virtual network.
+            const QString netName = virtualNetworkCombo->currentData().toString();
+            for (const auto &info : m_macUsageInfo) {
+                if (m_mode == Mode::Edit && info.vmName == m_original.name())
+                    continue;
+                if (info.networkMode != VMSpecs::NetworkMode::VirtualNetwork || info.virtualNetworkName != netName)
+                    continue;
+                if (info.dnsHostname.compare(hostname, Qt::CaseInsensitive) == 0) {
+                    hostnameWarningText = i18n("Hostname conflict with '%1' on network '%2'.", info.vmName, netName);
+                    valid = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (hostnameWarningLabel && !hostnameWarningText.isEmpty()) {
+        hostnameWarningLabel->setText(hostnameWarningText);
+    } else {
+        hostnameWarningLabel->clear();
     }
 
     if (auto *ok = buttonBox ? buttonBox->button(QDialogButtonBox::Ok) : nullptr)
