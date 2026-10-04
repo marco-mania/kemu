@@ -269,6 +269,7 @@ virtual networks work unchanged inside sandboxed (Flatpak) environments.
 
 - **DHCP**: A lightweight DHCPv4 server built into KEMU assigns addresses automatically. It can be disabled for static IP setups or Cloud-Init deployments.
 - **NAT**: An embedded libslirp instance terminates guest TCP/UDP connections in userspace and re-originates them on the host, including a DNS proxy. When disabled, the network is fully air-gapped (the gateway address still answers ARP and ping so static setups remain diagnosable) and the built-in DNS server only answers for the local zone.
+- **Host access**: Off by default. When enabled (NAT only), guests reach services listening on the host's `127.0.0.1` via the gateway address.
 - **Port forwarding**: Exposes ports of a specific guest VM on the host, bound to `127.0.0.1`. Format: `proto/hostPort:guestIp:guestPort`, e.g. `tcp/8080:192.168.100.50:80`.
 
 **Requirements:**

@@ -103,6 +103,7 @@ void VirtualNetworkManager::load()
         net.dhcpRangeStart = grp.readEntry(u"DhcpRangeStart"_s, {});
         net.dhcpRangeEnd = grp.readEntry(u"DhcpRangeEnd"_s, {});
         net.enableNat = grp.readEntry(u"EnableNat"_s, true);
+        net.allowHostAccess = grp.readEntry(u"AllowHostAccess"_s, false);
         net.portForwards = grp.readEntry(u"PortForwards"_s, QStringList());
         if (net.isValid())
             m_networks.append(net);
@@ -136,6 +137,7 @@ void VirtualNetworkManager::save() const
         grp.writeEntry(u"DhcpRangeStart"_s, net.dhcpRangeStart);
         grp.writeEntry(u"DhcpRangeEnd"_s, net.dhcpRangeEnd);
         grp.writeEntry(u"EnableNat"_s, net.enableNat);
+        grp.writeEntry(u"AllowHostAccess"_s, net.allowHostAccess);
         grp.writeEntry(u"PortForwards"_s, net.portForwards);
     }
 
@@ -270,6 +272,7 @@ bool VirtualNetworkManager::startNetwork(const QString &name)
         cfg.netmask = mask;
         cfg.gateway = gatewayIp;
         cfg.nameserver = dnsIp != 0 ? dnsIp : networkAddr + 1;
+        cfg.allowHostLoopback = net.allowHostAccess;
 
         if (!uplink->start(cfg)) {
             const QString error = uplink->lastError();

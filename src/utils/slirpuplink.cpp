@@ -345,7 +345,7 @@ public:
         m_slirpConfig.vnameserver.s_addr = htonl(config.nameserver);
         m_slirpConfig.disable_dns = false;
         m_slirpConfig.disable_dhcp = !config.enableDhcp;
-        m_slirpConfig.disable_host_loopback = false;
+        m_slirpConfig.disable_host_loopback = !config.allowHostLoopback;
         m_slirpConfig.enable_emu = false;
 
         m_slirpCallbacks.send_packet = &SlirpWorkerThread::sendPacket;

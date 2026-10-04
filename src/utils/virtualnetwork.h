@@ -66,6 +66,10 @@ struct VirtualNetwork {
     /// (air-gapped).
     bool enableNat = true;
 
+    /// When true (and enableNat is true), guests reach services listening on
+    /// the host's loopback interface via the gateway address.
+    bool allowHostAccess = false;
+
     /// Optional: network-level port forwards handled by the NAT uplink
     /// (host 127.0.0.1 → guest address).
     /// Format per entry: "tcp/8080:192.168.100.50:80" or "udp/5353:192.168.100.50:53"

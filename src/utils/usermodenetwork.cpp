@@ -64,6 +64,8 @@ bool UserModeNetwork::start(const QString &socketPath, const QList<PortForwardRu
     cfg.nameserver = kUserNetNameserver;
     cfg.enableDhcp = true;
     cfg.dhcpStart = kUserNetDhcpStart;
+    // Same as QEMU's "-netdev user": 10.0.2.2 reaches services on the host.
+    cfg.allowHostLoopback = true;
 
     if (!uplink->start(cfg)) {
         m_lastError = i18n("Failed to start the user-mode network stack: %1", uplink->lastError());

@@ -40,6 +40,7 @@ public:
         quint32 nameserver = 0; // slirp DNS proxy address
         bool enableDhcp = false; // slirp's own DHCP server (user-mode networking)
         quint32 dhcpStart = 0; // first DHCP address; 0 -> network + 15 (slirp default)
+        bool allowHostLoopback = false; // gateway address reaches the host's 127.0.0.1
     };
 
     explicit SlirpUplink(QObject *parent = nullptr);

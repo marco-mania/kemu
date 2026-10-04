@@ -719,6 +719,13 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
              "from the host network (air-gapped)."));
     form->addRow(natCheck);
 
+    auto *hostAccessCheck = new QCheckBox(i18n("Allow access to host services"));
+    hostAccessCheck->setChecked(net.allowHostAccess);
+    hostAccessCheck->setToolTip(
+        i18n("Guests can reach services listening on the host's loopback "
+             "interface (127.0.0.1) via the gateway address."));
+    form->addRow(hostAccessCheck);
+
     // --- Port Forwards ---
     auto *portFwdCheck = new QCheckBox(i18n("Enable Port Forwarding"));
     // Checked if there are existing forwards
@@ -737,6 +744,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
         const bool natEnabled = natCheck->isChecked();
         const bool fwdEnabled = portFwdCheck->isChecked();
 
+        hostAccessCheck->setEnabled(natEnabled);
         portFwdCheck->setEnabled(natEnabled);
         portFwdLabel->setEnabled(natEnabled && fwdEnabled);
         portFwdEdit->setEnabled(natEnabled && fwdEnabled);
@@ -763,6 +771,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     net.dhcpRangeStart = dhcpStartEdit->text().trimmed();
     net.dhcpRangeEnd = dhcpEndEdit->text().trimmed();
     net.enableNat = natCheck->isChecked();
+    net.allowHostAccess = net.enableNat && hostAccessCheck->isChecked();
 
     net.portForwards.clear();
     // Only parse and save port forwards if NAT and Port Forwarding are enabled
