@@ -20,6 +20,7 @@ extern "C" {
 #include <QMutexLocker>
 #include <QSemaphore>
 #include <QThread>
+#include <QtEndian>
 
 #include <atomic>
 #include <cstdint>
@@ -392,6 +393,7 @@ bool SlirpUplink::start(const Config &config)
     if (m_thread)
         return true;
 
+    m_config = config;
     m_thread = new SlirpWorkerThread;
     m_thread->config = config;
     m_thread->prepareSlirpConfig();
@@ -444,6 +446,15 @@ void SlirpUplink::addPortForward(bool udp, quint16 hostPort, quint32 guestIp, qu
         if (slirp_add_hostfwd(slirp, udp ? 1 : 0, hostAddr, hostPort, guestAddr, guestPort) < 0)
             qCWarning(KEMU) << "SlirpUplink: failed to add port forward" << hostPort << "->" << guestPort;
     });
+}
+
+bool SlirpUplink::ownsMac(const QByteArray &mac) const
+{
+    // libslirp answers for each of its addresses with 52:55:<IPv4 address>.
+    if (mac.size() != 6 || static_cast<quint8>(mac[0]) != 0x52 || static_cast<quint8>(mac[1]) != 0x55)
+        return false;
+    const quint32 ip = qFromBigEndian<quint32>(reinterpret_cast<const uchar *>(mac.constData()) + 2);
+    return (ip & m_config.netmask) == m_config.network;
 }
 
 void SlirpUplink::receiveFrame(const QByteArray &frame)

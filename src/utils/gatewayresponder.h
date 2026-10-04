@@ -27,6 +27,10 @@ public:
     explicit GatewayResponder(const QByteArray &mac, quint32 gatewayIp, QObject *parent = nullptr);
 
     void receiveFrame(const QByteArray &frame) override;
+    [[nodiscard]] bool ownsMac(const QByteArray &mac) const override
+    {
+        return mac == m_mac;
+    }
 
 private:
     void answerArp(const QByteArray &frame);

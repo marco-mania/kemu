@@ -58,11 +58,13 @@ public:
     void addPortForward(bool udp, quint16 hostPort, quint32 guestIp, quint16 guestPort);
 
     void receiveFrame(const QByteArray &frame) override;
+    [[nodiscard]] bool ownsMac(const QByteArray &mac) const override;
 
 Q_SIGNALS:
     void errorOccurred(const QString &message);
 
 private:
     SlirpWorkerThread *m_thread = nullptr;
+    Config m_config;
     QString m_lastError;
 };

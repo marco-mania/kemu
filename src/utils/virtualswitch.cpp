@@ -62,7 +62,6 @@ void VirtualSwitch::close()
     m_clients.clear();
     m_readBuffers.clear();
     m_macToClient.clear();
-    m_macToInternal.clear();
 
     m_server->close();
     m_server->deleteLater();
@@ -109,12 +108,6 @@ void VirtualSwitch::removeInternalPort(VirtualSwitchPort *port)
         return;
     disconnect(port, nullptr, this, nullptr);
     m_internalPorts.removeAll(port);
-    for (auto it = m_macToInternal.begin(); it != m_macToInternal.end();) {
-        if (!it.value() || it.value() == port)
-            it = m_macToInternal.erase(it);
-        else
-            ++it;
-    }
 }
 
 void VirtualSwitch::onNewConnection()
@@ -181,11 +174,11 @@ void VirtualSwitch::forwardFrame(QObject *source, const QByteArray &frame)
                   << u"0x%1"_s.arg(qFromBigEndian<quint16>(reinterpret_cast<const uchar *>(frame.constData()) + 12), 4, 16, u'0')
                   << (qobject_cast<QLocalSocket *>(source) ? "from socket" : "from internal port");
 
-    // Learn the sender.
-    if (auto *socket = qobject_cast<QLocalSocket *>(source))
-        m_macToClient.insert(srcMac, socket);
-    else if (auto *port = qobject_cast<VirtualSwitchPort *>(source))
-        m_macToInternal.insert(srcMac, port);
+    auto *sourceSocket = qobject_cast<QLocalSocket *>(source);
+    auto *sourcePort = qobject_cast<VirtualSwitchPort *>(source);
+
+    if (sourceSocket && !(srcMac.at(0) & 0x01))
+        m_macToClient.insert(srcMac, sourceSocket);
 
     const auto deliverToClients = [this, &frame](QLocalSocket *exclude) {
         for (const auto &client : m_clients) {
@@ -200,9 +193,6 @@ void VirtualSwitch::forwardFrame(QObject *source, const QByteArray &frame)
         }
     };
 
-    auto *sourceSocket = qobject_cast<QLocalSocket *>(source);
-    auto *sourcePort = qobject_cast<VirtualSwitchPort *>(source);
-
     // Broadcast / multicast: flood to everyone except the origin.
     if (dstMac.at(0) & 0x01) {
         deliverToClients(sourceSocket);
@@ -210,29 +200,30 @@ void VirtualSwitch::forwardFrame(QObject *source, const QByteArray &frame)
         return;
     }
 
-    // Known unicast.
-    if (m_macToClient.contains(dstMac)) {
-        QLocalSocket *target = m_macToClient.value(dstMac);
-        if (target && target != sourceSocket) {
-            writeFrame(target, frame);
+    // Internal ports are matched first, so a guest cannot shadow their MACs.
+    for (const auto &port : std::as_const(m_internalPorts)) {
+        if (port && port->ownsMac(dstMac)) {
+            if (port != sourcePort)
+                port->receiveFrame(frame);
             return;
         }
-        if (!target)
-            m_macToClient.remove(dstMac); // stale entry, fall through to flood
-        else
-            return; // hairpin: frame already at its destination
-    } else if (m_macToInternal.contains(dstMac)) {
-        VirtualSwitchPort *target = m_macToInternal.value(dstMac);
-        if (target && target != sourcePort)
-            target->receiveFrame(frame);
-        else if (!target)
-            m_macToInternal.remove(dstMac);
-        return;
     }
 
-    // Unknown unicast: flood.
+    // Known unicast.
+    const auto it = m_macToClient.constFind(dstMac);
+    if (it != m_macToClient.cend()) {
+        QLocalSocket *target = it.value();
+        if (target) {
+            if (target != sourceSocket) // else hairpin
+                writeFrame(target, frame);
+            return;
+        }
+        m_macToClient.erase(it);
+    }
+
+    // Unknown unicast: guests only. libslirp routes any frame it is handed,
+    // so flooding it would leak guest-to-guest traffic to the host network.
     deliverToClients(sourceSocket);
-    deliverToInternal(sourcePort);
 }
 
 void VirtualSwitch::writeFrame(QLocalSocket *socket, const QByteArray &frame)

@@ -21,6 +21,8 @@ class QLocalSocket;
  * Internal ports are KEMU-side services attached to the switch fabric
  * (DHCP server, gateway responder, NAT uplink). The switch delivers frames
  * via receiveFrame(); a port emits frameReady() to put a frame on the wire.
+ * A port receives broadcast/multicast frames and unicast frames addressed
+ * to a MAC it owns, never flooded unicast.
  */
 class VirtualSwitchPort : public QObject
 {
@@ -31,6 +33,8 @@ public:
 
     /// Called with a complete Ethernet frame taken from the wire.
     virtual void receiveFrame(const QByteArray &frame) = 0;
+
+    [[nodiscard]] virtual bool ownsMac(const QByteArray &mac) const = 0;
 
 Q_SIGNALS:
     /// The port wants to transmit a complete Ethernet frame onto the wire.
@@ -43,8 +47,8 @@ Q_SIGNALS:
  * QEMU instances connect to the QLocalServer via
  * "-netdev stream,server=off,addr.type=unix,addr.path=<socketPath>"
  * (4-byte big-endian length prefix + Ethernet frame). Frames are forwarded
- * between sockets and internal ports using MAC learning; unknown unicast,
- * broadcast and multicast frames are flooded.
+ * between sockets and internal ports using MAC learning; broadcast and
+ * multicast frames are flooded, unknown unicast only to sockets.
  *
  * Runs entirely in the KEMU process: no root rights, no kernel interfaces,
  * no namespaces, fully functional inside sandboxed (Flatpak) environments.
@@ -93,6 +97,5 @@ private:
     QList<QPointer<VirtualSwitchPort>> m_internalPorts;
 
     QHash<QByteArray, QPointer<QLocalSocket>> m_macToClient;
-    QHash<QByteArray, QPointer<VirtualSwitchPort>> m_macToInternal;
     QHash<QLocalSocket *, QByteArray> m_readBuffers;
 };

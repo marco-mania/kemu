@@ -49,6 +49,10 @@ public:
                    const QList<quint32> &reserved = {});
 
     void receiveFrame(const QByteArray &frame) override;
+    [[nodiscard]] bool ownsMac(const QByteArray &mac) const override
+    {
+        return mac == m_serverMac;
+    }
 
     /// Current lease address for a client MAC, 0 if none or expired.
     /// Used by the DNS server to resolve VM hostnames.

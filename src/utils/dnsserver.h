@@ -50,6 +50,10 @@ public:
     void removeHost(const QByteArray &mac);
 
     void receiveFrame(const QByteArray &frame) override;
+    [[nodiscard]] bool ownsMac(const QByteArray &mac) const override
+    {
+        return mac == m_serverMac;
+    }
 
 private:
     struct PendingQuery {

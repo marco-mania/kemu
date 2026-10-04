@@ -261,8 +261,8 @@ stack runs inside the KEMU process:
 Each virtual network runs an in-memory layer-2 switch that listens on a UNIX
 domain socket under the user's runtime directory. QEMU instances attach as
 clients (`-netdev stream`), and the switch forwards Ethernet frames between
-them using MAC learning, flooding broadcast, multicast and unknown-destination
-frames. Because nothing touches the host kernel or spawns helper processes,
+them using MAC learning, flooding broadcast and multicast frames. Frames for
+unknown destinations are flooded to the VMs only, never to the NAT uplink. Because nothing touches the host kernel or spawns helper processes,
 virtual networks work unchanged inside sandboxed (Flatpak) environments.
 
 **Features per network (individually configurable):**
