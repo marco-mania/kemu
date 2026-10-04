@@ -697,8 +697,8 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     auto *dnsCheck = new QCheckBox(i18n("Enable DNS server"));
     dnsCheck->setChecked(net.enableDns);
     dnsCheck->setToolTip(i18n("Resolves the VMs' hostnames inside this network "
-                              "(\"<hostname>.<network>.lan\") and forwards other queries "
-                              "to the host resolver. Requires DHCP."));
+                              "(\"<hostname>.<network>.lan\"). Other queries are forwarded "
+                              "to the host resolver only if NAT is enabled. Requires DHCP."));
     form->addRow(dnsCheck);
 
     auto updateDhcpWidgets = [=](bool checked) {

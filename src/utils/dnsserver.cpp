@@ -158,11 +158,12 @@ DnsServer::DnsServer(const QByteArray &serverMac, QObject *parent)
 {
 }
 
-void DnsServer::configure(quint32 serverIp, const QString &zone)
+void DnsServer::configure(quint32 serverIp, const QString &zone, bool forwardUpstream)
 {
     m_serverIp = serverIp;
     m_zone = zone.toLower();
-    m_upstreamIp = firstUpstreamResolver();
+    m_forwardUpstream = forwardUpstream;
+    m_upstreamIp = forwardUpstream ? firstUpstreamResolver() : 0;
 
     if (m_upstreamIp != 0) {
         m_upstream = new QUdpSocket(this);
@@ -412,11 +413,12 @@ void DnsServer::handleQuery(const QByteArray &frame)
 void DnsServer::forwardQuery(quint16 id, const QByteArray &clientMac, quint32 clientIp, quint16 clientPort, const QByteArray &dnsPayload)
 {
     if (!m_upstream || m_upstreamIp == 0) {
-        qCDebug(KEMU) << "DnsServer: no upstream resolver, refusing query id" << id;
-        // SERVFAIL.
+        // REFUSED on isolated networks, SERVFAIL if no resolver was found.
+        const quint16 rcode = m_forwardUpstream ? 2 : 5;
+        qCDebug(KEMU) << "DnsServer: not forwarding query id" << id << "- rcode" << rcode;
         QByteArray response = dnsPayload;
         quint16 rflags = get16(response.constData() + 2);
-        rflags = (rflags & 0x0100) | 0x8000 | 2;
+        rflags = (rflags & 0x0100) | 0x8000 | rcode;
         qToBigEndian(rflags, response.data() + 2);
         sendResponse(clientMac, clientIp, clientPort, response);
         return;

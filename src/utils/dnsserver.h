@@ -22,10 +22,10 @@ class QUdpSocket;
  * @brief Minimal DNS server attached to a VirtualSwitch as an internal port.
  *
  * Answers A/AAAA/PTR queries for the network-local zone
- * "<hostname>.<network>.lan" from the DHCP lease table and forwards
- * everything else to the host's resolver (first IPv4 nameserver from
- * /etc/resolv.conf). UDP only; enough for guests to reach each other by
- * name and to resolve internet names.
+ * "<hostname>.<network>.lan" from the DHCP lease table. With upstream
+ * forwarding enabled, everything else goes to the host's resolver (first
+ * IPv4 nameserver from /etc/resolv.conf); otherwise it is refused, so an
+ * isolated network has no path to the outside. UDP only.
  */
 class DnsServer : public VirtualSwitchPort
 {
@@ -36,8 +36,9 @@ public:
 
     /// All addresses in host byte order. serverIp is this server's own
     /// address; the server answers ARP requests for it. zone is the local
-    /// DNS zone (e.g. "test-net.lan").
-    void configure(quint32 serverIp, const QString &zone);
+    /// DNS zone (e.g. "test-net.lan"). forwardUpstream must only be set for
+    /// networks with internet access (NAT).
+    void configure(quint32 serverIp, const QString &zone, bool forwardUpstream);
 
     /// Lease source used to resolve hostnames to addresses (may be null
     /// when DHCP is disabled - the local zone then stays empty).
@@ -75,6 +76,7 @@ private:
     QHash<QByteArray, QString> m_hostByMac; // NIC MAC -> hostname label
     QPointer<DhcpServer> m_dhcp;
 
+    bool m_forwardUpstream = false;
     QUdpSocket *m_upstream = nullptr;
     quint32 m_upstreamIp = 0;
     QHash<quint16, QList<PendingQuery>> m_pending; // key: DNS transaction id

@@ -55,8 +55,8 @@ struct VirtualNetwork {
     QString dhcpRangeEnd;
 
     /// When true (and enableDhcp is true), a built-in DNS server resolves
-    /// the VMs' hostnames in "<network>.lan" from the DHCP lease table and
-    /// forwards other queries to the host resolver.
+    /// the VMs' hostnames in "<network>.lan" from the DHCP lease table.
+    /// Other queries go to the host resolver only if enableNat is set.
     bool enableDns = true;
 
     // --- NAT / Internet ---

@@ -340,11 +340,11 @@ bool VirtualNetworkManager::startNetwork(const QString &name)
     }
 
     // In-process DNS server: resolves VM hostnames in "<network>.lan" from
-    // the DHCP lease table and forwards everything else to the host resolver.
+    // the DHCP lease table. Other names are forwarded only with NAT.
     if (nameDnsIp != 0) {
         const QString dnsZone = Utils::vmNameToHostname(name) + u".lan"_s;
         auto *dns = new DnsServer(serviceMac(name + u"-dns"_s), this);
-        dns->configure(nameDnsIp, dnsZone);
+        dns->configure(nameDnsIp, dnsZone, net.enableNat);
         if (state.dhcp)
             dns->setDhcpServer(state.dhcp);
         vswitch->addInternalPort(dns);
