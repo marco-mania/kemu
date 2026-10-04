@@ -32,6 +32,15 @@ extern "C" {
 
 using namespace Qt::StringLiterals;
 
+// libslirp 4.9 introduced slirp_os_socket and deprecated slirp_pollfds_fill.
+#if SLIRP_CHECK_VERSION(4, 9, 0)
+using SlirpPollSocket = slirp_os_socket;
+#define KEMU_SLIRP_POLLFDS_FILL slirp_pollfds_fill_socket
+#else
+using SlirpPollSocket = int;
+#define KEMU_SLIRP_POLLFDS_FILL slirp_pollfds_fill
+#endif
+
 // ---------------------------------------------------------------------------
 // Worker thread: owns the Slirp instance and drives its poll loop.
 // ---------------------------------------------------------------------------
@@ -109,7 +118,7 @@ protected:
             uint32_t timeout = UINT32_MAX;
 
             m_pollfds.clear();
-            slirp_pollfds_fill_socket(slirp, &timeout, &SlirpWorkerThread::addPollSocket, this);
+            KEMU_SLIRP_POLLFDS_FILL(slirp, &timeout, &SlirpWorkerThread::addPollSocket, this);
             m_pollfds.push_back({m_wakePipe[0], POLLIN, 0});
 
             const qint64 now = clockMs();
@@ -204,12 +213,12 @@ private:
 
     // --- libslirp callbacks (all invoked on the worker thread) ---
 
-    static slirp_ssize_t sendPacket(const void *buf, size_t len, void *opaque)
+    static ssize_t sendPacket(const void *buf, size_t len, void *opaque)
     {
         auto *self = static_cast<SlirpWorkerThread *>(opaque);
         qCDebug(KEMU) << "SlirpUplink: slirp -> switch," << len << "bytes";
         Q_EMIT self->frameOut(QByteArray(static_cast<const char *>(buf), static_cast<qsizetype>(len)));
-        return static_cast<slirp_ssize_t>(len);
+        return static_cast<ssize_t>(len);
     }
 
     static void guestError(const char *msg, void * /*opaque*/)
@@ -278,7 +287,7 @@ private:
     {
     }
 
-    static int addPollSocket(slirp_os_socket fd, int events, void *opaque)
+    static int addPollSocket(SlirpPollSocket fd, int events, void *opaque)
     {
         auto *self = static_cast<SlirpWorkerThread *>(opaque);
         short pollEvents = 0;
@@ -356,8 +365,6 @@ public:
         m_slirpCallbacks.timer_mod = &SlirpWorkerThread::timerMod;
         m_slirpCallbacks.notify = &SlirpWorkerThread::notify;
         m_slirpCallbacks.timer_new_opaque = &SlirpWorkerThread::timerNewOpaque;
-        m_slirpCallbacks.register_poll_socket = nullptr;
-        m_slirpCallbacks.unregister_poll_socket = nullptr;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
         m_slirpCallbacks.register_poll_fd = &SlirpWorkerThread::registerPollFd;
