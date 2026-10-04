@@ -16,11 +16,14 @@ class SlirpWorkerThread;
  * @brief NAT uplink for a virtual network, backed by an embedded libslirp
  * instance.
  *
- * One instance per virtual network. The slirp stack terminates guest TCP/UDP
+ * One instance per virtual network, or one per VM for user-mode
+ * networking (UserModeNetwork). The slirp stack terminates guest TCP/UDP
  * connections in userspace and re-originates them on the host - no root
- * rights, no kernel interfaces, no namespaces. libslirp's own DHCP is
- * disabled (DhcpServer owns address assignment); its DNS proxy at the
- * configured nameserver address stays active.
+ * rights, no kernel interfaces, no namespaces. For virtual networks,
+ * libslirp's own DHCP is disabled (DhcpServer owns address assignment);
+ * for user-mode networking it hands out the guest address itself
+ * (Config::enableDhcp). Its DNS proxy at the configured nameserver
+ * address stays active in both cases.
  *
  * The slirp event loop runs on a dedicated worker thread; receiveFrame() and
  * addPortForward() are thread-safe and marshal into it.
@@ -35,6 +38,8 @@ public:
         quint32 netmask = 0;
         quint32 gateway = 0; // exposed to guests as default route
         quint32 nameserver = 0; // slirp DNS proxy address
+        bool enableDhcp = false; // slirp's own DHCP server (user-mode networking)
+        quint32 dhcpStart = 0; // first DHCP address; 0 -> network + 15 (slirp default)
     };
 
     explicit SlirpUplink(QObject *parent = nullptr);

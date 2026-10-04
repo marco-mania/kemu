@@ -160,7 +160,7 @@ private:
     QComboBox *networkModeCombo = nullptr;
     QComboBox *virtualNetworkCombo = nullptr;
     QLineEdit *hostnameEdit = nullptr;
-    QWidget *passtGroup = nullptr;
+    QWidget *userModeGroup = nullptr;
     QWidget *vdeGroup = nullptr;
 
     QLabel *nameWarningLabel = nullptr;

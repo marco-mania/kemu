@@ -341,10 +341,10 @@ public:
         m_slirpConfig.vnetmask.s_addr = htonl(config.netmask);
         m_slirpConfig.vhost.s_addr = htonl(config.gateway);
         m_slirpConfig.in6_enabled = false;
-        m_slirpConfig.vdhcp_start.s_addr = htonl(config.network | 0x0f); // unused, DHCP is disabled
+        m_slirpConfig.vdhcp_start.s_addr = htonl(config.dhcpStart != 0 ? config.dhcpStart : (config.network | 0x0f));
         m_slirpConfig.vnameserver.s_addr = htonl(config.nameserver);
         m_slirpConfig.disable_dns = false;
-        m_slirpConfig.disable_dhcp = true;
+        m_slirpConfig.disable_dhcp = !config.enableDhcp;
         m_slirpConfig.disable_host_loopback = false;
         m_slirpConfig.enable_emu = false;
 

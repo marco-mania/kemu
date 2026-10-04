@@ -28,7 +28,6 @@ ExternalTools::ExternalTools(QObject *parent)
     registerTool(Swtpm, u"SwtpmPath"_s, u"swtpm"_s);
     registerTool(Virtiofsd, u"VirtiofsdPath"_s, u"virtiofsd"_s);
     registerTool(GenIsoImage, u"GenIsoImagePath"_s, u"genisoimage"_s);
-    registerTool(Passt, u"PasstPath"_s, u"passt"_s);
 }
 
 // --- Registration ---
@@ -191,15 +190,13 @@ QString ExternalTools::displayName(Tool tool)
         return i18n("Virtio-fs Shared File System Daemon");
     case GenIsoImage:
         return i18n("ISO Image Creator (genisoimage/mkisofs/xorriso)");
-    case Passt:
-        return i18n("passt Network Backend");
     }
     return {};
 }
 
 QList<ExternalTools::Tool> ExternalTools::allTools()
 {
-    return {QemuSystem, QemuImg, Swtpm, Virtiofsd, GenIsoImage, Passt};
+    return {QemuSystem, QemuImg, Swtpm, Virtiofsd, GenIsoImage};
 }
 
 QList<ExternalTools::Tool> ExternalTools::coreTools()
@@ -209,13 +206,9 @@ QList<ExternalTools::Tool> ExternalTools::coreTools()
 
 QList<ExternalTools::Tool> ExternalTools::unusedTools() const
 {
-    const auto &caps = SandboxCapabilities::instance();
-    QList<Tool> result;
-
-    if (!caps.has(SandboxCapabilities::UserNamespaces))
-        result << Passt;
-
-    return result;
+    // User-mode networking runs in-process now, so no tool becomes
+    // unusable when user namespaces are unavailable.
+    return {};
 }
 
 QString ExternalTools::probeVersionString(Tool /*tool*/, const QString &path)
@@ -247,13 +240,6 @@ QStringList ExternalTools::missingToolNames() const
             missing << displayName(t);
     }
     return missing;
-}
-
-bool ExternalTools::isPasstUsable() const
-{
-    // passt does its own unshare()+pivot_root(); without user namespaces it
-    // cannot start, and there is no switch to turn that off.
-    return SandboxCapabilities::instance().has(SandboxCapabilities::UserNamespaces) && isAvailable(Passt);
 }
 
 // --- Feature groups ---

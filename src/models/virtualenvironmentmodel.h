@@ -57,7 +57,6 @@ struct VmEntry {
     QPointer<KProcess> qemuProcess;
     QPointer<KProcess> swtpmProcess;
     QPointer<KProcess> virtiofsdProcess;
-    QPointer<KProcess> passtProcess;
 
     QVector<double> cpuHistory;
     QVector<double> ramHistory;
@@ -84,7 +83,6 @@ struct VmEntry {
         qemuProcess = other.qemuProcess;
         swtpmProcess = other.swtpmProcess;
         virtiofsdProcess = other.virtiofsdProcess;
-        passtProcess = other.passtProcess;
         qmpClient = other.qmpClient;
         attachedUsb = other.attachedUsb;
         cpuHistory = other.cpuHistory;
@@ -101,7 +99,6 @@ struct VmEntry {
         qemuProcess = nullptr;
         swtpmProcess = nullptr;
         virtiofsdProcess = nullptr;
-        passtProcess = nullptr;
         qmpClient = nullptr;
         attachedUsb.clear();
         cpuHistory.clear();
@@ -173,7 +170,6 @@ public:
     void setQemuProcess(const QString &name, KProcess *process);
     void setSwtpmProcess(const QString &name, KProcess *process);
     void setVirtiofsdProcess(const QString &name, KProcess *process);
-    void setPasstProcess(const QString &name, KProcess *process);
     void setQmpClient(const QString &name, QMPClient *client);
     void updateConfig(const QString &name, const VMConfig &config);
     void appendPerfSample(const QString &name, int channel, double value);

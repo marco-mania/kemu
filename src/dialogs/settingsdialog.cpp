@@ -80,23 +80,6 @@ void SettingsDialog::setupGeneralPage()
     importRegenerateMacCheck->setChecked(importRegenerateMac());
     layout->addWidget(importRegenerateMacCheck);
 
-    auto *netLine = new QFrame(this);
-    netLine->setFrameShape(QFrame::HLine);
-    netLine->setFrameShadow(QFrame::Sunken);
-    layout->addWidget(netLine);
-
-    slirpNetworkingCheck = new QCheckBox(i18n("Use QEMU's built-in usermode networking (SLIRP) instead of passt"));
-    slirpNetworkingCheck->setToolTip(
-        i18n("passt is used by default and is significantly faster. Enable "
-             "this only if passt is unavailable or causes problems on your "
-             "system."));
-    const bool passtUsable = ExternalTools::instance().isPasstUsable();
-    slirpNetworkingCheck->setChecked(useSlirpNetworking());
-    slirpNetworkingCheck->setEnabled(passtUsable);
-    if (!passtUsable)
-        slirpNetworkingCheck->setToolTip(i18n("passt cannot be used on this system - SLIRP is used for all VMs."));
-    layout->addWidget(slirpNetworkingCheck);
-
     layout->addStretch();
 
     auto *item = addPage(page, i18n("Virtual Machines"));
@@ -535,11 +518,6 @@ void SettingsDialog::saveSettings()
 
     general.writeEntry("DeployInstallDesktop", deployInstallDesktopCheck->isChecked());
 
-    // Only persist the user's actual choice - not the forced value, so the
-    // real preference survives once passt becomes available again.
-    if (slirpNetworkingCheck->isEnabled())
-        general.writeEntry("PreferSlirpNetworking", slirpNetworkingCheck->isChecked());
-
     config->sync();
 
     ExternalTools::instance().refresh();
@@ -598,15 +576,6 @@ bool SettingsDialog::importRegenerateMac()
     const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
     const KConfigGroup general = config->group(u"General"_s);
     return general.readEntry("ImportRegenerateMac", false);
-}
-
-bool SettingsDialog::useSlirpNetworking()
-{
-    if (!ExternalTools::instance().isPasstUsable())
-        return true;
-    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
-    const KConfigGroup general = config->group(u"General"_s);
-    return general.readEntry("PreferSlirpNetworking", false);
 }
 
 bool SettingsDialog::inhibitScreensaverAlways()

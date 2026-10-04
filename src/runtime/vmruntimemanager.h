@@ -10,6 +10,7 @@
 #include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
+#include <QPointer>
 #include <QString>
 #include <QStringList>
 
@@ -22,6 +23,7 @@
 
 class VirtualEnvironmentModel;
 class VirtualNetworkManager;
+class UserModeNetwork;
 
 /**
  * Owns the runtime state of every virtual machine and, from step 4 on, the
@@ -92,9 +94,11 @@ public:
     using HelperResult = std::function<void(bool ok, const QString &error)>;
     void startSwtpmAsync(const QString &vmName, HelperResult done);
     void startVirtiofsdAsync(const QString &vmName, HelperResult done);
-    void startPasstAsync(const QString &vmName, const QList<PortForwardRule> &portForwards, HelperResult done);
-    // Single source of truth for the user-mode networking backend.
-    [[nodiscard]] bool usePasstFor(const VMConfig &config) const;
+    // Starts the in-process user-mode network for the VM if it is not
+    // running yet. Returns the socket path, or an empty string on failure.
+    // `reason` is filled on failure and is meant for the caller to display.
+    QString ensureUserModeNetwork(const VMConfig &config, QString *reason);
+    void stopUserModeNetwork(const QString &vmName);
     [[nodiscard]] QemuNetworkContext createQemuNetworkContext(const VMConfig &config, const QString &networkSocket = {}) const;
 
     // Applies a changed monitoring preference to the VMs already running.
@@ -134,9 +138,9 @@ public:
     {
         return vmDir(vmName).absoluteFilePath(KEMUConst::VirtiofsdPidFileName);
     }
-    [[nodiscard]] QString passtSocketPath(const QString &vmName) const
+    [[nodiscard]] QString userNetSocketPath(const QString &vmName) const
     {
-        return vmDir(vmName).absoluteFilePath(KEMUConst::PasstSocketFileName);
+        return vmDir(vmName).absoluteFilePath(KEMUConst::UserNetSocketFileName);
     }
 
 public Q_SLOTS:
@@ -180,6 +184,9 @@ private:
     VirtualNetworkManager *m_network_manager = nullptr;
 
     QHash<QString, VmRuntimeInfo> m_runtimes;
+
+    // In-process user-mode networks, keyed by VM name.
+    QHash<QString, QPointer<UserModeNetwork>> m_userModeNets;
 
     void setUpQmpClient(const LaunchRequest &req, const QString &sockPath, bool isResume);
     void connectPerfSignals(QMPClient *client, const QString &vmName, bool includeMemory);

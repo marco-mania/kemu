@@ -2450,9 +2450,6 @@ void MainWindow::startVM(bool headless)
         return;
     if (!currentConfig.sharedPath().isEmpty() && currentConfig.osType() == VMSpecs::OsType::Windows && !requireTool(ExternalTools::Virtiofsd))
         return;
-    if (currentConfig.networkCard() != VMSpecs::NetworkCard::None && currentConfig.networkMode() != VMSpecs::NetworkMode::VirtualNetwork
-        && m_runtimeManager->usePasstFor(currentConfig) && !requireTool(ExternalTools::Passt))
-        return;
 
     auto *chain = new StartupChain(this);
 
@@ -2467,8 +2464,8 @@ void MainWindow::startVM(bool headless)
         });
     }
 
-    // Network: passt is async, virtual-network setup is sync (the switch
-    // starts in-process and returns its socket path immediately).
+    // Network setup is synchronous: the switch and the user-mode stack run
+    // in-process and return their socket path immediately.
     QString resolvedNetworkSocket;
     if (currentConfig.networkCard() != VMSpecs::NetworkCard::None) {
         if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
@@ -2485,11 +2482,16 @@ void MainWindow::startVM(bool headless)
                 m_runtimeManager->tearDown(vmName);
                 return;
             }
-        } else if (m_runtimeManager->usePasstFor(currentConfig)) {
-            const auto pf = currentConfig.portForwards();
-            chain->then([this, vmName, pf](auto done) {
-                m_runtimeManager->startPasstAsync(vmName, pf, reportingDone(vmName, std::move(done)));
-            });
+        } else {
+            QString reason;
+            const QString sockPath = m_runtimeManager->ensureUserModeNetwork(currentConfig, &reason);
+            if (sockPath.isEmpty()) {
+                if (!reason.isEmpty())
+                    KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
+                delete chain;
+                m_runtimeManager->tearDown(vmName);
+                return;
+            }
         }
     }
 
@@ -3828,8 +3830,8 @@ void MainWindow::startDeployment(const QString &vmName)
         });
     }
 
-    // Network: passt is async, virtual-network setup is sync (the switch
-    // starts in-process and returns its socket path immediately).
+    // Network setup is synchronous: the switch and the user-mode stack run
+    // in-process and return their socket path immediately.
     QString resolvedNetworkSocket;
     if (config.networkCard() != VMSpecs::NetworkCard::None) {
         if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
@@ -3846,11 +3848,16 @@ void MainWindow::startDeployment(const QString &vmName)
                 abortDeployment(vmName, false);
                 return;
             }
-        } else if (m_runtimeManager->usePasstFor(config)) {
-            const auto pf = config.portForwards();
-            chain->then([this, vmName, pf](auto done) {
-                m_runtimeManager->startPasstAsync(vmName, pf, reportingDone(vmName, std::move(done)));
-            });
+        } else {
+            QString reason;
+            const QString sockPath = m_runtimeManager->ensureUserModeNetwork(config, &reason);
+            if (sockPath.isEmpty()) {
+                if (!reason.isEmpty())
+                    KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
+                delete chain;
+                abortDeployment(vmName, false);
+                return;
+            }
         }
     }
 

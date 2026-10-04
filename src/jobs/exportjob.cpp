@@ -122,7 +122,7 @@ QByteArray ExportJob::buildPortableConfig()
 
     obj[u"boot_iso"_s] = false;
     obj[u"boot_floppy"_s] = false;
-    obj[u"network_mode"_s] = VMConfig::toString(VMSpecs::NetworkMode::Passt);
+    obj[u"network_mode"_s] = VMConfig::toString(VMSpecs::NetworkMode::UserMode);
     obj[u"deploy_state"_s] = VMConfig::toString(VMConfig::DeployState::Complete);
     obj.remove(u"port_forwards"_s);
 

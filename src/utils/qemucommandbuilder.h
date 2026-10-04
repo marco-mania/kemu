@@ -29,10 +29,12 @@ using namespace Qt::StringLiterals;
  *     networking is used instead, because a standalone script cannot reach
  *     the switch living inside the KEMU process.
  *
- * For NetworkMode != VirtualNetwork, exactly one of:
- *   - useSlirp is true: QEMU's built-in usermode networking is used, no
- *     helper process required.
- *   - useSlirp is false (default): passt is used via passtSocketPath.
+ * For NetworkMode::UserMode, exactly one of:
+ *   - useSlirp is true (export scripts only): QEMU's built-in usermode
+ *     networking is used, because a standalone script cannot reach the
+ *     slirp instance living inside the KEMU process.
+ *   - useSlirp is false (default): QEMU connects to KEMU's in-process
+ *     user-mode network via "-netdev stream" over userNetSocketPath.
  */
 struct QemuNetworkContext {
     /// Socket path of the virtual network's in-memory switch.
@@ -41,10 +43,10 @@ struct QemuNetworkContext {
     /// "group:port" for QEMU's socket,mcast= backend (export scripts only).
     QString mcastAddress;
 
-    /// Unix socket path for passt (Passt mode).
-    QString passtSocketPath;
+    /// Unix socket path of KEMU's in-process user-mode network (UserMode).
+    QString userNetSocketPath;
 
-    /// Use QEMU's built-in "-netdev user" backend instead of passt.
+    /// Use QEMU's built-in "-netdev user" backend (export scripts only).
     bool useSlirp = false;
 };
 
@@ -57,7 +59,7 @@ public:
      * @param config                 The VM configuration.
      * @param vmDir                  The directory containing the VM files (disk, VARS).
      * @param monitorSocketPath      Path to the QMP socket.
-     * @param networkContext         Network-mode-specific context (tap device or passt socket).
+     * @param networkContext         Network-mode-specific context (switch or user-mode socket).
      * @param relativePaths          Whether to emit relative paths.
      * @param headless               Whether to suppress display output.
      * @param incomingSavestatePath  Path to file with saved state.
@@ -73,7 +75,7 @@ public:
     /**
      * @brief Generates a complete, self-contained shell script to launch the VM.
      *
-     * Includes all helper processes (swtpm, virtiofsd, passt) and the QEMU
+     * Includes all helper processes (swtpm, virtiofsd) and the QEMU
      * invocation. Virtual networks are exported on QEMU's built-in multicast
      * networking, since a standalone script cannot reach the in-memory switch
      * inside the KEMU process.

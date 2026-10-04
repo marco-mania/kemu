@@ -11,6 +11,7 @@
 #include "utils/asynchelperprocess.h"
 #include "utils/externaltools.h"
 #include "utils/savestatemanager.h"
+#include "utils/usermodenetwork.h"
 #include "utils/utils.h"
 #include "utils/virtualnetworkmanager.h"
 
@@ -212,11 +213,10 @@ void VmRuntimeManager::tearDown(const QString &vmName)
         delete p; // QPointer auto-nullifies
     };
 
-    // Signal all three first, then share one deadline: they shut down in
+    // Signal both first, then share one deadline: they shut down in
     // parallel instead of one after the other.
     terminateHelper(entry->swtpmProcess);
     terminateHelper(entry->virtiofsdProcess);
-    terminateHelper(entry->passtProcess);
 
     QElapsedTimer deadline;
     deadline.start();
@@ -226,11 +226,11 @@ void VmRuntimeManager::tearDown(const QString &vmName)
 
     reapHelper(entry->swtpmProcess, remaining());
     reapHelper(entry->virtiofsdProcess, remaining());
-    reapHelper(entry->passtProcess, remaining());
+
+    stopUserModeNetwork(vmName);
 
     QFile::remove(swtpmSocketPath(vmName));
     QFile::remove(virtiofsdPidPath(vmName));
-    QFile::remove(passtSocketPath(vmName));
     QFile::remove(monitorSocketPath(vmName));
 
     releaseNetwork(entry->config);
@@ -377,70 +377,51 @@ void VmRuntimeManager::startVirtiofsdAsync(const QString &vmName, HelperResult d
     });
 }
 
-void VmRuntimeManager::startPasstAsync(const QString &vmName, const QList<PortForwardRule> &portForwards, HelperResult done)
+QString VmRuntimeManager::ensureUserModeNetwork(const VMConfig &config, QString *reason)
 {
-    const VmEntry *entry = m_model->entryByName(vmName);
-    if (entry && !usePasstFor(entry->config)) {
-        // Not reachable via the normal start paths; the VM is on SLIRP and
-        // its command line has no passt netdev, so continuing is safe.
-        qCWarning(KEMU) << "startPasstAsync() called for" << vmName << "which does not use passt - skipping";
-        done(true, {});
-        return;
+    const QString vmName = config.name();
+    const QString sockPath = userNetSocketPath(vmName);
+
+    if (auto net = m_userModeNets.value(vmName)) {
+        if (net->isRunning())
+            return sockPath;
+        // Stale instance from a previous failed start.
+        net->stop();
+        net->deleteLater();
+        m_userModeNets.remove(vmName);
     }
 
-    const QString sockPath = passtSocketPath(vmName);
-    QFile::remove(sockPath);
-
-    QStringList passtArgs = {u"--socket"_s, sockPath, u"-f"_s, u"-q"_s};
-
-    QStringList tcpPorts, udpPorts;
-    for (const auto &rule : portForwards) {
-        const QString mapping = (rule.hostPort != rule.guestPort) ? u"%1:%2"_s.arg(rule.hostPort).arg(rule.guestPort) : QString::number(rule.hostPort);
-        if (rule.protocol == PortForwardRule::Protocol::Tcp)
-            tcpPorts << mapping;
-        else
-            udpPorts << mapping;
+    auto *net = new UserModeNetwork(this);
+    if (!net->start(sockPath, config.portForwards())) {
+        if (reason)
+            *reason = net->lastError();
+        net->deleteLater();
+        return {};
     }
-    if (!tcpPorts.isEmpty())
-        passtArgs << u"-t"_s << tcpPorts.join(u","_s);
-    if (!udpPorts.isEmpty())
-        passtArgs << u"-u"_s << udpPorts.join(u","_s);
-
-    AsyncHelperProcess::Options opts;
-    opts.program = ExternalTools::instance().path(ExternalTools::Passt);
-    opts.arguments = passtArgs;
-    opts.socketPath = sockPath;
-
-    AsyncHelperProcess::run(this, opts, [this, vmName, sockPath, done = std::move(done)](KProcess *process, bool ok, const QString &err) {
-        if (!ok) {
-            QFile::remove(sockPath);
-            done(false, i18n("Failed to start passt: %1", err));
-            return;
-        }
-        m_model->setPasstProcess(vmName, process);
-        done(true, {});
-    });
+    m_userModeNets.insert(vmName, net);
+    return sockPath;
 }
 
-bool VmRuntimeManager::usePasstFor(const VMConfig &config) const
+void VmRuntimeManager::stopUserModeNetwork(const QString &vmName)
 {
-    if (config.networkCard() == VMSpecs::NetworkCard::None)
-        return false;
-    if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
-        return false;
-    if (!ExternalTools::instance().isPasstUsable())
-        return false;
-    return !SettingsDialog::useSlirpNetworking();
+    if (auto net = m_userModeNets.take(vmName)) {
+        net->stop();
+        net->deleteLater();
+    }
 }
 
 QemuNetworkContext VmRuntimeManager::createQemuNetworkContext(const VMConfig &config, const QString &networkSocket) const
 {
     QemuNetworkContext ctx;
-    if (!networkSocket.isEmpty()) {
-        ctx.switchSocketPath = networkSocket;
+    if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
+        if (!networkSocket.isEmpty())
+            ctx.switchSocketPath = networkSocket;
         return ctx;
     }
-    ctx.useSlirp = !usePasstFor(config);
+    // User mode: QEMU connects to the in-process network that
+    // ensureUserModeNetwork() started before launch. buildShellScript()
+    // overrides this with useSlirp for standalone exports.
+    ctx.userNetSocketPath = userNetSocketPath(config.name());
     return ctx;
 }
 

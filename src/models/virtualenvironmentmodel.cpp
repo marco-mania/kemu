@@ -430,12 +430,6 @@ void VirtualEnvironmentModel::setVirtiofsdProcess(const QString &name, KProcess 
         e->virtiofsdProcess = p;
 }
 
-void VirtualEnvironmentModel::setPasstProcess(const QString &name, KProcess *process)
-{
-    if (VmEntry *e = entryByName(name))
-        e->passtProcess = process;
-}
-
 void VirtualEnvironmentModel::setQmpClient(const QString &name, QMPClient *c)
 {
     if (VmEntry *e = entryByName(name))

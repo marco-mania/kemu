@@ -126,6 +126,8 @@ target_sources(
           utils/gatewayresponder.h
           utils/slirpuplink.cpp
           utils/slirpuplink.h
+          utils/usermodenetwork.cpp
+          utils/usermodenetwork.h
           utils/usbenumerator.h
           utils/usbenumerator.cpp
           utils/savestatemanager.cpp

@@ -69,7 +69,6 @@ public:
     static bool showAllArchitectures();
     static bool cloneRegenerateMac();
     static bool importRegenerateMac();
-    static bool useSlirpNetworking();
 
     static bool inhibitScreensaverAlways();
     static bool inhibitScreensaverFullscreen();
@@ -136,7 +135,6 @@ private:
     QCheckBox *allArchCheck = nullptr;
     QCheckBox *cloneRegenerateMacCheck = nullptr;
     QCheckBox *importRegenerateMacCheck = nullptr;
-    QCheckBox *slirpNetworkingCheck = nullptr;
 
     VirtualNetworkManager *m_networkManager = nullptr;
     QTableWidget *networkTable = nullptr;

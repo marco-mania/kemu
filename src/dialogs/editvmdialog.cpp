@@ -462,7 +462,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     netFormLayout->addRow(i18n("Network Adapter:"), netCombo);
 
     networkModeCombo = new QComboBox();
-    networkModeCombo->addItem(VMConfig::toUIString(VMSpecs::NetworkMode::Passt), static_cast<int>(VMSpecs::NetworkMode::Passt));
+    networkModeCombo->addItem(VMConfig::toUIString(VMSpecs::NetworkMode::UserMode), static_cast<int>(VMSpecs::NetworkMode::UserMode));
     networkModeCombo->addItem(VMConfig::toUIString(VMSpecs::NetworkMode::VirtualNetwork), static_cast<int>(VMSpecs::NetworkMode::VirtualNetwork));
     netFormLayout->addRow(i18n("Network Mode:"), networkModeCombo);
 
@@ -488,9 +488,9 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 
     netMainLayout->addLayout(netFormLayout);
 
-    // --- Passt Section (Port Forwarding) ---
-    passtGroup = new QGroupBox(i18n("Port Forwarding (Host → Guest)"));
-    auto *pfLayout = new QVBoxLayout(passtGroup);
+    // --- User Mode Section (Port Forwarding) ---
+    userModeGroup = new QGroupBox(i18n("Port Forwarding (Host → Guest)"));
+    auto *pfLayout = new QVBoxLayout(userModeGroup);
 
     portForwardTable = new QTableWidget(0, 3);
     portForwardTable->setHorizontalHeaderLabels({i18n("Protocol"), i18n("Host Port"), i18n("Guest Port")});
@@ -512,7 +512,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     pfButtonLayout->addStretch();
     pfLayout->addLayout(pfButtonLayout);
 
-    netMainLayout->addWidget(passtGroup);
+    netMainLayout->addWidget(userModeGroup);
 
     // --- Virtual Network Section ---
     vdeGroup = new QGroupBox(i18n("Virtual Network"));
@@ -534,7 +534,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 
     netMainLayout->addWidget(vdeGroup);
 
-    passtGroup->setVisible(true);
+    userModeGroup->setVisible(true);
     vdeGroup->setVisible(false);
 
     netMainLayout->addStretch();
@@ -734,7 +734,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     });
     connect(networkModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
         auto mode = static_cast<VMSpecs::NetworkMode>(networkModeCombo->currentData().toInt());
-        passtGroup->setVisible(mode == VMSpecs::NetworkMode::Passt);
+        userModeGroup->setVisible(mode == VMSpecs::NetworkMode::UserMode);
         vdeGroup->setVisible(mode == VMSpecs::NetworkMode::VirtualNetwork);
         validateForm();
     });
@@ -751,7 +751,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         const bool hasNetwork = static_cast<VMSpecs::NetworkCard>(netCombo->currentData().toInt()) != VMSpecs::NetworkCard::None;
         networkModeCombo->setEnabled(hasNetwork);
         macEdit->setEnabled(hasNetwork);
-        passtGroup->setEnabled(hasNetwork);
+        userModeGroup->setEnabled(hasNetwork);
         vdeGroup->setEnabled(hasNetwork);
         portForwardTable->setEnabled(hasNetwork);
         addPortFwdButton->setEnabled(hasNetwork);
@@ -1170,9 +1170,9 @@ void EditVmDialog::setNetworkManager(VirtualNetworkManager *mgr)
     }
 
     if (disableVirtualNetwork && static_cast<VMSpecs::NetworkMode>(networkModeCombo->currentData().toInt()) == VMSpecs::NetworkMode::VirtualNetwork) {
-        const int passtIdx = networkModeCombo->findData(static_cast<int>(VMSpecs::NetworkMode::Passt));
-        if (passtIdx >= 0)
-            networkModeCombo->setCurrentIndex(passtIdx);
+        const int userModeIdx = networkModeCombo->findData(static_cast<int>(VMSpecs::NetworkMode::UserMode));
+        if (userModeIdx >= 0)
+            networkModeCombo->setCurrentIndex(userModeIdx);
     }
 }
 

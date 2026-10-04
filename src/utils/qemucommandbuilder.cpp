@@ -372,8 +372,9 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
                             .arg(relativePaths ? QFileInfo(networkContext.switchSocketPath).fileName() : networkContext.switchSocketPath);
             }
         } else if (networkContext.useSlirp) {
-            // QEMU's built-in usermode networking. No external process, no
-            // helper socket - just port forwards on the command line.
+            // Standalone export: QEMU's built-in usermode networking stands
+            // in for KEMU's in-process slirp instance. No external process,
+            // no helper socket - just port forwards on the command line.
             QString netdev = u"user,id=%1"_s.arg(KEMUConst::NetdevId);
             for (const auto &rule : config.portForwards()) {
                 const QString proto = rule.protocol == PortForwardRule::Protocol::Tcp ? u"tcp"_s : u"udp"_s;
@@ -381,12 +382,15 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             }
             args << u"-netdev"_s << netdev;
         } else {
-            // Passt: user-mode networking via unix stream socket.
-            const QString passtSock =
-                networkContext.passtSocketPath.isEmpty() ? vmDir.absoluteFilePath(KEMUConst::PasstSocketFileName) : networkContext.passtSocketPath;
+            // User mode: QEMU connects to KEMU's in-process slirp network
+            // (UserModeNetwork) via a unix stream socket.
+            Q_ASSERT_X(!networkContext.userNetSocketPath.isEmpty(),
+                       "QemuCommandBuilder::build",
+                       "UserMode requires NetworkContext::userNetSocketPath or useSlirp to be set");
             args << u"-netdev"_s
                  << u"stream,id=%1,server=off,addr.type=unix,addr.path=%2"_s.arg(KEMUConst::NetdevId)
-                        .arg(relativePaths ? QFileInfo(passtSock).fileName() : passtSock);
+                        .arg(relativePaths ? QFileInfo(networkContext.userNetSocketPath).fileName()
+                                           : networkContext.userNetSocketPath);
         }
     }
 
@@ -464,6 +468,13 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     if (config.networkCard() != VMSpecs::NetworkCard::None && config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         scriptNetCtx.mcastAddress = mcastAddressFor(network.name);
 
+    // Same for user mode: the script cannot reach KEMU's in-process slirp
+    // instance, so it falls back to QEMU's built-in "-netdev user".
+    if (config.networkCard() != VMSpecs::NetworkCard::None && config.networkMode() == VMSpecs::NetworkMode::UserMode) {
+        scriptNetCtx.useSlirp = true;
+        scriptNetCtx.userNetSocketPath.clear();
+    }
+
     const QStringList args = build(scriptConfig, vmDir, monitorSocketPath, scriptNetCtx, relativePaths);
 
     QString script;
@@ -506,26 +517,6 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
                 + u"# guests or run a DHCP server in one of them.\n\n"_s;
         } else if (networkContext.useSlirp) {
             // Nothing to start - QEMU's own -netdev user is already in args.
-        } else {
-            const QString passtPath = relativePaths ? u"passt"_s : ExternalTools::instance().path(ExternalTools::Passt);
-            const QString sockArg = relativePaths ? KEMUConst::PasstSocketFileName : vmDir.absoluteFilePath(KEMUConst::PasstSocketFileName);
-
-            script += u"# Start passt for user-mode networking\n"_s + u"%1 \\\n"_s.arg(passtPath) + u"  --socket %1 \\\n"_s.arg(sockArg) + u"  -f -q"_s;
-
-            QStringList tcpPorts, udpPorts;
-            for (const auto &rule : config.portForwards()) {
-                const QString mapping = (rule.hostPort != rule.guestPort) ? u"%1:%2"_s.arg(rule.hostPort).arg(rule.guestPort) : QString::number(rule.hostPort);
-                if (rule.protocol == PortForwardRule::Protocol::Tcp)
-                    tcpPorts << mapping;
-                else
-                    udpPorts << mapping;
-            }
-            if (!tcpPorts.isEmpty())
-                script += u" \\\n  -t %1"_s.arg(tcpPorts.join(u","_s));
-            if (!udpPorts.isEmpty())
-                script += u" \\\n  -u %1"_s.arg(udpPorts.join(u","_s));
-
-            script += u" &\n"_s + u"sleep 1\n\n"_s;
         }
     }
 

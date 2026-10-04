@@ -21,7 +21,7 @@ class QTimer;
  * its Unix-domain socket to appear before reporting success.
  *
  * Intended for the short-lived "is the daemon ready?" handshake KEMU runs
- * for each QEMU companion process (swtpm, virtiofsd, passt, ...).
+ * for each QEMU companion process (swtpm, virtiofsd).
  *
  * The helper guarantees:
  *   - finished() is emitted exactly once.

@@ -111,7 +111,7 @@ enum class NetworkCard {
 };
 
 enum class NetworkMode {
-    Passt,
+    UserMode,
     VirtualNetwork
 };
 
@@ -190,7 +190,7 @@ struct Defaults {
     bool useAcpi = true;
     OsType osType = OsType::Linux;
     Architecture architecture = Architecture::X86_64;
-    NetworkMode networkMode = NetworkMode::Passt;
+    NetworkMode networkMode = NetworkMode::UserMode;
     QString macAddress = u"52:54:00:12:34:56"_s;
     ExitAction exitAction = ExitAction::SaveState;
 };
@@ -243,7 +243,7 @@ struct Sb16Config {
 struct MacUsageInfo {
     QString vmName;
     QString mac;
-    VMSpecs::NetworkMode networkMode = VMSpecs::NetworkMode::Passt;
+    VMSpecs::NetworkMode networkMode = VMSpecs::NetworkMode::UserMode;
     QString virtualNetworkName;
     QString dnsHostname; // effective (explicit or derived from the VM name)
 };

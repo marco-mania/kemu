@@ -883,7 +883,7 @@ QString VMConfig::toUIString(VMSpecs::Architecture arch)
 QString VMConfig::toUIString(VMSpecs::NetworkMode mode)
 {
     switch (mode) {
-    case VMSpecs::NetworkMode::Passt:
+    case VMSpecs::NetworkMode::UserMode:
         return i18n("User Mode");
     case VMSpecs::NetworkMode::VirtualNetwork:
         return i18n("Virtual Network");
@@ -1110,7 +1110,7 @@ QString VMConfig::toString(VMSpecs::NetworkMode mode)
 {
     if (mode == VMSpecs::NetworkMode::VirtualNetwork)
         return u"virtual_network"_s;
-    return u"passt"_s;
+    return u"usermode"_s;
 }
 
 QString VMConfig::toString(VMSpecs::ExitAction action)
@@ -1373,7 +1373,8 @@ VMSpecs::NetworkMode VMConfig::parseNetworkMode(const QString &str)
 {
     if (str.toLower().trimmed() == u"virtual_network"_s)
         return VMSpecs::NetworkMode::VirtualNetwork;
-    return VMSpecs::NetworkMode::Passt;
+    // Configs written before the in-process switch stored "passt" here.
+    return VMSpecs::NetworkMode::UserMode;
 }
 
 VMSpecs::ExitAction VMConfig::parseExitAction(const QString &str)

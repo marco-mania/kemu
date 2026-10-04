@@ -45,8 +45,7 @@ public:
         QemuImg, // qemu-img
         Swtpm, // swtpm
         Virtiofsd, // virtiofsd (virtio-fs shared file system daemon)
-        GenIsoImage, // genisoimage, mkisofs, or xorriso
-        Passt // passt -- single-VM user-mode networking
+        GenIsoImage // genisoimage, mkisofs, or xorriso
     };
     Q_ENUM(Tool)
 
@@ -103,8 +102,6 @@ public:
 
     // Convenience: list of tools that are configured but NOT available.
     [[nodiscard]] QStringList missingToolNames() const;
-
-    [[nodiscard]] bool isPasstUsable() const;
 
     [[nodiscard]] static QList<FeatureGroup> featureGroups();
     [[nodiscard]] QList<FeatureGroup> missingFeatureGroups() const;
