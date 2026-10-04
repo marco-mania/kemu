@@ -9,7 +9,6 @@
 #include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
-#include <QScopeGuard>
 #include <QString>
 #include <QStringList>
 
@@ -51,7 +50,7 @@ public:
     struct LaunchRequest {
         QString vmName;
         bool headless = false;
-        QString tapDevice;
+        QString networkSocket;
 
         // Deployment keeps the VM in state Deploying, skips savestate
         // handling, and samples CPU and I/O but not memory.
@@ -82,7 +81,7 @@ public:
     // been destroyed are skipped.
     [[nodiscard]] QList<DbusViewerWindow *> viewerWindows() const;
 
-    KProcess *createQemuProcess(const QString &vmName, const QStringList &args, int tapFd);
+    KProcess *createQemuProcess(const QString &vmName, const QStringList &args);
     void tearDown(const QString &vmName);
     void scheduleQemuStartupProbe(KProcess *process, const QString &vmName);
 
@@ -95,15 +94,16 @@ public:
     void startPasstAsync(const QString &vmName, const QList<PortForwardRule> &portForwards, HelperResult done);
     // Single source of truth for the user-mode networking backend.
     [[nodiscard]] bool usePasstFor(const VMConfig &config) const;
-    [[nodiscard]] QemuNetworkContext createQemuNetworkContext(const VMConfig &config, const QString &tapDevice = {}, int tapFd = -1) const;
+    [[nodiscard]] QemuNetworkContext createQemuNetworkContext(const VMConfig &config, const QString &networkSocket = {}) const;
 
     // Applies a changed monitoring preference to the VMs already running.
     void setPerfMonitoringEnabled(bool enabled);
 
     // Misc helper functions
     [[nodiscard]] bool hasLiveQemu(const QString &vmName) const;
-    // Returns the tap device name, or an empty string on failure. `reason` is
-    // filled on failure and is meant for the caller to display.
+    // Returns the network's switch socket path, or an empty string on
+    // failure. `reason` is filled on failure and is meant for the caller to
+    // display.
     QString ensureNetworkRunning(const QString &networkName, const QString &vmName, QString *reason);
     void releaseNetwork(const VMConfig &config);
 
@@ -175,7 +175,6 @@ private:
 
     QHash<QString, VmRuntimeInfo> m_runtimes;
 
-    bool openTapFdFor(const VMConfig &config, const QString &vmName, const QString &tapDevice, int *tapFd, QString *reason);
     void setUpQmpClient(const LaunchRequest &req, const QString &sockPath, bool isResume);
     void connectPerfSignals(QMPClient *client, const QString &vmName, bool includeMemory);
 

@@ -22,8 +22,12 @@ using namespace Qt::StringLiterals;
 /**
  * @brief Network context passed to QemuCommandBuilder::build().
  *
- * For NetworkMode::VirtualNetwork (namespace-based):
- *   - tapDevice is set (e.g. "tap-myvm"), passtSocketPath is empty, useSlirp is false.
+ * For NetworkMode::VirtualNetwork:
+ *   - switchSocketPath is set: QEMU connects to the in-memory L2 switch of
+ *     the running network via "-netdev stream" over a unix socket.
+ *   - mcastAddress is set (export scripts only): QEMU's built-in multicast
+ *     networking is used instead, because a standalone script cannot reach
+ *     the switch living inside the KEMU process.
  *
  * For NetworkMode != VirtualNetwork, exactly one of:
  *   - useSlirp is true: QEMU's built-in usermode networking is used, no
@@ -31,12 +35,11 @@ using namespace Qt::StringLiterals;
  *   - useSlirp is false (default): passt is used via passtSocketPath.
  */
 struct QemuNetworkContext {
-    /// Tap device name inside the namespace (VirtualNetwork mode).
-    QString tapDevice;
+    /// Socket path of the virtual network's in-memory switch.
+    QString switchSocketPath;
 
-    /// Open descriptor for that tap device. When set, QEMU receives the
-    /// descriptor rather than the name and runs outside the namespace.
-    int tapFd = -1;
+    /// "group:port" for QEMU's socket,mcast= backend (export scripts only).
+    QString mcastAddress;
 
     /// Unix socket path for passt (Passt mode).
     QString passtSocketPath;
@@ -70,8 +73,10 @@ public:
     /**
      * @brief Generates a complete, self-contained shell script to launch the VM.
      *
-     * Includes all helper processes (swtpm, virtiofsd, namespace setup,
-     * dnsmasq, pasta) and the QEMU invocation.
+     * Includes all helper processes (swtpm, virtiofsd, passt) and the QEMU
+     * invocation. Virtual networks are exported on QEMU's built-in multicast
+     * networking, since a standalone script cannot reach the in-memory switch
+     * inside the KEMU process.
      *
      * @param config             The VM configuration.
      * @param vmDir              The directory containing the VM files.

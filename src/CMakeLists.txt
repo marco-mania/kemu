@@ -116,8 +116,14 @@ target_sources(
           utils/virtualnetwork.h
           utils/virtualnetworkmanager.cpp
           utils/virtualnetworkmanager.h
-          utils/namespacehelper.cpp
-          utils/namespacehelper.h
+          utils/virtualswitch.cpp
+          utils/virtualswitch.h
+          utils/dhcpserver.cpp
+          utils/dhcpserver.h
+          utils/gatewayresponder.cpp
+          utils/gatewayresponder.h
+          utils/slirpuplink.cpp
+          utils/slirpuplink.h
           utils/usbenumerator.h
           utils/usbenumerator.cpp
           utils/savestatemanager.cpp
@@ -216,13 +222,12 @@ target_sources(
           dbusdisplay/waylandsubsurface.h)
 
 target_include_directories(
-  ${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MNL_INCLUDE_DIRS}
-                          ${NFTNL_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
+  ${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+                          ${CMAKE_CURRENT_BINARY_DIR})
 
 target_link_libraries(
   ${PROJECT_NAME}
-  ${MNL_LIBRARIES}
-  ${NFTNL_LIBRARIES}
+  PkgConfig::SLIRP
   ${UDEV_LIBRARIES}
   LibArchive::LibArchive
   PkgConfig::GIO

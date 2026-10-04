@@ -18,7 +18,7 @@ A traditional, direct-to-QEMU desktop frontend for Linux, built with Qt 6 Widget
 - Automated deployment utilizing Cloud-Init
 - Snapshot support (QCOW2)
 - Hot-swapping of ISO and floppy images
-- Networking: User-mode networking via `passt`, or rootless virtual networks within Linux user namespaces
+- Networking: User-mode networking via `passt`, or in-process virtual networks (in-memory L2 switch with built-in DHCP and optional libslirp NAT)
 - Shared folders via 9p/VirtFS (Linux/BSD) and virtio-fs (Windows)
 - Portable VM storage: VMs are stored as directories containing `config.json`, `disk.qcow2`, and a `qemu.sh` start script using relative paths
 - Export and import VMs as compressed archives (`.kemu.tar.zst`) for seamless backup or migration
@@ -30,6 +30,8 @@ A traditional, direct-to-QEMU desktop frontend for Linux, built with Qt 6 Widget
 - Pointer capture in the D-Bus viewer requires a Wayland session. Under X11 or
   XWayland the capture action is disabled; guests with an absolute pointing
   device (tablet) are unaffected and work everywhere.
+- Virtual network NAT is IPv4-only, and outbound ICMP echo (ping) from guests
+  is not translated by the NAT (a limitation of the embedded libslirp stack).
 
 ## Gallery
 
@@ -48,28 +50,26 @@ A traditional, direct-to-QEMU desktop frontend for Linux, built with Qt 6 Widget
 - Wayland (client library, protocols and `wayland-scanner`; build-time and runtime)
 - Qt 6 private headers (`Qt6::GuiPrivate`, for the Wayland surface of a window)
 - libarchive
-- libmnl (minimalistic netlink library for virtual networks)
-- libnftnl (nftables netlink helpers for virtual networks)
+- libslirp >= 4.7 (NAT and DNS proxy for virtual networks)
 - libudev (for USB device passthrough)
 - **Optional:** `passt` (for user-mode networking; QEMU's built-in SLIRP is used when absent)
 - **Optional:** `edk2-ovmf` (for UEFI boot)
 - **Optional:** `swtpm` (for TPM 2.0 emulation)
 - **Optional:** `virtiofsd` (for shared folders with Windows guests)
-- **Optional:** `dnsmasq` (for DHCP in virtual networks)
 
 ### Arch Linux
 
 ```bash
 sudo pacman -S qt6-base qt6-declarative extra-cmake-modules \
   kconfig kcoreaddons ki18n kxmlgui kwidgetsaddons kdbusaddons \
-  kiconthemes qemu-full edk2-ovmf libarchive passt libmnl libnftnl \
+  kiconthemes qemu-full edk2-ovmf libarchive passt libslirp \
   wayland wayland-protocols
 ```
 
 Optional:
 
 ```bash
-sudo pacman -S swtpm virtiofsd dnsmasq cdrtools
+sudo pacman -S swtpm virtiofsd cdrtools
 ```
 
 ### Debian 13+ / (K)Ubuntu 26.04+ / KDE neon
@@ -79,7 +79,7 @@ sudo apt install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-multimedia-dev
   libkf6config-dev libkf6coreaddons-dev libkf6i18n-dev libkf6kio-dev \
   libkf6crash-dev libkf6xmlgui-dev libkf6widgetsaddons-dev libkf6iconthemes-dev \
   libkf6texttemplate-dev qemu-system extra-cmake-modules libegl1-mesa-dev \
-  libarchive-dev passt libmnl-dev libnftnl-dev libudev-dev libkf6dbusaddons-dev \
+  libarchive-dev passt libslirp-dev libudev-dev libkf6dbusaddons-dev \
   libkf6dbusaddons-dev build-essential cmake \
   libwayland-dev wayland-protocols qt6-base-private-dev \
   build-essential cmake
@@ -88,7 +88,7 @@ sudo apt install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-multimedia-dev
 Optional:
 
 ```bash
-sudo apt install ovmf swtpm virtiofsd dnsmasq genisoimage
+sudo apt install ovmf swtpm virtiofsd genisoimage
 ```
 
 ### Fedora 40+
@@ -99,16 +99,16 @@ sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
   kf6-kio-devel kf6-kcrash-devel kf6-kxmlgui-devel kf6-kwidgetsaddons-devel \
   kf6-kiconthemes-devel kf6-ktexttemplate-devel kf6-kdbusaddons-devel \
   extra-cmake-modules qemu-system-x86 qemu-img edk2-ovmf swtpm swtpm-tools \
-  mesa-libEGL-devel libarchive-devel passt libmnl-devel libnftnl-devel \
+  mesa-libEGL-devel libarchive-devel passt libslirp-devel \
   systemd-devel gcc-c++ make cmake wayland-devel wayland-protocols-devel \
-  qt6-qtbase-private-devel libmnl-devel libnftnl-devel systemd-devel \
+  qt6-qtbase-private-devel systemd-devel \
   gcc-c++ make cmake
 ```
 
 Optional:
 
 ```bash
-sudo dnf install edk2-ovmf swtpm virtiofsd dnsmasq genisoimage
+sudo dnf install edk2-ovmf swtpm virtiofsd genisoimage
 ```
 
 ## Building and Running
@@ -157,10 +157,10 @@ sudo make uninstall
 
 KEMU utilizes Qt logging categories. Two primary categories are defined:
 
-| Category | Covers |
-| --- | --- |
-| `org.kde.kemu` | Main application, VM lifecycle, QMP, snapshots, etc. |
-| `org.kde.kemu.dbusdisplay` | Integrated D-Bus display viewer (frame-level traffic) |
+| Category                   | Covers                                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------------------- |
+| `org.kde.kemu`             | Main application, VM lifecycle, networking (switch, DHCP, NAT uplink), QMP, snapshots, etc. |
+| `org.kde.kemu.dbusdisplay` | Integrated D-Bus display viewer (frame-level traffic)                                       |
 
 By default, only warnings and critical messages are printed. To enable debug output for a single run:
 
@@ -179,32 +179,32 @@ QT_LOGGING_RULES="org.kde.kemu*=true" kemu 2>&1 | tee kemu.log
 
 ## File Locations
 
-| Purpose | Path |
-| --- | --- |
-| VM data | `~/.local/share/kemu/vms/` |
+| Purpose                              | Path                        |
+| ------------------------------------ | --------------------------- |
+| VM data                              | `~/.local/share/kemu/vms/`  |
 | Cloud Image DB, Cloud-Init templates | `~/.local/share/kemu/data/` |
-| Configuration | `~/.config/kemurc` |
+| Configuration                        | `~/.config/kemurc`          |
 
 Each VM is stored as a subdirectory containing `config.json`, `disk.qcow2`, `OVMF_VARS.fd` (optional), and `qemu.sh`.
 
 ## Secure Boot Firmware Package Names
 
-| Distro | Package | Typical OVMF Path |
-| --- | --- | --- |
-| **Arch Linux** | `edk2-ovmf` | `/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd` |
-| **Debian/Ubuntu** | `ovmf` | `/usr/share/OVMF/OVMF_CODE_4M.secboot.fd` |
-| **Fedora** | `edk2-ovmf` | `/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd` |
-| **openSUSE** | `qemu-ovmf-x86_64` | `/usr/share/qemu/ovmf-x86_64-smm-ms-code.bin` |
+| Distro            | Package            | Typical OVMF Path                             |
+| ----------------- | ------------------ | --------------------------------------------- |
+| **Arch Linux**    | `edk2-ovmf`        | `/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd` |
+| **Debian/Ubuntu** | `ovmf`             | `/usr/share/OVMF/OVMF_CODE_4M.secboot.fd`     |
+| **Fedora**        | `edk2-ovmf`        | `/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd`   |
+| **openSUSE**      | `qemu-ovmf-x86_64` | `/usr/share/qemu/ovmf-x86_64-smm-ms-code.bin` |
 
 ## Display Backends
 
 KEMU supports three display backends, which can be selected per VM in the VM settings:
 
-| Backend | Window | 3D Acceleration | Audio Routing | Clipboard Sharing | External Process |
-| --- | --- | --- | --- | --- | --- |
-| **GTK** | QEMU built-in | Yes (Virtio) | System (PipeWire) | No | None |
-| **SDL** | QEMU built-in | Yes (Virtio) | System (PipeWire) | No | None |
-| **D-Bus** | KEMU integrated | Yes (Virtio) | Routed via D-Bus | Yes (built-in) | None |
+| Backend   | Window          | 3D Acceleration | Audio Routing     | Clipboard Sharing | External Process |
+| --------- | --------------- | --------------- | ----------------- | ----------------- | ---------------- |
+| **GTK**   | QEMU built-in   | Yes (Virtio)    | System (PipeWire) | No                | None             |
+| **SDL**   | QEMU built-in   | Yes (Virtio)    | System (PipeWire) | No                | None             |
+| **D-Bus** | KEMU integrated | Yes (Virtio)    | Routed via D-Bus  | Yes (built-in)    | None             |
 
 **GTK** and **SDL** are the simplest options: QEMU opens its own window directly, with optional OpenGL passthrough for hardware-accelerated graphics. The **D-Bus** backend combines hardware-accelerated rendering inside a viewer window managed by KEMU itself, featuring built-in audio and clipboard sharing.
 
@@ -217,25 +217,25 @@ KEMU starts QEMU with `-display dbus,p2p=on` and hands it one end of a Unix sock
 
 **Features:**
 
-* **Hardware-accelerated graphics**: When the VM uses Virtio-GPU with 3D acceleration, frames are passed as DMA-BUF descriptors over D-Bus and imported directly into the viewer's OpenGL context for zero-copy, GPU-to-GPU performance.
-* **Bidirectional audio**: Playback (host speakers) and capture (host microphone) are routed through D-Bus to QEMU's `audiodev=dbus` backend, using PipeWire on the host side via Qt Multimedia.
-* **Clipboard synchronization**: Toggle between off, guest->host, host->guest, or bidirectional synchronization in the viewer's Devices menu. This requires a clipboard agent in the guest (e.g., `qemu-guest-agent` with the appropriate addon, or the SPICE vdagent, which also works on the D-Bus interface).
-* **Reconnect support**: Closing the viewer window switches the VM to headless mode instead of terminating it. You can reconnect later via the VM's context menu.
+- **Hardware-accelerated graphics**: When the VM uses Virtio-GPU with 3D acceleration, frames are passed as DMA-BUF descriptors over D-Bus and imported directly into the viewer's OpenGL context for zero-copy, GPU-to-GPU performance.
+- **Bidirectional audio**: Playback (host speakers) and capture (host microphone) are routed through D-Bus to QEMU's `audiodev=dbus` backend, using PipeWire on the host side via Qt Multimedia.
+- **Clipboard synchronization**: Toggle between off, guest->host, host->guest, or bidirectional synchronization in the viewer's Devices menu. This requires a clipboard agent in the guest (e.g., `qemu-guest-agent` with the appropriate addon, or the SPICE vdagent, which also works on the D-Bus interface).
+- **Reconnect support**: Closing the viewer window switches the VM to headless mode instead of terminating it. You can reconnect later via the VM's context menu.
 
 **Requirements:**
 
-* QEMU must support peer-to-peer D-Bus display connections (`-display dbus,p2p=on`), available since QEMU 7.0 and covered by the general dependency requirement above.
-* The guest requires no special drivers for video or input; QEMU handles everything on its side. For clipboard features, simply install the standard SPICE vdagent in the guest.
+- QEMU must support peer-to-peer D-Bus display connections (`-display dbus,p2p=on`), available since QEMU 7.0 and covered by the general dependency requirement above.
+- The guest requires no special drivers for video or input; QEMU handles everything on its side. For clipboard features, simply install the standard SPICE vdagent in the guest.
 
 ## Networking
 
 KEMU offers two network modes, both running entirely in userspace without requiring root privileges.
 
-| Mode | Backend | VM-to-VM | DHCP | NAT | Port Forwarding |
-| --- | --- | --- | --- | --- | --- |
-| **User Mode (passt)** | `passt` | No | N/A (host stack) | Yes | Yes |
-| **User Mode (SLIRP)** | QEMU built-in | No | Yes (10.0.2.0/24) | Yes | Yes |
-| **Virtual Network** | User namespaces + `pasta` + `dnsmasq` | Yes | Yes (optional) | Yes (optional) | Yes |
+| Mode                  | Backend                                  | VM-to-VM | DHCP              | NAT            | Port Forwarding |
+| --------------------- | ---------------------------------------- | -------- | ----------------- | -------------- | --------------- |
+| **User Mode (passt)** | `passt`                                  | No       | N/A (host stack)  | Yes            | Yes             |
+| **User Mode (SLIRP)** | QEMU built-in                            | No       | Yes (10.0.2.0/24) | Yes            | Yes             |
+| **Virtual Network**   | In-process L2 switch + embedded libslirp | Yes      | Yes (optional)    | Yes (optional) | Yes             |
 
 ### User Mode (passt) - Default
 
@@ -243,88 +243,90 @@ Each VM gets its own isolated network connection through `passt`, which translat
 
 ### Virtual Network
 
-Virtual networks connect multiple VMs to a shared private subnet. The entire stack runs rootless using Linux user namespaces.
+Virtual networks connect multiple VMs to a shared private subnet. The entire
+stack runs inside the KEMU process:
 
 ```text
-┌─── User Namespace ───────────────────────────────┐
-│                                                  │
-│   br0  (bridge, e.g. 192.168.100.1/24)           │
-│    ├── tap-vm1 :: QEMU VM1                       │
-│    ├── tap-vm2 :: QEMU VM2                       │
-│    └── ...                                       │
-│                                                  │
-│   [dnsmasq]  (optional DHCP on br0)              │
-│                                                  │
-└──────────────────────────────────────────────────┘
-         │
-      [pasta]  (optional NAT to host network)
-
+┌─── KEMU process ────────────────────────────────────────────────┐
+│                                                                 │
+│   VirtualSwitch (in-memory L2, MAC learning, broadcast flood)   │
+│    ├── QEMU VM1  (-netdev stream, unix socket)                  │
+│    ├── QEMU VM2  (-netdev stream, unix socket)                  │
+│    ├── DhcpServer (optional, built-in)                          │
+│    └── SlirpUplink (optional: NAT + DNS proxy)                  │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-Each virtual network creates an isolated Linux network namespace containing a bridge. VMs attach to the bridge via tap devices and can communicate directly at layer 2. QEMU runs outside the namespace: KEMU opens the tap device inside it and passes the file descriptor to QEMU, so the VM process keeps the host's user ID, its access to PipeWire and the GPU, and the integrated D-Bus viewer.
+Each virtual network runs an in-memory layer-2 switch that listens on a UNIX
+domain socket under the user's runtime directory. QEMU instances attach as
+clients (`-netdev stream`), and the switch forwards Ethernet frames between
+them using MAC learning, flooding broadcast, multicast and unknown-destination
+frames. Because nothing touches the host kernel or spawns helper processes,
+virtual networks work unchanged inside sandboxed (Flatpak) environments.
 
 **Features per network (individually configurable):**
 
-* **DHCP** (via `dnsmasq`): Automatically assigns IP addresses to VMs. Can be disabled for static IP setups or Cloud-Init deployments.
-* **NAT** (via `pasta`): Provides internet access to VMs by translating traffic between the namespace and the host network. When disabled, the network is fully air-gapped.
-* **Port forwarding**: Expose specific ports from the virtual network on the host.
+- **DHCP**: A lightweight DHCPv4 server built into KEMU assigns addresses automatically. It can be disabled for static IP setups or Cloud-Init deployments.
+- **NAT**: An embedded libslirp instance terminates guest TCP/UDP connections in userspace and re-originates them on the host, including a DNS proxy. When disabled, the network is fully air-gapped (the gateway address still answers ARP and ping so static setups remain diagnosable).
+- **Port forwarding**: Exposes ports of a specific guest VM on the host, bound to `127.0.0.1`. Format: `proto/hostPort:guestIp:guestPort`, e.g. `tcp/8080:192.168.100.50:80`.
 
 **Requirements:**
 
-* Unprivileged user namespaces must be enabled (`kernel.unprivileged_userns_clone=1`, which is the default on most distributions). KEMU checks this at startup and disables the virtual network feature if unsupported.
-* `dnsmasq` must be installed for DHCP. Without it, VMs require static IPs (configured manually or via Cloud-Init).
-* `pasta` (part of the `passt` package) must be installed for NAT. Without it, virtual networks are isolated from the internet.
+- QEMU >= 7.2 (the `stream` network backend used for VM attachment).
+- libslirp >= 4.7 (build-time dependency, used for NAT and the DNS proxy).
 
-**Automatic cleanup:** When all VMs disconnect from a virtual network, KEMU stops the network. Killing the namespace anchor process causes the kernel to automatically destroy all interfaces, bridges, and routes, leaving no leftover state and requiring no manual cleanup.
+**Automatic cleanup:** When the last VM detaches from a virtual network, KEMU stops the network and removes its runtime directory. No state survives outside the KEMU process.
 
-**Debugging:** Click the namespace PID in the VM details panel to copy it, then enter the namespace from any terminal:
+**Exported VMs:** Start scripts generated for exported VMs connect the VMs of the same virtual network via QEMU multicast networking. This provides layer-2 connectivity between the exported VMs only - there is no DHCP server and no internet access, so configure static addresses (manually or via Cloud-Init).
 
-```bash
-nsenter -t <PID> -U --preserve-credentials -n -- /bin/bash
-```
-
-From this shell, you have full access to all VMs on the virtual network. The QEMU processes themselves run outside the namespace; you will see the bridge, the tap devices and dnsmasq, but no VM processes
+**Debugging:** Virtual network activity (switch frames, DHCP exchanges, NAT traffic) is logged under the `org.kde.kemu` logging category; see [Debug Logging](#debug-logging).
 
 ## Sandbox Mode
 
-Some of KEMU's features rely on Linux user namespaces, which sandbox environments block by design. When running in a restircted environment, KEMU detects this automatically and adjusts its behavior to prevent runtime failures. Features may be manually disabled for testing purpose with `--disable-capability ...` cli option.
+Some of KEMU's features rely on Linux user namespaces, which sandbox
+environments block by design. When running in a restricted environment,
+KEMU detects this automatically and adjusts its behavior to prevent
+runtime failures. Features may be manually disabled for testing purpose
+with `--disable-capability ...` cli option.
 
-* **Networking:** Virtual Network mode is unavailable, as it requires namespace capabilities denied by the sandbox. User Mode still functions, but relies on QEMU's built-in usermode networking (SLIRP) instead of `passt`. `passt` performs its own `unshare()` on startup and therefore cannot run inside the sandbox. See [Networking](https://www.google.com/search?q=%23networking) for details on SLIRP's capabilities.
-* **Settings:** The Virtual Networks page is disabled, and the Executables page is read-only since all helper programs are bundled within the Flatpak image and cannot be replaced with host binaries. Existing configurations are preserved, so they will still be available if you later switch to a native installation.
-* **Firmware:** UEFI firmware is included with the bundled QEMU build. If a specific OVMF variant is needed, KEMU searches the host's firmware directories. Setting a custom path under *Settings -> Firmware* works as expected.
-* **Start scripts:** The generated `qemu.sh` and the "Show QEMU command" dialog reference paths inside the sandbox (e.g., `/app/bin/...`). These are intended for inspection and for execution via `flatpak run --command=...`, not for running directly on the host.
-* **File locations:** VM data and configuration reside under `~/.var/app/org.kde.kemu/`, rather than `~/.local/share/kemu`. VMs from a previous native installation will not be detected automatically; update *Settings -> General -> VM directory* to point to the old path if you wish to continue using them.
-* **USB passthrough:** In addition to the udev rule described under [USB Passthrough](https://www.google.com/search?q=%23usb-passthrough), the sandbox must be granted permission to access the device. Recent Flatpak versions prompt for this permission per device.
+- **Networking:** Virtual networks are fully functional inside the sandbox: the in-memory switch, the built-in DHCP server and the libslirp NAT uplink run inside the KEMU process and require no namespaces. User Mode still functions, but relies on QEMU's built-in usermode networking (SLIRP) instead of `passt`. `passt` performs its own `unshare()` on startup and therefore cannot run inside the sandbox. See [Networking](#networking) for details on SLIRP's capabilities.
+- **Settings:** The Executables page is read-only since all helper programs are bundled within the Flatpak image and cannot be replaced with host binaries. Existing configurations are preserved, so they will still be available if you later switch to a native installation.
+- **Firmware:** UEFI firmware is included with the bundled QEMU build. If a specific OVMF variant is needed, KEMU searches the host's firmware directories. Setting a custom path under _Settings -> Firmware_ works as expected.
+- **Start scripts:** The generated `qemu.sh` and the "Show QEMU command" dialog reference paths inside the sandbox (e.g., `/app/bin/...`). These are intended for inspection and for execution via `flatpak run --command=...`, not for running directly on the host.
+- **File locations:** VM data and configuration reside under `~/.var/app/org.kde.kemu/`, rather than `~/.local/share/kemu`. VMs from a previous native installation will not be detected automatically; update _Settings -> General -> VM directory_ to point to the old path if you wish to continue using them.
+- **USB passthrough:** In addition to the udev rule described under [USB Passthrough](#usb-passthrough), the sandbox must be granted permission to access the device. Recent Flatpak versions prompt for this permission per device.
 
 ## Shared Folders
 
 KEMU enables host-guest file exchange via the following protocols:
 
-| Guest OS | Protocol | Host Daemon | Guest Software |
-| --- | --- | --- | --- |
-| **Linux/BSD** | 9p (VirtFS) | None | Native kernel support |
-| **Windows** | virtio-fs | `virtiofsd` | VirtIO drivers + WinFsp |
+| Guest OS      | Protocol    | Host Daemon | Guest Software          |
+| ------------- | ----------- | ----------- | ----------------------- |
+| **Linux/BSD** | 9p (VirtFS) | None        | Native kernel support   |
+| **Windows**   | virtio-fs   | `virtiofsd` | VirtIO drivers + WinFsp |
 
-Configuration is done in the VM settings. The *Shared Name* serves as the mount tag within the guest.
+Configuration is done in the VM settings. The _Shared Name_ serves as the mount tag within the guest.
 
 ### Linux & BSD Guests
 
 Mounting via 9p (Example: using the tag `exchange` mounted to `/mnt/shared`).
 
-* **Linux:**
+- **Linux:**
+
 ```bash
 sudo mount -t 9p -o trans=virtio exchange /mnt/shared
 ```
 
-*fstab:* `exchange /mnt/shared 9p trans=virtio,version=9p2000.L,rw,nofail 0 0`
+_fstab:_ `exchange /mnt/shared 9p trans=virtio,version=9p2000.L,rw,nofail 0 0`
 
-* **FreeBSD (13+):**
+- **FreeBSD (13+):**
+
 ```bash
 sudo mount -t virtfs -o trans=virtio exchange /mnt/shared
 ```
 
-
-*fstab:* `exchange /mnt/shared virtfs trans=virtio,rw 0 0`
+_fstab:_ `exchange /mnt/shared virtfs trans=virtio,rw 0 0`
 
 > **Note:** OpenBSD/NetBSD support is limited; please verify compatibility beforehand. The virtual network mode note above applies to all Unix guests utilizing 9p.
 
@@ -345,7 +347,7 @@ Requires `virtio-fs`. On the host side, KEMU starts `virtiofsd` automatically.
 
 The installation order is critical:
 
-1. **Install WinFsp** ([winfsp.dev](https://www.google.com/search?q=https://winfsp.dev/rel/)).
+1. **Install WinFsp** ([winfsp.dev](https://winfsp.dev/rel/)).
 2. **Install VirtIO Guest Tools** (Run `virtio-win-gt-x64.msi`).
 3. **Reboot.**
 
@@ -389,16 +391,16 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="0951", ATTR{idProduct}=="1666", MODE="0664", 
 
 ## OVA Import/Export Limitations
 
-* OVA support is limited to single-disk VMs; multi-disk configurations are not supported.
-* UEFI, TPM, and Secure Boot settings cannot be represented in the OVA format and will be lost upon export.
-* Snapshots are not preserved during OVA export (as VMDK does not support them).
-* The shared folder path and ISO path are stripped from native exports because they are system-specific.
-* OVF parsing covers common VirtualBox/VMware OVAs, but it may fail to handle highly customized or exotic configurations.
+- OVA support is limited to single-disk VMs; multi-disk configurations are not supported.
+- UEFI, TPM, and Secure Boot settings cannot be represented in the OVA format and will be lost upon export.
+- Snapshots are not preserved during OVA export (as VMDK does not support them).
+- The shared folder path and ISO path are stripped from native exports because they are system-specific.
+- OVF parsing covers common VirtualBox/VMware OVAs, but it may fail to handle highly customized or exotic configurations.
 
 ## Credits and Trademarks
 
 **Third-Party Assets:**
-Operating system icons utilized within KEMU are provided by the [Papirus Icon Theme](https://www.google.com/search?q=https://github.com/PapirusDevelopmentTeam/papirus-icon-theme), licensed under the GPL-3.0.
+Operating system icons utilized within KEMU are provided by the [Papirus Icon Theme](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme), licensed under the GPL-3.0.
 
 **Trademark Disclaimer:**
 Any trademarks, logos, and brand names used in this software are the property of their respective owners. The use of third-party logos within the KEMU user interface is strictly for identification and descriptive purposes to represent the guest operating system of a virtual machine.

@@ -14,12 +14,16 @@ using namespace Qt::StringLiterals;
 /**
  * @brief Configuration of a single virtual network.
  *
- * Each virtual network maps to one Linux user-namespace containing:
- *   - a bridge interface (br0)
- *   - optionally dnsmasq for DHCP
- *   - optionally pasta for NAT / internet access
+ * Each virtual network is realized entirely inside the KEMU process:
+ *   - an in-memory L2 switch (VirtualSwitch) that QEMU instances connect to
+ *     via "-netdev stream" over a unix socket
+ *   - optionally a built-in DHCP server (DhcpServer)
+ *   - optionally an embedded libslirp instance (SlirpUplink) for
+ *     NAT / internet access
  *
- * Per-VM tap devices are attached to the bridge at VM start time.
+ * No root rights, kernel interfaces or namespaces are involved, so virtual
+ * networks work unchanged inside sandboxes (Flatpak) and on immutable
+ * systems.
  */
 struct VirtualNetwork {
     /// Unique, user-visible name (also used as KConfig group key and runtime-dir
@@ -28,15 +32,15 @@ struct VirtualNetwork {
 
     // --- Subnet ---
 
-    /// Bridge / gateway address inside the namespace, e.g. "192.168.100.1"
+    /// Gateway address of the network, e.g. "192.168.100.1"
     QString gateway;
 
     /// CIDR prefix length for the subnet, e.g. 24 → 192.168.100.0/24
     int prefixLength = 24;
 
-    // --- DHCP (dnsmasq) ---
+    // --- DHCP ---
 
-    /// When true, dnsmasq is started inside the namespace to hand out leases.
+    /// When true, the built-in DHCP server hands out leases on the network.
     bool enableDhcp = true;
 
     /// First address of the DHCP range, e.g. "192.168.100.100".
@@ -47,15 +51,16 @@ struct VirtualNetwork {
     /// Last address of the DHCP range, e.g. "192.168.100.200".
     QString dhcpRangeEnd;
 
-    // --- NAT / Internet (pasta) ---
+    // --- NAT / Internet ---
 
-    /// When true, pasta is started to provide outbound connectivity (NAT).
-    /// When false the network is fully isolated (air-gapped).
+    /// When true, an embedded libslirp instance provides outbound
+    /// connectivity (NAT). When false the network is fully isolated
+    /// (air-gapped).
     bool enableNat = true;
 
-    /// Optional: network-level port forwards handled by pasta (host → namespace).
-    /// Individual per-VM forwards are still stored in VMConfig::portForwards().
-    /// Format per entry: "tcp/8080:80" or "udp/5353:53"
+    /// Optional: network-level port forwards handled by the NAT uplink
+    /// (host 127.0.0.1 → guest address).
+    /// Format per entry: "tcp/8080:192.168.100.50:80" or "udp/5353:192.168.100.50:53"
     QStringList portForwards;
 
     // --- Validation ---

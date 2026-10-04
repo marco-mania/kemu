@@ -29,8 +29,6 @@ ExternalTools::ExternalTools(QObject *parent)
     registerTool(Virtiofsd, u"VirtiofsdPath"_s, u"virtiofsd"_s);
     registerTool(GenIsoImage, u"GenIsoImagePath"_s, u"genisoimage"_s);
     registerTool(Passt, u"PasstPath"_s, u"passt"_s);
-    registerTool(Pasta, u"PastaPath"_s, u"pasta"_s);
-    registerTool(Dnsmasq, u"DnsmasqPath"_s, u"dnsmasq"_s);
 }
 
 // --- Registration ---
@@ -195,27 +193,18 @@ QString ExternalTools::displayName(Tool tool)
         return i18n("ISO Image Creator (genisoimage/mkisofs/xorriso)");
     case Passt:
         return i18n("passt Network Backend");
-    case Pasta:
-        return i18n("pasta Namespace Network Connector");
-    case Dnsmasq:
-        return i18n("dnsmasq DHCP/DNS Server");
     }
     return {};
 }
 
 QList<ExternalTools::Tool> ExternalTools::allTools()
 {
-    return {QemuSystem, QemuImg, Swtpm, Virtiofsd, GenIsoImage, Passt, Pasta, Dnsmasq};
+    return {QemuSystem, QemuImg, Swtpm, Virtiofsd, GenIsoImage, Passt};
 }
 
 QList<ExternalTools::Tool> ExternalTools::coreTools()
 {
     return {QemuSystem, QemuImg};
-}
-
-QList<ExternalTools::Tool> ExternalTools::virtualNetworkTools()
-{
-    return {Pasta, Dnsmasq};
 }
 
 QList<ExternalTools::Tool> ExternalTools::unusedTools() const
@@ -224,7 +213,7 @@ QList<ExternalTools::Tool> ExternalTools::unusedTools() const
     QList<Tool> result;
 
     if (!caps.has(SandboxCapabilities::UserNamespaces))
-        result << Passt << Pasta << Dnsmasq;
+        result << Passt;
 
     return result;
 }
@@ -260,13 +249,6 @@ QStringList ExternalTools::missingToolNames() const
     return missing;
 }
 
-bool ExternalTools::isVirtualNetworkCapable() const
-{
-    if (!SandboxCapabilities::instance().has(SandboxCapabilities::UserNamespaces))
-        return false;
-    return isAvailable(virtualNetworkTools());
-}
-
 bool ExternalTools::isPasstUsable() const
 {
     // passt does its own unshare()+pivot_root(); without user namespaces it
@@ -279,7 +261,6 @@ bool ExternalTools::isPasstUsable() const
 QList<ExternalTools::FeatureGroup> ExternalTools::featureGroups()
 {
     return {{Core, i18n("Core Functionality"), i18n("Required for basic VM operation. This warning cannot be disabled."), coreTools(), false},
-            {VirtualNetwork, i18n("Virtual Networks"), i18n("User-defined isolated networks with built-in DHCP and DNS."), virtualNetworkTools(), true},
             {TpmEmulation,
              i18n("TPM Emulation"),
              i18n("Software TPM 2.0 device for guests that require it (e.g. Windows "
@@ -312,8 +293,6 @@ QString ExternalTools::suppressionConfigKey(FeatureGroupId id)
     switch (id) {
     case Core:
         return u"IgnoreMissing_Core"_s;
-    case VirtualNetwork:
-        return u"IgnoreMissing_VirtualNetwork"_s;
     case TpmEmulation:
         return u"IgnoreMissing_TpmEmulation"_s;
     case SharedFolders:

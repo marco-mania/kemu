@@ -14,7 +14,24 @@
 
 #include "kemu_debug.h"
 
+#include <QCryptographicHash>
+
 using namespace Qt::StringLiterals;
+
+namespace
+{
+
+/// Stable multicast group+port per virtual network for exported scripts.
+QString mcastAddressFor(const QString &networkName)
+{
+    const QByteArray hash = QCryptographicHash::hash(networkName.toUtf8(), QCryptographicHash::Md5);
+    const auto hi = static_cast<quint16>(static_cast<uchar>(hash.at(0)));
+    const auto lo = static_cast<quint16>(static_cast<uchar>(hash.at(1)));
+    const quint16 port = 1025 + static_cast<quint16>(((hi << 8) | lo) % 64000);
+    return u"230.0.0.1:%1"_s.arg(port);
+}
+
+} // namespace
 
 QStringList QemuCommandBuilder::build(const VMConfig &config,
                                       const QDir &vmDir,
@@ -341,18 +358,18 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         args << u"-device"_s << netDevice;
 
         if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
-            if (networkContext.tapFd >= 0) {
-                // QEMU rejects ifname=, script= and downscript= together
-                // with fd=.
-                args << u"-netdev"_s << u"tap,id=%1,fd=%2"_s.arg(KEMUConst::NetdevId).arg(networkContext.tapFd);
+            if (!networkContext.mcastAddress.isEmpty()) {
+                // Standalone export: QEMU's built-in multicast network stands
+                // in for the in-memory switch, which lives in the KEMU
+                // process and is unreachable from a script.
+                args << u"-netdev"_s << u"socket,id=%1,mcast=%2"_s.arg(KEMUConst::NetdevId, networkContext.mcastAddress);
             } else {
-                // Name-based form for the exported script, which cannot inherit
-                // a descriptor and therefore enters the namespace itself.
-                Q_ASSERT_X(!networkContext.tapDevice.isEmpty(),
+                Q_ASSERT_X(!networkContext.switchSocketPath.isEmpty(),
                            "QemuCommandBuilder::build",
-                           "VirtualNetwork mode requires NetworkContext::tapDevice or tapFd to be set");
-
-                args << u"-netdev"_s << u"tap,id=%1,ifname=%2,script=no,downscript=no"_s.arg(KEMUConst::NetdevId).arg(networkContext.tapDevice);
+                           "VirtualNetwork mode requires NetworkContext::switchSocketPath or mcastAddress to be set");
+                args << u"-netdev"_s
+                     << u"stream,id=%1,server=off,addr.type=unix,addr.path=%2"_s.arg(KEMUConst::NetdevId)
+                            .arg(relativePaths ? QFileInfo(networkContext.switchSocketPath).fileName() : networkContext.switchSocketPath);
             }
         } else if (networkContext.useSlirp) {
             // QEMU's built-in usermode networking. No external process, no
@@ -440,7 +457,14 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     if (scriptConfig.displayType() == VMSpecs::DisplayType::Dbus)
         scriptConfig.setDisplayType(VMSpecs::DisplayType::Gtk);
 
-    const QStringList args = build(scriptConfig, vmDir, monitorSocketPath, networkContext, relativePaths);
+    // A standalone script cannot reach the in-memory switch inside the KEMU
+    // process, so exported virtual networks run on QEMU's built-in multicast
+    // networking: all exported VMs of the same network share one mcast group.
+    QemuNetworkContext scriptNetCtx = networkContext;
+    if (config.networkCard() != VMSpecs::NetworkCard::None && config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
+        scriptNetCtx.mcastAddress = mcastAddressFor(network.name);
+
+    const QStringList args = build(scriptConfig, vmDir, monitorSocketPath, scriptNetCtx, relativePaths);
 
     QString script;
 
@@ -475,59 +499,11 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     // --- Network ---
     if (config.networkCard() != VMSpecs::NetworkCard::None) {
         if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
-            const QString gw = network.gateway.isEmpty() ? u"192.168.100.1"_s : network.gateway;
-
-            script +=
-                u"# Create network namespace\n"_s + u"unshare --user --net --map-root-user -- sleep infinity &\n"_s + u"NS_PID=$!\n"_s + u"sleep 0.5\n\n"_s;
-
-            script += u"# Start NAT connector (must run before bridge setup)\n"_s;
-            if (network.enableNat) {
-                script +=
-                    u"pasta --userns /proc/$NS_PID/ns/user \\\n"_s + u"  --netns /proc/$NS_PID/ns/net \\\n"_s + u"  --config-net -f &\n"_s + u"sleep 2\n\n"_s;
-            }
-
-            script += u"# Configure bridge\n"_s + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link set lo up\n"_s
-                + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link add br0 type bridge\n"_s
-                + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link set dev br0 type bridge stp_state 0\n"_s
-                + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip addr add %1/%2 dev br0\n"_s.arg(gw).arg(network.prefixLength)
-                + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link set br0 up\n"_s;
-
-            if (network.enableNat) {
-                script +=
-            u"\n# Enable IP forwarding and setup NAT\n"_s +
-            u"nsenter -t $NS_PID -U --preserve-credentials -n -- "
-            u"sh -c 'echo 1 > /proc/sys/net/ipv4/ip_forward'\n"_s +
-            u"NS_IFACE=$(nsenter -t $NS_PID -U --preserve-credentials -n -- "
-            u"ip -o route show default | awk '{print $5}')\n"_s +
-            u"nsenter -t $NS_PID -U --preserve-credentials -n -- "
-            u"nft add table ip nat\n"_s +
-            u"nsenter -t $NS_PID -U --preserve-credentials -n -- "
-            u"nft add chain ip nat postrouting '{ type nat hook postrouting priority 100; }'\n"_s +
-            u"nsenter -t $NS_PID -U --preserve-credentials -n -- "
-            u"nft add rule ip nat postrouting oif \"$NS_IFACE\" masquerade\n"_s;
-            }
-
-            if (network.enableDhcp) {
-                QString rangeStart = network.dhcpRangeStart;
-                QString rangeEnd = network.dhcpRangeEnd;
-                if (rangeStart.isEmpty()) {
-                    QStringList octets = gw.split(u'.');
-                    if (octets.size() == 4) {
-                        QString prefix = octets[0] + u'.' + octets[1] + u'.' + octets[2];
-                        rangeStart = prefix + u".100"_s;
-                        rangeEnd = prefix + u".200"_s;
-                    }
-                }
-                script += u"\n# Start DHCP server\n"_s + u"nsenter -t $NS_PID -U --preserve-credentials -n -- dnsmasq \\\n"_s
-                    + u"  --interface=br0 --bind-interfaces \\\n"_s + u"  --dhcp-range=%1,%2,12h \\\n"_s.arg(rangeStart, rangeEnd)
-                    + u"  --no-daemon --no-resolv --server=1.1.1.1 &\n"_s;
-            }
-
-            const QString tapName = networkContext.tapDevice.isEmpty() ? u"tap0"_s : networkContext.tapDevice;
-            script += u"\n# Create tap device for VM\n"_s + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip tuntap add dev %1 mode tap\n"_s.arg(tapName)
-                + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link set %1 master br0\n"_s.arg(tapName)
-                + u"nsenter -t $NS_PID -U --preserve-credentials -n -- ip link set %1 up\n"_s.arg(tapName) + u"sleep 1\n\n"_s;
-
+            script += u"# Network '%1': QEMU's built-in multicast networking stands in for\n"_s.arg(network.name)
+                + u"# KEMU's in-memory switch. Every exported VM of this network shares\n"_s
+                + u"# the same group and reaches the others at L2. There is no DHCP and\n"_s
+                + u"# no internet access here - configure static addresses inside the\n"_s
+                + u"# guests or run a DHCP server in one of them.\n\n"_s;
         } else if (networkContext.useSlirp) {
             // Nothing to start - QEMU's own -netdev user is already in args.
         } else {
@@ -564,16 +540,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
         script += u"# For standalone use another display type.\n"_s;
     }
 
-    if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && config.networkCard() != VMSpecs::NetworkCard::None) {
-        script +=
-            u"# KEMU itself does not use nsenter here: it opens the tap inside\n"_s
-            u"# the namespace and hands QEMU the descriptor via -netdev tap,fd=.\n"_s
-            u"# A standalone script cannot inherit a descriptor, so it enters the\n"_s
-            u"# namespace instead.\n"_s;
-        script += u"exec nsenter -t $NS_PID -U --preserve-credentials -n -- \\\n  "_s;
-    } else {
-        script += u"exec "_s;
-    }
+    script += u"exec "_s;
 
     script += qemuPath + u" \\\n  "_s + argsToReadableString(args) + u"\n"_s;
 

@@ -477,9 +477,6 @@ void SettingsDialog::setupVirtualNetworksPage()
     auto *item = addPage(page, i18n("Virtual Networks"));
     item->setIcon(QIcon::fromTheme(u"network-workgroup"_s));
     m_pages[VirtualNetworks] = item;
-
-    if (!ExternalTools::instance().isVirtualNetworkCapable())
-        item->setEnabled(false);
 }
 
 void SettingsDialog::browseVmDir()
@@ -680,7 +677,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     // --- Gateway / Subnet ---
     auto *gatewayEdit = new QLineEdit(net.gateway);
     gatewayEdit->setPlaceholderText(u"192.168.100.1"_s);
-    gatewayEdit->setToolTip(i18n("Bridge gateway address inside the network namespace."));
+    gatewayEdit->setToolTip(i18n("Gateway address of the virtual network."));
     form->addRow(i18n("Gateway:"), gatewayEdit);
 
     auto *prefixSpin = new QSpinBox;
@@ -712,7 +709,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     QObject::connect(prefixSpin, &QSpinBox::valueChanged, &dlg, updateSubnetLabel);
 
     // --- DHCP ---
-    auto *dhcpCheck = new QCheckBox(i18n("Enable DHCP (via dnsmasq)"));
+    auto *dhcpCheck = new QCheckBox(i18n("Enable DHCP"));
     dhcpCheck->setChecked(net.enableDhcp);
     form->addRow(dhcpCheck);
 
@@ -736,7 +733,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     QObject::connect(dhcpCheck, &QCheckBox::toggled, updateDhcpWidgets);
 
     // --- NAT ---
-    auto *natCheck = new QCheckBox(i18n("Enable NAT (Internet access via pasta)"));
+    auto *natCheck = new QCheckBox(i18n("Enable NAT (Internet access)"));
     natCheck->setChecked(net.enableNat);
     natCheck->setToolTip(
         i18n("When disabled, the virtual network is completely isolated "
@@ -750,10 +747,10 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     form->addRow(portFwdCheck);
 
     auto *portFwdEdit = new QLineEdit(net.portForwards.join(u", "_s));
-    portFwdEdit->setPlaceholderText(u"tcp/8080:80, tcp/2222:22"_s);
+    portFwdEdit->setPlaceholderText(u"tcp/8080:192.168.100.50:80, tcp/2222:192.168.100.51:22"_s);
     portFwdEdit->setToolTip(
-        i18n("Comma-separated list of port forwards from host to namespace.\n"
-             "Format: protocol/hostPort:guestPort"));
+        i18n("Comma-separated list of port forwards from host to guest.\n"
+             "Format: protocol/hostPort:guestIp:guestPort"));
     auto *portFwdLabel = new QLabel(i18n("Port forwards:"));
     form->addRow(portFwdLabel, portFwdEdit);
 

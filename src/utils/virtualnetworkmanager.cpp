@@ -6,16 +6,56 @@
 
 #include "virtualnetworkmanager.h"
 
-extern "C" {
-#include <signal.h>
-#include <sys/prctl.h>
-#include <sys/wait.h>
-}
+#include <QCryptographicHash>
+#include <QHostAddress>
 
-#include "utils/externaltools.h"
-#include "utils/namespacehelper.h"
+#include "const.h"
+#include "utils/dhcpserver.h"
+#include "utils/gatewayresponder.h"
+#include "utils/slirpuplink.h"
+#include "utils/virtualswitch.h"
+
+#include "kemu_debug.h"
 
 using namespace Qt::StringLiterals;
+
+namespace
+{
+
+/// Deterministic locally-administered MAC for the in-process service ports.
+QByteArray serviceMac(const QString &seed)
+{
+    const QByteArray hash = QCryptographicHash::hash(seed.toUtf8(), QCryptographicHash::Md5);
+    QByteArray mac;
+    mac.append(char(0x02)).append('K').append('E').append('M').append(hash.at(0)).append(hash.at(1));
+    return mac;
+}
+
+quint32 prefixToMask(int prefixLength)
+{
+    if (prefixLength <= 0)
+        return 0;
+    if (prefixLength >= 32)
+        return 0xffffffffu;
+    return 0xffffffffu << (32 - prefixLength);
+}
+
+/// Address for an in-process network service: next to the gateway, inside the
+/// subnet, distinct from gateway and 'avoid'. Returns 0 if none fits.
+quint32 deriveServiceAddress(quint32 gateway, quint32 network, quint32 broadcast, quint32 offset, quint32 avoid)
+{
+    const quint32 up = gateway + offset;
+    if (up > network && up < broadcast && up != gateway && up != avoid)
+        return up;
+    if (offset < gateway) {
+        const quint32 down = gateway - offset;
+        if (down > network && down < broadcast && down != gateway && down != avoid)
+            return down;
+    }
+    return 0;
+}
+
+} // namespace
 
 // ============================================================================
 // Construction / Destruction
@@ -28,12 +68,9 @@ VirtualNetworkManager::VirtualNetworkManager(QObject *parent)
 
 VirtualNetworkManager::~VirtualNetworkManager()
 {
-    // Shut down every running network. Killing the namespace anchor process
-    // causes the kernel to tear down all interfaces automatically, but we
-    // terminate dnsmasq and pasta first for a clean shutdown.
-    for (auto it = m_runtime.begin(); it != m_runtime.end(); ++it)
-        terminateAll(it.value());
-    m_runtime.clear();
+    const QStringList names = m_runtime.keys();
+    for (const QString &name : names)
+        stopNetwork(name);
 }
 
 // ============================================================================
@@ -178,7 +215,7 @@ bool VirtualNetworkManager::updateNetwork(const VirtualNetwork &net)
 
 bool VirtualNetworkManager::startNetwork(const QString &name)
 {
-    m_lastError.clear();
+    resetError();
 
     if (isRunning(name))
         return true;
@@ -189,43 +226,98 @@ bool VirtualNetworkManager::startNetwork(const QString &name)
         return false;
     }
 
+    const QHostAddress gatewayAddress(net.gateway);
+    if (gatewayAddress.isNull() || gatewayAddress.protocol() != QAbstractSocket::IPv4Protocol) {
+        setError(name, i18n("Invalid gateway address '%1'.", net.gateway));
+        return false;
+    }
+
+    const quint32 gatewayIp = gatewayAddress.toIPv4Address();
+    const quint32 mask = prefixToMask(net.prefixLength);
+    const quint32 networkAddr = gatewayIp & mask;
+    const quint32 broadcastAddr = networkAddr | ~mask;
+
     const QDir dir(runtimeDir(name));
     dir.mkpath(u"."_s);
 
-    if (!createNamespace(name)) {
+    auto *vswitch = new VirtualSwitch(this);
+    const QString sockPath = runtimeDir(name) + u'/' + KEMUConst::NetworkSwitchSocketFileName;
+    if (!vswitch->listen(sockPath)) {
+        setError(name, i18n("Failed to create network switch socket '%1'.", sockPath));
+        delete vswitch;
         cleanupRuntimeDir(name);
         return false;
     }
 
-    // pasta must be started BEFORE the bridge, while the namespace
-    // is still empty. Otherwise pasta detects existing interfaces
-    // and skips its own network setup.
+    RuntimeState &state = m_runtime[name];
+    state.vswitch = vswitch;
+
+    qCDebug(KEMU) << "VirtualNetworkManager: network" << name << "switch listening on" << sockPath << "- gateway"
+                  << gatewayAddress.toString() << "prefix" << net.prefixLength << "dhcp" << net.enableDhcp << "nat" << net.enableNat;
+
+    // NAT uplink first: the DHCP server advertises its DNS proxy address.
+    quint32 dnsIp = 0;
     if (net.enableNat) {
-        if (!startPasta(name, net)) {
+        dnsIp = deriveServiceAddress(gatewayIp, networkAddr, broadcastAddr, 1, 0);
+
+        auto *uplink = new SlirpUplink(this);
+        SlirpUplink::Config cfg;
+        cfg.network = networkAddr;
+        cfg.netmask = mask;
+        cfg.gateway = gatewayIp;
+        cfg.nameserver = dnsIp != 0 ? dnsIp : networkAddr + 1;
+
+        if (!uplink->start(cfg)) {
+            const QString error = uplink->lastError();
+            delete uplink;
             stopNetwork(name);
+            setError(name, i18n("Failed to start NAT uplink: %1", error));
             return false;
         }
-    }
+        connect(uplink, &SlirpUplink::errorOccurred, uplink, [this, name](const QString &message) {
+            Q_EMIT errorOccurred(name, message);
+        });
 
-    if (!configureBridge(name, net)) {
-        stopNetwork(name);
-        return false;
-    }
-
-    // NAT rules
-    if (net.enableNat) {
-        if (!setupNat(name)) {
-            stopNetwork(name);
-            return false;
-        }
+        vswitch->addInternalPort(uplink);
+        state.uplink = uplink;
+        qCDebug(KEMU) << "VirtualNetworkManager: NAT uplink attached, DNS proxy at"
+                      << (dnsIp != 0 ? QHostAddress(dnsIp).toString() : u"none"_s);
+    } else {
+        auto *responder = new GatewayResponder(serviceMac(name + u"-gw"_s), gatewayIp, this);
+        vswitch->addInternalPort(responder);
+        state.gatewayResponder = responder;
+        qCDebug(KEMU) << "VirtualNetworkManager: gateway responder attached (no NAT)";
     }
 
     if (net.enableDhcp) {
-        if (!startDnsmasq(name, net)) {
-            stopNetwork(name);
-            return false;
+        quint32 rangeStart = QHostAddress(net.dhcpRangeStart).toIPv4Address();
+        quint32 rangeEnd = QHostAddress(net.dhcpRangeEnd).toIPv4Address();
+        if (rangeStart == 0 || rangeEnd == 0 || rangeStart > rangeEnd) {
+            // Default pool: network + 100 .. network + 200, clamped to the subnet.
+            rangeStart = networkAddr + 100;
+            rangeEnd = networkAddr + 200;
+            if (rangeEnd >= broadcastAddr)
+                rangeEnd = broadcastAddr - 1;
+            if (rangeStart > rangeEnd || rangeStart <= networkAddr) {
+                stopNetwork(name);
+                setError(name, i18n("Cannot derive a DHCP range from gateway '%1'.", net.gateway));
+                return false;
+            }
         }
+
+        // Own service address so unicast lease renewals reach this server.
+        const quint32 dhcpIp = deriveServiceAddress(gatewayIp, networkAddr, broadcastAddr, 2, dnsIp);
+
+        auto *dhcp = new DhcpServer(serviceMac(name + u"-dhcp"_s), this);
+        dhcp->configure(gatewayIp, dhcpIp, net.prefixLength, rangeStart, rangeEnd, net.enableNat ? dnsIp : 0);
+        vswitch->addInternalPort(dhcp);
+        state.dhcp = dhcp;
+        qCDebug(KEMU) << "VirtualNetworkManager: DHCP server attached, pool" << QHostAddress(rangeStart).toString() << "-"
+                      << QHostAddress(rangeEnd).toString();
     }
+
+    if (state.uplink)
+        applyPortForwards(name, net);
 
     Q_EMIT networkStarted(name);
     return true;
@@ -237,13 +329,22 @@ void VirtualNetworkManager::stopNetwork(const QString &name)
     if (it == m_runtime.end())
         return;
 
+    qCDebug(KEMU) << "VirtualNetworkManager: stopping network" << name;
+
     // Notify all attached VMs that they are being detached.
-    const QStringList vmNames = it->attachedVms.keys();
+    const QList<QString> vmNames = it->attachedVms.values();
     for (const QString &vm : vmNames)
         Q_EMIT vmDetached(name, vm);
 
-    terminateAll(it.value());
+    RuntimeState state = it.value();
     m_runtime.erase(it);
+
+    // Ports first (their destruction detaches them), then the switch.
+    delete state.dhcp;
+    delete state.gatewayResponder;
+    delete state.uplink;
+    delete state.vswitch;
+
     cleanupRuntimeDir(name);
 
     Q_EMIT networkStopped(name);
@@ -252,9 +353,7 @@ void VirtualNetworkManager::stopNetwork(const QString &name)
 bool VirtualNetworkManager::isRunning(const QString &name) const
 {
     auto it = m_runtime.find(name);
-    if (it == m_runtime.end() || it->nsPid <= 0)
-        return false;
-    return kill(static_cast<pid_t>(it->nsPid), 0) == 0;
+    return it != m_runtime.end() && it->vswitch && it->vswitch->isListening();
 }
 
 // ============================================================================
@@ -265,52 +364,21 @@ QString VirtualNetworkManager::attachVm(const QString &networkName, const QStrin
 {
     resetError();
 
-    if (!isRunning(networkName)) {
+    auto it = m_runtime.find(networkName);
+    if (it == m_runtime.end() || !it->vswitch || !it->vswitch->isListening()) {
         setError(networkName, i18n("Cannot attach VM '%1': network is not running.", vmName));
         return {};
     }
 
-    auto it = m_runtime.find(networkName);
-
-    // Already attached? Return existing tap device.
     if (it->attachedVms.contains(vmName))
-        return it->attachedVms.value(vmName);
+        return it->vswitch->socketPath();
 
-    const QString tapName = createTapDevice(networkName, vmName);
-    if (tapName.isEmpty()) {
-        setError(networkName, i18n("Failed to create tap device for VM '%1'.", vmName));
-        return {};
-    }
+    it->attachedVms.insert(vmName);
 
-    it->attachedVms.insert(vmName, tapName);
-    it->vmRefCount++;
-
-    Q_EMIT vmAttached(networkName, vmName, tapName);
-    return tapName;
-}
-
-int VirtualNetworkManager::openTapFd(const QString &networkName, const QString &vmName)
-{
-    resetError();
-
-    const auto it = m_runtime.constFind(networkName);
-    if (it == m_runtime.constEnd() || it->nsPid <= 0) {
-        setError(networkName, i18n("Network '%1' is not running.", networkName));
-        return -1;
-    }
-
-    const QString tapName = it->attachedVms.value(vmName);
-    if (tapName.isEmpty()) {
-        setError(networkName, i18n("VM '%1' is not attached to network '%2'.", vmName, networkName));
-        return -1;
-    }
-
-    QString error;
-    const int fd = NamespaceHelper::openTapFd(it->nsPid, tapName, &error);
-    if (fd < 0)
-        setError(networkName, i18n("Could not open tap device '%1': %2", tapName, error));
-
-    return fd;
+    const QString path = it->vswitch->socketPath();
+    qCDebug(KEMU) << "VirtualNetworkManager: VM" << vmName << "attached to" << networkName << "-" << path;
+    Q_EMIT vmAttached(networkName, vmName, path);
+    return path;
 }
 
 void VirtualNetworkManager::detachVm(const QString &networkName, const QString &vmName)
@@ -319,41 +387,27 @@ void VirtualNetworkManager::detachVm(const QString &networkName, const QString &
     if (it == m_runtime.end())
         return;
 
-    const QString tapName = it->attachedVms.value(vmName);
-    if (tapName.isEmpty())
+    if (!it->attachedVms.remove(vmName))
         return;
 
-    // Remove the tap device from the namespace.
-    destroyTapDevice(networkName, tapName);
-
-    it->attachedVms.remove(vmName);
-    it->vmRefCount = qMax(0, it->vmRefCount - 1);
-
+    qCDebug(KEMU) << "VirtualNetworkManager: VM" << vmName << "detached from" << networkName;
     Q_EMIT vmDetached(networkName, vmName);
 
     // Auto-stop the network when no VMs remain.
-    if (it->vmRefCount <= 0)
+    if (it->attachedVms.isEmpty())
         stopNetwork(networkName);
 }
 
 int VirtualNetworkManager::connectedVmCount(const QString &name) const
 {
     auto it = m_runtime.find(name);
-    return (it != m_runtime.end()) ? it->vmRefCount : 0;
+    return (it != m_runtime.end()) ? static_cast<int>(it->attachedVms.size()) : 0;
 }
 
-qint64 VirtualNetworkManager::namespacePid(const QString &name) const
+QString VirtualNetworkManager::switchSocketPath(const QString &name) const
 {
     auto it = m_runtime.find(name);
-    return (it != m_runtime.end()) ? it->nsPid : 0;
-}
-
-QString VirtualNetworkManager::tapDeviceName(const QString &networkName, const QString &vmName) const
-{
-    auto it = m_runtime.find(networkName);
-    if (it == m_runtime.end())
-        return {};
-    return it->attachedVms.value(vmName);
+    return (it != m_runtime.end() && it->vswitch) ? it->vswitch->socketPath() : QString{};
 }
 
 QString VirtualNetworkManager::lastError() const
@@ -379,292 +433,37 @@ void VirtualNetworkManager::cleanupRuntimeDir(const QString &name)
 }
 
 // ============================================================================
-// Internal: Namespace Creation (Step 1)
+// Internal: Port Forwards
 // ============================================================================
 
-bool VirtualNetworkManager::createNamespace(const QString &name)
+void VirtualNetworkManager::applyPortForwards(const QString &name, const VirtualNetwork &net)
 {
-    QString error;
-    const qint64 pid = NamespaceHelper::createNamespace(&error);
-    if (pid < 0) {
-        setError(name, i18n("Failed to create namespace: %1", error));
-        return false;
-    }
-
-    RuntimeState &state = m_runtime[name];
-    state.nsPid = pid;
-
-    if (!NamespaceHelper::setInterfaceUp(pid, u"lo"_s, &error)) {
-        setError(name, i18n("Loopback configuration failed: %1", error));
-        kill(static_cast<pid_t>(pid), SIGKILL);
-        waitpid(static_cast<pid_t>(pid), nullptr, 0);
-        m_runtime.remove(name);
-        return false;
-    }
-
-    return true;
-}
-
-bool VirtualNetworkManager::setupNat(const QString &name)
-{
-    const qint64 pid = m_runtime.value(name).nsPid;
-    if (pid <= 0)
-        return false;
-
-    NamespaceHelper::enableIpForward(pid);
-
-    const QString pastaIface = NamespaceHelper::getDefaultRouteDevice(pid);
-    if (pastaIface.isEmpty()) {
-        setError(name, i18n("Cannot determine pasta network interface."));
-        return false;
-    }
-
-    QString error;
-    if (!NamespaceHelper::setupMasquerade(pid, pastaIface, &error)) {
-        setError(name, i18n("Failed to setup NAT masquerade: %1", error));
-        return false;
-    }
-
-    return true;
-}
-
-// ============================================================================
-// Internal: Bridge Configuration
-// ============================================================================
-
-bool VirtualNetworkManager::configureBridge(const QString &name, const VirtualNetwork &net)
-{
-    const qint64 pid = m_runtime.value(name).nsPid;
-    if (pid <= 0)
-        return false;
-
-    QString error;
-
-    if (!NamespaceHelper::createBridge(pid, u"br0"_s, &error)) {
-        setError(name, i18n("Failed to create bridge: %1", error));
-        return false;
-    }
-
-    NamespaceHelper::setBridgeStp(pid, u"br0"_s, false);
-
-    if (!NamespaceHelper::addAddress(pid, u"br0"_s, net.gateway, net.prefixLength, &error)) {
-        setError(name, i18n("Failed to assign IP %1 to bridge: %2", net.gateway, error));
-        return false;
-    }
-
-    if (!NamespaceHelper::setInterfaceUp(pid, u"br0"_s, &error)) {
-        setError(name, i18n("Failed to bring bridge up: %1", error));
-        return false;
-    }
-
-    return true;
-}
-
-// ============================================================================
-// Internal: dnsmasq for DHCP
-// ============================================================================
-
-bool VirtualNetworkManager::startDnsmasq(const QString &name, const VirtualNetwork &net)
-{
-    const auto &tools = ExternalTools::instance();
-    if (!tools.isAvailable(ExternalTools::Dnsmasq)) {
-        setError(name, i18n("'dnsmasq' not found. Install dnsmasq to enable DHCP."));
-        return false;
-    }
-
-    const qint64 pid = m_runtime.value(name).nsPid;
-    if (pid <= 0)
-        return false;
-
-    // Derive a sensible DHCP range if not explicitly configured.
-    // Given gateway "192.168.100.1", we default to .100 – .200.
-    QString rangeStart = net.dhcpRangeStart;
-    QString rangeEnd = net.dhcpRangeEnd;
-
-    if (rangeStart.isEmpty() || rangeEnd.isEmpty()) {
-        // Parse the gateway to derive the range.
-        const QStringList octets = net.gateway.split(u'.');
-        if (octets.size() == 4) {
-            const QString prefix = octets[0] + u'.' + octets[1] + u'.' + octets[2];
-            if (rangeStart.isEmpty())
-                rangeStart = prefix + u".100"_s;
-            if (rangeEnd.isEmpty())
-                rangeEnd = prefix + u".200"_s;
-        } else {
-            setError(name, i18n("Cannot derive DHCP range from gateway '%1'.", net.gateway));
-            return false;
-        }
-    }
-
-    const QString runDir = runtimeDir(name);
-    const QString pidFile = runDir + u"/dnsmasq.pid"_s;
-    const QString leaseFile = runDir + u"/dnsmasq.leases"_s;
-
-    auto *process = new KProcess(this);
-    NamespaceHelper::prepareProcessForNamespace(process, pid);
-    process->setProgram(tools.path(ExternalTools::Dnsmasq));
-    process->setArguments({u"--interface=br0"_s,
-                           u"--bind-interfaces"_s,
-                           u"--except-interface=lo"_s,
-                           u"--dhcp-range=%1,%2,12h"_s.arg(rangeStart, rangeEnd),
-                           u"--no-daemon"_s,
-                           u"--pid-file=%1"_s.arg(pidFile),
-                           u"--dhcp-leasefile=%1"_s.arg(leaseFile),
-                           u"--no-resolv"_s,
-                           u"--server=1.1.1.1"_s,
-                           u"--server=1.0.0.1"_s,
-                           u"--listen-address=%1"_s.arg(net.gateway),
-                           u"--log-dhcp"_s});
-    process->setOutputChannelMode(KProcess::MergedChannels);
-    process->start();
-
-    if (!process->waitForStarted(3000)) {
-        setError(name, i18n("dnsmasq failed to start."));
-        delete process;
-        return false;
-    }
-
-    // Give dnsmasq a moment to bind to the interface.
-    QThread::msleep(200);
-
-    // Verify it is still running (it may exit immediately on config errors).
-    if (process->state() != KProcess::Running) {
-        const QString stderr = QString::fromUtf8(process->readAllStandardOutput()).trimmed();
-        setError(name, i18n("dnsmasq exited immediately: %1", stderr));
-        delete process;
-        return false;
-    }
-
-    m_runtime[name].dnsmasqProcess = process;
-    return true;
-}
-
-// ============================================================================
-// Internal: pasta for NAT (Step 4)
-// ============================================================================
-
-bool VirtualNetworkManager::startPasta(const QString &name, const VirtualNetwork &net)
-{
-    const auto &tools = ExternalTools::instance();
-    if (!tools.isAvailable(ExternalTools::Pasta)) {
-        setError(name, i18n("'pasta' not found. Install passt to enable NAT."));
-        return false;
-    }
-
-    const qint64 pid = m_runtime.value(name).nsPid;
-    if (pid <= 0)
-        return false;
-
-    QStringList args = {u"--userns"_s, u"/proc/%1/ns/user"_s.arg(pid), u"--netns"_s, u"/proc/%1/ns/net"_s.arg(pid), u"--config-net"_s, u"-f"_s};
+    auto it = m_runtime.find(name);
+    if (it == m_runtime.end() || !it->uplink)
+        return;
 
     for (const QString &fwd : net.portForwards) {
-        if (fwd.startsWith(u"tcp/"_s))
-            args << u"-t"_s << fwd.mid(4);
-        else if (fwd.startsWith(u"udp/"_s))
-            args << u"-u"_s << fwd.mid(4);
+        // Format: "proto/hostPort:guestIp:guestPort", e.g. "tcp/8080:192.168.100.50:80"
+        const int slash = fwd.indexOf(u'/');
+        const QString proto = fwd.left(slash).toLower();
+        const bool udp = proto == u"udp"_s;
+        const QStringList parts = fwd.mid(slash + 1).split(u':');
+
+        bool okHost = false, okGuest = false;
+        const int hostPort = parts.value(0).toInt(&okHost);
+        const QHostAddress guestAddress(parts.value(1));
+        const int guestPort = parts.value(2).toInt(&okGuest);
+
+        if (slash <= 0 || (!udp && proto != u"tcp"_s) || parts.size() != 3 || !okHost || !okGuest || guestAddress.isNull()
+            || guestAddress.protocol() != QAbstractSocket::IPv4Protocol || hostPort <= 0 || hostPort > 65535 || guestPort <= 0 || guestPort > 65535) {
+            qCWarning(KEMU) << "Ignoring port forward" << fwd << "for network" << name
+                            << "- expected format proto/hostPort:guestIp:guestPort (e.g. tcp/8080:192.168.100.50:80)";
+            continue;
+        }
+
+        qCDebug(KEMU) << "VirtualNetworkManager: applying port forward" << fwd << "for network" << name;
+        it->uplink->addPortForward(udp, static_cast<quint16>(hostPort), guestAddress.toIPv4Address(), static_cast<quint16>(guestPort));
     }
-
-    auto *process = new KProcess(this);
-    process->setProgram(tools.path(ExternalTools::Pasta));
-    process->setArguments(args);
-    process->setOutputChannelMode(KProcess::MergedChannels);
-    process->start();
-
-    if (!process->waitForStarted(3000)) {
-        setError(name, i18n("pasta failed to start."));
-        delete process;
-        return false;
-    }
-
-    m_runtime[name].pastaProcess = process;
-    return true;
-}
-
-// ============================================================================
-// Internal: Tap Device Management
-// ============================================================================
-
-QString VirtualNetworkManager::createTapDevice(const QString &networkName, const QString &vmName)
-{
-    const qint64 pid = m_runtime.value(networkName).nsPid;
-    if (pid <= 0)
-        return {};
-
-    const QString tapName = makeTapName(vmName);
-    QString error;
-
-    if (!NamespaceHelper::createTapDevice(pid, tapName, &error))
-        return {};
-
-    if (!NamespaceHelper::addInterfaceToBridge(pid, tapName, u"br0"_s, &error)) {
-        NamespaceHelper::removeInterface(pid, tapName);
-        return {};
-    }
-
-    if (!NamespaceHelper::setInterfaceUp(pid, tapName, &error)) {
-        NamespaceHelper::removeInterface(pid, tapName);
-        return {};
-    }
-
-    return tapName;
-}
-
-void VirtualNetworkManager::destroyTapDevice(const QString &networkName, const QString &tapName)
-{
-    const qint64 pid = m_runtime.value(networkName).nsPid;
-    if (pid <= 0)
-        return;
-    NamespaceHelper::removeInterface(pid, tapName);
-}
-
-// ============================================================================
-// Internal: Process Termination
-// ============================================================================
-
-void VirtualNetworkManager::terminateAll(RuntimeState &state)
-{
-    auto terminateKProcess = [](QPointer<KProcess> &p) {
-        if (!p)
-            return;
-        p->terminate();
-        if (!p->waitForFinished(3000))
-            p->kill();
-        delete p;
-        p = nullptr;
-    };
-
-    terminateKProcess(state.dnsmasqProcess);
-    terminateKProcess(state.pastaProcess);
-
-    // The namespace anchor is a fork() child, not a KProcess
-    if (state.nsPid > 0) {
-        kill(static_cast<pid_t>(state.nsPid), SIGKILL);
-        waitpid(static_cast<pid_t>(state.nsPid), nullptr, 0);
-    }
-
-    state.nsPid = 0;
-    state.attachedVms.clear();
-    state.vmRefCount = 0;
-}
-
-// ============================================================================
-// Internal: Tap Device Naming
-// ============================================================================
-
-QString VirtualNetworkManager::makeTapName(const QString &vmName)
-{
-    // Linux IFNAMSIZ is 16 bytes (15 chars + NUL terminator).
-    // Prefix "tap-" uses 4 characters, leaving 11 for the VM name.
-    // We sanitize to lowercase alphanumerics to avoid any issues
-    // with special characters in interface names.
-    QString sanitized = vmName.toLower();
-    sanitized.remove(QRegularExpression(u"[^a-z0-9]"_s));
-
-    // Ensure we have at least some characters after sanitization.
-    if (sanitized.isEmpty())
-        sanitized = u"vm"_s;
-
-    return u"tap-%1"_s.arg(sanitized.left(11));
 }
 
 void VirtualNetworkManager::setError(const QString &networkName, const QString &message)

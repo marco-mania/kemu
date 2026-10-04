@@ -10,7 +10,6 @@
 #include "models/virtualenvironmentmodel.h"
 #include "utils/asynchelperprocess.h"
 #include "utils/externaltools.h"
-#include "utils/sandboxcapabilities.h"
 #include "utils/savestatemanager.h"
 #include "utils/utils.h"
 #include "utils/virtualnetworkmanager.h"
@@ -41,22 +40,7 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     const QString sockPath = monitorSocketPath(vmName);
     QFile::remove(sockPath);
 
-    int tapFd = -1;
-    QString reason;
-    if (!openTapFdFor(config, vmName, req.tapDevice, &tapFd, &reason)) {
-        tearDown(vmName);
-        Q_EMIT startFailed(vmName, reason, 0, KProcess::NormalExit, {});
-        return;
-    }
-
-    // QEMU takes its own copy of the descriptor in start(); make sure ours is
-    // closed on every path from here on.
-    const auto tapGuard = qScopeGuard([&tapFd] {
-        if (tapFd >= 0)
-            ::close(tapFd);
-    });
-
-    const QemuNetworkContext netCtx = createQemuNetworkContext(config, req.tapDevice, tapFd);
+    const QemuNetworkContext netCtx = createQemuNetworkContext(config, req.networkSocket);
 
     const QString savestatePath =
         (!req.deployment && SaveStateManager::hasSavestate(path, vmName)) ? SaveStateManager::savestateFilePath(path, vmName) : QString{};
@@ -72,7 +56,7 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     if (req.unattendedDeployment)
         args << u"-serial"_s << u"file:%1"_s.arg(path + u'/' + KEMUConst::DeploySerialLogFileName);
 
-    KProcess *process = createQemuProcess(vmName, args, tapFd);
+    KProcess *process = createQemuProcess(vmName, args);
 
     connect(process, &KProcess::finished, this, [this, vmName](int code, KProcess::ExitStatus status) {
         onQemuExit(vmName, code, status);
@@ -177,7 +161,7 @@ DbusViewerWindow *VmRuntimeManager::viewerWindow(const QString &vmName) const
     return rt->viewer->window.data();
 }
 
-KProcess *VmRuntimeManager::createQemuProcess(const QString &vmName, const QStringList &args, int tapFd)
+KProcess *VmRuntimeManager::createQemuProcess(const QString &vmName, const QStringList &args)
 {
     auto *process = new KProcess(this);
     process->setOutputChannelMode(KProcess::SeparateChannels);
@@ -187,9 +171,8 @@ KProcess *VmRuntimeManager::createQemuProcess(const QString &vmName, const QStri
         Utils::appendTail(runtimeFor(vmName).stderrTail, process->readAllStandardError(), kStderrTailLimit);
     });
 
-    // Never combine this with KProcess::UnixProcessParameters::CloseFileDescriptors:
-    // it would close the tap descriptor despite the cleared CLOEXEC flag.
-    Utils::setDiesWithParent(process, tapFd);
+    // Never combine this with KProcess::UnixProcessParameters::CloseFileDescriptors.
+    Utils::setDiesWithParent(process);
 
     process->setProgram(ExternalTools::instance().path(ExternalTools::QemuSystem));
     process->setArguments(args);
@@ -450,12 +433,11 @@ bool VmRuntimeManager::usePasstFor(const VMConfig &config) const
     return !SettingsDialog::useSlirpNetworking();
 }
 
-QemuNetworkContext VmRuntimeManager::createQemuNetworkContext(const VMConfig &config, const QString &tapDevice, int tapFd) const
+QemuNetworkContext VmRuntimeManager::createQemuNetworkContext(const VMConfig &config, const QString &networkSocket) const
 {
     QemuNetworkContext ctx;
-    if (!tapDevice.isEmpty()) {
-        ctx.tapDevice = tapDevice;
-        ctx.tapFd = tapFd;
+    if (!networkSocket.isEmpty()) {
+        ctx.switchSocketPath = networkSocket;
         return ctx;
     }
     ctx.useSlirp = !usePasstFor(config);
@@ -480,18 +462,8 @@ QString VmRuntimeManager::ensureNetworkRunning(const QString &networkName, const
         return QString{};
     };
 
-    if (!SandboxCapabilities::instance().has(SandboxCapabilities::UserNamespaces)) {
-        return fail(
-            i18n("User namespaces are not supported on this system. Virtual "
-                 "networking requires unprivileged user namespaces."));
-    }
-
-    if (!ExternalTools::instance().isVirtualNetworkCapable()) {
-        return fail(
-            i18n("Required tools for virtual networking are "
-                 "missing. Please check Settings → Executables."));
-    }
-
+    // Virtual networks run entirely in-process (in-memory switch plus
+    // embedded libslirp uplink) - no namespaces, no external tools.
     const VirtualNetwork net = m_network_manager->network(networkName);
     if (!net.isValid())
         return fail(i18n("Virtual network '%1' not found or invalid: %2", networkName, m_network_manager->lastError()));
@@ -499,11 +471,12 @@ QString VmRuntimeManager::ensureNetworkRunning(const QString &networkName, const
     if (!m_network_manager->startNetwork(networkName))
         return fail(i18n("Failed to start virtual network '%1': %2", networkName, m_network_manager->lastError()));
 
-    const QString tapDevice = m_network_manager->attachVm(networkName, vmName);
-    if (tapDevice.isEmpty())
-        return fail(i18n("Failed to create network interface for VM '%1': %2", vmName, m_network_manager->lastError()));
+    const QString socketPath = m_network_manager->attachVm(networkName, vmName);
+    if (socketPath.isEmpty())
+        return fail(i18n("Failed to attach VM '%1' to the network: %2", vmName, m_network_manager->lastError()));
 
-    return tapDevice;
+    qCDebug(KEMU) << "VmRuntimeManager: VM" << vmName << "uses network switch at" << socketPath;
+    return socketPath;
 }
 
 void VmRuntimeManager::releaseNetwork(const VMConfig &config)
@@ -568,27 +541,6 @@ void VmRuntimeManager::onQemuExit(const QString &vmName, int exitCode, KProcess:
         p->deleteLater();
 
     Q_EMIT vmExited(info);
-}
-
-bool VmRuntimeManager::openTapFdFor(const VMConfig &config, const QString &vmName, const QString &tapDevice, int *tapFd, QString *reason)
-{
-    *tapFd = -1;
-
-    if (config.networkMode() != VMSpecs::NetworkMode::VirtualNetwork || tapDevice.isEmpty() || !m_network_manager)
-        return true;
-
-    // Opening the tap inside the namespace and handing QEMU the descriptor
-    // keeps QEMU in our namespace, and thus at our UID - the D-Bus display
-    // authenticates over the socket's peer credentials.
-    const int fd = m_network_manager->openTapFd(config.virtualNetworkName(), vmName);
-    if (fd < 0) {
-        if (reason)
-            *reason = i18n("Could not open the network interface for '%1': %2", vmName, m_network_manager->lastError());
-        return false;
-    }
-
-    *tapFd = fd;
-    return true;
 }
 
 void VmRuntimeManager::setUpQmpClient(const LaunchRequest &req, const QString &sockPath, bool isResume)

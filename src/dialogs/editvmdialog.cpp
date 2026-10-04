@@ -8,7 +8,6 @@
 
 #include "const.h"
 #include "dialogs/settingsdialog.h"
-#include "utils/sandboxcapabilities.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
 
@@ -1124,8 +1123,9 @@ void EditVmDialog::setNetworkManager(VirtualNetworkManager *mgr)
     for (const auto &net : mgr->networks())
         virtualNetworkCombo->addItem(net.name, net.name);
 
-    const bool virtualNetworksUsable = ExternalTools::instance().isVirtualNetworkCapable();
-    const bool disableVirtualNetwork = mgr->networks().isEmpty() || !virtualNetworksUsable;
+    // Virtual networks run in-process; they are unavailable only while no
+    // network has been defined yet.
+    const bool disableVirtualNetwork = mgr->networks().isEmpty();
 
     if (disableVirtualNetwork) {
         auto *model = qobject_cast<QStandardItemModel *>(networkModeCombo->model());
@@ -1134,8 +1134,7 @@ void EditVmDialog::setNetworkManager(VirtualNetworkManager *mgr)
             if (idx >= 0) {
                 QStandardItem *item = model->item(idx);
                 item->setEnabled(false);
-                item->setToolTip(virtualNetworksUsable ? i18n("Create a virtual network first in Settings")
-                                                       : SandboxCapabilities::instance().unavailableReason(SandboxCapabilities::UserNamespaces));
+                item->setToolTip(i18n("Create a virtual network first in Settings"));
             }
         }
     }

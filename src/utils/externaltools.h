@@ -46,15 +46,12 @@ public:
         Swtpm, // swtpm
         Virtiofsd, // virtiofsd (virtio-fs shared file system daemon)
         GenIsoImage, // genisoimage, mkisofs, or xorriso
-        Passt, // passt -- single-VM user-mode networking (unchanged)
-        Pasta, // pasta -- namespace-to-host NAT connector (from passt project)
-        Dnsmasq // dnsmasq -- lightweight DHCP/DNS for virtual networks
+        Passt // passt -- single-VM user-mode networking
     };
     Q_ENUM(Tool)
 
     enum FeatureGroupId {
         Core,
-        VirtualNetwork,
         TpmEmulation,
         SharedFolders,
         CloudInitIso
@@ -93,9 +90,6 @@ public:
     // Tools required for basic VM operation (always needed).
     [[nodiscard]] static QList<Tool> coreTools();
 
-    // Tools required only for the virtual-network feature.
-    [[nodiscard]] static QList<Tool> virtualNetworkTools();
-
     [[nodiscard]] QList<Tool> unusedTools() const;
 
     /**
@@ -110,8 +104,6 @@ public:
     // Convenience: list of tools that are configured but NOT available.
     [[nodiscard]] QStringList missingToolNames() const;
 
-    // Convenience: check if all tools for virtual networking are available.
-    [[nodiscard]] bool isVirtualNetworkCapable() const;
     [[nodiscard]] bool isPasstUsable() const;
 
     [[nodiscard]] static QList<FeatureGroup> featureGroups();

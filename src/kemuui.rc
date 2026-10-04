@@ -41,7 +41,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <Action name="vm_export"/>
       <Separator/>
       <Action name="vm_show_cmd"/>
-      <Action name="vm_network_shell"/>
       <Action name="vm_screenshot"/>
     </Menu>
   </MenuBar>

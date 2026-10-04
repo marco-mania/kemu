@@ -892,13 +892,6 @@ void MainWindow::setupActions()
     actionScreenshot->setToolTip(i18n("Capture and save a screenshot of the running VM"));
     connect(actionScreenshot, &QAction::triggered, this, &MainWindow::saveScreenshot);
 
-    auto *actionNetShell = ac->addAction(u"vm_network_shell"_s);
-    actionNetShell->setIcon(QIcon::fromTheme(u"utilities-terminal"_s));
-    actionNetShell->setText(i18n("Open Network Shell..."));
-    actionNetShell->setToolTip(i18n("Open a terminal (konsole) inside the virtual network namespace"));
-    connect(actionNetShell, &QAction::triggered, this, &MainWindow::openNetworkShell);
-    actionNetShell->setVisible(SandboxCapabilities::instance().has(SandboxCapabilities::HostTerminal));
-
     auto *actionReconnect = ac->addAction(u"vm_reconnect"_s);
     actionReconnect->setIcon(QIcon::fromTheme(u"view-fullscreen"_s));
     actionReconnect->setText(i18n("Reconnect Viewer"));
@@ -999,11 +992,6 @@ void MainWindow::updateActionStates()
     const bool canReconnect =
         (isRunning || isDeploying) && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !m_runtimeManager->hasViewer(entry->config.name());
     actionCollection()->action(u"vm_reconnect"_s)->setEnabled(hasSelection && canReconnect);
-
-    const bool hasActiveNamespace = hasSelection && (isRunning || isDeploying) && entry->config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork
-        && !entry->config.virtualNetworkName().isEmpty() && m_networkManager && m_networkManager->namespacePid(entry->config.virtualNetworkName()) > 0;
-
-    actionCollection()->action(u"vm_network_shell"_s)->setEnabled(hasActiveNamespace && SandboxCapabilities::instance().has(SandboxCapabilities::HostTerminal));
 }
 
 void MainWindow::activatePerfMonitorFor(const QString &vmName)
@@ -1399,14 +1387,11 @@ void MainWindow::updateDetails()
         rows.append({u"network-connect"_s, i18n("Port Forwarding"), portFwdVal, false, false});
 
     if ((isRunning || isDeploying) && currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !currentConfig.virtualNetworkName().isEmpty()
-        && m_networkManager) {
-        const qint64 nsPid = m_networkManager->namespacePid(currentConfig.virtualNetworkName());
-        if (nsPid > 0) {
-            const int vmCount = m_networkManager->connectedVmCount(currentConfig.virtualNetworkName());
-            QString nsVal = u"<a href='copy-pid:%1' title='%2'>PID %1</a>"_s.arg(QString::number(nsPid), i18n("Click to copy namespace PID"));
-            nsVal += u"  [%1, %2]"_s.arg(currentConfig.virtualNetworkName()).arg(i18np("%1 VM connected", "%1 VMs connected", vmCount));
-            rows.append({u"network-server"_s, i18n("Namespace"), nsVal, false, false});
-        }
+        && m_networkManager && m_networkManager->isRunning(currentConfig.virtualNetworkName())) {
+        const int vmCount = m_networkManager->connectedVmCount(currentConfig.virtualNetworkName());
+        const QString vnetVal =
+            u"%1  [%2]"_s.arg(currentConfig.virtualNetworkName(), i18np("%1 VM connected", "%1 VMs connected", vmCount));
+        rows.append({u"network-server"_s, i18n("Virtual Network"), vnetVal, false, false});
     }
 
     rows.append({u"drive-removable-media-usb"_s, i18n("USB Controller"), usbVal, true, false});
@@ -1507,8 +1492,7 @@ void MainWindow::generateShellScript(const QString &vmPath, const VMConfig &conf
 {
     const QString sockPath = vmPath + u'/' + KEMUConst::QemuMonitorSocketFileName;
 
-    const QString tap = config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork ? u"tap0"_s : QString{};
-    const QemuNetworkContext netCtx = m_runtimeManager->createQemuNetworkContext(config, tap);
+    const QemuNetworkContext netCtx = m_runtimeManager->createQemuNetworkContext(config);
 
     const VirtualNetwork net = (m_networkManager && config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         ? m_networkManager->network(config.virtualNetworkName())
@@ -2108,56 +2092,7 @@ void MainWindow::saveScreenshot()
     }
 }
 
-void MainWindow::openNetworkShell()
-{
-    if (currentConfig.name().isEmpty())
-        return;
 
-    const QString netName = currentConfig.virtualNetworkName();
-    if (netName.isEmpty() || !m_networkManager)
-        return;
-
-    const qint64 nsPid = m_networkManager->namespacePid(netName);
-    if (nsPid <= 0)
-        return;
-
-    // Build the nsenter command as a single shell string
-    const QString nsenterCmd =
-        u"echo '-- KEMU Network Shell --'; "
-        u"echo 'Network: %1  (Namespace PID %2)'; "
-        u"echo 'Hint: Root privileges are mapped to the UID of the user "
-        u"executing KEMU.'; "
-        u"echo 'Type exit to leave.'; echo; "
-        u"exec nsenter -t %2 -U --preserve-credentials -n -- /bin/bash"_s.arg(netName)
-            .arg(nsPid);
-
-    const QString terminal = SandboxCapabilities::instance().terminalProgram();
-    if (terminal.isEmpty()) {
-        KMessageBox::error(this,
-                           i18n("No terminal emulator found.\n\n"
-                                "You can enter the namespace manually:\n"
-                                "nsenter -t %1 -U --preserve-credentials -n -- /bin/bash",
-                                nsPid));
-        return;
-    }
-
-    auto *process = new KProcess(this);
-    connect(process, &KProcess::finished, process, &KProcess::deleteLater);
-    process->setProgram(terminal);
-
-    const QString title = i18n("KEMU Network Shell -- %1", netName);
-    if (terminal.endsWith(u"/konsole"_s))
-        process->setArguments({u"--separate"_s, u"--title"_s, title, u"-e"_s, u"/bin/bash"_s, u"-c"_s, nsenterCmd});
-    else
-        process->setArguments({u"-title"_s, title, u"-e"_s, u"/bin/bash"_s, u"-c"_s, nsenterCmd});
-
-    process->start();
-
-    if (!process->waitForStarted(3000)) {
-        KMessageBox::error(this, i18n("Failed to open terminal: %1", process->errorString()));
-        delete process;
-    }
-}
 
 void MainWindow::reconnectViewer()
 {
@@ -2394,8 +2329,6 @@ void MainWindow::showContextMenu(const QPoint &pos)
                 contextMenu.addSeparator();
                 contextMenu.addAction(actionCollection()->action(u"vm_manage_snapshots"_s));
                 contextMenu.addSeparator();
-                if (actionCollection()->action(u"vm_network_shell"_s)->isEnabled())
-                    contextMenu.addAction(actionCollection()->action(u"vm_network_shell"_s));
                 contextMenu.addSeparator();
 
                 contextMenu.addAction(actionCollection()->action(u"vm_poweroff"_s));
@@ -2418,8 +2351,7 @@ void MainWindow::showCommand()
     if (currentConfig.name().isEmpty())
         return;
 
-    const QString tap = currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork ? u"tap-<vm>"_s : QString{};
-    const QemuNetworkContext netCtx = m_runtimeManager->createQemuNetworkContext(currentConfig, tap);
+    const QemuNetworkContext netCtx = m_runtimeManager->createQemuNetworkContext(currentConfig);
 
     const VirtualNetwork net = (m_networkManager && currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         ? m_networkManager->network(currentConfig.virtualNetworkName())
@@ -2496,22 +2428,6 @@ void MainWindow::startVM(bool headless)
     // Reset failure-handling state from any previous attempt of this VM.
     m_runtimeManager->runtimeFor(vmName).resetRunState();
 
-    if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !ExternalTools::instance().isVirtualNetworkCapable()) {
-        const auto answer = KMessageBox::questionTwoActions(this,
-                                                            i18n("'%1' is configured for a virtual network, which is not available "
-                                                                 "on this system:\n%2\n\nSwitch this VM to user-mode networking?",
-                                                                 vmName,
-                                                                 SandboxCapabilities::instance().unavailableReason(SandboxCapabilities::UserNamespaces)),
-                                                            i18n("Virtual Network Unavailable"),
-                                                            KGuiItem(i18n("Switch and Start"), u"network-wired"_s),
-                                                            KStandardGuiItem::cancel());
-        if (answer != KMessageBox::PrimaryAction)
-            return;
-
-        currentConfig.setNetworkMode(VMSpecs::NetworkMode::Passt);
-        saveVmConfig(vmDirPath, currentConfig);
-    }
-
     if (!headless && !VMConfig::isDisplayTypeAvailable(currentConfig.displayType())) {
         const auto fallback = VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType::Dbus) ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Gtk;
         const auto answer = KMessageBox::questionTwoActions(this,
@@ -2551,16 +2467,16 @@ void MainWindow::startVM(bool headless)
         });
     }
 
-    // Network: passt is async, virtual-network setup is sync (namespace
-    // operations don't block long enough to matter).
-    QString resolvedTap;
+    // Network: passt is async, virtual-network setup is sync (the switch
+    // starts in-process and returns its socket path immediately).
+    QString resolvedNetworkSocket;
     if (currentConfig.networkCard() != VMSpecs::NetworkCard::None) {
         if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
             QString reason;
-            resolvedTap = m_runtimeManager->ensureNetworkRunning(currentConfig.virtualNetworkName(), vmName, &reason);
-            if (resolvedTap.isEmpty() && !reason.isEmpty())
+            resolvedNetworkSocket = m_runtimeManager->ensureNetworkRunning(currentConfig.virtualNetworkName(), vmName, &reason);
+            if (resolvedNetworkSocket.isEmpty() && !reason.isEmpty())
                 KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
-            if (resolvedTap.isEmpty()) {
+            if (resolvedNetworkSocket.isEmpty()) {
                 delete chain;
                 m_runtimeManager->tearDown(vmName);
                 return;
@@ -2573,7 +2489,7 @@ void MainWindow::startVM(bool headless)
         }
     }
 
-    chain->run([this, vmName, headless, resolvedTap](bool ok) {
+    chain->run([this, vmName, headless, resolvedNetworkSocket](bool ok) {
         if (!ok) {
             m_runtimeManager->tearDown(vmName);
             return;
@@ -2582,7 +2498,7 @@ void MainWindow::startVM(bool headless)
         VmRuntimeManager::LaunchRequest req;
         req.vmName = vmName;
         req.headless = headless;
-        req.tapDevice = resolvedTap;
+        req.networkSocket = resolvedNetworkSocket;
         m_runtimeManager->launch(req);
     });
 }
@@ -3908,17 +3824,16 @@ void MainWindow::startDeployment(const QString &vmName)
         });
     }
 
-    // Network: passt is async, virtual-network setup is sync (namespace
-    // operations are short and we need the tap device name before QEMU
-    // starts).
-    QString resolvedTap;
+    // Network: passt is async, virtual-network setup is sync (the switch
+    // starts in-process and returns its socket path immediately).
+    QString resolvedNetworkSocket;
     if (config.networkCard() != VMSpecs::NetworkCard::None) {
         if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
             QString reason;
-            resolvedTap = m_runtimeManager->ensureNetworkRunning(config.virtualNetworkName(), vmName, &reason);
-            if (resolvedTap.isEmpty() && !reason.isEmpty())
+            resolvedNetworkSocket = m_runtimeManager->ensureNetworkRunning(config.virtualNetworkName(), vmName, &reason);
+            if (resolvedNetworkSocket.isEmpty() && !reason.isEmpty())
                 KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
-            if (resolvedTap.isEmpty()) {
+            if (resolvedNetworkSocket.isEmpty()) {
                 delete chain;
                 abortDeployment(vmName, false);
                 return;
@@ -3938,7 +3853,7 @@ void MainWindow::startDeployment(const QString &vmName)
     const bool unattended = isUnattendedDeployment(vmName);
     const bool headless = unattended && config.displayType() == VMSpecs::DisplayType::Dbus;
 
-    chain->run([this, vmName, headless, unattended, resolvedTap](bool ok) {
+    chain->run([this, vmName, headless, unattended, resolvedNetworkSocket](bool ok) {
         if (!ok) {
             m_runtimeManager->tearDown(vmName);
             return;
@@ -3947,7 +3862,7 @@ void MainWindow::startDeployment(const QString &vmName)
         VmRuntimeManager::LaunchRequest req;
         req.vmName = vmName;
         req.headless = headless;
-        req.tapDevice = resolvedTap;
+        req.networkSocket = resolvedNetworkSocket;
         req.deployment = true;
         req.unattendedDeployment = unattended;
         m_runtimeManager->launch(req);

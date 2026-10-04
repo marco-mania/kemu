@@ -108,7 +108,6 @@ private Q_SLOTS:
     void exportVM();
     void importVM();
     void saveScreenshot();
-    void openNetworkShell();
     void reconnectViewer();
 
     void onVmStarted(const QString &vmName, bool headless, bool deployment);

@@ -7,50 +7,52 @@
 #pragma once
 
 #include <QDir>
-#include <QFile>
 #include <QHash>
 #include <QList>
 #include <QObject>
 #include <QPointer>
-#include <QRegularExpression>
+#include <QSet>
 #include <QStandardPaths>
 #include <QString>
-#include <QThread>
 
 #include <KConfigGroup>
 #include <KLocalizedString>
-#include <KProcess>
 #include <KSharedConfig>
 
 #include "utils/virtualnetwork.h"
 
 using namespace Qt::StringLiterals;
 
+class DhcpServer;
+class GatewayResponder;
+class SlirpUplink;
+class VirtualSwitch;
+
 /**
- * @brief Manages rootless virtual networks based on Linux user-namespaces.
+ * @brief Manages virtual networks backed by an in-memory L2 switch.
  *
- * Architecture overview (per network):
+ * Architecture overview (per network, entirely inside the KEMU process):
  *
- *   ┌─── User Namespace (unshare --user --net) ────────────────────┐
- *   │                                                              │
- *   │   br0  (bridge, gateway IP)                                  │
- *   │    ├── tap-<vm1>  ←──── QEMU VM 1 (outside, holds tap fd)    │
- *   │    ├── tap-<vm2>  ←──── QEMU VM 2                            │
- *   │    └── ...                                                   │
- *   │                                                              │
- *   │   [dnsmasq]  (optional, DHCP on br0)                         │
- *   │                                                              │
- *   └──────────────────────────────────────────────────────────────┘
- *          │
- *       [pasta]  (optional, NAT to host network)
+ *   ┌─── KEMU process ───────────────────────────────────────────────┐
+ *   │                                                                │
+ *   │   VirtualSwitch (QLocalServer, MAC learning, flooding)         │
+ *   │    ├── QLocalSocket  ←──── QEMU VM 1 (-netdev stream, unix)    │
+ *   │    ├── QLocalSocket  ←──── QEMU VM 2                           │
+ *   │    ├── DhcpServer         (internal port, optional)            │
+ *   │    ├── SlirpUplink        (internal port, optional NAT)        │
+ *   │    └── GatewayResponder   (internal port, only without NAT)    │
+ *   │                                                                │
+ *   └────────────────────────────────────────────────────────────────┘
+ *
+ * No root rights, no kernel interfaces and no namespaces are involved, so
+ * virtual networks work unchanged inside sandboxes (Flatpak) and on
+ * immutable systems.
  *
  * Lifecycle:
- *   1. startNetwork()  → creates namespace, bridge, optional dnsmasq + pasta
- *   2. attachVm()      → creates tap device in namespace, attaches to bridge,
- *                         returns tap name for QEMU -netdev
- *   3. detachVm()      → removes tap device, decrements ref count
- *   4. stopNetwork()   → kills all namespace processes; kernel cleans up
- *                         all interfaces automatically
+ *   1. startNetwork()  → switch listens; DHCP / uplink ports attach
+ *   2. attachVm()      → returns the switch socket path for QEMU -netdev
+ *   3. detachVm()      → decrements the ref count
+ *   4. stopNetwork()   → closes the switch; QEMU clients drop off
  */
 class VirtualNetworkManager : public QObject
 {
@@ -78,21 +80,15 @@ public:
     // --- Runtime Control ---
 
     /**
-     * Start the virtual network:
-     *   1. Create a user + network namespace via `unshare`
-     *   2. Configure the bridge (br0) with the gateway IP
-     *   3. Optionally start dnsmasq for DHCP
-     *   4. Optionally start pasta for NAT
+     * Start the virtual network: the in-memory switch begins listening and
+     * the configured internal ports (DHCP, NAT uplink or gateway responder)
+     * attach to it.
      *
      * @return true if the network is running after this call.
      */
     bool startNetwork(const QString &name);
 
-    /**
-     * Stop the virtual network.
-     * Terminates the namespace anchor process; the kernel destroys
-     * all interfaces, tap devices and routes automatically.
-     */
+    /// Stop the virtual network and disconnect all attached VMs.
     void stopNetwork(const QString &name);
 
     [[nodiscard]] bool isRunning(const QString &name) const;
@@ -100,24 +96,15 @@ public:
     // --- Per-VM Integration ---
 
     /**
-     * Create a tap device inside the namespace and attach it to the bridge.
-     * Call this before launching QEMU for a VM that uses this network.
+     * Register a VM with the network. Call this before launching QEMU.
      *
-     * @param networkName  The virtual network to attach to.
-     * @param vmName       Used to derive a unique tap device name (tap-<vmName>).
-     * @return The tap interface name (e.g. "tap-myvm"), or empty on failure.
+     * @return The switch socket path for "-netdev stream,...,addr.path=",
+     *         or empty on failure.
      */
     QString attachVm(const QString &networkName, const QString &vmName);
 
     /**
-     * Open the VM's tap device inside the namespace and return a descriptor.
-     * The caller owns the fd and hands it to QEMU, which therefore stays
-     * outside the namespace. Returns -1 on failure.
-     */
-    [[nodiscard]] int openTapFd(const QString &networkName, const QString &vmName);
-
-    /**
-     * Remove the tap device for the given VM and decrement the ref count.
+     * Remove the VM from the network and decrement the ref count.
      * If the ref count reaches zero, the network is stopped automatically.
      */
     void detachVm(const QString &networkName, const QString &vmName);
@@ -125,17 +112,10 @@ public:
     [[nodiscard]] int connectedVmCount(const QString &name) const;
 
     /**
-     * Returns the PID of the namespace anchor process.
-     * Needed to launch QEMU inside the namespace via nsenter.
-     * Returns 0 if the network is not running.
+     * The socket path QEMU connects to for VMs on this network,
+     * empty if the network is not running.
      */
-    [[nodiscard]] qint64 namespacePid(const QString &name) const;
-
-    /**
-     * Returns the tap device name assigned to a specific VM.
-     * Used by QemuCommandBuilder to construct the -netdev argument.
-     */
-    [[nodiscard]] QString tapDeviceName(const QString &networkName, const QString &vmName) const;
+    [[nodiscard]] QString switchSocketPath(const QString &name) const;
 
     [[nodiscard]] QString lastError() const;
 
@@ -144,26 +124,22 @@ Q_SIGNALS:
     void networkStopped(const QString &name);
     void networksChanged();
 
-    /// Emitted when a VM's tap device has been created and is ready.
-    void vmAttached(const QString &networkName, const QString &vmName, const QString &tapDevice);
+    /// Emitted when a VM has been registered with a network.
+    void vmAttached(const QString &networkName, const QString &vmName, const QString &socketPath);
 
-    /// Emitted when a VM's tap device has been removed.
+    /// Emitted when a VM has been removed from a network.
     void vmDetached(const QString &networkName, const QString &vmName);
 
-    /// Emitted when a runtime error occurs (e.g. namespace creation fails).
+    /// Emitted when a runtime error occurs (e.g. the switch cannot listen).
     void errorOccurred(const QString &networkName, const QString &message);
 
 private:
     struct RuntimeState {
-        /// PID of the fork() anchor child holding the namespace.
-        qint64 nsPid = 0;
-        /// Optional dnsmasq process running inside the namespace.
-        QPointer<KProcess> dnsmasqProcess;
-        /// Optional pasta process providing NAT connectivity.
-        QPointer<KProcess> pastaProcess;
-        /// Currently attached VMs: vmName → tap device name.
-        QHash<QString, QString> attachedVms;
-        int vmRefCount = 0;
+        QPointer<VirtualSwitch> vswitch;
+        QPointer<DhcpServer> dhcp;
+        QPointer<GatewayResponder> gatewayResponder;
+        QPointer<SlirpUplink> uplink;
+        QSet<QString> attachedVms;
     };
 
     QList<VirtualNetwork> m_networks;
@@ -176,52 +152,9 @@ private:
 
     void cleanupRuntimeDir(const QString &name);
 
-    /**
-     * Step 1: Create the user + network namespace.
-     * Launches `unshare --user --net --map-root-user -- sleep infinity`.
-     */
-    bool createNamespace(const QString &name);
-
-    bool setupNat(const QString &name);
-
-    /**
-     * Step 2: Configure the bridge inside the namespace.
-     * Runs `ip link add br0 type bridge`, assigns the gateway IP, brings it up.
-     */
-    bool configureBridge(const QString &name, const VirtualNetwork &net);
-
-    /**
-     * Step 3 (optional): Start dnsmasq inside the namespace.
-     * Binds to br0, serves DHCP in the configured range.
-     */
-    bool startDnsmasq(const QString &name, const VirtualNetwork &net);
-
-    /**
-     * Step 4 (optional): Start pasta to connect the namespace to the host
-     * network. Provides NAT for outbound traffic and optional port forwards.
-     */
-    bool startPasta(const QString &name, const VirtualNetwork &net);
-
-    /**
-     * Create a tap device inside the namespace, set it up, and attach it to br0.
-     * @return The tap device name, or empty on failure.
-     */
-    QString createTapDevice(const QString &networkName, const QString &vmName);
-
-    /**
-     * Remove a tap device from the namespace.
-     */
-    void destroyTapDevice(const QString &networkName, const QString &tapName);
-
-    /**
-     * Terminate all processes associated with a network.
-     * Killing the namespace anchor process causes the kernel to
-     * clean up all interfaces, bridges and tap devices automatically.
-     */
-    void terminateAll(RuntimeState &state);
-
-    /// Derive a tap device name from the VM name (max 15 chars for IFNAMSIZ).
-    [[nodiscard]] static QString makeTapName(const QString &vmName);
+    /// Applies the network-level port forwards ("proto/host:guestIp:port")
+    /// to the NAT uplink.
+    void applyPortForwards(const QString &name, const VirtualNetwork &net);
 
     static QString configGroupName(const QString &networkName);
 
