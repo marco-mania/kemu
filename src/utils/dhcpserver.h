@@ -9,6 +9,8 @@
 #include <QByteArray>
 #include <QElapsedTimer>
 #include <QHash>
+#include <QList>
+#include <QSet>
 
 #include "utils/virtualswitch.h"
 
@@ -36,7 +38,15 @@ public:
     /// serverIp is this server's own address (advertised as DHCP server id);
     /// the server answers ARP requests for it so unicast lease renewals work.
     /// serverIp == 0 falls back to the gateway address without ARP answering.
-    void configure(quint32 gateway, quint32 serverIp, int prefixLength, quint32 rangeStart, quint32 rangeEnd, quint32 dnsServer);
+    /// reserved lists further addresses owned by network services; they are
+    /// never leased, like the gateway, serverIp and dnsServer.
+    void configure(quint32 gateway,
+                   quint32 serverIp,
+                   int prefixLength,
+                   quint32 rangeStart,
+                   quint32 rangeEnd,
+                   quint32 dnsServer,
+                   const QList<quint32> &reserved = {});
 
     void receiveFrame(const QByteArray &frame) override;
 
@@ -57,6 +67,7 @@ private:
     void sendReply(quint8 msgType, const QByteArray &clientMac, quint32 xid, quint32 yiaddr, quint16 flags);
     bool isInPool(quint32 ip) const;
     bool isLeased(quint32 ip) const;
+    bool isLeasable(quint32 ip) const;
     void expireLeases();
 
     QByteArray m_serverMac;
@@ -68,6 +79,7 @@ private:
     quint32 m_rangeEnd = 0;
     quint32 m_dnsServer = 0;
     bool m_ownAddress = false;
+    QSet<quint32> m_reserved;
 
     QHash<QByteArray, Lease> m_leases; // key: client MAC (6 bytes)
     QElapsedTimer m_clock;

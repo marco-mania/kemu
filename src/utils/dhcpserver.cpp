@@ -87,7 +87,13 @@ DhcpServer::DhcpServer(const QByteArray &serverMac, QObject *parent)
     m_clock.start();
 }
 
-void DhcpServer::configure(quint32 gateway, quint32 serverIp, int prefixLength, quint32 rangeStart, quint32 rangeEnd, quint32 dnsServer)
+void DhcpServer::configure(quint32 gateway,
+                           quint32 serverIp,
+                           int prefixLength,
+                           quint32 rangeStart,
+                           quint32 rangeEnd,
+                           quint32 dnsServer,
+                           const QList<quint32> &reserved)
 {
     m_gateway = gateway;
     m_serverIp = serverIp != 0 ? serverIp : gateway;
@@ -96,6 +102,10 @@ void DhcpServer::configure(quint32 gateway, quint32 serverIp, int prefixLength, 
     m_rangeStart = rangeStart;
     m_rangeEnd = rangeEnd;
     m_dnsServer = dnsServer;
+
+    m_reserved = QSet<quint32>(reserved.cbegin(), reserved.cend());
+    m_reserved << m_gateway << m_serverIp << m_dnsServer;
+    m_reserved.remove(0);
 
     qCDebug(KEMU) << "DhcpServer: configured, gateway" << ipString(m_gateway) << "server" << ipString(m_serverIp) << "netmask" << ipString(m_netmask) << "pool"
                   << ipString(m_rangeStart) << "-" << ipString(m_rangeEnd) << "dns" << (m_dnsServer != 0 ? ipString(m_dnsServer) : u"none"_s);
@@ -206,7 +216,7 @@ void DhcpServer::receiveFrame(const QByteArray &frame)
     case kDhcpRequest: {
         // Renewal via ciaddr, selection/rebinding via requested IP.
         const quint32 wanted = requestedIp != 0 ? requestedIp : ciaddr;
-        if (wanted != 0 && isInPool(wanted) && wanted != m_gateway && wanted != m_serverIp && wanted != m_dnsServer) {
+        if (wanted != 0 && isInPool(wanted) && !m_reserved.contains(wanted)) {
             const auto it = m_leases.constFind(clientMac);
             const bool ours = it != m_leases.constEnd() && it->ip == wanted;
             const bool free = !isLeased(wanted);
@@ -237,17 +247,13 @@ quint32 DhcpServer::allocateLease(const QByteArray &clientMac, quint32 requested
     }
 
     quint32 ip = 0;
-    const auto usable = [this](quint32 candidate) {
-        // The gateway, our service address and the DNS proxy belong to the
-        // network services and must never be leased out.
-        return candidate != m_gateway && candidate != m_serverIp && candidate != m_dnsServer && !isLeased(candidate);
-    };
-    if (requestedIp != 0 && isInPool(requestedIp) && usable(requestedIp))
+    if (requestedIp != 0 && isInPool(requestedIp) && isLeasable(requestedIp)) {
         ip = requestedIp;
-    else {
-        for (quint32 candidate = m_rangeStart; candidate <= m_rangeEnd; ++candidate) {
-            if (usable(candidate)) {
-                ip = candidate;
+    } else if (m_rangeStart != 0 && m_rangeStart <= m_rangeEnd) {
+        // 64-bit counter: a range ending at 255.255.255.255 must not wrap.
+        for (quint64 candidate = m_rangeStart; candidate <= m_rangeEnd; ++candidate) {
+            if (isLeasable(static_cast<quint32>(candidate))) {
+                ip = static_cast<quint32>(candidate);
                 break;
             }
         }
@@ -280,6 +286,11 @@ quint32 DhcpServer::leaseIpForMac(const QByteArray &clientMac) const
 bool DhcpServer::isInPool(quint32 ip) const
 {
     return ip >= m_rangeStart && ip <= m_rangeEnd;
+}
+
+bool DhcpServer::isLeasable(quint32 ip) const
+{
+    return !m_reserved.contains(ip) && !isLeased(ip);
 }
 
 bool DhcpServer::isLeased(quint32 ip) const

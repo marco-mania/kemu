@@ -314,9 +314,25 @@ bool VirtualNetworkManager::startNetwork(const QString &name)
                 return false;
             }
         }
+        if (rangeStart <= networkAddr || rangeEnd >= broadcastAddr) {
+            stopNetwork(name);
+            setError(name,
+                     i18n("The DHCP range %1 - %2 lies outside the subnet %3/%4.",
+                          QHostAddress(rangeStart).toString(),
+                          QHostAddress(rangeEnd).toString(),
+                          QHostAddress(networkAddr).toString(),
+                          net.prefixLength));
+            return false;
+        }
 
         auto *dhcp = new DhcpServer(serviceMac(name + u"-dhcp"_s), this);
-        dhcp->configure(gatewayIp, dhcpIp, net.prefixLength, rangeStart, rangeEnd, nameDnsIp != 0 ? nameDnsIp : (net.enableNat ? dnsIp : 0));
+        dhcp->configure(gatewayIp,
+                        dhcpIp,
+                        net.prefixLength,
+                        rangeStart,
+                        rangeEnd,
+                        nameDnsIp != 0 ? nameDnsIp : (net.enableNat ? dnsIp : 0),
+                        {dnsIp, nameDnsIp});
         vswitch->addInternalPort(dhcp);
         state.dhcp = dhcp;
         qCDebug(KEMU) << "VirtualNetworkManager: DHCP server attached, pool" << QHostAddress(rangeStart).toString() << "-"
