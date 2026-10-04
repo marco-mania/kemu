@@ -36,9 +36,9 @@ class VirtualSwitch;
  *
  *   ┌─── KEMU process ───────────────────────────────────────────────┐
  *   │                                                                │
- *   │   VirtualSwitch (QLocalServer, MAC learning, flooding)         │
- *   │    ├── QLocalSocket  ←──── QEMU VM 1 (-netdev stream, unix)    │
- *   │    ├── QLocalSocket  ←──── QEMU VM 2                           │
+ *   │   VirtualSwitch (one port per VM, bound to the VM's MAC)       │
+ *   │    ├── vm-<id>.sock  ←──── QEMU VM 1 (-netdev stream, unix)    │
+ *   │    ├── vm-<id>.sock  ←──── QEMU VM 2                           │
  *   │    ├── DhcpServer         (internal port, optional)            │
  *   │    ├── DnsServer          (internal port, optional)            │
  *   │    ├── SlirpUplink        (internal port, optional NAT)        │
@@ -51,9 +51,9 @@ class VirtualSwitch;
  * immutable systems.
  *
  * Lifecycle:
- *   1. startNetwork()  → switch listens; DHCP / uplink ports attach
- *   2. attachVm()      → returns the switch socket path for QEMU -netdev
- *   3. detachVm()      → decrements the ref count
+ *   1. startNetwork()  → switch created; DHCP / uplink ports attach
+ *   2. attachVm()      → opens the VM's port, returns its socket path
+ *   3. detachVm()      → closes the VM's port, decrements the ref count
  *   4. stopNetwork()   → closes the switch; QEMU clients drop off
  */
 class VirtualNetworkManager : public QObject
@@ -102,10 +102,11 @@ public:
      *
      * @param dnsHostname Hostname for the in-process DNS server
      *        ("<hostname>.<network>.lan"), may be empty.
-     * @param macAddress  MAC of the VM's NIC, used to map the hostname to
-     *        the DHCP-assigned address.
-     * @return The switch socket path for "-netdev stream,...,addr.path=",
-     *         or empty on failure.
+     * @param macAddress  MAC of the VM's NIC. The VM's switch port only
+     *        accepts frames from this MAC; it also maps the hostname to the
+     *        DHCP-assigned address.
+     * @return The VM's switch port socket path for
+     *         "-netdev stream,...,addr.path=", or empty on failure.
      */
     QString attachVm(const QString &networkName, const QString &vmName, const QString &dnsHostname, const QByteArray &macAddress);
 
@@ -116,12 +117,6 @@ public:
     void detachVm(const QString &networkName, const QString &vmName);
 
     [[nodiscard]] int connectedVmCount(const QString &name) const;
-
-    /**
-     * The socket path QEMU connects to for VMs on this network,
-     * empty if the network is not running.
-     */
-    [[nodiscard]] QString switchSocketPath(const QString &name) const;
 
     [[nodiscard]] QString lastError() const;
 
@@ -156,6 +151,8 @@ private:
 
     /// XDG_RUNTIME_DIR/kemu/net-<name>
     [[nodiscard]] QString runtimeDir(const QString &name) const;
+
+    [[nodiscard]] QString portSocketPath(const QString &networkName, const QString &vmName) const;
 
     void cleanupRuntimeDir(const QString &name);
 

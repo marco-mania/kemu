@@ -249,20 +249,22 @@ stack runs inside the KEMU process:
 ```text
 ┌─── KEMU process ────────────────────────────────────────────────┐
 │                                                                 │
-│   VirtualSwitch (in-memory L2, MAC learning, broadcast flood)   │
-│    ├── QEMU VM1  (-netdev stream, unix socket)                  │
-│    ├── QEMU VM2  (-netdev stream, unix socket)                  │
+│   VirtualSwitch (in-memory L2, one port per VM)                 │
+│    ├── QEMU VM1  (-netdev stream, own unix socket)              │
+│    ├── QEMU VM2  (-netdev stream, own unix socket)              │
 │    ├── DhcpServer (optional, built-in)                          │
 │    └── SlirpUplink (optional: NAT + DNS proxy)                  │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Each virtual network runs an in-memory layer-2 switch that listens on a UNIX
-domain socket under the user's runtime directory. QEMU instances attach as
-clients (`-netdev stream`), and the switch forwards Ethernet frames between
-them using MAC learning, flooding broadcast and multicast frames. Frames for
-unknown destinations are flooded to the VMs only, never to the NAT uplink. Because nothing touches the host kernel or spawns helper processes,
+Each virtual network runs an in-memory layer-2 switch. Every VM gets its own
+port, a UNIX domain socket under the user's runtime directory that QEMU attaches
+to (`-netdev stream`). A port accepts a single connection and only frames from
+the VM's configured MAC address, so guests cannot impersonate each other; VMs
+with the same MAC cannot join the same network. The switch floods broadcast and
+multicast frames; frames for unknown destinations go to the VMs only, never to
+the NAT uplink. Because nothing touches the host kernel or spawns helper processes,
 virtual networks work unchanged inside sandboxed (Flatpak) environments.
 
 **Features per network (individually configurable):**

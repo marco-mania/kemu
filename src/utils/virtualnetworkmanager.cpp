@@ -9,7 +9,6 @@
 #include <QCryptographicHash>
 #include <QHostAddress>
 
-#include "const.h"
 #include "utils/dhcpserver.h"
 #include "utils/dnsserver.h"
 #include "utils/gatewayresponder.h"
@@ -243,23 +242,18 @@ bool VirtualNetworkManager::startNetwork(const QString &name)
     const quint32 networkAddr = gatewayIp & mask;
     const quint32 broadcastAddr = networkAddr | ~mask;
 
-    const QDir dir(runtimeDir(name));
-    dir.mkpath(u"."_s);
-
-    auto *vswitch = new VirtualSwitch(this);
-    const QString sockPath = runtimeDir(name) + u'/' + KEMUConst::NetworkSwitchSocketFileName;
-    if (!vswitch->listen(sockPath)) {
-        setError(name, i18n("Failed to create network switch socket '%1'.", sockPath));
-        delete vswitch;
-        cleanupRuntimeDir(name);
+    const QString dirPath = runtimeDir(name);
+    if (!QDir().mkpath(dirPath)) {
+        setError(name, i18n("Failed to create the runtime directory '%1'.", dirPath));
         return false;
     }
 
+    auto *vswitch = new VirtualSwitch(this);
     RuntimeState &state = m_runtime[name];
     state.vswitch = vswitch;
 
-    qCDebug(KEMU) << "VirtualNetworkManager: network" << name << "switch listening on" << sockPath << "- gateway"
-                  << gatewayAddress.toString() << "prefix" << net.prefixLength << "dhcp" << net.enableDhcp << "nat" << net.enableNat;
+    qCDebug(KEMU) << "VirtualNetworkManager: network" << name << "started in" << dirPath << "- gateway" << gatewayAddress.toString() << "prefix"
+                  << net.prefixLength << "dhcp" << net.enableDhcp << "nat" << net.enableNat;
 
     // NAT uplink first: the DHCP server advertises its DNS proxy address.
     quint32 dnsIp = 0;
@@ -397,7 +391,7 @@ void VirtualNetworkManager::stopNetwork(const QString &name)
 bool VirtualNetworkManager::isRunning(const QString &name) const
 {
     auto it = m_runtime.find(name);
-    return it != m_runtime.end() && it->vswitch && it->vswitch->isListening();
+    return it != m_runtime.end() && it->vswitch;
 }
 
 // ============================================================================
@@ -412,13 +406,31 @@ QString VirtualNetworkManager::attachVm(const QString &networkName,
     resetError();
 
     auto it = m_runtime.find(networkName);
-    if (it == m_runtime.end() || !it->vswitch || !it->vswitch->isListening()) {
+    if (it == m_runtime.end() || !it->vswitch) {
         setError(networkName, i18n("Cannot attach VM '%1': network is not running.", vmName));
         return {};
     }
 
+    const QString path = portSocketPath(networkName, vmName);
     if (it->attachedVms.contains(vmName))
-        return it->vswitch->socketPath();
+        return path;
+
+    if (!macAddress.isEmpty()) {
+        for (auto vm = it->attachedVms.cbegin(); vm != it->attachedVms.cend(); ++vm) {
+            if (vm.value() == macAddress) {
+                setError(networkName,
+                         i18n("Cannot attach VM '%1': its MAC address is already used by VM '%2' on this network.", vmName, vm.key()));
+                return {};
+            }
+        }
+    }
+
+    if (!it->vswitch->addPort(path, macAddress)) {
+        setError(networkName, i18n("Cannot attach VM '%1': %2", vmName, it->vswitch->lastError()));
+        if (it->attachedVms.isEmpty())
+            stopNetwork(networkName);
+        return {};
+    }
 
     it->attachedVms.insert(vmName, macAddress);
 
@@ -427,7 +439,6 @@ QString VirtualNetworkManager::attachVm(const QString &networkName,
         qCDebug(KEMU) << "VirtualNetworkManager: DNS record" << dnsHostname << "registered for" << vmName;
     }
 
-    const QString path = it->vswitch->socketPath();
     qCDebug(KEMU) << "VirtualNetworkManager: VM" << vmName << "attached to" << networkName << "-" << path;
     Q_EMIT vmAttached(networkName, vmName, path);
     return path;
@@ -442,6 +453,9 @@ void VirtualNetworkManager::detachVm(const QString &networkName, const QString &
     const QByteArray mac = it->attachedVms.value(vmName);
     if (!it->attachedVms.remove(vmName))
         return;
+
+    if (it->vswitch)
+        it->vswitch->removePort(portSocketPath(networkName, vmName));
 
     if (it->dns && !mac.isEmpty())
         it->dns->removeHost(mac);
@@ -460,12 +474,6 @@ int VirtualNetworkManager::connectedVmCount(const QString &name) const
     return (it != m_runtime.end()) ? static_cast<int>(it->attachedVms.size()) : 0;
 }
 
-QString VirtualNetworkManager::switchSocketPath(const QString &name) const
-{
-    auto it = m_runtime.find(name);
-    return (it != m_runtime.end() && it->vswitch) ? it->vswitch->socketPath() : QString{};
-}
-
 QString VirtualNetworkManager::lastError() const
 {
     return m_lastError;
@@ -479,6 +487,13 @@ QString VirtualNetworkManager::runtimeDir(const QString &name) const
 {
     const QString base = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
     return base + u"/kemu/net-%1"_s.arg(name);
+}
+
+QString VirtualNetworkManager::portSocketPath(const QString &networkName, const QString &vmName) const
+{
+    // Short, filesystem-safe name: unix socket paths are limited to 108 bytes.
+    const QByteArray id = QCryptographicHash::hash(vmName.toUtf8(), QCryptographicHash::Sha256).toHex().left(12);
+    return runtimeDir(networkName) + u"/vm-"_s + QString::fromLatin1(id) + u".sock"_s;
 }
 
 void VirtualNetworkManager::cleanupRuntimeDir(const QString &name)

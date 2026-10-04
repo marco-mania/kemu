@@ -44,11 +44,12 @@ Q_SIGNALS:
 /**
  * @brief In-memory L2 switch for virtual networks.
  *
- * QEMU instances connect to the QLocalServer via
- * "-netdev stream,server=off,addr.type=unix,addr.path=<socketPath>"
- * (4-byte big-endian length prefix + Ethernet frame). Frames are forwarded
- * between sockets and internal ports using MAC learning; broadcast and
- * multicast frames are flooded, unknown unicast only to sockets.
+ * Every guest gets its own port: a QLocalServer that one QEMU instance
+ * connects to via "-netdev stream,server=off,addr.type=unix,addr.path=<path>"
+ * (4-byte big-endian length prefix + Ethernet frame). A port opened with a
+ * MAC only accepts frames from that source MAC and owns it in the MAC table
+ * (port security); a port without one learns source MACs. Broadcast and
+ * multicast frames are flooded, unknown unicast only to guest ports.
  *
  * Runs entirely in the KEMU process: no root rights, no kernel interfaces,
  * no namespaces, fully functional inside sandboxed (Flatpak) environments.
@@ -61,15 +62,20 @@ public:
     explicit VirtualSwitch(QObject *parent = nullptr);
     ~VirtualSwitch() override;
 
-    /// Starts listening on socketPath; a stale socket file is removed first.
-    bool listen(const QString &socketPath);
+    /// Opens a guest port listening on socketPath; a stale socket file is
+    /// removed first. Fails if socketPath or a non-empty mac is in use.
+    bool addPort(const QString &socketPath, const QByteArray &mac = {});
+    void removePort(const QString &socketPath);
+    [[nodiscard]] bool hasPort(const QString &socketPath) const;
 
-    /// Stops listening and disconnects all clients.
+    /// Closes all guest ports and disconnects their clients.
     void close();
 
-    [[nodiscard]] bool isListening() const;
-    [[nodiscard]] QString socketPath() const;
     [[nodiscard]] int clientCount() const;
+    [[nodiscard]] QString lastError() const
+    {
+        return m_lastError;
+    }
 
     /// Attach an internal port (not owned). The switch subscribes to the
     /// port's frameReady() signal for the lifetime of the attachment.
@@ -81,21 +87,25 @@ Q_SIGNALS:
     void clientDisconnected();
 
 private:
-    void onNewConnection();
-    void onReadyRead(QLocalSocket *socket);
-    void onSocketDisconnected(QLocalSocket *socket);
+    struct GuestPort {
+        QString socketPath;
+        QByteArray mac; // empty: source MACs are learned
+        QLocalServer *server = nullptr;
+        QPointer<QLocalSocket> socket;
+        QByteArray readBuffer;
+        bool spoofLogged = false;
+    };
 
-    /// Learn the source MAC and forward the frame. `source` identifies the
-    /// origin: either a QLocalSocket* or a VirtualSwitchPort*.
-    void forwardFrame(QObject *source, const QByteArray &frame);
-    void writeFrame(QLocalSocket *socket, const QByteArray &frame);
+    void onNewConnection(GuestPort *port);
+    void onReadyRead(GuestPort *port);
+    void onSocketDisconnected(GuestPort *port);
 
-    QLocalServer *m_server = nullptr;
-    QString m_socketPath;
+    void forwardFrame(const QByteArray &frame, GuestPort *fromGuest, VirtualSwitchPort *fromInternal);
+    void writeFrame(GuestPort *port, const QByteArray &frame);
+    [[nodiscard]] GuestPort *findPort(const QString &socketPath) const;
 
-    QList<QPointer<QLocalSocket>> m_clients;
+    QList<GuestPort *> m_ports; // owned
     QList<QPointer<VirtualSwitchPort>> m_internalPorts;
-
-    QHash<QByteArray, QPointer<QLocalSocket>> m_macToClient;
-    QHash<QLocalSocket *, QByteArray> m_readBuffers;
+    QHash<QByteArray, GuestPort *> m_macTable;
+    QString m_lastError;
 };

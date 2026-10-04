@@ -61,7 +61,6 @@ inline QStringList fallbackPaths()
 }
 
 inline constexpr auto UserNetSocketFileName = "usernet.sock"_L1;
-inline constexpr auto NetworkSwitchSocketFileName = "switch.sock"_L1;
 inline constexpr auto SwtpmSocketFileName = "swtpm.sock"_L1;
 inline constexpr auto VirtiofsdSocketFileName = "virtiofsd.sock"_L1;
 inline constexpr auto VirtiofsdPidFileName = "virtiofsd.sock.pid"_L1;

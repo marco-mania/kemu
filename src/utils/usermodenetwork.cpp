@@ -49,7 +49,7 @@ bool UserModeNetwork::start(const QString &socketPath, const QList<PortForwardRu
     QFile::remove(socketPath);
 
     auto *vswitch = new VirtualSwitch(this);
-    if (!vswitch->listen(socketPath)) {
+    if (!vswitch->addPort(socketPath)) {
         m_lastError = i18n("Failed to create the user-mode network socket '%1'.", socketPath);
         delete vswitch;
         return false;
@@ -103,5 +103,5 @@ void UserModeNetwork::stop()
 
 bool UserModeNetwork::isRunning() const
 {
-    return m_switch && m_switch->isListening();
+    return m_switch && m_switch->hasPort(m_socketPath);
 }

@@ -28,65 +28,97 @@ VirtualSwitch::~VirtualSwitch()
     close();
 }
 
-bool VirtualSwitch::listen(const QString &socketPath)
+bool VirtualSwitch::addPort(const QString &socketPath, const QByteArray &mac)
 {
-    if (m_server)
-        close();
+    m_lastError.clear();
+
+    if (findPort(socketPath)) {
+        m_lastError = u"port %1 already exists"_s.arg(socketPath);
+        return false;
+    }
+    if (!mac.isEmpty()) {
+        const GuestPort *owner = m_macTable.value(mac);
+        if (owner && owner->mac == mac) {
+            m_lastError = u"MAC address %1 is already bound to another port"_s.arg(QString::fromLatin1(mac.toHex(':')));
+            return false;
+        }
+    }
 
     QFile::remove(socketPath);
 
-    m_server = new QLocalServer(this);
-    if (!m_server->listen(socketPath)) {
-        qCWarning(KEMU) << "VirtualSwitch: failed to listen on" << socketPath << ":" << m_server->errorString();
-        delete m_server;
-        m_server = nullptr;
+    auto *server = new QLocalServer(this);
+    server->setMaxPendingConnections(1);
+    if (!server->listen(socketPath)) {
+        m_lastError = server->errorString();
+        qCWarning(KEMU) << "VirtualSwitch: failed to listen on" << socketPath << ":" << m_lastError;
+        delete server;
         return false;
     }
 
-    m_socketPath = socketPath;
-    connect(m_server, &QLocalServer::newConnection, this, &VirtualSwitch::onNewConnection);
-    qCDebug(KEMU) << "VirtualSwitch: listening on" << socketPath;
+    auto *port = new GuestPort;
+    port->socketPath = socketPath;
+    port->mac = mac;
+    port->server = server;
+    m_ports.append(port);
+    if (!mac.isEmpty())
+        m_macTable.insert(mac, port);
+
+    connect(server, &QLocalServer::newConnection, this, [this, port]() {
+        onNewConnection(port);
+    });
+
+    qCDebug(KEMU) << "VirtualSwitch: port listening on" << socketPath << "for" << (mac.isEmpty() ? QByteArray("any MAC") : mac.toHex(':'));
     return true;
+}
+
+void VirtualSwitch::removePort(const QString &socketPath)
+{
+    GuestPort *port = findPort(socketPath);
+    if (!port)
+        return;
+
+    m_ports.removeOne(port);
+    for (auto it = m_macTable.begin(); it != m_macTable.end();) {
+        if (it.value() == port)
+            it = m_macTable.erase(it);
+        else
+            ++it;
+    }
+
+    const bool hadClient = port->socket;
+    disconnect(port->server, nullptr, this, nullptr);
+    if (port->socket) {
+        disconnect(port->socket, nullptr, this, nullptr);
+        port->socket->abort();
+    }
+    port->server->close();
+    port->server->deleteLater(); // also deletes the client socket
+    QFile::remove(socketPath);
+    delete port;
+
+    qCDebug(KEMU) << "VirtualSwitch: port" << socketPath << "removed";
+    if (hadClient)
+        Q_EMIT clientDisconnected();
+}
+
+bool VirtualSwitch::hasPort(const QString &socketPath) const
+{
+    const GuestPort *port = findPort(socketPath);
+    return port && port->server->isListening();
 }
 
 void VirtualSwitch::close()
 {
-    if (!m_server)
-        return;
-
-    const auto clients = m_clients;
-    for (const auto &client : clients) {
-        if (client)
-            client->disconnectFromServer();
-    }
-    m_clients.clear();
-    m_readBuffers.clear();
-    m_macToClient.clear();
-
-    m_server->close();
-    m_server->deleteLater();
-    m_server = nullptr;
-
-    if (!m_socketPath.isEmpty())
-        QFile::remove(m_socketPath);
-    m_socketPath.clear();
-}
-
-bool VirtualSwitch::isListening() const
-{
-    return m_server && m_server->isListening();
-}
-
-QString VirtualSwitch::socketPath() const
-{
-    return m_socketPath;
+    while (!m_ports.isEmpty())
+        removePort(m_ports.constFirst()->socketPath);
+    m_macTable.clear();
 }
 
 int VirtualSwitch::clientCount() const
 {
     int count = 0;
-    for (const auto &client : m_clients) {
-        if (client)
+    for (const GuestPort *port : m_ports) {
+        if (port->socket)
             ++count;
     }
     return count;
@@ -98,7 +130,7 @@ void VirtualSwitch::addInternalPort(VirtualSwitchPort *port)
         return;
     m_internalPorts.append(port);
     connect(port, &VirtualSwitchPort::frameReady, this, [this, port](const QByteArray &frame) {
-        forwardFrame(port, frame);
+        forwardFrame(frame, nullptr, port);
     });
 }
 
@@ -110,32 +142,52 @@ void VirtualSwitch::removeInternalPort(VirtualSwitchPort *port)
     m_internalPorts.removeAll(port);
 }
 
-void VirtualSwitch::onNewConnection()
+VirtualSwitch::GuestPort *VirtualSwitch::findPort(const QString &socketPath) const
 {
-    while (QLocalSocket *socket = m_server->nextPendingConnection()) {
-        m_clients.append(socket);
-        m_readBuffers.insert(socket, {});
-        connect(socket, &QLocalSocket::readyRead, this, [this, socket]() {
-            onReadyRead(socket);
+    for (GuestPort *port : m_ports) {
+        if (port->socketPath == socketPath)
+            return port;
+    }
+    return nullptr;
+}
+
+void VirtualSwitch::onNewConnection(GuestPort *port)
+{
+    while (QLocalSocket *socket = port->server->nextPendingConnection()) {
+        if (port->socket) {
+            qCWarning(KEMU) << "VirtualSwitch: rejecting second connection on" << port->socketPath;
+            socket->abort();
+            socket->deleteLater();
+            continue;
+        }
+
+        port->socket = socket;
+        port->readBuffer.clear();
+        port->spoofLogged = false;
+        connect(socket, &QLocalSocket::readyRead, this, [this, port]() {
+            onReadyRead(port);
         });
-        connect(socket, &QLocalSocket::disconnected, this, [this, socket]() {
-            onSocketDisconnected(socket);
+        connect(socket, &QLocalSocket::disconnected, this, [this, port]() {
+            onSocketDisconnected(port);
         });
-        qCDebug(KEMU) << "VirtualSwitch: client connected," << clientCount() << "total";
+        qCDebug(KEMU) << "VirtualSwitch: client connected on" << port->socketPath << "-" << clientCount() << "total";
         Q_EMIT clientConnected();
     }
 }
 
-void VirtualSwitch::onReadyRead(QLocalSocket *socket)
+void VirtualSwitch::onReadyRead(GuestPort *port)
 {
-    QByteArray &buffer = m_readBuffers[socket];
-    buffer.append(socket->readAll());
+    if (!port->socket)
+        return;
+
+    QByteArray &buffer = port->readBuffer;
+    buffer.append(port->socket->readAll());
 
     while (buffer.size() >= 4) {
         const quint32 length = qFromBigEndian<quint32>(reinterpret_cast<const uchar *>(buffer.constData()));
         if (length == 0 || length > kMaxFrameSize) {
             qCWarning(KEMU) << "VirtualSwitch: invalid frame length" << length << "- disconnecting client";
-            socket->disconnectFromServer();
+            port->socket->disconnectFromServer();
             return;
         }
         if (buffer.size() < 4 + static_cast<qsizetype>(length))
@@ -143,26 +195,34 @@ void VirtualSwitch::onReadyRead(QLocalSocket *socket)
 
         const QByteArray frame = buffer.mid(4, length);
         buffer.remove(0, 4 + length);
-        forwardFrame(socket, frame);
+        forwardFrame(frame, port, nullptr);
     }
 }
 
-void VirtualSwitch::onSocketDisconnected(QLocalSocket *socket)
+void VirtualSwitch::onSocketDisconnected(GuestPort *port)
 {
-    m_clients.removeAll(socket);
-    m_readBuffers.remove(socket);
-    for (auto it = m_macToClient.begin(); it != m_macToClient.end();) {
-        if (it.value() == socket)
-            it = m_macToClient.erase(it);
-        else
-            ++it;
+    if (!port->socket)
+        return;
+
+    QLocalSocket *socket = port->socket;
+    port->socket = nullptr;
+    port->readBuffer.clear();
+
+    if (port->mac.isEmpty()) {
+        for (auto it = m_macTable.begin(); it != m_macTable.end();) {
+            if (it.value() == port)
+                it = m_macTable.erase(it);
+            else
+                ++it;
+        }
     }
+
     socket->deleteLater();
-    qCDebug(KEMU) << "VirtualSwitch: client disconnected," << clientCount() << "remaining";
+    qCDebug(KEMU) << "VirtualSwitch: client disconnected from" << port->socketPath << "-" << clientCount() << "remaining";
     Q_EMIT clientDisconnected();
 }
 
-void VirtualSwitch::forwardFrame(QObject *source, const QByteArray &frame)
+void VirtualSwitch::forwardFrame(const QByteArray &frame, GuestPort *fromGuest, VirtualSwitchPort *fromInternal)
 {
     if (frame.size() < 14)
         return;
@@ -170,24 +230,37 @@ void VirtualSwitch::forwardFrame(QObject *source, const QByteArray &frame)
     const QByteArray srcMac = frame.mid(6, 6);
     const QByteArray dstMac = frame.left(6);
 
+    if (fromGuest) {
+        GuestPort *owner = m_macTable.value(srcMac);
+        bool accepted;
+        if (!fromGuest->mac.isEmpty())
+            accepted = srcMac == fromGuest->mac;
+        else
+            accepted = !(srcMac.at(0) & 0x01) && (!owner || owner == fromGuest || owner->mac.isEmpty());
+
+        if (!accepted) {
+            if (!fromGuest->spoofLogged) {
+                qCWarning(KEMU) << "VirtualSwitch: dropping frames with source MAC" << srcMac.toHex(':') << "on" << fromGuest->socketPath;
+                fromGuest->spoofLogged = true;
+            }
+            return;
+        }
+        if (fromGuest->mac.isEmpty())
+            m_macTable.insert(srcMac, fromGuest);
+    }
+
     qCDebug(KEMU) << "VirtualSwitch: frame" << frame.size() << "bytes," << srcMac.toHex(':') << "->" << dstMac.toHex(':') << "ethertype"
                   << u"0x%1"_s.arg(qFromBigEndian<quint16>(reinterpret_cast<const uchar *>(frame.constData()) + 12), 4, 16, u'0')
-                  << (qobject_cast<QLocalSocket *>(source) ? "from socket" : "from internal port");
+                  << (fromGuest ? "from guest" : "from internal port");
 
-    auto *sourceSocket = qobject_cast<QLocalSocket *>(source);
-    auto *sourcePort = qobject_cast<VirtualSwitchPort *>(source);
-
-    if (sourceSocket && !(srcMac.at(0) & 0x01))
-        m_macToClient.insert(srcMac, sourceSocket);
-
-    const auto deliverToClients = [this, &frame](QLocalSocket *exclude) {
-        for (const auto &client : m_clients) {
-            if (client && client != exclude)
-                writeFrame(client, frame);
+    const auto deliverToGuests = [this, &frame](GuestPort *exclude) {
+        for (GuestPort *port : std::as_const(m_ports)) {
+            if (port != exclude)
+                writeFrame(port, frame);
         }
     };
     const auto deliverToInternal = [this, &frame](VirtualSwitchPort *exclude) {
-        for (const auto &port : m_internalPorts) {
+        for (const auto &port : std::as_const(m_internalPorts)) {
             if (port && port != exclude)
                 port->receiveFrame(frame);
         }
@@ -195,41 +268,38 @@ void VirtualSwitch::forwardFrame(QObject *source, const QByteArray &frame)
 
     // Broadcast / multicast: flood to everyone except the origin.
     if (dstMac.at(0) & 0x01) {
-        deliverToClients(sourceSocket);
-        deliverToInternal(sourcePort);
+        deliverToGuests(fromGuest);
+        deliverToInternal(fromInternal);
         return;
     }
 
     // Internal ports are matched first, so a guest cannot shadow their MACs.
     for (const auto &port : std::as_const(m_internalPorts)) {
         if (port && port->ownsMac(dstMac)) {
-            if (port != sourcePort)
+            if (port != fromInternal)
                 port->receiveFrame(frame);
             return;
         }
     }
 
-    // Known unicast.
-    const auto it = m_macToClient.constFind(dstMac);
-    if (it != m_macToClient.cend()) {
-        QLocalSocket *target = it.value();
-        if (target) {
-            if (target != sourceSocket) // else hairpin
-                writeFrame(target, frame);
-            return;
-        }
-        m_macToClient.erase(it);
+    // Known unicast; frames for a bound but unconnected port are dropped.
+    if (GuestPort *target = m_macTable.value(dstMac)) {
+        if (target != fromGuest) // else hairpin
+            writeFrame(target, frame);
+        return;
     }
 
     // Unknown unicast: guests only. libslirp routes any frame it is handed,
     // so flooding it would leak guest-to-guest traffic to the host network.
-    deliverToClients(sourceSocket);
+    deliverToGuests(fromGuest);
 }
 
-void VirtualSwitch::writeFrame(QLocalSocket *socket, const QByteArray &frame)
+void VirtualSwitch::writeFrame(GuestPort *port, const QByteArray &frame)
 {
+    if (!port->socket)
+        return;
     QByteArray out(4, Qt::Uninitialized);
     qToBigEndian<quint32>(static_cast<quint32>(frame.size()), reinterpret_cast<uchar *>(out.data()));
     out.append(frame);
-    socket->write(out);
+    port->socket->write(out);
 }
