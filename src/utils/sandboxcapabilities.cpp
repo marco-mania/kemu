@@ -7,18 +7,13 @@
 #include "sandboxcapabilities.h"
 
 #include <QDir>
-#include <QFile>
 #include <QFileInfo>
 #include <QProcessEnvironment>
 #include <QStandardPaths>
 
 #include <KLocalizedString>
 
-extern "C" {
-#include <sched.h>
-#include <sys/wait.h>
 #include <unistd.h>
-}
 
 namespace
 {
@@ -27,32 +22,6 @@ struct ProbeResult {
     bool ok = false;
     QString reason;
 };
-
-ProbeResult probeUserNamespaces()
-{
-    QFile sysctl(u"/proc/sys/kernel/unprivileged_userns_clone"_s);
-    if (sysctl.open(QIODevice::ReadOnly)) {
-        const QByteArray value = sysctl.readAll().trimmed();
-        sysctl.close();
-        if (value == "0")
-            return {false, i18n("Unprivileged user namespaces are disabled by the kernel.")};
-    }
-
-    const pid_t child = fork();
-    if (child < 0)
-        return {false, i18n("Could not fork a probe process.")};
-
-    if (child == 0)
-        _exit(unshare(CLONE_NEWUSER | CLONE_NEWNET) == 0 ? 0 : 1);
-
-    int status = 0;
-    waitpid(child, &status, 0);
-
-    if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-        return {true, {}};
-
-    return {false, i18n("Creating user and network namespaces was denied.")};
-}
 
 ProbeResult probeUsbPassthrough()
 {
@@ -127,7 +96,6 @@ void SandboxCapabilities::refresh()
         m_states.insert(capability, {result.ok, result.reason});
     };
 
-    store(UserNamespaces, probeUserNamespaces());
     store(UsbPassthrough, probeUsbPassthrough());
     store(HostTerminal, probeHostTerminal(&m_terminalProgram));
     store(PipeWireAudio, probePipeWireAudio());
@@ -161,8 +129,6 @@ QString SandboxCapabilities::terminalProgram() const
 QString SandboxCapabilities::configName(Capability capability)
 {
     switch (capability) {
-    case UserNamespaces:
-        return u"user-namespaces"_s;
     case UsbPassthrough:
         return u"usb-passthrough"_s;
     case HostTerminal:
@@ -190,5 +156,5 @@ bool SandboxCapabilities::parseCapability(const QString &name, Capability *capab
 
 QList<SandboxCapabilities::Capability> SandboxCapabilities::allCapabilities()
 {
-    return {UserNamespaces, UsbPassthrough, HostTerminal, PipeWireAudio, PulseAudio, ExternalToolPaths};
+    return {UsbPassthrough, HostTerminal, PipeWireAudio, PulseAudio, ExternalToolPaths};
 }

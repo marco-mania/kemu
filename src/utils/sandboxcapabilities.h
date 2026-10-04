@@ -15,7 +15,6 @@ class SandboxCapabilities
 {
 public:
     enum Capability {
-        UserNamespaces,
         UsbPassthrough,
         HostTerminal,
         PipeWireAudio,
