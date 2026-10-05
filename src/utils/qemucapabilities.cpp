@@ -6,6 +6,7 @@
 
 #include "qemucapabilities.h"
 
+#include "const.h"
 #include "utils/externaltools.h"
 #include "utils/sandboxcapabilities.h"
 
@@ -21,6 +22,7 @@ void QemuCapabilities::refresh()
 {
     m_displays.clear();
     m_audiodevs.clear();
+    m_seccompSandbox = false;
     m_probeSucceeded = false;
 
     const QString qemu = ExternalTools::instance().path(ExternalTools::QemuSystem);
@@ -63,14 +65,19 @@ bool QemuCapabilities::runProbes(const QString &qemuPath, int timeoutMs)
     // timeout in total rather than one per help option.
     KProcess displayProbe;
     KProcess audiodevProbe;
-    startProbe(displayProbe, qemuPath, u"-display"_s);
-    startProbe(audiodevProbe, qemuPath, u"-audiodev"_s);
+    KProcess sandboxProbe;
+    startProbe(displayProbe, qemuPath, {u"-display"_s, u"help"_s});
+    startProbe(audiodevProbe, qemuPath, {u"-audiodev"_s, u"help"_s});
+    // Options are parsed in order, so -sandbox is checked before -version
+    // exits. A QEMU without seccomp support fails right there.
+    startProbe(sandboxProbe, qemuPath, {u"-sandbox"_s, KEMUConst::QemuSandboxOptions, u"-version"_s});
 
     QElapsedTimer elapsed;
     elapsed.start();
 
     m_displays = collectProbe(displayProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
     m_audiodevs = collectProbe(audiodevProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
+    m_seccompSandbox = collectExitStatus(sandboxProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
 
     return !m_displays.isEmpty() && !m_audiodevs.isEmpty();
 }
@@ -90,13 +97,23 @@ void QemuCapabilities::seedSelfContainedDefaults()
     m_audiodevs = {u"none"_s, u"dbus"_s};
 }
 
-void QemuCapabilities::startProbe(KProcess &process, const QString &qemuPath, const QString &helpOption)
+void QemuCapabilities::startProbe(KProcess &process, const QString &qemuPath, const QStringList &arguments)
 {
     // Separate channels: a warning on stderr must not be parsed as a backend.
     process.setOutputChannelMode(KProcess::SeparateChannels);
     process.setProgram(qemuPath);
-    process.setArguments({helpOption, u"help"_s});
+    process.setArguments(arguments);
     process.start();
+}
+
+bool QemuCapabilities::collectExitStatus(KProcess &process, int remainingMs)
+{
+    if (process.state() != KProcess::NotRunning && !process.waitForFinished(qMax(0, remainingMs))) {
+        process.kill();
+        process.waitForFinished(200);
+        return false;
+    }
+    return process.error() != QProcess::FailedToStart && process.exitStatus() == KProcess::NormalExit && process.exitCode() == 0;
 }
 
 QSet<QString> QemuCapabilities::collectProbe(KProcess &process, int remainingMs)

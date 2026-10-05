@@ -302,6 +302,10 @@ with `--disable-capability ...` cli option.
 - **File locations:** VM data and configuration reside under `~/.var/app/org.kde.kemu/`, rather than `~/.local/share/kemu`. VMs from a previous native installation will not be detected automatically; update _Settings -> General -> VM directory_ to point to the old path if you wish to continue using them.
 - **USB passthrough:** In addition to the udev rule described under [USB Passthrough](#usb-passthrough), the sandbox must be granted permission to access the device. Recent Flatpak versions prompt for this permission per device.
 
+### QEMU Confinement
+
+Whenever the QEMU binary supports it, KEMU starts QEMU with its seccomp sandbox (`-sandbox on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny`, the set libvirt uses). A guest that breaks into QEMU can then neither start programs nor change privileges. Options that make QEMU spawn helpers, such as `-netdev tap,script=...` or `smb=` in the extra arguments, do not work under it; any `-sandbox` option in the extra arguments replaces KEMU's. Exported start scripts apply the same filter if the QEMU they find supports it.
+
 ## Shared Folders
 
 KEMU enables host-guest file exchange via the following protocols:

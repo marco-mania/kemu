@@ -10,6 +10,7 @@
 #include "models/virtualenvironmentmodel.h"
 #include "utils/asynchelperprocess.h"
 #include "utils/externaltools.h"
+#include "utils/qemucapabilities.h"
 #include "utils/savestatemanager.h"
 #include "utils/usermodenetwork.h"
 #include "utils/utils.h"
@@ -80,6 +81,11 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     if (req.unattendedDeployment)
         args << u"-serial"_s << u"file:%1"_s.arg(Utils::escapeQemuOptionValue(path + u'/' + KEMUConst::DeploySerialLogFileName));
 
+    // A guest that breaks into QEMU could otherwise start programs, change
+    // credentials and reach obsolete or privileged syscalls.
+    const QStringList sandbox = QemuCapabilities::instance().hasSeccompSandbox() ? QemuCommandBuilder::sandboxArgs(config) : QStringList();
+    args << sandbox;
+
     QList<int> inheritFds = {qmpFds[1]};
     if (netCtx.switchFd >= 0)
         inheritFds << netCtx.switchFd;
@@ -87,6 +93,8 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
         inheritFds << netCtx.userNetFd;
 
     KProcess *process = createQemuProcess(vmName, args, inheritFds);
+    if (!sandbox.isEmpty())
+        process->setProcessEnvironment(Utils::environmentWithoutDbusAutolaunch());
 
     connect(process, &KProcess::finished, this, [this, vmName](int code, KProcess::ExitStatus status) {
         onQemuExit(vmName, code, status);

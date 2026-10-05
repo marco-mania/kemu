@@ -304,6 +304,16 @@ void setDiesWithParent(KProcess *process, const QList<int> &inheritFds)
     });
 }
 
+QProcessEnvironment environmentWithoutDbusAutolaunch()
+{
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    // Both libraries try $XDG_RUNTIME_DIR/bus (the systemd user bus) first.
+    const QString runtimeDir = env.value(u"XDG_RUNTIME_DIR"_s);
+    if (!env.contains(u"DBUS_SESSION_BUS_ADDRESS"_s) && (runtimeDir.isEmpty() || !QFileInfo::exists(runtimeDir + u"/bus"_s)))
+        env.insert(u"DBUS_SESSION_BUS_ADDRESS"_s, u"disabled:"_s);
+    return env;
+}
+
 void appendTail(QByteArray &tail, const QByteArray &data, int maxBytes)
 {
     tail.append(data);

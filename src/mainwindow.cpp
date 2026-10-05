@@ -34,6 +34,8 @@
 
 #include "kemu_debug.h"
 
+#include <csignal>
+
 extern "C" {
 #include <fcntl.h>
 #include <sys/prctl.h>
@@ -3797,6 +3799,13 @@ void MainWindow::showQemuFailureDialog(const QString &vmName, bool startupFailed
     } else {
         summary = i18n("QEMU for VM '%1' exited with code %2.", vmName, exitCode);
     }
+
+    // Our -sandbox kills on spawn and privilege changes, without a word on
+    // stderr. Startup failures land here too.
+    if (exitStatus == KProcess::CrashExit && exitCode == SIGSYS)
+        summary += u' '
+            + i18n("It was stopped by its seccomp sandbox because it tried to start another program or change its privileges. "
+                   "If a feature in the extra arguments needs that, add your own -sandbox option there.");
 
     // Build the main body: summary + QEMU's stderr (the actually useful part)
     QString body = u"<p>"_s + summary.toHtmlEscaped() + u"</p>"_s;

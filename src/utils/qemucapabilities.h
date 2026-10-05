@@ -29,6 +29,13 @@ public:
     bool hasDisplay(const QString &name) const;
     bool hasAudiodev(const QString &name) const;
 
+    // Whether the binary was built with seccomp support. Unlike the lists
+    // above this defaults to false: -sandbox on a QEMU without it is fatal.
+    [[nodiscard]] bool hasSeccompSandbox() const
+    {
+        return m_seccompSandbox;
+    }
+
     // False when neither probe produced a listing. The Settings page can use
     // this to say "capabilities unknown" instead of silently offering
     // everything.
@@ -45,10 +52,12 @@ private:
 
     bool runProbes(const QString &qemuPath, int timeoutMs);
     void seedSelfContainedDefaults();
-    static void startProbe(KProcess &process, const QString &qemuPath, const QString &helpOption);
+    static void startProbe(KProcess &process, const QString &qemuPath, const QStringList &arguments);
     static QSet<QString> collectProbe(KProcess &process, int remainingMs);
+    static bool collectExitStatus(KProcess &process, int remainingMs);
 
     QSet<QString> m_displays;
     QSet<QString> m_audiodevs;
+    bool m_seccompSandbox = false;
     bool m_probeSucceeded = false;
 };

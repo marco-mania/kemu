@@ -103,6 +103,15 @@ public:
                                     const bool relativePaths = false);
 
     /**
+     * @brief The -sandbox option KEMU confines QEMU with.
+     *
+     * Empty when the VM's extra arguments bring their own -sandbox: QEMU
+     * installs one filter per occurrence, so a later "-sandbox off" could
+     * not lift ours. The caller checks QemuCapabilities first.
+     */
+    static QStringList sandboxArgs(const VMConfig &config);
+
+    /**
      * @brief Formats the QEMU argument list into a readable multi-line string.
      * @param args  The list of QEMU arguments.
      * @return A formatted string with line continuation characters.

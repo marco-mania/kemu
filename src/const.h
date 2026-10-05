@@ -72,6 +72,10 @@ inline constexpr auto NetdevId = "nic0"_L1;
 // Chardev id of the QMP monitor when it rides on an inherited descriptor.
 inline constexpr auto QmpChardevId = "qmp0"_L1;
 
+// QEMU's seccomp filter, as libvirt applies it. Resource control calls fail
+// with EPERM; anything else on the deny lists kills QEMU with SIGSYS.
+inline constexpr auto QemuSandboxOptions = "on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny"_L1;
+
 inline static constexpr int kExitPolicyTimeoutMs = 120'000;
 
 } // namespace KEMUConst

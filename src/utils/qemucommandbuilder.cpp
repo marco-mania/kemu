@@ -549,11 +549,32 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
         script += u"# For standalone use another display type.\n"_s;
     }
 
+    // The target machine's QEMU may lack seccomp support, so the script
+    // checks before it confines it.
+    const QStringList sandbox = sandboxArgs(config);
+    if (!sandbox.isEmpty()) {
+        script += u"# Confine QEMU with its seccomp sandbox if it was built with one.\n"_s;
+        script += u"SANDBOX=%1\n"_s.arg(sandbox.last());
+        script += u"if %1 -sandbox \"$SANDBOX\" -version >/dev/null 2>&1; then\n"_s.arg(Utils::quoteShellArg(qemuPath));
+        script += u"  set -- -sandbox \"$SANDBOX\"\n"_s;
+        script += u"  # Without a session bus D-Bus would fork dbus-launch, which the sandbox forbids.\n"_s;
+        script += u"  [ -n \"$DBUS_SESSION_BUS_ADDRESS\" ] || [ -S \"$XDG_RUNTIME_DIR/bus\" ] || export DBUS_SESSION_BUS_ADDRESS=disabled:\n"_s;
+        script += u"else\n  set --\nfi\n\n"_s;
+    }
+
     script += u"exec "_s;
 
-    script += qemuPath + u" \\\n  "_s + argsToReadableString(args) + u"\n"_s;
+    script += qemuPath + (sandbox.isEmpty() ? QString() : u" \"$@\""_s) + u" \\\n  "_s + argsToReadableString(args) + u"\n"_s;
 
     return script;
+}
+
+QStringList QemuCommandBuilder::sandboxArgs(const VMConfig &config)
+{
+    const QStringList extra = KProcess::splitCommand(config.extraArgs());
+    if (extra.contains(u"-sandbox"_s) || extra.contains(u"--sandbox"_s))
+        return {};
+    return {u"-sandbox"_s, KEMUConst::QemuSandboxOptions};
 }
 
 QString QemuCommandBuilder::argsToReadableString(const QStringList &args)

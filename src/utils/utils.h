@@ -15,6 +15,7 @@
 #include <QFileSystemWatcher>
 #include <QHash>
 #include <QMetaEnum>
+#include <QProcessEnvironment>
 #include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QString>
@@ -159,6 +160,12 @@ QString vmNameToHostname(const QString &vmName);
 // UnixProcessParameters::CloseFileDescriptors: that would close them despite
 // the cleared flag.
 void setDiesWithParent(KProcess *process, const QList<int> &inheritFds = {});
+
+// The system environment, unless it offers no session bus: then libdbus and
+// GDBus would fork "dbus-launch --autolaunch" on X11 (GTK, SDL), which a
+// seccomp sandbox with spawn=deny answers with SIGSYS. The bus address is
+// set to one that fails instead.
+QProcessEnvironment environmentWithoutDbusAutolaunch();
 
 // Appends to a rolling tail, discarding the oldest bytes beyond maxBytes.
 void appendTail(QByteArray &tail, const QByteArray &data, int maxBytes);
