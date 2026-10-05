@@ -17,6 +17,11 @@
 
 #include "kemu_debug.h"
 
+#include <cerrno>
+#include <cstring>
+#include <sys/socket.h>
+#include <unistd.h>
+
 VmRuntimeManager::VmRuntimeManager(VirtualEnvironmentModel *model, VirtualNetworkManager *network_manager, QObject *parent)
     : QObject(parent)
     , m_model(model)
@@ -45,16 +50,27 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     const VMConfig config = entry->config;
 
     const QString path = vmPath(vmName);
-    const QString sockPath = monitorSocketPath(vmName);
-    QFile::remove(sockPath);
 
-    const QemuNetworkContext netCtx = createQemuNetworkContext(config, req.networkSocket);
+    // QMP rides on a socketpair: nothing in the file system that another
+    // process of this user could connect to, and the monitor is reachable the
+    // moment QEMU starts.
+    int qmpFds[2] = {-1, -1};
+    if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, qmpFds) != 0) {
+        qCWarning(KEMU) << "VmRuntimeManager: socketpair() for the QMP monitor failed:" << strerror(errno);
+        tearDown(vmName);
+        return;
+    }
+
+    const QemuNetworkContext netCtx = createQemuNetworkContext(config, req.networkFd, qmpFds[1]);
 
     const QString savestatePath =
         (!req.deployment && SaveStateManager::hasSavestate(path, vmName)) ? SaveStateManager::savestateFilePath(path, vmName) : QString{};
     const bool isResume = !savestatePath.isEmpty();
 
-    QStringList args = QemuCommandBuilder::build(config, vmDir(vmName), sockPath, netCtx, /*relativePaths=*/false, req.headless, savestatePath);
+    // The monitor path is only a fallback for exported scripts; this QEMU
+    // gets the descriptor from netCtx.
+    QStringList args =
+        QemuCommandBuilder::build(config, vmDir(vmName), monitorSocketPath(vmName), netCtx, /*relativePaths=*/false, req.headless, savestatePath);
 
     // Unattended runs only: an interactive installer's UI could move to the
     // serial console once one is present, which would defeat an attended
@@ -64,7 +80,13 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     if (req.unattendedDeployment)
         args << u"-serial"_s << u"file:%1"_s.arg(Utils::escapeQemuOptionValue(path + u'/' + KEMUConst::DeploySerialLogFileName));
 
-    KProcess *process = createQemuProcess(vmName, args);
+    QList<int> inheritFds = {qmpFds[1]};
+    if (netCtx.switchFd >= 0)
+        inheritFds << netCtx.switchFd;
+    if (netCtx.userNetFd >= 0)
+        inheritFds << netCtx.userNetFd;
+
+    KProcess *process = createQemuProcess(vmName, args, inheritFds);
 
     connect(process, &KProcess::finished, this, [this, vmName](int code, KProcess::ExitStatus status) {
         onQemuExit(vmName, code, status);
@@ -94,8 +116,21 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     process->start();
 
     // start() can fail synchronously; errorOccurred has already cleaned up.
-    if (process->state() == KProcess::NotRunning)
+    if (process->state() == KProcess::NotRunning) {
+        ::close(qmpFds[0]);
+        ::close(qmpFds[1]);
         return;
+    }
+
+    // The child has the descriptors now, so drop our copies. The switch and
+    // the user-mode network own theirs and close them on request.
+    ::close(qmpFds[1]);
+    if (netCtx.switchFd >= 0 && m_network_manager)
+        m_network_manager->releaseGuestFd(config.virtualNetworkName(), vmName);
+    if (netCtx.userNetFd >= 0) {
+        if (auto net = m_userModeNets.value(vmName))
+            net->releaseGuestFd();
+    }
 
     // Optimistic registration: if QEMU dies inside the probe window, the probe
     // surfaces a startup failure and dedups against onQemuExit() via
@@ -113,7 +148,7 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     if (!req.deployment)
         scheduleQemuStartupProbe(process, vmName);
 
-    setUpQmpClient(req, sockPath, isResume);
+    setUpQmpClient(req, qmpFds[0], isResume);
 }
 
 void VmRuntimeManager::setPerfMonitoringEnabled(bool enabled)
@@ -169,7 +204,7 @@ DbusViewerWindow *VmRuntimeManager::viewerWindow(const QString &vmName) const
     return rt->viewer->window.data();
 }
 
-KProcess *VmRuntimeManager::createQemuProcess(const QString &vmName, const QStringList &args)
+KProcess *VmRuntimeManager::createQemuProcess(const QString &vmName, const QStringList &args, const QList<int> &inheritFds)
 {
     auto *process = new KProcess(this);
     process->setOutputChannelMode(KProcess::SeparateChannels);
@@ -180,7 +215,7 @@ KProcess *VmRuntimeManager::createQemuProcess(const QString &vmName, const QStri
     });
 
     // Never combine this with KProcess::UnixProcessParameters::CloseFileDescriptors.
-    Utils::setDiesWithParent(process);
+    Utils::setDiesWithParent(process, inheritFds);
 
     process->setProgram(ExternalTools::instance().path(ExternalTools::QemuSystem));
     process->setArguments(args);
@@ -238,7 +273,6 @@ void VmRuntimeManager::tearDown(const QString &vmName)
 
     QFile::remove(swtpmSocketPath(vmName));
     QFile::remove(virtiofsdPidPath(vmName));
-    QFile::remove(monitorSocketPath(vmName));
 
     releaseNetwork(vmName);
     m_model->clearRuntimeState(vmName);
@@ -384,14 +418,13 @@ void VmRuntimeManager::startVirtiofsdAsync(const QString &vmName, HelperResult d
     });
 }
 
-QString VmRuntimeManager::ensureUserModeNetwork(const VMConfig &config, QString *reason)
+bool VmRuntimeManager::ensureUserModeNetwork(const VMConfig &config, QString *reason)
 {
     const QString vmName = config.name();
-    const QString sockPath = userNetSocketPath(vmName);
 
     if (auto net = m_userModeNets.value(vmName)) {
         if (net->isRunning())
-            return sockPath;
+            return true;
         // Stale instance from a previous failed start.
         net->stop();
         net->deleteLater();
@@ -399,14 +432,14 @@ QString VmRuntimeManager::ensureUserModeNetwork(const VMConfig &config, QString 
     }
 
     auto *net = new UserModeNetwork(this);
-    if (!net->start(sockPath, config.portForwards())) {
+    if (!net->start(config.portForwards())) {
         if (reason)
             *reason = net->lastError();
         net->deleteLater();
-        return {};
+        return false;
     }
     m_userModeNets.insert(vmName, net);
-    return sockPath;
+    return true;
 }
 
 void VmRuntimeManager::stopUserModeNetwork(const QString &vmName)
@@ -417,18 +450,21 @@ void VmRuntimeManager::stopUserModeNetwork(const QString &vmName)
     }
 }
 
-QemuNetworkContext VmRuntimeManager::createQemuNetworkContext(const VMConfig &config, const QString &networkSocket) const
+QemuNetworkContext VmRuntimeManager::createQemuNetworkContext(const VMConfig &config, int switchFd, int monitorFd) const
 {
     QemuNetworkContext ctx;
+    ctx.monitorFd = monitorFd;
+
     if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
-        if (!networkSocket.isEmpty())
-            ctx.switchSocketPath = networkSocket;
+        ctx.switchFd = switchFd;
         return ctx;
     }
-    // User mode: QEMU connects to the in-process network that
-    // ensureUserModeNetwork() started before launch. buildShellScript()
-    // overrides this with useSlirp for standalone exports.
-    ctx.userNetSocketPath = userNetSocketPath(config.name());
+
+    // User mode: the in-process network that ensureUserModeNetwork() started
+    // before launch owns the descriptor. buildShellScript() replaces this
+    // with useSlirp for standalone exports.
+    if (const auto net = m_userModeNets.value(config.name()))
+        ctx.userNetFd = net->guestFd();
     return ctx;
 }
 
@@ -442,16 +478,16 @@ bool VmRuntimeManager::hasLiveQemu(const QString &vmName) const
     return entry && (entry->state == VmEntry::State::Running || entry->state == VmEntry::State::Deploying);
 }
 
-QString VmRuntimeManager::ensureNetworkRunning(const QString &networkName,
-                                               const QString &vmName,
-                                               const QString &dnsHostname,
-                                               const QByteArray &macAddress,
-                                               QString *reason)
+int VmRuntimeManager::ensureNetworkRunning(const QString &networkName,
+                                           const QString &vmName,
+                                           const QString &dnsHostname,
+                                           const QByteArray &macAddress,
+                                           QString *reason)
 {
     const auto fail = [reason](const QString &text) {
         if (reason)
             *reason = text;
-        return QString{};
+        return -1;
     };
 
     // Virtual networks run entirely in-process (in-memory switch plus
@@ -463,12 +499,12 @@ QString VmRuntimeManager::ensureNetworkRunning(const QString &networkName,
     if (!m_network_manager->startNetwork(networkName))
         return fail(i18n("Failed to start virtual network '%1': %2", networkName, m_network_manager->lastError()));
 
-    const QString socketPath = m_network_manager->attachVm(networkName, vmName, dnsHostname, macAddress);
-    if (socketPath.isEmpty())
+    const int guestFd = m_network_manager->attachVm(networkName, vmName, dnsHostname, macAddress);
+    if (guestFd < 0)
         return fail(i18n("Failed to attach VM '%1' to the network: %2", vmName, m_network_manager->lastError()));
 
-    qCDebug(KEMU) << "VmRuntimeManager: VM" << vmName << "uses network switch at" << socketPath;
-    return socketPath;
+    qCDebug(KEMU) << "VmRuntimeManager: VM" << vmName << "uses switch port fd" << guestFd;
+    return guestFd;
 }
 
 void VmRuntimeManager::releaseNetwork(const QString &vmName)
@@ -532,7 +568,7 @@ void VmRuntimeManager::onQemuExit(const QString &vmName, int exitCode, KProcess:
     Q_EMIT vmExited(info);
 }
 
-void VmRuntimeManager::setUpQmpClient(const LaunchRequest &req, const QString &sockPath, bool isResume)
+void VmRuntimeManager::setUpQmpClient(const LaunchRequest &req, int monitorFd, bool isResume)
 {
     const QString vmName = req.vmName;
 
@@ -591,15 +627,9 @@ void VmRuntimeManager::setUpQmpClient(const LaunchRequest &req, const QString &s
     // qom-set above is skipped, so query-balloon would report a flat 100%.
     connectPerfSignals(client, vmName, /*includeMemory=*/!req.deployment);
 
-    QPointer<QMPClient> safeClient(client);
-    AsyncHelperProcess::waitForSocket(this, sockPath, 2000, 50, [safeClient, vmName, sockPath](bool ok) {
-        if (!ok) {
-            qCWarning(KEMU) << "QMP: socket not ready for" << vmName;
-            return;
-        }
-        if (safeClient)
-            safeClient->connectToVm(sockPath);
-    });
+    // The monitor descriptor is connected from the start, so there is nothing
+    // to wait for: QEMU's greeting arrives on its own.
+    client->connectToVm(monitorFd);
 }
 
 void VmRuntimeManager::connectPerfSignals(QMPClient *client, const QString &vmName, bool includeMemory)

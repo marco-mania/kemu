@@ -251,8 +251,8 @@ stack runs inside the KEMU process:
 ┌─── KEMU process ────────────────────────────────────────────────┐
 │                                                                 │
 │   VirtualSwitch (in-memory L2, one port per VM)                 │
-│    ├── QEMU VM1  (-netdev stream, own unix socket)              │
-│    ├── QEMU VM2  (-netdev stream, own unix socket)              │
+│    ├── QEMU VM1  (-netdev stream, own socketpair)               │
+│    ├── QEMU VM2  (-netdev stream, own socketpair)               │
 │    ├── DhcpServer (optional, built-in)                          │
 │    └── SlirpUplink (optional: NAT + DNS proxy)                  │
 │                                                                 │
@@ -260,10 +260,11 @@ stack runs inside the KEMU process:
 ```
 
 Each virtual network runs an in-memory layer-2 switch. Every VM gets its own
-port, a UNIX domain socket under the user's runtime directory that QEMU attaches
-to (`-netdev stream`). A port accepts a single connection and only frames from
-the VM's configured MAC address, so guests cannot impersonate each other; VMs
-with the same MAC cannot join the same network. The switch floods broadcast and
+port: one end of a socketpair that QEMU inherits as a file descriptor
+(`-netdev stream,addr.type=fd`). Nothing is created in the file system, so no
+other process can attach to a port, and a port only accepts frames from the
+VM's configured MAC address, so guests cannot impersonate each other; VMs with
+the same MAC cannot join the same network. The switch floods broadcast and
 multicast frames; frames for unknown destinations go to the VMs only, never to
 the NAT uplink. Because nothing touches the host kernel or spawns helper processes,
 virtual networks work unchanged inside sandboxed (Flatpak) environments.
@@ -280,7 +281,7 @@ virtual networks work unchanged inside sandboxed (Flatpak) environments.
 - QEMU >= 7.2 (the `stream` network backend used for VM attachment).
 - libslirp >= 4.7 (build-time dependency, used for NAT and the DNS proxy).
 
-**Automatic cleanup:** When the last VM detaches from a virtual network, KEMU stops the network and removes its runtime directory. No state survives outside the KEMU process.
+**Automatic cleanup:** When the last VM detaches from a virtual network, KEMU stops the network and closes its descriptors. A network leaves nothing behind in the file system, and no state survives outside the KEMU process.
 
 **Exported VMs:** Start scripts generated for exported VMs connect the VMs of the same virtual network via QEMU multicast networking. This provides layer-2 connectivity between the exported VMs only - there is no DHCP server and no internet access, so configure static addresses (manually or via Cloud-Init).
 

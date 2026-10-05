@@ -13,6 +13,7 @@
 extern "C" {
 char *__crypt_sha512(const char *key, const char *setting, char *output);
 #include <algorithm>
+#include <array>
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/prctl.h>
@@ -279,14 +280,27 @@ QString vmNameToHostname(const QString &vmName)
     return host.isEmpty() ? u"kemu-vm"_s : host.left(63);
 }
 
-void setDiesWithParent(KProcess *process, int inheritFd)
+void setDiesWithParent(KProcess *process, const QList<int> &inheritFds)
 {
+    // Copied into a plain array: the modifier runs in the child between fork
+    // and exec, where touching a shared container is not safe.
+    constexpr qsizetype kMaxInheritedFds = 4;
+    std::array<int, kMaxInheritedFds> fds{};
+    fds.fill(-1);
+    const qsizetype count = std::min(inheritFds.size(), kMaxInheritedFds);
+    for (qsizetype i = 0; i < count; ++i)
+        fds[i] = inheritFds.at(i);
+    if (inheritFds.size() > kMaxInheritedFds)
+        qCWarning(KEMU) << "setDiesWithParent: ignoring" << (inheritFds.size() - kMaxInheritedFds) << "descriptors beyond the limit";
+
     // Runs in the child between fork and exec, so it must stay
     // async-signal-safe.
-    process->setChildProcessModifier([inheritFd] {
+    process->setChildProcessModifier([fds, count] {
         prctl(PR_SET_PDEATHSIG, SIGTERM);
-        if (inheritFd >= 0)
-            fcntl(inheritFd, F_SETFD, 0);
+        for (qsizetype i = 0; i < count; ++i) {
+            if (fds[i] >= 0)
+                fcntl(fds[i], F_SETFD, 0);
+        }
     });
 }
 

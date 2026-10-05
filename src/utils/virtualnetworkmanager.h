@@ -7,12 +7,10 @@
 #pragma once
 
 #include <QByteArray>
-#include <QDir>
 #include <QHash>
 #include <QList>
 #include <QObject>
 #include <QPointer>
-#include <QStandardPaths>
 #include <QString>
 
 #include <memory>
@@ -40,8 +38,8 @@ class VirtualSwitch;
  *   ┌─── KEMU process ───────────────────────────────────────────────┐
  *   │                                                                │
  *   │   VirtualSwitch (one port per VM, bound to the VM's MAC)       │
- *   │    ├── vm-<id>.sock  ←──── QEMU VM 1 (-netdev stream, unix)    │
- *   │    ├── vm-<id>.sock  ←──── QEMU VM 2                           │
+ *   │    ├── socketpair ←─────── QEMU VM 1 (-netdev stream, fd)      │
+ *   │    ├── socketpair ←─────── QEMU VM 2                           │
  *   │    ├── DhcpServer         (internal port, optional)            │
  *   │    ├── DnsServer          (internal port, optional)            │
  *   │    ├── SlirpUplink        (internal port, optional NAT)        │
@@ -111,10 +109,16 @@ public:
      * @param macAddress  MAC of the VM's NIC. The VM's switch port only
      *        accepts frames from this MAC; it also maps the hostname to the
      *        DHCP-assigned address.
-     * @return The VM's switch port socket path for
-     *         "-netdev stream,...,addr.path=", or empty on failure.
+     * @return The descriptor for the VM's switch port
+     *         ("-netdev stream,addr.type=fd,addr.str="), or -1 on failure.
+     *         The switch owns it: hand it to the guest process, then call
+     *         releaseGuestFd(), and never close it directly.
      */
-    QString attachVm(const QString &networkName, const QString &vmName, const QString &dnsHostname, const QByteArray &macAddress);
+    int attachVm(const QString &networkName, const QString &vmName, const QString &dnsHostname, const QByteArray &macAddress);
+
+    /// Closes the switch's copy of the VM's port descriptor once the guest
+    /// process has inherited it.
+    void releaseGuestFd(const QString &networkName, const QString &vmName);
 
     /**
      * Remove the VM from the network and decrement the ref count.
@@ -137,7 +141,7 @@ Q_SIGNALS:
     void networksChanged();
 
     /// Emitted when a VM has been registered with a network.
-    void vmAttached(const QString &networkName, const QString &vmName, const QString &socketPath);
+    void vmAttached(const QString &networkName, const QString &vmName);
 
     /// Emitted when a VM has been removed from a network.
     void vmDetached(const QString &networkName, const QString &vmName);
@@ -162,15 +166,8 @@ private:
 
     // --- Internal Helpers ---
 
-    /// XDG_RUNTIME_DIR/kemu/net-<name>
-    [[nodiscard]] QString runtimeDir(const QString &name) const;
-
-    [[nodiscard]] QString portSocketPath(const QString &networkName, const QString &vmName) const;
-
-    void cleanupRuntimeDir(const QString &name);
-
-    /// Reports an error and returns false for names that cannot become a
-    /// runtime directory or socket path.
+    /// Reports an error and returns false for names that cannot be used as a
+    /// configuration group or in log output.
     bool validateName(const QString &name);
 
     /// Applies the network-level port forwards ("proto/host:guestIp:port")

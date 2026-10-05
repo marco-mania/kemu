@@ -20,9 +20,9 @@ class VirtualSwitch;
 /**
  * @brief Per-VM user-mode networking, entirely inside the KEMU process.
  *
- * Replaces the external passt helper: an in-memory L2 switch listens on a
- * unix socket that QEMU connects to via "-netdev stream", and a SlirpUplink
- * port terminates the traffic. The addressing follows the slirp (and QEMU
+ * Replaces the external passt helper: an in-memory L2 switch hands QEMU one
+ * end of a socketpair ("-netdev stream,addr.type=fd"), and a SlirpUplink port
+ * terminates the traffic. The addressing follows the slirp (and QEMU
  * "-netdev user") conventions: network 10.0.2.0/24, gateway/DHCP 10.0.2.2,
  * DNS proxy 10.0.2.3, first DHCP lease 10.0.2.15.
  *
@@ -47,9 +47,17 @@ public:
     ~UserModeNetwork() override;
 
     /// Start switch and slirp uplink; apply port forwards.
-    bool start(const QString &socketPath, const QList<PortForwardRule> &portForwards);
+    bool start(const QList<PortForwardRule> &portForwards);
     void stop();
     [[nodiscard]] bool isRunning() const;
+
+    /// Descriptor for QEMU's "-netdev stream,addr.type=fd,addr.str=", or -1.
+    /// Owned by the network: hand it to the guest process, then call
+    /// releaseGuestFd().
+    [[nodiscard]] int guestFd() const;
+
+    /// Closes this side's copy once the guest process has inherited it.
+    void releaseGuestFd();
     [[nodiscard]] QString lastError() const
     {
         return m_lastError;
@@ -62,6 +70,6 @@ private:
     std::unique_ptr<NetworkThread> m_thread;
     VirtualSwitch *m_switch = nullptr;
     SlirpUplink *m_uplink = nullptr;
-    QString m_socketPath;
+    int m_guestFd = -1;
     QString m_lastError;
 };

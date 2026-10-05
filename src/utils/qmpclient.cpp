@@ -35,7 +35,7 @@ QMPClient::~QMPClient()
     disconnectFromVm();
 }
 
-void QMPClient::connectToVm(const QString &socketPath)
+void QMPClient::connectToVm(int socketFd)
 {
     if (m_socket.state() != QLocalSocket::UnconnectedState) {
         m_socket.abort();
@@ -43,7 +43,14 @@ void QMPClient::connectToVm(const QString &socketPath)
     m_handshakeComplete = false;
     failPendingRequests(i18n("The connection to the QEMU monitor was reset."));
     m_pendingRequests.clear();
-    m_socket.connectToServer(socketPath);
+
+    // One end of the socketpair QEMU got the other end of: already connected,
+    // so the greeting arrives without any handshake of our own. QLocalSocket
+    // takes ownership of the descriptor.
+    if (!m_socket.setSocketDescriptor(socketFd, QLocalSocket::ConnectedState)) {
+        ::close(socketFd);
+        Q_EMIT errorOccurred(m_socket.errorString());
+    }
 }
 
 void QMPClient::disconnectFromVm()

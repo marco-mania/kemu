@@ -6,7 +6,6 @@
 
 #include "usermodenetwork.h"
 
-#include <QFile>
 #include <QHostAddress>
 
 #include <KLocalizedString>
@@ -29,6 +28,9 @@ constexpr quint32 kUserNetGateway = 0x0a000202; // 10.0.2.2
 constexpr quint32 kUserNetNameserver = 0x0a000203; // 10.0.2.3
 constexpr quint32 kUserNetDhcpStart = 0x0a00020f; // 10.0.2.15 (slirp's first lease)
 
+// The switch holds a single port here, so its id is arbitrary.
+const QString kPortId = u"guest"_s;
+
 } // namespace
 
 UserModeNetwork::UserModeNetwork(QObject *parent)
@@ -41,21 +43,19 @@ UserModeNetwork::~UserModeNetwork()
     stop();
 }
 
-bool UserModeNetwork::start(const QString &socketPath, const QList<PortForwardRule> &portForwards)
+bool UserModeNetwork::start(const QList<PortForwardRule> &portForwards)
 {
     if (isRunning())
         return true;
-
-    m_socketPath = socketPath;
-    QFile::remove(socketPath);
 
     m_thread = std::make_unique<NetworkThread>(u"kemu-usernet"_s);
 
     QString error;
     m_thread->run([&] {
         auto *vswitch = new VirtualSwitch;
-        if (!vswitch->addPort(socketPath)) {
-            error = i18n("Failed to create the user-mode network socket '%1'.", socketPath);
+        m_guestFd = vswitch->addPort(kPortId);
+        if (m_guestFd < 0) {
+            error = i18n("Failed to create the user-mode network port: %1", vswitch->lastError());
             delete vswitch;
             return;
         }
@@ -97,7 +97,7 @@ bool UserModeNetwork::start(const QString &socketPath, const QList<PortForwardRu
         return false;
     }
 
-    qCDebug(KEMU) << "UserModeNetwork: listening on" << socketPath;
+    qCDebug(KEMU) << "UserModeNetwork: ready, guest fd" << m_guestFd;
     return true;
 }
 
@@ -107,15 +107,27 @@ void UserModeNetwork::stop()
         m_thread->run([this] {
             delete m_uplink;
             m_uplink = nullptr;
-            delete m_switch;
+            delete m_switch; // closes both ends of the socketpair
             m_switch = nullptr;
         });
         m_thread.reset(); // joins the thread
     }
-    if (!m_socketPath.isEmpty()) {
-        QFile::remove(m_socketPath);
-        m_socketPath.clear();
-    }
+    m_guestFd = -1;
+}
+
+int UserModeNetwork::guestFd() const
+{
+    return m_guestFd;
+}
+
+void UserModeNetwork::releaseGuestFd()
+{
+    if (!m_thread || !m_switch || m_guestFd < 0)
+        return;
+    m_thread->run([this] {
+        m_switch->releaseGuestFd(kPortId);
+    });
+    m_guestFd = -1;
 }
 
 bool UserModeNetwork::isRunning() const
@@ -125,7 +137,7 @@ bool UserModeNetwork::isRunning() const
 
     bool running = false;
     m_thread->run([&] {
-        running = m_switch && m_switch->hasPort(m_socketPath);
+        running = m_switch && m_switch->hasPort(kPortId);
     });
     return running;
 }

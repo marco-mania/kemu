@@ -6,10 +6,13 @@
 
 #include "virtualswitch.h"
 
-#include <QFile>
-#include <QLocalServer>
 #include <QLocalSocket>
 #include <QtEndian>
+
+#include <cerrno>
+#include <cstring>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include "kemu_debug.h"
 
@@ -32,52 +35,80 @@ VirtualSwitch::~VirtualSwitch()
     close();
 }
 
-bool VirtualSwitch::addPort(const QString &socketPath, const QByteArray &mac)
+int VirtualSwitch::addPort(const QString &portId, const QByteArray &mac)
 {
     m_lastError.clear();
 
-    if (findPort(socketPath)) {
-        m_lastError = u"port %1 already exists"_s.arg(socketPath);
-        return false;
+    if (findPort(portId)) {
+        m_lastError = u"port %1 already exists"_s.arg(portId);
+        return -1;
     }
     if (!mac.isEmpty()) {
         const GuestPort *owner = m_macTable.value(mac);
         if (owner && owner->mac == mac) {
             m_lastError = u"MAC address %1 is already bound to another port"_s.arg(QString::fromLatin1(mac.toHex(':')));
-            return false;
+            return -1;
         }
     }
 
-    QFile::remove(socketPath);
+    // CLOEXEC on both ends: only the guest process this port belongs to gets
+    // its descriptor, and only because the launcher clears the flag for it.
+    int fds[2] = {-1, -1};
+    if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, fds) != 0) {
+        m_lastError = QString::fromLocal8Bit(std::strerror(errno));
+        qCWarning(KEMU) << "VirtualSwitch: socketpair() failed:" << m_lastError;
+        return -1;
+    }
 
-    auto *server = new QLocalServer(this);
-    server->setMaxPendingConnections(1);
-    if (!server->listen(socketPath)) {
-        m_lastError = server->errorString();
-        qCWarning(KEMU) << "VirtualSwitch: failed to listen on" << socketPath << ":" << m_lastError;
-        delete server;
-        return false;
+    auto *socket = new QLocalSocket(this);
+    if (!socket->setSocketDescriptor(fds[0], QLocalSocket::ConnectedState)) {
+        m_lastError = socket->errorString();
+        qCWarning(KEMU) << "VirtualSwitch: cannot adopt the port descriptor:" << m_lastError;
+        delete socket;
+        ::close(fds[0]);
+        ::close(fds[1]);
+        return -1;
     }
 
     auto *port = new GuestPort;
-    port->socketPath = socketPath;
+    port->portId = portId;
     port->mac = mac;
-    port->server = server;
+    port->socket = socket;
+    port->guestFd = fds[1];
     m_ports.append(port);
     if (!mac.isEmpty())
         m_macTable.insert(mac, port);
 
-    connect(server, &QLocalServer::newConnection, this, [this, port]() {
-        onNewConnection(port);
+    connect(socket, &QLocalSocket::readyRead, this, [this, port]() {
+        onReadyRead(port);
+    });
+    connect(socket, &QLocalSocket::disconnected, this, [this, port]() {
+        onSocketDisconnected(port);
     });
 
-    qCDebug(KEMU) << "VirtualSwitch: port listening on" << socketPath << "for" << (mac.isEmpty() ? QByteArray("any MAC") : mac.toHex(':'));
-    return true;
+    qCDebug(KEMU) << "VirtualSwitch: port" << portId << "open for" << (mac.isEmpty() ? QByteArray("any MAC") : mac.toHex(':')) << "- guest fd" << fds[1];
+    Q_EMIT clientConnected();
+    return fds[1];
 }
 
-void VirtualSwitch::removePort(const QString &socketPath)
+int VirtualSwitch::guestFd(const QString &portId) const
 {
-    GuestPort *port = findPort(socketPath);
+    const GuestPort *port = findPort(portId);
+    return port ? port->guestFd : -1;
+}
+
+void VirtualSwitch::releaseGuestFd(const QString &portId)
+{
+    GuestPort *port = findPort(portId);
+    if (!port || port->guestFd < 0)
+        return;
+    ::close(port->guestFd);
+    port->guestFd = -1;
+}
+
+void VirtualSwitch::removePort(const QString &portId)
+{
+    GuestPort *port = findPort(portId);
     if (!port)
         return;
 
@@ -90,31 +121,30 @@ void VirtualSwitch::removePort(const QString &socketPath)
     }
 
     const bool hadClient = port->socket;
-    disconnect(port->server, nullptr, this, nullptr);
     if (port->socket) {
         disconnect(port->socket, nullptr, this, nullptr);
-        port->socket->abort();
+        port->socket->abort(); // also closes the adopted descriptor
+        port->socket->deleteLater();
     }
-    port->server->close();
-    port->server->deleteLater(); // also deletes the client socket
-    QFile::remove(socketPath);
+    if (port->guestFd >= 0)
+        ::close(port->guestFd);
     delete port;
 
-    qCDebug(KEMU) << "VirtualSwitch: port" << socketPath << "removed";
+    qCDebug(KEMU) << "VirtualSwitch: port" << portId << "removed";
     if (hadClient)
         Q_EMIT clientDisconnected();
 }
 
-bool VirtualSwitch::hasPort(const QString &socketPath) const
+bool VirtualSwitch::hasPort(const QString &portId) const
 {
-    const GuestPort *port = findPort(socketPath);
-    return port && port->server->isListening();
+    const GuestPort *port = findPort(portId);
+    return port && port->socket && port->socket->isOpen();
 }
 
 void VirtualSwitch::close()
 {
     while (!m_ports.isEmpty())
-        removePort(m_ports.constFirst()->socketPath);
+        removePort(m_ports.constFirst()->portId);
     m_macTable.clear();
 }
 
@@ -146,38 +176,13 @@ void VirtualSwitch::removeInternalPort(VirtualSwitchPort *port)
     m_internalPorts.removeAll(port);
 }
 
-VirtualSwitch::GuestPort *VirtualSwitch::findPort(const QString &socketPath) const
+VirtualSwitch::GuestPort *VirtualSwitch::findPort(const QString &portId) const
 {
     for (GuestPort *port : m_ports) {
-        if (port->socketPath == socketPath)
+        if (port->portId == portId)
             return port;
     }
     return nullptr;
-}
-
-void VirtualSwitch::onNewConnection(GuestPort *port)
-{
-    while (QLocalSocket *socket = port->server->nextPendingConnection()) {
-        if (port->socket) {
-            qCWarning(KEMU) << "VirtualSwitch: rejecting second connection on" << port->socketPath;
-            socket->abort();
-            socket->deleteLater();
-            continue;
-        }
-
-        port->socket = socket;
-        port->readBuffer.clear();
-        port->spoofLogged = false;
-        port->congested = false;
-        connect(socket, &QLocalSocket::readyRead, this, [this, port]() {
-            onReadyRead(port);
-        });
-        connect(socket, &QLocalSocket::disconnected, this, [this, port]() {
-            onSocketDisconnected(port);
-        });
-        qCDebug(KEMU) << "VirtualSwitch: client connected on" << port->socketPath << "-" << clientCount() << "total";
-        Q_EMIT clientConnected();
-    }
 }
 
 void VirtualSwitch::onReadyRead(GuestPort *port)
@@ -212,6 +217,10 @@ void VirtualSwitch::onSocketDisconnected(GuestPort *port)
     QLocalSocket *socket = port->socket;
     port->socket = nullptr;
     port->readBuffer.clear();
+    if (port->guestFd >= 0) {
+        ::close(port->guestFd);
+        port->guestFd = -1;
+    }
 
     if (port->mac.isEmpty()) {
         for (auto it = m_macTable.begin(); it != m_macTable.end();) {
@@ -223,7 +232,7 @@ void VirtualSwitch::onSocketDisconnected(GuestPort *port)
     }
 
     socket->deleteLater();
-    qCDebug(KEMU) << "VirtualSwitch: client disconnected from" << port->socketPath << "-" << clientCount() << "remaining";
+    qCDebug(KEMU) << "VirtualSwitch: guest gone on port" << port->portId << "-" << clientCount() << "remaining";
     Q_EMIT clientDisconnected();
 }
 
@@ -245,7 +254,7 @@ void VirtualSwitch::forwardFrame(const QByteArray &frame, GuestPort *fromGuest, 
 
         if (!accepted) {
             if (!fromGuest->spoofLogged) {
-                qCWarning(KEMU) << "VirtualSwitch: dropping frames with source MAC" << srcMac.toHex(':') << "on" << fromGuest->socketPath;
+                qCWarning(KEMU) << "VirtualSwitch: dropping frames with source MAC" << srcMac.toHex(':') << "on" << fromGuest->portId;
                 fromGuest->spoofLogged = true;
             }
             return;
@@ -305,7 +314,7 @@ void VirtualSwitch::writeFrame(GuestPort *port, const QByteArray &frame)
         return;
     if (port->socket->bytesToWrite() > kMaxPendingWriteBytes) {
         if (!port->congested) {
-            qCWarning(KEMU) << "VirtualSwitch: client on" << port->socketPath << "is not reading, dropping frames";
+            qCWarning(KEMU) << "VirtualSwitch: client on" << port->portId << "is not reading, dropping frames";
             port->congested = true;
         }
         return;

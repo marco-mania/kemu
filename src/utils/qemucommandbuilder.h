@@ -20,31 +20,39 @@
 using namespace Qt::StringLiterals;
 
 /**
- * @brief Network context passed to QemuCommandBuilder::build().
+ * @brief Runtime wiring passed to QemuCommandBuilder::build().
+ *
+ * The descriptors belong to their owners (VirtualSwitch, UserModeNetwork,
+ * VmRuntimeManager); the builder only writes their numbers into the command
+ * line, and the launcher clears their CLOEXEC flag for the child.
  *
  * For NetworkMode::VirtualNetwork:
- *   - switchSocketPath is set: QEMU connects to the in-memory L2 switch of
- *     the running network via "-netdev stream" over a unix socket.
+ *   - switchFd is set: QEMU gets one end of the socketpair that is a port of
+ *     the running network's in-memory L2 switch.
  *   - mcastAddress is set (export scripts only): QEMU's built-in multicast
- *     networking is used instead, because a standalone script cannot reach
- *     the switch living inside the KEMU process.
+ *     networking is used instead, because a standalone script can neither
+ *     inherit a descriptor nor reach the switch inside the KEMU process.
  *
  * For NetworkMode::UserMode, exactly one of:
  *   - useSlirp is true (export scripts only): QEMU's built-in usermode
  *     networking is used, because a standalone script cannot reach the
  *     slirp instance living inside the KEMU process.
- *   - useSlirp is false (default): QEMU connects to KEMU's in-process
- *     user-mode network via "-netdev stream" over userNetSocketPath.
+ *   - useSlirp is false (default): userNetFd is one end of the socketpair
+ *     KEMU's in-process user-mode network switches.
  */
 struct QemuNetworkContext {
-    /// Socket path of the virtual network's in-memory switch.
-    QString switchSocketPath;
+    /// Virtual network: descriptor of this VM's switch port.
+    int switchFd = -1;
+
+    /// User mode: descriptor of KEMU's in-process slirp network.
+    int userNetFd = -1;
+
+    /// QMP monitor descriptor. Below zero, QEMU opens a listening unix
+    /// socket at monitorSocketPath instead (export scripts).
+    int monitorFd = -1;
 
     /// "group:port" for QEMU's socket,mcast= backend (export scripts only).
     QString mcastAddress;
-
-    /// Unix socket path of KEMU's in-process user-mode network (UserMode).
-    QString userNetSocketPath;
 
     /// Use QEMU's built-in "-netdev user" backend (export scripts only).
     bool useSlirp = false;

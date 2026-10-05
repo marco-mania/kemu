@@ -60,7 +60,6 @@ inline QStringList fallbackPaths()
     };
 }
 
-inline constexpr auto UserNetSocketFileName = "usernet.sock"_L1;
 inline constexpr auto SwtpmSocketFileName = "swtpm.sock"_L1;
 inline constexpr auto VirtiofsdSocketFileName = "virtiofsd.sock"_L1;
 inline constexpr auto VirtiofsdPidFileName = "virtiofsd.sock.pid"_L1;
@@ -69,6 +68,9 @@ inline constexpr auto DeploySerialLogFileName = "deploy-serial.log"_L1;
 
 // Net client id used for -netdev; also the `name` argument of QMP set_link.
 inline constexpr auto NetdevId = "nic0"_L1;
+
+// Chardev id of the QMP monitor when it rides on an inherited descriptor.
+inline constexpr auto QmpChardevId = "qmp0"_L1;
 
 inline static constexpr int kExitPolicyTimeoutMs = 120'000;
 

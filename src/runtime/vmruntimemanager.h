@@ -53,7 +53,10 @@ public:
     struct LaunchRequest {
         QString vmName;
         bool headless = false;
-        QString networkSocket;
+
+        /// Virtual network mode: the descriptor ensureNetworkRunning()
+        /// returned for this VM. Owned by the switch.
+        int networkFd = -1;
 
         // Deployment keeps the VM in state Deploying, skips savestate
         // handling, and samples CPU and I/O but not memory.
@@ -84,7 +87,7 @@ public:
     // been destroyed are skipped.
     [[nodiscard]] QList<DbusViewerWindow *> viewerWindows() const;
 
-    KProcess *createQemuProcess(const QString &vmName, const QStringList &args);
+    KProcess *createQemuProcess(const QString &vmName, const QStringList &args, const QList<int> &inheritFds = {});
     void tearDown(const QString &vmName);
     void scheduleQemuStartupProbe(KProcess *process, const QString &vmName);
 
@@ -95,26 +98,26 @@ public:
     void startSwtpmAsync(const QString &vmName, HelperResult done);
     void startVirtiofsdAsync(const QString &vmName, HelperResult done);
     // Starts the in-process user-mode network for the VM if it is not
-    // running yet. Returns the socket path, or an empty string on failure.
-    // `reason` is filled on failure and is meant for the caller to display.
-    QString ensureUserModeNetwork(const VMConfig &config, QString *reason);
+    // running yet. Returns true on success; `reason` is filled on failure and
+    // is meant for the caller to display.
+    bool ensureUserModeNetwork(const VMConfig &config, QString *reason);
     void stopUserModeNetwork(const QString &vmName);
-    [[nodiscard]] QemuNetworkContext createQemuNetworkContext(const VMConfig &config, const QString &networkSocket = {}) const;
+    [[nodiscard]] QemuNetworkContext createQemuNetworkContext(const VMConfig &config, int switchFd = -1, int monitorFd = -1) const;
 
     // Applies a changed monitoring preference to the VMs already running.
     void setPerfMonitoringEnabled(bool enabled);
 
     // Misc helper functions
     [[nodiscard]] bool hasLiveQemu(const QString &vmName) const;
-    // Returns the network's switch socket path, or an empty string on
-    // failure. `reason` is filled on failure and is meant for the caller to
-    // display. `dnsHostname`/`macAddress` are used to register the VM's
-    // DNS record with the in-process DNS server (both may be empty).
-    QString ensureNetworkRunning(const QString &networkName,
-                                 const QString &vmName,
-                                 const QString &dnsHostname,
-                                 const QByteArray &macAddress,
-                                 QString *reason);
+    // Returns the descriptor of the VM's switch port, or -1 on failure.
+    // `reason` is filled on failure and is meant for the caller to display.
+    // `dnsHostname`/`macAddress` are used to register the VM's DNS record
+    // with the in-process DNS server (both may be empty).
+    int ensureNetworkRunning(const QString &networkName,
+                             const QString &vmName,
+                             const QString &dnsHostname,
+                             const QByteArray &macAddress,
+                             QString *reason);
     void releaseNetwork(const QString &vmName);
 
     // Single source of truth for VM store locations.
@@ -138,11 +141,6 @@ public:
     {
         return vmDir(vmName).absoluteFilePath(KEMUConst::VirtiofsdPidFileName);
     }
-    [[nodiscard]] QString userNetSocketPath(const QString &vmName) const
-    {
-        return vmDir(vmName).absoluteFilePath(KEMUConst::UserNetSocketFileName);
-    }
-
 public Q_SLOTS:
     void onQemuExit(const QString &vmName, int exitCode, KProcess::ExitStatus exitStatus);
 
@@ -188,7 +186,7 @@ private:
     // In-process user-mode networks, keyed by VM name.
     QHash<QString, QPointer<UserModeNetwork>> m_userModeNets;
 
-    void setUpQmpClient(const LaunchRequest &req, const QString &sockPath, bool isResume);
+    void setUpQmpClient(const LaunchRequest &req, int monitorFd, bool isResume);
     void connectPerfSignals(QMPClient *client, const QString &vmName, bool includeMemory);
 
     static constexpr int kPerfSampleIntervalMs = 1000;

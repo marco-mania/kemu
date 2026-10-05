@@ -94,7 +94,8 @@ public:
     explicit QMPClient(QObject *parent = nullptr);
     ~QMPClient();
 
-    void connectToVm(const QString &socketPath);
+    /// Adopts a connected descriptor (QEMU holds the peer end).
+    void connectToVm(int socketFd);
     void disconnectFromVm();
     bool isConnected() const;
 

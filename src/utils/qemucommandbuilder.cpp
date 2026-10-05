@@ -374,12 +374,10 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
                 args << u"-netdev"_s
                      << u"socket,id=%1,mcast=%2,localaddr=127.0.0.1"_s.arg(KEMUConst::NetdevId, networkContext.mcastAddress);
             } else {
-                Q_ASSERT_X(!networkContext.switchSocketPath.isEmpty(),
+                Q_ASSERT_X(networkContext.switchFd >= 0,
                            "QemuCommandBuilder::build",
-                           "VirtualNetwork mode requires NetworkContext::switchSocketPath or mcastAddress to be set");
-                args << u"-netdev"_s
-                     << u"stream,id=%1,server=off,addr.type=unix,addr.path=%2"_s.arg(KEMUConst::NetdevId)
-                            .arg(optPath(networkContext.switchSocketPath, relativePaths));
+                           "VirtualNetwork mode requires NetworkContext::switchFd or mcastAddress to be set");
+                args << u"-netdev"_s << u"stream,id=%1,server=off,addr.type=fd,addr.str=%2"_s.arg(KEMUConst::NetdevId).arg(networkContext.switchFd);
             }
         } else if (networkContext.useSlirp) {
             // Standalone export: QEMU's built-in usermode networking stands
@@ -392,14 +390,12 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             }
             args << u"-netdev"_s << netdev;
         } else {
-            // User mode: QEMU connects to KEMU's in-process slirp network
-            // (UserModeNetwork) via a unix stream socket.
-            Q_ASSERT_X(!networkContext.userNetSocketPath.isEmpty(),
+            // User mode: QEMU gets one end of the socketpair KEMU's
+            // in-process slirp network (UserModeNetwork) listens on.
+            Q_ASSERT_X(networkContext.userNetFd >= 0,
                        "QemuCommandBuilder::build",
-                       "UserMode requires NetworkContext::userNetSocketPath or useSlirp to be set");
-            args << u"-netdev"_s
-                 << u"stream,id=%1,server=off,addr.type=unix,addr.path=%2"_s.arg(KEMUConst::NetdevId)
-                        .arg(optPath(networkContext.userNetSocketPath, relativePaths));
+                       "UserMode requires NetworkContext::userNetFd or useSlirp to be set");
+            args << u"-netdev"_s << u"stream,id=%1,server=off,addr.type=fd,addr.str=%2"_s.arg(KEMUConst::NetdevId).arg(networkContext.userNetFd);
         }
     }
 
@@ -442,7 +438,15 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         args << u"-device"_s << u"usb-kbd,bus=%1"_s.arg(usbBus);
 
     // --- Monitor / QMP ---
-    args << u"-qmp"_s << u"unix:%1,server,nowait"_s.arg(optPath(monitorSocketPath, relativePaths));
+    if (networkContext.monitorFd >= 0) {
+        // Socketpair: nothing in the file system for other processes of this
+        // user to connect to, and the monitor is up the moment QEMU starts.
+        args << u"-chardev"_s << u"socket,id=%1,fd=%2"_s.arg(KEMUConst::QmpChardevId).arg(networkContext.monitorFd);
+        args << u"-mon"_s << u"chardev=%1,mode=control"_s.arg(KEMUConst::QmpChardevId);
+    } else {
+        // Export scripts cannot inherit descriptors, so QEMU listens instead.
+        args << u"-qmp"_s << u"unix:%1,server,nowait"_s.arg(optPath(monitorSocketPath, relativePaths));
+    }
 
     // --- Extra Args ---
     if (!config.extraArgs().isEmpty())
@@ -473,7 +477,11 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     // A standalone script cannot reach the in-memory switch inside the KEMU
     // process, so exported virtual networks run on QEMU's built-in multicast
     // networking: all exported VMs of the same network share one mcast group.
+    // No descriptors in a script: the monitor listens and the network falls
+    // back to QEMU's own backends.
     QemuNetworkContext scriptNetCtx = networkContext;
+    scriptNetCtx.monitorFd = -1;
+    scriptNetCtx.switchFd = -1;
     if (config.networkCard() != VMSpecs::NetworkCard::None && config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         scriptNetCtx.mcastAddress = mcastAddressFor(network.name);
 
@@ -481,7 +489,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     // instance, so it falls back to QEMU's built-in "-netdev user".
     if (config.networkCard() != VMSpecs::NetworkCard::None && config.networkMode() == VMSpecs::NetworkMode::UserMode) {
         scriptNetCtx.useSlirp = true;
-        scriptNetCtx.userNetSocketPath.clear();
+        scriptNetCtx.userNetFd = -1;
     }
 
     const QStringList args = build(scriptConfig, vmDir, monitorSocketPath, scriptNetCtx, relativePaths);

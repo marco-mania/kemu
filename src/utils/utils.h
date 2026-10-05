@@ -134,9 +134,8 @@ QByteArray macAddressToBytes(const QString &mac);
 bool isValidDnsHostname(const QString &hostname);
 
 // Name of a virtual network. Same character set as a VM name (see
-// VMConfig::isValidVmName), but shorter: the name becomes a directory under
-// XDG_RUNTIME_DIR and part of the unix socket paths handed to QEMU, which
-// must stay inside the 108-byte sun_path limit.
+// VMConfig::isValidVmName), but shorter: the name is a KConfig group key and
+// shows up in log output, where 32 characters are plenty.
 bool isValidNetworkName(const QString &name, QString *error = nullptr);
 
 // Dot-separated list of valid host name labels, e.g. "lab.example.com".
@@ -155,10 +154,11 @@ QString vmNameToHostname(const QString &vmName);
 
 // Installs PR_SET_PDEATHSIG=SIGTERM so the child dies with KEMU.
 // Replaces any previously installed child process modifier.
-// inheritFd, when >= 0, gets its CLOEXEC flag cleared so the child keeps it.
-// Never combine with UnixProcessParameters::CloseFileDescriptors: that would
-// close the descriptor despite the cleared flag.
-void setDiesWithParent(KProcess *process, int inheritFd = -1);
+// Every descriptor in inheritFds gets its CLOEXEC flag cleared, so the child
+// keeps exactly those. Never combine with
+// UnixProcessParameters::CloseFileDescriptors: that would close them despite
+// the cleared flag.
+void setDiesWithParent(KProcess *process, const QList<int> &inheritFds = {});
 
 // Appends to a rolling tail, discarding the oldest bytes beyond maxBytes.
 void appendTail(QByteArray &tail, const QByteArray &data, int maxBytes);

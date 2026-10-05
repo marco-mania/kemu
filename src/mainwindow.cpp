@@ -2479,27 +2479,26 @@ void MainWindow::startVM(bool headless)
     }
 
     // Network setup is synchronous: the switch and the user-mode stack run
-    // in-process and return their socket path immediately.
-    QString resolvedNetworkSocket;
+    // in-process and hand out their descriptor immediately.
+    int resolvedNetworkFd = -1;
     if (currentConfig.networkCard() != VMSpecs::NetworkCard::None) {
         if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
             QString reason;
-            resolvedNetworkSocket = m_runtimeManager->ensureNetworkRunning(currentConfig.virtualNetworkName(),
-                                                                           vmName,
-                                                                           currentConfig.effectiveDnsHostname(),
-                                                                           Utils::macAddressToBytes(currentConfig.macAddress()),
-                                                                           &reason);
-            if (resolvedNetworkSocket.isEmpty() && !reason.isEmpty())
-                KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
-            if (resolvedNetworkSocket.isEmpty()) {
+            resolvedNetworkFd = m_runtimeManager->ensureNetworkRunning(currentConfig.virtualNetworkName(),
+                                                                       vmName,
+                                                                       currentConfig.effectiveDnsHostname(),
+                                                                       Utils::macAddressToBytes(currentConfig.macAddress()),
+                                                                       &reason);
+            if (resolvedNetworkFd < 0) {
+                if (!reason.isEmpty())
+                    KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
                 delete chain;
                 m_runtimeManager->tearDown(vmName);
                 return;
             }
         } else {
             QString reason;
-            const QString sockPath = m_runtimeManager->ensureUserModeNetwork(currentConfig, &reason);
-            if (sockPath.isEmpty()) {
+            if (!m_runtimeManager->ensureUserModeNetwork(currentConfig, &reason)) {
                 if (!reason.isEmpty())
                     KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
                 delete chain;
@@ -2509,7 +2508,7 @@ void MainWindow::startVM(bool headless)
         }
     }
 
-    chain->run([this, vmName, headless, resolvedNetworkSocket](bool ok) {
+    chain->run([this, vmName, headless, resolvedNetworkFd](bool ok) {
         if (!ok) {
             m_runtimeManager->tearDown(vmName);
             return;
@@ -2518,7 +2517,7 @@ void MainWindow::startVM(bool headless)
         VmRuntimeManager::LaunchRequest req;
         req.vmName = vmName;
         req.headless = headless;
-        req.networkSocket = resolvedNetworkSocket;
+        req.networkFd = resolvedNetworkFd;
         m_runtimeManager->launch(req);
     });
 }
@@ -3850,27 +3849,26 @@ void MainWindow::startDeployment(const QString &vmName)
     }
 
     // Network setup is synchronous: the switch and the user-mode stack run
-    // in-process and return their socket path immediately.
-    QString resolvedNetworkSocket;
+    // in-process and hand out their descriptor immediately.
+    int resolvedNetworkFd = -1;
     if (config.networkCard() != VMSpecs::NetworkCard::None) {
         if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
             QString reason;
-            resolvedNetworkSocket = m_runtimeManager->ensureNetworkRunning(config.virtualNetworkName(),
-                                                                           vmName,
-                                                                           config.effectiveDnsHostname(),
-                                                                           Utils::macAddressToBytes(config.macAddress()),
-                                                                           &reason);
-            if (resolvedNetworkSocket.isEmpty() && !reason.isEmpty())
-                KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
-            if (resolvedNetworkSocket.isEmpty()) {
+            resolvedNetworkFd = m_runtimeManager->ensureNetworkRunning(config.virtualNetworkName(),
+                                                                       vmName,
+                                                                       config.effectiveDnsHostname(),
+                                                                       Utils::macAddressToBytes(config.macAddress()),
+                                                                       &reason);
+            if (resolvedNetworkFd < 0) {
+                if (!reason.isEmpty())
+                    KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
                 delete chain;
                 abortDeployment(vmName, false);
                 return;
             }
         } else {
             QString reason;
-            const QString sockPath = m_runtimeManager->ensureUserModeNetwork(config, &reason);
-            if (sockPath.isEmpty()) {
+            if (!m_runtimeManager->ensureUserModeNetwork(config, &reason)) {
                 if (!reason.isEmpty())
                     KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Network Error"));
                 delete chain;
@@ -3887,7 +3885,7 @@ void MainWindow::startDeployment(const QString &vmName)
     const bool unattended = isUnattendedDeployment(vmName);
     const bool headless = unattended && config.displayType() == VMSpecs::DisplayType::Dbus;
 
-    chain->run([this, vmName, headless, unattended, resolvedNetworkSocket](bool ok) {
+    chain->run([this, vmName, headless, unattended, resolvedNetworkFd](bool ok) {
         if (!ok) {
             m_runtimeManager->tearDown(vmName);
             return;
@@ -3896,7 +3894,7 @@ void MainWindow::startDeployment(const QString &vmName)
         VmRuntimeManager::LaunchRequest req;
         req.vmName = vmName;
         req.headless = headless;
-        req.networkSocket = resolvedNetworkSocket;
+        req.networkFd = resolvedNetworkFd;
         req.deployment = true;
         req.unattendedDeployment = unattended;
         m_runtimeManager->launch(req);

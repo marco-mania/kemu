@@ -12,7 +12,6 @@
 #include <QObject>
 #include <QPointer>
 
-class QLocalServer;
 class QLocalSocket;
 
 /**
@@ -44,9 +43,10 @@ Q_SIGNALS:
 /**
  * @brief In-memory L2 switch for virtual networks.
  *
- * Every guest gets its own port: a QLocalServer that one QEMU instance
- * connects to via "-netdev stream,server=off,addr.type=unix,addr.path=<path>"
- * (4-byte big-endian length prefix + Ethernet frame). A port opened with a
+ * Every guest gets its own port: a socketpair whose guest end is handed to
+ * one QEMU instance as "-netdev stream,addr.type=fd,addr.str=<fd>" (4-byte
+ * big-endian length prefix + Ethernet frame). Nothing is created in the file
+ * system, so no other process can connect to a port. A port opened with a
  * MAC only accepts frames from that source MAC and owns it in the MAC table
  * (port security); a port without one learns source MACs. Broadcast and
  * multicast frames are flooded, unknown unicast only to guest ports.
@@ -62,11 +62,23 @@ public:
     explicit VirtualSwitch(QObject *parent = nullptr);
     ~VirtualSwitch() override;
 
-    /// Opens a guest port listening on socketPath; a stale socket file is
-    /// removed first. Fails if socketPath or a non-empty mac is in use.
-    bool addPort(const QString &socketPath, const QByteArray &mac = {});
-    void removePort(const QString &socketPath);
-    [[nodiscard]] bool hasPort(const QString &socketPath) const;
+    /// Opens a guest port and returns the descriptor for QEMU's
+    /// "addr.type=fd", or -1 on failure (portId or a non-empty mac in use).
+    /// The switch keeps that descriptor open; the caller passes it to the
+    /// guest process and then calls releaseGuestFd(), it must never close it
+    /// itself.
+    int addPort(const QString &portId, const QByteArray &mac = {});
+
+    /// Descriptor of the port's guest end, -1 once released or unknown.
+    [[nodiscard]] int guestFd(const QString &portId) const;
+
+    /// Closes the switch's copy of the guest descriptor, after the guest
+    /// process has inherited it. Without this the port never sees the guest
+    /// go away.
+    void releaseGuestFd(const QString &portId);
+
+    void removePort(const QString &portId);
+    [[nodiscard]] bool hasPort(const QString &portId) const;
 
     /// Closes all guest ports and disconnects their clients.
     void close();
@@ -88,22 +100,21 @@ Q_SIGNALS:
 
 private:
     struct GuestPort {
-        QString socketPath;
+        QString portId;
         QByteArray mac; // empty: source MACs are learned
-        QLocalServer *server = nullptr;
-        QPointer<QLocalSocket> socket;
+        QPointer<QLocalSocket> socket; // switch end of the socketpair
+        int guestFd = -1; // guest end, -1 once handed over
         QByteArray readBuffer;
         bool spoofLogged = false;
         bool congested = false;
     };
 
-    void onNewConnection(GuestPort *port);
     void onReadyRead(GuestPort *port);
     void onSocketDisconnected(GuestPort *port);
 
     void forwardFrame(const QByteArray &frame, GuestPort *fromGuest, VirtualSwitchPort *fromInternal);
     void writeFrame(GuestPort *port, const QByteArray &frame);
-    [[nodiscard]] GuestPort *findPort(const QString &socketPath) const;
+    [[nodiscard]] GuestPort *findPort(const QString &portId) const;
 
     QList<GuestPort *> m_ports; // owned
     QList<QPointer<VirtualSwitchPort>> m_internalPorts;
