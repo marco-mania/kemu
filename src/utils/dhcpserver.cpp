@@ -335,6 +335,25 @@ void DhcpServer::expireLeases()
     }
 }
 
+void DhcpServer::setSearchDomain(const QString &domain)
+{
+    m_domainName.clear();
+    m_domainSearch.clear();
+
+    const QByteArray name = domain.toLatin1();
+    if (name.isEmpty() || name.size() > 200)
+        return;
+    QByteArray encoded;
+    for (const QByteArray &label : name.split('.')) {
+        if (label.isEmpty() || label.size() > 63)
+            return;
+        encoded.append(char(label.size())).append(label);
+    }
+    encoded.append(char(0));
+    m_domainName = name;
+    m_domainSearch = encoded;
+}
+
 void DhcpServer::sendReply(quint8 msgType, const QByteArray &clientMac, quint32 xid, quint32 yiaddr, quint16 flags)
 {
     const bool broadcast = (flags & kFlagBroadcast) || msgType == kDhcpNak;
@@ -375,6 +394,10 @@ void DhcpServer::sendReply(quint8 msgType, const QByteArray &clientMac, quint32 
     if (m_dnsServer != 0) {
         bootp.append(char(6)).append(char(4));
         put32(bootp, m_dnsServer);
+    }
+    if (!m_domainName.isEmpty()) {
+        bootp.append(char(15)).append(char(m_domainName.size())).append(m_domainName);
+        bootp.append(char(119)).append(char(m_domainSearch.size())).append(m_domainSearch);
     }
     bootp.append(char(255));
 

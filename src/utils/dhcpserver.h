@@ -49,6 +49,10 @@ public:
                    quint32 dnsServer,
                    const QList<quint32> &reserved = {});
 
+    /// Advertised as domain name (option 15) and search list (option 119)
+    /// so guests resolve short names. Empty omits both.
+    void setSearchDomain(const QString &domain);
+
     void receiveFrame(const QByteArray &frame) override;
     [[nodiscard]] bool ownsMac(const QByteArray &mac) const override
     {
@@ -85,6 +89,8 @@ private:
     quint32 m_dnsServer = 0;
     bool m_ownAddress = false;
     QSet<quint32> m_reserved;
+    QByteArray m_domainName; // option 15 payload
+    QByteArray m_domainSearch; // option 119 payload, RFC 1035 label encoding
 
     QHash<QByteArray, Lease> m_leases; // key: client MAC (6 bytes)
     QHash<quint32, qint64> m_declined; // address -> held back until (ms)

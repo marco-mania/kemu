@@ -330,6 +330,8 @@ bool VirtualNetworkManager::startNetwork(const QString &name)
                         rangeEnd,
                         nameDnsIp != 0 ? nameDnsIp : (net.enableNat ? dnsIp : 0),
                         {dnsIp, nameDnsIp});
+        if (nameDnsIp != 0)
+            dhcp->setSearchDomain(Utils::vmNameToHostname(name) + u".lan"_s);
         vswitch->addInternalPort(dhcp);
         state.dhcp = dhcp;
         qCDebug(KEMU) << "VirtualNetworkManager: DHCP server attached, pool" << QHostAddress(rangeStart).toString() << "-"
