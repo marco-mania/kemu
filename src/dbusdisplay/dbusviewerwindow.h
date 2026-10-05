@@ -147,6 +147,7 @@ private Q_SLOTS:
     void onClipboardToHost();
     void onClipboardToGuest();
     void onClipboardBoth();
+    void onClipboardRegistrationFailed(const QString &error);
     void onScanoutChanged(int width, int height);
     void onQemuDisconnected();
     void onAbout();

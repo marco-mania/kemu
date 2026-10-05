@@ -52,6 +52,10 @@ public:
 
     bool setup();
 
+    // Switches direction without re-registering: a new Register would reset
+    // the session and make QEMU reconnect the guest agent.
+    void setDirection(ClipboardDirection direction);
+
     struct ClipboardData {
         QString mime;
         QByteArray data;
@@ -75,6 +79,11 @@ public:
     void handleGrab(uint selection, uint serial, const QStringList &mimes);
     void handleRelease(uint selection);
     ClipboardData handleRequest(uint selection, const QStringList &mimes);
+
+Q_SIGNALS:
+    // QEMU refused Register(), e.g. because another peer is registered.
+    // The manager is inert afterwards and should be deleted (deleteLater).
+    void registrationFailed(const QString &error);
 
 private Q_SLOTS:
     void onHostClipboardChanged();

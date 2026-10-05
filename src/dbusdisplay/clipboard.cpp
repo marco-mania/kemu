@@ -44,7 +44,7 @@ static const gchar clipboardXml[] =
 <node>
   <interface name="org.qemu.Display1.Clipboard">
     <method name="Register"/>
-    <method name="UnRegister"/>
+    <method name="Unregister"/>
     <method name="Grab">
       <arg type="u" name="selection" direction="in"/>
       <arg type="u" name="serial" direction="in"/>
@@ -82,16 +82,21 @@ QemuClipboardManager::QemuClipboardManager(QemuControlConnection *ctrl, Clipboar
 {
     m_hostClipboard = QApplication::clipboard();
 
-    if (m_direction == ClipboardDirection::ToGuest || m_direction == ClipboardDirection::Both) {
-        connect(m_hostClipboard, &QClipboard::dataChanged, this, &QemuClipboardManager::onHostClipboardChanged);
-    }
+    // Always connected: the direction can change at runtime, and
+    // onHostClipboardChanged() filters by it.
+    connect(m_hostClipboard, &QClipboard::dataChanged, this, &QemuClipboardManager::onHostClipboardChanged);
+}
+
+void QemuClipboardManager::setDirection(ClipboardDirection direction)
+{
+    m_direction = direction;
 }
 
 QemuClipboardManager::~QemuClipboardManager()
 {
     if (m_ctrl) {
         if (m_registered)
-            m_ctrl->callAsync(KemuDbusDisplayConst::ClipboardPath, KemuDbusDisplayConst::ClipboardIface, u"UnRegister"_s, nullptr);
+            m_ctrl->callAsync(KemuDbusDisplayConst::ClipboardPath, KemuDbusDisplayConst::ClipboardIface, u"Unregister"_s, nullptr);
         m_ctrl->unregisterObject(m_registrationId);
     }
 }
@@ -174,7 +179,7 @@ void QemuClipboardManager::onMethodCall(GDBusConnection *,
         self->resetSession();
         g_dbus_method_invocation_return_value(invocation, nullptr);
 
-    } else if (g_strcmp0(method_name, "UnRegister") == 0) {
+    } else if (g_strcmp0(method_name, "Unregister") == 0) {
         g_dbus_method_invocation_return_value(invocation, nullptr);
 
     } else {
@@ -198,6 +203,11 @@ void QemuClipboardManager::doRegister()
                               if (error) {
                                   qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Register() failed:" << error->message;
                                   m_registered = false;
+                                  // Free the path right away, so a new manager can export it.
+                                  if (m_ctrl)
+                                      m_ctrl->unregisterObject(m_registrationId);
+                                  m_registrationId = 0;
+                                  Q_EMIT registrationFailed(QString::fromUtf8(error->message));
                                   return;
                               }
 

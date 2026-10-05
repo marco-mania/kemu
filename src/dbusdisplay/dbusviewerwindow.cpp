@@ -671,14 +671,23 @@ void DbusViewerWindow::onClipboardBoth()
 
 void DbusViewerWindow::setupClipboard(ClipboardDirection dir)
 {
-    teardownClipboard();
     m_clipDirection = dir; // effective state (may revert on failure)
     m_prefs.clipboard = dir; // intended state (persisted)
     Q_EMIT devicePrefsChanged(m_prefs);
 
-    m_clipboard = new QemuClipboardManager(m_ctrl, dir, this);
-    if (!m_clipboard->setup()) {
-        statusBar()->showMessage(i18n("Clipboard registration failed – QEMU needs a clipboard agent in the guest"), 5000);
+    // QEMU accepts one clipboard peer per connection, so a direction change
+    // keeps the existing registration.
+    bool ok = true;
+    if (m_clipboard) {
+        m_clipboard->setDirection(dir);
+    } else {
+        m_clipboard = new QemuClipboardManager(m_ctrl, dir, this);
+        connect(m_clipboard, &QemuClipboardManager::registrationFailed, this, &DbusViewerWindow::onClipboardRegistrationFailed);
+        ok = m_clipboard->setup();
+    }
+
+    if (!ok) {
+        statusBar()->showMessage(i18n("Clipboard sharing could not be set up"), 5000);
         delete m_clipboard;
         m_clipboard = nullptr;
         m_clipDirection = ClipboardDirection::Off;
@@ -702,6 +711,19 @@ void DbusViewerWindow::setupClipboard(ClipboardDirection dir)
     }
 
     updateStatusBar();
+}
+
+void DbusViewerWindow::onClipboardRegistrationFailed(const QString &error)
+{
+    // Emitted from within the manager's reply handler: defer the deletion.
+    if (m_clipboard) {
+        m_clipboard->deleteLater();
+        m_clipboard = nullptr;
+    }
+    m_clipDirection = ClipboardDirection::Off;
+    m_actClipOff->setChecked(true);
+    updateStatusBar();
+    statusBar()->showMessage(i18n("Clipboard sharing unavailable: %1", error), 5000);
 }
 
 void DbusViewerWindow::teardownClipboard()
