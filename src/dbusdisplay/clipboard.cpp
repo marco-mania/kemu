@@ -222,6 +222,8 @@ void QemuClipboardManager::resetSession()
     // Spec: the serial counter restarts at 0 on every (re-)registration.
     m_currentSerial = 0;
     m_weAreOwner = false;
+    // Offer the host content again to a (re)connected guest agent.
+    m_lastSharedText.clear();
     qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: session reset, serial 0";
 }
 
@@ -309,10 +311,10 @@ void QemuClipboardManager::handleGrab(uint selection, uint serial, const QString
                               if (mime.startsWith(u"text/"_s) || mime == u"UTF8_STRING"_s) {
                                   const QString text = QString::fromUtf8(data);
                                   newMimeData->setText(text);
-                                  m_lastTextFromGuest = text;
+                                  m_lastSharedText = text;
                               } else {
                                   newMimeData->setData(mime, data);
-                                  m_lastTextFromGuest.clear();
+                                  m_lastSharedText.clear();
                               }
 
                               // Arm the echo guard, then place the data on the host clipboard.
@@ -391,17 +393,12 @@ void QemuClipboardManager::onHostClipboardChanged()
     if (!mimeData || !mimeData->hasText())
         return;
 
-    // Late echo: a clipboard manager (Klipper) can re-announce the very text
-    // we just took from the guest, long after the window above has closed.
-    // Identical content never travels back. Anything else means the host
-    // clipboard has genuinely moved on, so the guard is dropped and the same
-    // text can be sent again later.
     const QString hostText = mimeData->text();
-    if (!m_lastTextFromGuest.isEmpty() && hostText == m_lastTextFromGuest) {
-        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: dataChanged ignored (late echo of guest content)";
+    if (hostText.isEmpty() || hostText == m_lastSharedText) {
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: dataChanged ignored (content already shared)";
         return;
     }
-    m_lastTextFromGuest.clear();
+    m_lastSharedText = hostText;
 
     const QStringList mimesToSend = {
         u"text/plain;charset=utf-8"_s,
@@ -425,6 +422,7 @@ void QemuClipboardManager::onHostClipboardChanged()
                               if (error) {
                                   qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Grab to QEMU failed:" << error->message;
                                   m_weAreOwner = false;
+                                  m_lastSharedText.clear(); // allow a retry with the same content
                               }
                               // Do NOT proactively call Request() from here. QEMU pulls the data
                               // itself when the guest pastes, by invoking our Request handler.

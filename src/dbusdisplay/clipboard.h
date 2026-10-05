@@ -105,8 +105,9 @@ private:
     // (especially under Wayland, where setMimeData fires multiple signals).
     bool m_settingFromGuest = false;
 
-    // Second guard (content-based): remember the last text received from the
-    // guest; identical dataChanged content is never bounced back. Catches
-    // late echoes from clipboard managers (Klipper) outside the time window.
-    QString m_lastTextFromGuest;
+    // Text currently shared between host and guest, in either direction.
+    // dataChanged with identical content is never sent to the guest: Wayland
+    // re-announces the selection on every focus change, and clipboard
+    // managers (Klipper) echo guest data late.
+    QString m_lastSharedText;
 };
