@@ -315,9 +315,12 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         // no peer on the guest side -- Grab/Request calls go nowhere.
         // NB: The port name "com.redhat.spice.0" is hardcoded in the
         // spice-vdagent daemon only for historical reasons.
-        args << u"-device"_s << u"virtio-serial-pci"_s;
-        args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,name=vdagent,clipboard=on,mouse=off"_s;
-        args << u"-device"_s << u"virtserialport,chardev=vdagent,name=com.redhat.spice.0"_s;
+        // virtio-serial needs PCI; without it (isapc) QEMU would not start.
+        if (VMConfig::supportsPciBus(config.machineType())) {
+            args << u"-device"_s << u"virtio-serial-pci"_s;
+            args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,name=vdagent,clipboard=on,mouse=off"_s;
+            args << u"-device"_s << u"virtserialport,chardev=vdagent,name=com.redhat.spice.0"_s;
+        }
 
     } else if (headless) {
         args << u"-display"_s << u"none"_s;
