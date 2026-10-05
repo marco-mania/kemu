@@ -227,11 +227,10 @@ void QemuClipboardManager::handleGrab(uint selection, uint serial, const QString
         qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Grab received before Register ack - ignoring";
         return;
     }
-    if (m_direction != ClipboardDirection::ToHost && m_direction != ClipboardDirection::Both) {
-        return;
-    }
 
     // Serial protocol: discard stale grabs; on tie the client (us) wins.
+    // Tracked in every direction, or our next host grab would carry a stale
+    // serial that QEMU drops silently.
     if (serial < m_currentSerial) {
         qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: stale Grab discarded (serial" << serial << "<" << m_currentSerial << ")";
         return;
@@ -243,6 +242,10 @@ void QemuClipboardManager::handleGrab(uint selection, uint serial, const QString
 
     m_currentSerial = serial;
     m_weAreOwner = false;
+
+    if (m_direction != ClipboardDirection::ToHost && m_direction != ClipboardDirection::Both) {
+        return;
+    }
 
     qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Guest grabbed clipboard, MIMEs:" << mimes;
 
