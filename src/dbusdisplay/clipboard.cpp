@@ -168,8 +168,13 @@ void QemuClipboardManager::onMethodCall(GDBusConnection *,
         GVariant *data = g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, result.data.constData(), result.data.size(), sizeof(guint8));
         g_dbus_method_invocation_return_value(invocation, g_variant_new("(s@ay)", result.mime.toUtf8().constData(), data));
 
-    } else if (g_strcmp0(method_name, "Register") == 0 || g_strcmp0(method_name, "UnRegister") == 0) {
-        // QEMU never calls these on us, but the interface declares them.
+    } else if (g_strcmp0(method_name, "Register") == 0) {
+        // QEMU re-registers us to restart the serial counter, e.g. whenever
+        // the guest agent (re)connects.
+        self->resetSession();
+        g_dbus_method_invocation_return_value(invocation, nullptr);
+
+    } else if (g_strcmp0(method_name, "UnRegister") == 0) {
         g_dbus_method_invocation_return_value(invocation, nullptr);
 
     } else {
@@ -196,12 +201,18 @@ void QemuClipboardManager::doRegister()
                                   return;
                               }
 
-                              // Spec: serial counter is reset on (re-)registration.
-                              m_currentSerial = 0;
-                              m_weAreOwner = false;
+                              resetSession();
                               m_registered = true;
-                              qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Register() acknowledged, serial reset to 0";
+                              qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Register() acknowledged";
                           });
+}
+
+void QemuClipboardManager::resetSession()
+{
+    // Spec: the serial counter restarts at 0 on every (re-)registration.
+    m_currentSerial = 0;
+    m_weAreOwner = false;
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: session reset, serial 0";
 }
 
 // =============================================================================

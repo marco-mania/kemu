@@ -71,6 +71,7 @@ public:
                              gpointer user_data);
 
     // Called by onMethodCall:
+    void resetSession();
     void handleGrab(uint selection, uint serial, const QStringList &mimes);
     void handleRelease(uint selection);
     ClipboardData handleRequest(uint selection, const QStringList &mimes);
