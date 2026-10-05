@@ -18,6 +18,10 @@ using namespace Qt::StringLiterals;
 // QEMU stream netdev framing: 4-byte big-endian length + Ethernet frame.
 static constexpr quint32 kMaxFrameSize = 65535;
 
+// Frames for a client that stops reading (e.g. a paused VM) are dropped
+// once this much is queued, like a switch with a full egress queue.
+static constexpr qint64 kMaxPendingWriteBytes = 4 * 1024 * 1024;
+
 VirtualSwitch::VirtualSwitch(QObject *parent)
     : QObject(parent)
 {
@@ -164,6 +168,7 @@ void VirtualSwitch::onNewConnection(GuestPort *port)
         port->socket = socket;
         port->readBuffer.clear();
         port->spoofLogged = false;
+        port->congested = false;
         connect(socket, &QLocalSocket::readyRead, this, [this, port]() {
             onReadyRead(port);
         });
@@ -298,6 +303,15 @@ void VirtualSwitch::writeFrame(GuestPort *port, const QByteArray &frame)
 {
     if (!port->socket)
         return;
+    if (port->socket->bytesToWrite() > kMaxPendingWriteBytes) {
+        if (!port->congested) {
+            qCWarning(KEMU) << "VirtualSwitch: client on" << port->socketPath << "is not reading, dropping frames";
+            port->congested = true;
+        }
+        return;
+    }
+    port->congested = false;
+
     QByteArray out(4, Qt::Uninitialized);
     qToBigEndian<quint32>(static_cast<quint32>(frame.size()), reinterpret_cast<uchar *>(out.data()));
     out.append(frame);

@@ -94,6 +94,7 @@ private:
         QPointer<QLocalSocket> socket;
         QByteArray readBuffer;
         bool spoofLogged = false;
+        bool congested = false;
     };
 
     void onNewConnection(GuestPort *port);
