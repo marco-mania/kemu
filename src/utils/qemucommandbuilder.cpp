@@ -368,8 +368,11 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             if (!networkContext.mcastAddress.isEmpty()) {
                 // Standalone export: QEMU's built-in multicast network stands
                 // in for the in-memory switch, which lives in the KEMU
-                // process and is unreachable from a script.
-                args << u"-netdev"_s << u"socket,id=%1,mcast=%2"_s.arg(KEMUConst::NetdevId, networkContext.mcastAddress);
+                // process and is unreachable from a script. localaddr keeps
+                // the group on the loopback interface; without it the guest's
+                // frames leave for the physical network.
+                args << u"-netdev"_s
+                     << u"socket,id=%1,mcast=%2,localaddr=127.0.0.1"_s.arg(KEMUConst::NetdevId, networkContext.mcastAddress);
             } else {
                 Q_ASSERT_X(!networkContext.switchSocketPath.isEmpty(),
                            "QemuCommandBuilder::build",
@@ -518,7 +521,8 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
         if (config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork) {
             script += u"# Network '%1': QEMU's built-in multicast networking stands in for\n"_s.arg(network.name)
                 + u"# KEMU's in-memory switch. Every exported VM of this network shares\n"_s
-                + u"# the same group and reaches the others at L2. There is no DHCP and\n"_s
+                + u"# the same group on this machine and reaches the others at L2; the\n"_s
+                + u"# group stays on the loopback interface. There is no DHCP and\n"_s
                 + u"# no internet access here - configure static addresses inside the\n"_s
                 + u"# guests or run a DHCP server in one of them.\n\n"_s;
         } else if (networkContext.useSlirp) {
