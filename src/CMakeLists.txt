@@ -118,6 +118,8 @@ target_sources(
           utils/virtualnetworkmanager.h
           utils/virtualswitch.cpp
           utils/virtualswitch.h
+          utils/networkthread.cpp
+          utils/networkthread.h
           utils/dhcpserver.cpp
           utils/dhcpserver.h
           utils/dnsserver.cpp

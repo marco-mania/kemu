@@ -15,6 +15,8 @@
 #include <QStandardPaths>
 #include <QString>
 
+#include <memory>
+
 #include <KConfigGroup>
 #include <KLocalizedString>
 #include <KSharedConfig>
@@ -26,6 +28,7 @@ using namespace Qt::StringLiterals;
 class DhcpServer;
 class DnsServer;
 class GatewayResponder;
+class NetworkThread;
 class SlirpUplink;
 class VirtualSwitch;
 
@@ -45,6 +48,9 @@ class VirtualSwitch;
  *   │    └── GatewayResponder   (internal port, only without NAT)    │
  *   │                                                                │
  *   └────────────────────────────────────────────────────────────────┘
+ *
+ * Each running network owns a NetworkThread; the switch and its internal
+ * ports live there, so guest traffic does not share the GUI thread.
  *
  * No root rights, no kernel interfaces and no namespaces are involved, so
  * virtual networks work unchanged inside sandboxes (Flatpak) and on
@@ -136,6 +142,8 @@ Q_SIGNALS:
 
 private:
     struct RuntimeState {
+        // Owns the thread the switch and all ports below live on.
+        std::shared_ptr<NetworkThread> thread;
         QPointer<VirtualSwitch> vswitch;
         QPointer<DhcpServer> dhcp;
         QPointer<DnsServer> dns;

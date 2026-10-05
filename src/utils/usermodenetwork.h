@@ -9,8 +9,11 @@
 #include <QObject>
 #include <QString>
 
+#include <memory>
+
 #include "utils/vmconfig.h"
 
+class NetworkThread;
 class SlirpUplink;
 class VirtualSwitch;
 
@@ -22,6 +25,9 @@ class VirtualSwitch;
  * port terminates the traffic. The addressing follows the slirp (and QEMU
  * "-netdev user") conventions: network 10.0.2.0/24, gateway/DHCP 10.0.2.2,
  * DNS proxy 10.0.2.3, first DHCP lease 10.0.2.15.
+ *
+ * Switch and uplink live on their own NetworkThread, so the VM's traffic
+ * does not share the GUI thread.
  *
  * No external process, no root rights, no namespaces - so user-mode
  * networking also works inside sandboxes (Flatpak), where passt's
@@ -53,6 +59,7 @@ Q_SIGNALS:
     void errorOccurred(const QString &message);
 
 private:
+    std::unique_ptr<NetworkThread> m_thread;
     VirtualSwitch *m_switch = nullptr;
     SlirpUplink *m_uplink = nullptr;
     QString m_socketPath;

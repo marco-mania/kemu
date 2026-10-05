@@ -12,6 +12,7 @@
 #include "utils/dhcpserver.h"
 #include "utils/dnsserver.h"
 #include "utils/gatewayresponder.h"
+#include "utils/networkthread.h"
 #include "utils/slirpuplink.h"
 #include "utils/utils.h"
 #include "utils/virtualswitch.h"
@@ -242,63 +243,12 @@ bool VirtualNetworkManager::startNetwork(const QString &name)
     const quint32 networkAddr = gatewayIp & mask;
     const quint32 broadcastAddr = networkAddr | ~mask;
 
-    const QString dirPath = runtimeDir(name);
-    if (!QDir().mkpath(dirPath)) {
-        setError(name, i18n("Failed to create the runtime directory '%1'.", dirPath));
-        return false;
-    }
-
-    auto *vswitch = new VirtualSwitch(this);
-    RuntimeState &state = m_runtime[name];
-    state.vswitch = vswitch;
-
-    qCDebug(KEMU) << "VirtualNetworkManager: network" << name << "started in" << dirPath << "- gateway" << gatewayAddress.toString() << "prefix"
-                  << net.prefixLength << "dhcp" << net.enableDhcp << "nat" << net.enableNat;
-
-    // NAT uplink first: the DHCP server advertises its DNS proxy address.
-    quint32 dnsIp = 0;
-    if (net.enableNat) {
-        dnsIp = deriveServiceAddress(gatewayIp, networkAddr, broadcastAddr, 1, 0);
-
-        auto *uplink = new SlirpUplink(this);
-        SlirpUplink::Config cfg;
-        cfg.network = networkAddr;
-        cfg.netmask = mask;
-        cfg.gateway = gatewayIp;
-        cfg.nameserver = dnsIp != 0 ? dnsIp : networkAddr + 1;
-        cfg.allowHostLoopback = net.allowHostAccess;
-
-        if (!uplink->start(cfg)) {
-            const QString error = uplink->lastError();
-            delete uplink;
-            stopNetwork(name);
-            setError(name, i18n("Failed to start NAT uplink: %1", error));
-            return false;
-        }
-        connect(uplink, &SlirpUplink::errorOccurred, uplink, [this, name](const QString &message) {
-            Q_EMIT errorOccurred(name, message);
-        });
-
-        vswitch->addInternalPort(uplink);
-        state.uplink = uplink;
-        qCDebug(KEMU) << "VirtualNetworkManager: NAT uplink attached, DNS proxy at"
-                      << (dnsIp != 0 ? QHostAddress(dnsIp).toString() : u"none"_s);
-    } else {
-        auto *responder = new GatewayResponder(serviceMac(name + u"-gw"_s), gatewayIp, this);
-        vswitch->addInternalPort(responder);
-        state.gatewayResponder = responder;
-        qCDebug(KEMU) << "VirtualNetworkManager: gateway responder attached (no NAT)";
-    }
-
-    // Own service addresses so unicast traffic reaches the in-process servers.
-    const quint32 dhcpIp = deriveServiceAddress(gatewayIp, networkAddr, broadcastAddr, 2, dnsIp);
-    // DNS requires DHCP: the lease table is its only name->address source.
-    const bool runDns = net.enableDhcp && net.enableDns;
-    const quint32 nameDnsIp = runDns ? deriveServiceAddress(gatewayIp, networkAddr, broadcastAddr, 3, dnsIp, dhcpIp) : 0;
-
+    // DHCP pool, validated before anything is created.
+    quint32 rangeStart = 0;
+    quint32 rangeEnd = 0;
     if (net.enableDhcp) {
-        quint32 rangeStart = QHostAddress(net.dhcpRangeStart).toIPv4Address();
-        quint32 rangeEnd = QHostAddress(net.dhcpRangeEnd).toIPv4Address();
+        rangeStart = QHostAddress(net.dhcpRangeStart).toIPv4Address();
+        rangeEnd = QHostAddress(net.dhcpRangeEnd).toIPv4Address();
         if (rangeStart == 0 || rangeEnd == 0 || rangeStart > rangeEnd) {
             // Default pool: network + 100 .. network + 200, clamped to the subnet.
             rangeStart = networkAddr + 100;
@@ -306,13 +256,11 @@ bool VirtualNetworkManager::startNetwork(const QString &name)
             if (rangeEnd >= broadcastAddr)
                 rangeEnd = broadcastAddr - 1;
             if (rangeStart > rangeEnd || rangeStart <= networkAddr) {
-                stopNetwork(name);
                 setError(name, i18n("Cannot derive a DHCP range from gateway '%1'.", net.gateway));
                 return false;
             }
         }
         if (rangeStart <= networkAddr || rangeEnd >= broadcastAddr) {
-            stopNetwork(name);
             setError(name,
                      i18n("The DHCP range %1 - %2 lies outside the subnet %3/%4.",
                           QHostAddress(rangeStart).toString(),
@@ -321,38 +269,103 @@ bool VirtualNetworkManager::startNetwork(const QString &name)
                           net.prefixLength));
             return false;
         }
-
-        auto *dhcp = new DhcpServer(serviceMac(name + u"-dhcp"_s), this);
-        dhcp->configure(gatewayIp,
-                        dhcpIp,
-                        net.prefixLength,
-                        rangeStart,
-                        rangeEnd,
-                        nameDnsIp != 0 ? nameDnsIp : (net.enableNat ? dnsIp : 0),
-                        {dnsIp, nameDnsIp});
-        if (nameDnsIp != 0)
-            dhcp->setSearchDomain(Utils::vmNameToHostname(name) + u".lan"_s);
-        vswitch->addInternalPort(dhcp);
-        state.dhcp = dhcp;
-        qCDebug(KEMU) << "VirtualNetworkManager: DHCP server attached, pool" << QHostAddress(rangeStart).toString() << "-"
-                      << QHostAddress(rangeEnd).toString();
     }
 
-    // In-process DNS server: resolves VM hostnames in "<network>.lan" from
-    // the DHCP lease table. Other names are forwarded only with NAT.
-    if (nameDnsIp != 0) {
-        const QString dnsZone = Utils::vmNameToHostname(name) + u".lan"_s;
-        auto *dns = new DnsServer(serviceMac(name + u"-dns"_s), this);
-        dns->configure(nameDnsIp, dnsZone, net.enableNat);
-        if (state.dhcp)
-            dns->setDhcpServer(state.dhcp);
-        vswitch->addInternalPort(dns);
-        state.dns = dns;
-        qCDebug(KEMU) << "VirtualNetworkManager: DNS server attached at" << QHostAddress(nameDnsIp).toString() << "zone" << dnsZone;
-    } else if (runDns) {
-        qCDebug(KEMU) << "VirtualNetworkManager: no address left for the DNS server (subnet too small)";
-    } else {
-        qCDebug(KEMU) << "VirtualNetworkManager: DNS server disabled for this network";
+    // Service addresses: the DHCP server advertises the NAT DNS proxy.
+    const quint32 dnsIp = net.enableNat ? deriveServiceAddress(gatewayIp, networkAddr, broadcastAddr, 1, 0) : 0;
+    const quint32 dhcpIp = deriveServiceAddress(gatewayIp, networkAddr, broadcastAddr, 2, dnsIp);
+    // DNS requires DHCP: the lease table is its only name->address source.
+    const bool runDns = net.enableDhcp && net.enableDns;
+    const quint32 nameDnsIp = runDns ? deriveServiceAddress(gatewayIp, networkAddr, broadcastAddr, 3, dnsIp, dhcpIp) : 0;
+
+    const QString dirPath = runtimeDir(name);
+    if (!QDir().mkpath(dirPath)) {
+        setError(name, i18n("Failed to create the runtime directory '%1'.", dirPath));
+        return false;
+    }
+
+    RuntimeState &state = m_runtime[name];
+    state.thread = std::make_shared<NetworkThread>(u"kemu-net"_s);
+
+    qCDebug(KEMU) << "VirtualNetworkManager: network" << name << "started in" << dirPath << "- gateway" << gatewayAddress.toString() << "prefix"
+                  << net.prefixLength << "dhcp" << net.enableDhcp << "nat" << net.enableNat;
+
+    // The fabric lives on its own thread: guest frames are switched there,
+    // independently of whatever blocks the GUI thread.
+    QString uplinkError;
+    state.thread->run([&] {
+        auto *vswitch = new VirtualSwitch;
+        state.vswitch = vswitch;
+
+        if (net.enableNat) {
+            auto *uplink = new SlirpUplink;
+            SlirpUplink::Config cfg;
+            cfg.network = networkAddr;
+            cfg.netmask = mask;
+            cfg.gateway = gatewayIp;
+            cfg.nameserver = dnsIp != 0 ? dnsIp : networkAddr + 1;
+            cfg.allowHostLoopback = net.allowHostAccess;
+
+            if (!uplink->start(cfg)) {
+                uplinkError = uplink->lastError();
+                delete uplink;
+                return;
+            }
+            // Context is the manager, so the signal is re-emitted on its thread.
+            connect(uplink, &SlirpUplink::errorOccurred, this, [this, name](const QString &message) {
+                Q_EMIT errorOccurred(name, message);
+            });
+
+            vswitch->addInternalPort(uplink);
+            state.uplink = uplink;
+            qCDebug(KEMU) << "VirtualNetworkManager: NAT uplink attached, DNS proxy at"
+                          << (dnsIp != 0 ? QHostAddress(dnsIp).toString() : u"none"_s);
+        } else {
+            auto *responder = new GatewayResponder(serviceMac(name + u"-gw"_s), gatewayIp);
+            vswitch->addInternalPort(responder);
+            state.gatewayResponder = responder;
+            qCDebug(KEMU) << "VirtualNetworkManager: gateway responder attached (no NAT)";
+        }
+
+        if (net.enableDhcp) {
+            auto *dhcp = new DhcpServer(serviceMac(name + u"-dhcp"_s));
+            dhcp->configure(gatewayIp,
+                            dhcpIp,
+                            net.prefixLength,
+                            rangeStart,
+                            rangeEnd,
+                            nameDnsIp != 0 ? nameDnsIp : (net.enableNat ? dnsIp : 0),
+                            {dnsIp, nameDnsIp});
+            if (nameDnsIp != 0)
+                dhcp->setSearchDomain(Utils::vmNameToHostname(name) + u".lan"_s);
+            vswitch->addInternalPort(dhcp);
+            state.dhcp = dhcp;
+            qCDebug(KEMU) << "VirtualNetworkManager: DHCP server attached, pool" << QHostAddress(rangeStart).toString() << "-"
+                          << QHostAddress(rangeEnd).toString();
+        }
+
+        // In-process DNS server: resolves VM hostnames in "<network>.lan" from
+        // the DHCP lease table. Other names are forwarded only with NAT.
+        if (nameDnsIp != 0) {
+            const QString dnsZone = Utils::vmNameToHostname(name) + u".lan"_s;
+            auto *dns = new DnsServer(serviceMac(name + u"-dns"_s));
+            dns->configure(nameDnsIp, dnsZone, net.enableNat);
+            if (state.dhcp)
+                dns->setDhcpServer(state.dhcp);
+            vswitch->addInternalPort(dns);
+            state.dns = dns;
+            qCDebug(KEMU) << "VirtualNetworkManager: DNS server attached at" << QHostAddress(nameDnsIp).toString() << "zone" << dnsZone;
+        } else if (runDns) {
+            qCDebug(KEMU) << "VirtualNetworkManager: no address left for the DNS server (subnet too small)";
+        } else {
+            qCDebug(KEMU) << "VirtualNetworkManager: DNS server disabled for this network";
+        }
+    });
+
+    if (!uplinkError.isEmpty()) {
+        stopNetwork(name);
+        setError(name, i18n("Failed to start NAT uplink: %1", uplinkError));
+        return false;
     }
 
     if (state.uplink)
@@ -378,12 +391,18 @@ void VirtualNetworkManager::stopNetwork(const QString &name)
     RuntimeState state = it.value();
     m_runtime.erase(it);
 
-    // Ports first (their destruction detaches them), then the switch.
-    delete state.dhcp;
-    delete state.dns;
-    delete state.gatewayResponder;
-    delete state.uplink;
-    delete state.vswitch;
+    // Ports first (their destruction detaches them), then the switch. All of
+    // them belong to the network thread, so they are destroyed there.
+    if (state.thread) {
+        state.thread->run([&state] {
+            delete state.dhcp;
+            delete state.dns;
+            delete state.gatewayResponder;
+            delete state.uplink;
+            delete state.vswitch;
+        });
+        state.thread.reset(); // joins the thread
+    }
 
     cleanupRuntimeDir(name);
 
@@ -427,8 +446,19 @@ QString VirtualNetworkManager::attachVm(const QString &networkName,
         }
     }
 
-    if (!it->vswitch->addPort(path, macAddress)) {
-        setError(networkName, i18n("Cannot attach VM '%1': %2", vmName, it->vswitch->lastError()));
+    const bool registerHost = it->dns && !dnsHostname.isEmpty() && !macAddress.isEmpty();
+    bool added = false;
+    QString switchError;
+    it->thread->run([&] {
+        added = it->vswitch->addPort(path, macAddress);
+        if (!added)
+            switchError = it->vswitch->lastError();
+        else if (registerHost)
+            it->dns->addHost(dnsHostname, macAddress);
+    });
+
+    if (!added) {
+        setError(networkName, i18n("Cannot attach VM '%1': %2", vmName, switchError));
         if (it->attachedVms.isEmpty())
             stopNetwork(networkName);
         return {};
@@ -436,10 +466,8 @@ QString VirtualNetworkManager::attachVm(const QString &networkName,
 
     it->attachedVms.insert(vmName, macAddress);
 
-    if (it->dns && !dnsHostname.isEmpty() && !macAddress.isEmpty()) {
-        it->dns->addHost(dnsHostname, macAddress);
+    if (registerHost)
         qCDebug(KEMU) << "VirtualNetworkManager: DNS record" << dnsHostname << "registered for" << vmName;
-    }
 
     qCDebug(KEMU) << "VirtualNetworkManager: VM" << vmName << "attached to" << networkName << "-" << path;
     Q_EMIT vmAttached(networkName, vmName, path);
@@ -456,11 +484,15 @@ void VirtualNetworkManager::detachVm(const QString &networkName, const QString &
     if (!it->attachedVms.remove(vmName))
         return;
 
-    if (it->vswitch)
-        it->vswitch->removePort(portSocketPath(networkName, vmName));
-
-    if (it->dns && !mac.isEmpty())
-        it->dns->removeHost(mac);
+    const QString path = portSocketPath(networkName, vmName);
+    if (it->thread) {
+        it->thread->run([&] {
+            if (it->vswitch)
+                it->vswitch->removePort(path);
+            if (it->dns && !mac.isEmpty())
+                it->dns->removeHost(mac);
+        });
+    }
 
     qCDebug(KEMU) << "VirtualNetworkManager: VM" << vmName << "detached from" << networkName;
     Q_EMIT vmDetached(networkName, vmName);
