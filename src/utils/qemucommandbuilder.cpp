@@ -318,7 +318,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         // virtio-serial needs PCI; without it (isapc) QEMU would not start.
         if (VMConfig::supportsPciBus(config.machineType())) {
             args << u"-device"_s << u"virtio-serial-pci"_s;
-            args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,name=vdagent,clipboard=on,mouse=off"_s;
+            args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,clipboard=on,mouse=off"_s;
             args << u"-device"_s << u"virtserialport,chardev=vdagent,name=com.redhat.spice.0"_s;
         }
 
