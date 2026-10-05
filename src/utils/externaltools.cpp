@@ -27,7 +27,6 @@ ExternalTools::ExternalTools(QObject *parent)
     registerTool(QemuImg, u"QemuImgPath"_s, u"qemu-img"_s);
     registerTool(Swtpm, u"SwtpmPath"_s, u"swtpm"_s);
     registerTool(Virtiofsd, u"VirtiofsdPath"_s, u"virtiofsd"_s);
-    registerTool(GenIsoImage, u"GenIsoImagePath"_s, u"genisoimage"_s);
 }
 
 // --- Registration ---
@@ -72,15 +71,6 @@ QString ExternalTools::autoDetect(const ToolInfo &info)
     QString found = QStandardPaths::findExecutable(info.defaultBinary);
     if (!found.isEmpty())
         return found;
-
-    // Alternative binary names for the ISO tool.
-    if (info.configKey == u"GenIsoImagePath"_s) {
-        found = QStandardPaths::findExecutable(u"mkisofs"_s);
-        if (found.isEmpty())
-            found = QStandardPaths::findExecutable(u"xorriso"_s);
-        if (!found.isEmpty())
-            return found;
-    }
 
     return QStandardPaths::findExecutable(info.defaultBinary, KEMUConst::fallbackPaths());
 }
@@ -188,15 +178,13 @@ QString ExternalTools::displayName(Tool tool)
         return i18n("Software TPM Emulator");
     case Virtiofsd:
         return i18n("Virtio-fs Shared File System Daemon");
-    case GenIsoImage:
-        return i18n("ISO Image Creator (genisoimage/mkisofs/xorriso)");
     }
     return {};
 }
 
 QList<ExternalTools::Tool> ExternalTools::allTools()
 {
-    return {QemuSystem, QemuImg, Swtpm, Virtiofsd, GenIsoImage};
+    return {QemuSystem, QemuImg, Swtpm, Virtiofsd};
 }
 
 QList<ExternalTools::Tool> ExternalTools::coreTools()
@@ -253,8 +241,7 @@ QList<ExternalTools::FeatureGroup> ExternalTools::featureGroups()
                   "11)."),
              {Swtpm},
              true},
-            {SharedFolders, i18n("Shared Folders"), i18n("Host-to-guest folder sharing via virtio-fs."), {Virtiofsd}, true},
-            {CloudInitIso, i18n("Cloud-Init / ISO Creation"), i18n("Generate seed ISOs for automated cloud-image deployment."), {GenIsoImage}, true}};
+            {SharedFolders, i18n("Shared Folders"), i18n("Host-to-guest folder sharing via virtio-fs."), {Virtiofsd}, true}};
 }
 
 QList<ExternalTools::FeatureGroup> ExternalTools::missingFeatureGroups() const
@@ -283,8 +270,6 @@ QString ExternalTools::suppressionConfigKey(FeatureGroupId id)
         return u"IgnoreMissing_TpmEmulation"_s;
     case SharedFolders:
         return u"IgnoreMissing_SharedFolders"_s;
-    case CloudInitIso:
-        return u"IgnoreMissing_CloudInitIso"_s;
     }
     return {};
 }

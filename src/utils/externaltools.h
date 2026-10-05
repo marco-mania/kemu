@@ -44,16 +44,14 @@ public:
         QemuSystem, // qemu-system-x86_64
         QemuImg, // qemu-img
         Swtpm, // swtpm
-        Virtiofsd, // virtiofsd (virtio-fs shared file system daemon)
-        GenIsoImage // genisoimage, mkisofs, or xorriso
+        Virtiofsd // virtiofsd (virtio-fs shared file system daemon)
     };
     Q_ENUM(Tool)
 
     enum FeatureGroupId {
         Core,
         TpmEmulation,
-        SharedFolders,
-        CloudInitIso
+        SharedFolders
     };
     Q_ENUM(FeatureGroupId)
 

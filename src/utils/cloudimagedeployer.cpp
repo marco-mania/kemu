@@ -8,7 +8,7 @@
 
 #include "utils/cloudinittemplates.h"
 #include "utils/externaltools.h"
-#include "utils/sandboxcapabilities.h"
+#include "utils/isoimagebuilder.h"
 #include "utils/utils.h"
 
 using namespace Qt::StringLiterals;
@@ -215,71 +215,15 @@ bool CloudImageDeployer::createNoCloudIso(const QDir &vmDir,
                                           const QByteArray &networkConfig,
                                           QString &errorOut)
 {
-    QTemporaryDir tmpDir;
-    if (!tmpDir.isValid()) {
-        errorOut = i18n("Failed to create temp directory.");
+    // The NoCloud datasource finds the seed by volume label "cidata" and
+    // reads the three files from the image root.
+    const QList<IsoImageBuilder::Entry> entries = {{u"user-data"_s, userData}, {u"meta-data"_s, metaData}, {u"network-config"_s, networkConfig}};
+
+    QString isoError;
+    if (!IsoImageBuilder::write(noCloudIsoPath(vmDir), u"cidata"_s, entries, isoError)) {
+        errorOut = i18n("ISO creation failed: %1", isoError);
         return false;
     }
-
-    auto writeFile = [&](const QString &name, const QByteArray &content) -> bool {
-        QFile f(tmpDir.filePath(name));
-        if (!f.open(QIODevice::WriteOnly)) {
-            errorOut = i18n("Failed to write %1.", name);
-            return false;
-        }
-        f.write(content);
-        return true;
-    };
-
-    if (!writeFile(u"user-data"_s, userData))
-        return false;
-    if (!writeFile(u"meta-data"_s, metaData))
-        return false;
-    if (!writeFile(u"network-config"_s, networkConfig))
-        return false;
-
-    const QString tool = findIsoTool();
-    if (tool.isEmpty()) {
-        errorOut = SandboxCapabilities::instance().has(SandboxCapabilities::ExternalToolPaths)
-            ? i18n("No ISO tool found. Please install genisoimage, mkisofs, or xorriso.")
-            : i18n("No ISO tool found. This build should ship xorriso - please report this as a packaging bug.");
-        return false;
-    }
-
-    const QString outputIso = noCloudIsoPath(vmDir);
-
-    // xorriso needs switching into its mkisofs-compatible personality;
-    // xorrisofs already starts in it.
-    const QString binary = QFileInfo(tool).fileName();
-    QStringList args;
-    if (binary == "xorriso"_L1)
-        args << u"-as"_s << u"genisoimage"_s;
-    args << u"-output"_s << outputIso << u"-volid"_s << u"cidata"_s << u"-joliet"_s << u"-rock"_s << tmpDir.path();
-
-    KProcess proc;
-    proc.setOutputChannelMode(KProcess::SeparateChannels);
-    proc.setProgram(tool, args);
-
-    const int exitCode = proc.execute(15000);
-    if (exitCode < 0) {
-        errorOut = i18n("ISO creation timed out.");
-        return false;
-    }
-
-    if (exitCode != 0 || !QFile::exists(outputIso)) {
-        errorOut = i18n("ISO creation failed: %1", QString::fromUtf8(proc.readAllStandardError()).trimmed());
-        return false;
-    }
-
-    QFile::setPermissions(outputIso, QFile::ReadOwner | QFile::WriteOwner);
 
     return true;
-}
-
-QString CloudImageDeployer::findIsoTool()
-{
-    // ExternalTools::autoDetect() already covers genisoimage, mkisofs and
-    // xorriso, including the configured override and the fallback paths.
-    const auto &tools = ExternalTools::instance();
-    return tools.isAvailable(ExternalTools::GenIsoImage) ? tools.path(ExternalTools::GenIsoImage) : QString();
 }

@@ -12,7 +12,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QString>
-#include <QTemporaryDir>
 #include <QTextStream>
 #include <QUuid>
 
@@ -74,5 +73,4 @@ private:
 
     static bool createNoCloudIso(const QDir &vmDir, const QByteArray &userData, const QByteArray &metaData, const QByteArray &networkConfig, QString &errorOut);
 
-    static QString findIsoTool();
 };

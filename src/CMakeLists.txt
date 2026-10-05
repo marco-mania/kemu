@@ -113,6 +113,8 @@ target_sources(
           utils/cloudimagedeployer.cpp
           utils/cloudimagedeployer.h
           utils/cloudinittemplates.h
+          utils/isoimagebuilder.cpp
+          utils/isoimagebuilder.h
           utils/virtualnetwork.h
           utils/virtualnetworkmanager.cpp
           utils/virtualnetworkmanager.h
@@ -234,6 +236,7 @@ target_include_directories(
 target_link_libraries(
   ${PROJECT_NAME}
   PkgConfig::SLIRP
+  PkgConfig::ISOFS
   ${UDEV_LIBRARIES}
   LibArchive::LibArchive
   PkgConfig::GIO

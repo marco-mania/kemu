@@ -91,6 +91,7 @@ file(GLOB_RECURSE ALL_SOURCE_FILES src/*.cpp src/*.h)
 kde_clang_format(${ALL_SOURCE_FILES})
 
 pkg_check_modules(SLIRP REQUIRED IMPORTED_TARGET slirp>=4.7)
+pkg_check_modules(ISOFS REQUIRED IMPORTED_TARGET libisofs-1>=1.0.0)
 pkg_check_modules(UDEV REQUIRED libudev)
 pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0 gio-unix-2.0)
 pkg_check_modules(EGL REQUIRED IMPORTED_TARGET egl)
