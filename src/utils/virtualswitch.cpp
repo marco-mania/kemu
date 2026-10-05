@@ -255,7 +255,7 @@ void VirtualSwitch::forwardFrame(const QByteArray &frame, GuestPort *fromGuest, 
     }
 
     qCDebug(KEMU) << "VirtualSwitch: frame" << frame.size() << "bytes," << srcMac.toHex(':') << "->" << dstMac.toHex(':') << "ethertype"
-                  << u"0x%1"_s.arg(qFromBigEndian<quint16>(reinterpret_cast<const uchar *>(frame.constData()) + 12), 4, 16, u'0')
+                  << u"0x%1"_s.arg(qFromBigEndian<quint16>(reinterpret_cast<const uchar *>(frame.constData()) + 12), 4, 16, QLatin1Char('0'))
                   << (fromGuest ? "from guest" : "from internal port");
 
     const auto deliverToGuests = [this, &frame](GuestPort *exclude) {
