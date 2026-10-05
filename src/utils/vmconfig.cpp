@@ -1716,3 +1716,41 @@ void VMConfig::normalizePaths(const QDir &baseDir)
 
     m_diskPath = makeAbsolute(m_diskPath);
 }
+
+QStringList VMConfig::dropUntrustedSettings(const QDir &baseDir)
+{
+    QStringList dropped;
+
+    // An archive carries only the VM's own files. Everything that names a
+    // path on this machine, or adds raw QEMU arguments, is cleared: it would
+    // otherwise hand the guest host files or arbitrary QEMU options. KEMU's
+    // own export already strips these fields.
+    if (!m_isoPath.isEmpty()) {
+        dropped << i18n("CD/DVD image");
+        m_isoPath.clear();
+    }
+    m_bootFromIso = false;
+
+    if (!m_floppyPath.isEmpty()) {
+        dropped << i18n("Floppy image");
+        m_floppyPath.clear();
+    }
+    m_bootFromFloppy = false;
+
+    if (!m_sharedPath.isEmpty()) {
+        dropped << i18n("Shared folder");
+        m_sharedPath.clear();
+    }
+
+    if (!m_extraArgs.isEmpty()) {
+        dropped << i18n("Additional QEMU arguments");
+        m_extraArgs.clear();
+    }
+
+    // Disk and icon always live inside the VM directory.
+    m_diskPath = baseDir.absoluteFilePath(KEMUConst::VMDiskFileName);
+    if (m_iconSource == IconSource::Custom)
+        m_iconIdentifier = QFileInfo(m_iconIdentifier).fileName();
+
+    return dropped;
+}

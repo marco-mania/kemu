@@ -2011,6 +2011,10 @@ void MainWindow::importVM()
             const QString vmDir = getVmDir(importJob->vmName()).absolutePath();
 
             VMConfig config = loadVmConfig(vmDir);
+
+            // config.json comes from the archive and is untrusted input.
+            const QStringList dropped = config.dropUntrustedSettings(QDir(vmDir));
+
             const QStringList used = veModel->usedMacAddresses();
             if (SettingsDialog::importRegenerateMac() || used.contains(config.macAddress(), Qt::CaseInsensitive))
                 config.setMacAddress(Utils::generateRandomMac(used));
@@ -2022,6 +2026,15 @@ void MainWindow::importVM()
             statusBar()->showMessage(i18n("VM '%1' imported successfully.", importJob->vmName()));
             loadVmList();
             selectVmByName(importJob->vmName());
+
+            if (!dropped.isEmpty()) {
+                KMessageBox::information(this,
+                                         i18n("The archive contained settings that refer to files or QEMU options on the "
+                                              "machine it was exported from. They have been cleared:\n\n%1\n\n"
+                                              "Set them again in the VM settings if you need them.",
+                                              dropped.join(u", "_s)),
+                                         i18n("Imported Settings Cleared"));
+            }
         }
 
         importJob->deleteLater();

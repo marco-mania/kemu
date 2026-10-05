@@ -835,6 +835,10 @@ public:
 
     void normalizePaths(const QDir &baseDir);
 
+    /// Drops settings that an imported archive must not control: host paths
+    /// and raw QEMU arguments. Returns the labels of the dropped settings.
+    QStringList dropUntrustedSettings(const QDir &baseDir);
+
 private:
     QString m_name;
     QString m_comment;
