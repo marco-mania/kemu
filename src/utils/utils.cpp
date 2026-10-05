@@ -10,6 +10,7 @@
 
 extern "C" {
 char *__crypt_sha512(const char *key, const char *setting, char *output);
+#include <algorithm>
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/prctl.h>
@@ -197,6 +198,16 @@ bool isValidDnsHostname(const QString &hostname)
 {
     static const QRegularExpression re(u"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"_s);
     return re.match(hostname).hasMatch();
+}
+
+bool isValidDnsDomain(const QString &domain)
+{
+    if (domain.isEmpty() || domain.size() > 189)
+        return false;
+    const QStringList labels = domain.split(u'.');
+    return std::all_of(labels.cbegin(), labels.cend(), [](const QString &label) {
+        return isValidDnsHostname(label);
+    });
 }
 
 QString quoteShellArg(const QString &arg)

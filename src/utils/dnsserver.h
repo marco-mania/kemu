@@ -22,7 +22,7 @@ class QUdpSocket;
  * @brief Minimal DNS server attached to a VirtualSwitch as an internal port.
  *
  * Answers A/AAAA/PTR queries for the network-local zone
- * "<hostname>.<network>.lan" from the DHCP lease table. With upstream
+ * "<hostname>.<dns domain>" from the DHCP lease table. With upstream
  * forwarding enabled, everything else goes to the host's resolver (first
  * IPv4 nameserver from /etc/resolv.conf); otherwise it is refused, so an
  * isolated network has no path to the outside. UDP only.
@@ -36,7 +36,7 @@ public:
 
     /// All addresses in host byte order. serverIp is this server's own
     /// address; the server answers ARP requests for it. zone is the local
-    /// DNS zone (e.g. "test-net.lan"). forwardUpstream must only be set for
+    /// DNS zone (e.g. "test-net.internal"). forwardUpstream must only be set for
     /// networks with internet access (NAT).
     void configure(quint32 serverIp, const QString &zone, bool forwardUpstream);
 
@@ -78,7 +78,7 @@ private:
 
     QByteArray m_serverMac;
     quint32 m_serverIp = 0;
-    QString m_zone; // e.g. "test-net.lan"
+    QString m_zone; // e.g. "test-net.internal"
 
     QHash<QByteArray, QString> m_hostByMac; // NIC MAC -> hostname label
     QPointer<DhcpServer> m_dhcp;

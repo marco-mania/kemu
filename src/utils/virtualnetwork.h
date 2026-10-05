@@ -9,6 +9,8 @@
 #include <QString>
 #include <QStringList>
 
+#include "utils/utils.h"
+
 using namespace Qt::StringLiterals;
 
 /**
@@ -19,7 +21,7 @@ using namespace Qt::StringLiterals;
  *     via "-netdev stream" over a unix socket
  *   - optionally a built-in DHCP server (DhcpServer)
  *   - optionally a built-in DNS server (DnsServer) resolving the VMs'
- *     hostnames in "<network>.lan" (requires the DHCP server: its lease
+ *     hostnames in the network's DNS domain (requires the DHCP server: its lease
  *     table is the only name -> address source)
  *   - optionally an embedded libslirp instance (SlirpUplink) for
  *     NAT / internet access
@@ -55,9 +57,18 @@ struct VirtualNetwork {
     QString dhcpRangeEnd;
 
     /// When true (and enableDhcp is true), a built-in DNS server resolves
-    /// the VMs' hostnames in "<network>.lan" from the DHCP lease table.
-    /// Other queries go to the host resolver only if enableNat is set.
+    /// the VMs' hostnames in the network's DNS domain from the DHCP lease
+    /// table. Other queries go to the host resolver only if enableNat is set.
     bool enableDns = true;
+
+    /// DNS domain of the network, e.g. "lab.example.com". Handed to guests
+    /// as search domain. Empty selects "<network>.internal".
+    QString dnsDomain;
+
+    [[nodiscard]] QString effectiveDnsDomain() const
+    {
+        return dnsDomain.isEmpty() ? Utils::vmNameToHostname(name) + u".internal"_s : dnsDomain;
+    }
 
     // --- NAT / Internet ---
 

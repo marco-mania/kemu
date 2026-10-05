@@ -107,7 +107,7 @@ public:
      * Register a VM with the network. Call this before launching QEMU.
      *
      * @param dnsHostname Hostname for the in-process DNS server
-     *        ("<hostname>.<network>.lan"), may be empty.
+     *        ("<hostname>.<dns domain>"), may be empty.
      * @param macAddress  MAC of the VM's NIC. The VM's switch port only
      *        accepts frames from this MAC; it also maps the hostname to the
      *        DHCP-assigned address.

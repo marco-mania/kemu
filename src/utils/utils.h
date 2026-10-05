@@ -133,6 +133,10 @@ QByteArray macAddressToBytes(const QString &mac);
 // trailing '-'. Used for the per-network DNS names of VMs.
 bool isValidDnsHostname(const QString &hostname);
 
+// Dot-separated list of valid host name labels, e.g. "lab.example.com".
+// Capped so that "<63-char host>.<domain>" stays a legal 253-byte name.
+bool isValidDnsDomain(const QString &domain);
+
 QString quoteShellArg(const QString &arg);
 
 // Derives an RFC-1123 style host name from a VM name. VM names allow spaces,

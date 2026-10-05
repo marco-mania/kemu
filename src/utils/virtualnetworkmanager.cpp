@@ -100,6 +100,8 @@ void VirtualNetworkManager::load()
         net.prefixLength = grp.readEntry(u"PrefixLength"_s, 24);
         net.enableDhcp = grp.readEntry(u"EnableDhcp"_s, true);
         net.enableDns = grp.readEntry(u"EnableDns"_s, true);
+        // Networks saved before the domain became configurable used ".lan".
+        net.dnsDomain = grp.hasKey(u"DnsDomain"_s) ? grp.readEntry(u"DnsDomain"_s, QString()) : Utils::vmNameToHostname(name) + u".lan"_s;
         net.dhcpRangeStart = grp.readEntry(u"DhcpRangeStart"_s, {});
         net.dhcpRangeEnd = grp.readEntry(u"DhcpRangeEnd"_s, {});
         net.enableNat = grp.readEntry(u"EnableNat"_s, true);
@@ -134,6 +136,7 @@ void VirtualNetworkManager::save() const
         grp.writeEntry(u"PrefixLength"_s, net.prefixLength);
         grp.writeEntry(u"EnableDhcp"_s, net.enableDhcp);
         grp.writeEntry(u"EnableDns"_s, net.enableDns);
+        grp.writeEntry(u"DnsDomain"_s, net.dnsDomain);
         grp.writeEntry(u"DhcpRangeStart"_s, net.dhcpRangeStart);
         grp.writeEntry(u"DhcpRangeEnd"_s, net.dhcpRangeEnd);
         grp.writeEntry(u"EnableNat"_s, net.enableNat);
@@ -243,6 +246,12 @@ bool VirtualNetworkManager::startNetwork(const QString &name)
     const quint32 networkAddr = gatewayIp & mask;
     const quint32 broadcastAddr = networkAddr | ~mask;
 
+    const QString dnsDomain = net.effectiveDnsDomain().toLower();
+    if (net.enableDhcp && net.enableDns && !Utils::isValidDnsDomain(dnsDomain)) {
+        setError(name, i18n("The DNS domain '%1' is not valid.", dnsDomain));
+        return false;
+    }
+
     // DHCP pool, validated before anything is created.
     quint32 rangeStart = 0;
     quint32 rangeEnd = 0;
@@ -337,24 +346,23 @@ bool VirtualNetworkManager::startNetwork(const QString &name)
                             nameDnsIp != 0 ? nameDnsIp : (net.enableNat ? dnsIp : 0),
                             {dnsIp, nameDnsIp});
             if (nameDnsIp != 0)
-                dhcp->setSearchDomain(Utils::vmNameToHostname(name) + u".lan"_s);
+                dhcp->setSearchDomain(dnsDomain);
             vswitch->addInternalPort(dhcp);
             state.dhcp = dhcp;
             qCDebug(KEMU) << "VirtualNetworkManager: DHCP server attached, pool" << QHostAddress(rangeStart).toString() << "-"
                           << QHostAddress(rangeEnd).toString();
         }
 
-        // In-process DNS server: resolves VM hostnames in "<network>.lan" from
+        // In-process DNS server: resolves VM hostnames in the network's DNS domain from
         // the DHCP lease table. Other names are forwarded only with NAT.
         if (nameDnsIp != 0) {
-            const QString dnsZone = Utils::vmNameToHostname(name) + u".lan"_s;
             auto *dns = new DnsServer(serviceMac(name + u"-dns"_s));
-            dns->configure(nameDnsIp, dnsZone, net.enableNat);
+            dns->configure(nameDnsIp, dnsDomain, net.enableNat);
             if (state.dhcp)
                 dns->setDhcpServer(state.dhcp);
             vswitch->addInternalPort(dns);
             state.dns = dns;
-            qCDebug(KEMU) << "VirtualNetworkManager: DNS server attached at" << QHostAddress(nameDnsIp).toString() << "zone" << dnsZone;
+            qCDebug(KEMU) << "VirtualNetworkManager: DNS server attached at" << QHostAddress(nameDnsIp).toString() << "zone" << dnsDomain;
         } else if (runDns) {
             qCDebug(KEMU) << "VirtualNetworkManager: no address left for the DNS server (subnet too small)";
         } else {

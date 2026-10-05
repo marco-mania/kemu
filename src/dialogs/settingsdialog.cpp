@@ -6,10 +6,13 @@
 
 #include "settingsdialog.h"
 
+#include <algorithm>
+
 #include "const.h"
 #include "utils/guestlocales.h"
 #include "utils/qemucapabilities.h"
 #include "utils/sandboxcapabilities.h"
+#include "utils/utils.h"
 #include "utils/vmconfig.h"
 
 SettingsDialog::SettingsDialog(QWidget *parent)
@@ -697,9 +700,25 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     auto *dnsCheck = new QCheckBox(i18n("Enable DNS server"));
     dnsCheck->setChecked(net.enableDns);
     dnsCheck->setToolTip(i18n("Resolves the VMs' hostnames inside this network "
-                              "(\"<hostname>.<network>.lan\"). Other queries are forwarded "
+                              "(\"<hostname>.<DNS domain>\"). Other queries are forwarded "
                               "to the host resolver only if NAT is enabled. Requires DHCP."));
     form->addRow(dnsCheck);
+
+    auto *domainEdit = new QLineEdit(net.dnsDomain);
+    auto *domainLabel = new QLabel(i18n("DNS domain:"));
+    domainEdit->setToolTip(i18n("Domain of the VMs' names and search domain handed to guests. "
+                                "Leave empty for \"<network>.internal\"."));
+    form->addRow(domainLabel, domainEdit);
+    const auto updateDomainPlaceholder = [=]() {
+        domainEdit->setPlaceholderText(Utils::vmNameToHostname(nameEdit->text().trimmed()) + u".internal"_s);
+    };
+    updateDomainPlaceholder();
+    QObject::connect(nameEdit, &QLineEdit::textChanged, &dlg, updateDomainPlaceholder);
+
+    auto *domainHint = new QLabel;
+    domainHint->setWordWrap(true);
+    domainHint->setStyleSheet(u"color: palette(mid);"_s);
+    form->addRow(u""_s, domainHint);
 
     auto updateDhcpWidgets = [=](bool checked) {
         dhcpStartEdit->setEnabled(checked);
@@ -707,9 +726,14 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
         dhcpEndEdit->setEnabled(checked);
         dhcpEndLabel->setEnabled(checked);
         dnsCheck->setEnabled(checked);
+        domainEdit->setEnabled(checked && dnsCheck->isChecked());
+        domainLabel->setEnabled(checked && dnsCheck->isChecked());
     };
     updateDhcpWidgets(dhcpCheck->isChecked());
     QObject::connect(dhcpCheck, &QCheckBox::toggled, updateDhcpWidgets);
+    QObject::connect(dnsCheck, &QCheckBox::toggled, [=](bool) {
+        updateDhcpWidgets(dhcpCheck->isChecked());
+    });
 
     // --- NAT ---
     auto *natCheck = new QCheckBox(i18n("Enable NAT (Internet access)"));
@@ -757,6 +781,36 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     // --- Buttons ---
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     form->addRow(buttons);
+
+    const auto updateDomainHint = [=]() {
+        const QString domain = domainEdit->text().trimmed().toLower();
+        const bool dnsOn = dhcpCheck->isChecked() && dnsCheck->isChecked();
+        const bool valid = domain.isEmpty() || Utils::isValidDnsDomain(domain);
+        buttons->button(QDialogButtonBox::Ok)->setEnabled(valid || !dnsOn);
+
+        QString hint;
+        if (!dnsOn || domain.isEmpty()) {
+            hint.clear();
+        } else if (!valid) {
+            hint = i18n("Not a valid domain name.");
+        } else if (domain == u"local"_s || domain.endsWith(u".local"_s)) {
+            hint = i18n("\".local\" is used by multicast DNS; guests will not ask this network's DNS server.");
+        } else {
+            static const QStringList privateSuffixes = {u"internal"_s, u"lan"_s, u"test"_s, u"example"_s, u"invalid"_s, u"home.arpa"_s};
+            const bool isPrivate = std::any_of(privateSuffixes.cbegin(), privateSuffixes.cend(), [&domain](const QString &suffix) {
+                return domain == suffix || domain.endsWith(u'.' + suffix);
+            });
+            if (!isPrivate && natCheck->isChecked())
+                hint = i18n("Names below this domain are answered inside the network and never reach the real DNS.");
+        }
+        domainHint->setText(hint);
+        domainHint->setVisible(!hint.isEmpty());
+    };
+    QObject::connect(domainEdit, &QLineEdit::textChanged, &dlg, updateDomainHint);
+    QObject::connect(dnsCheck, &QCheckBox::toggled, &dlg, updateDomainHint);
+    QObject::connect(dhcpCheck, &QCheckBox::toggled, &dlg, updateDomainHint);
+    QObject::connect(natCheck, &QCheckBox::toggled, &dlg, updateDomainHint);
+    updateDomainHint();
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
 
@@ -768,6 +822,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     net.prefixLength = prefixSpin->value();
     net.enableDhcp = dhcpCheck->isChecked();
     net.enableDns = dnsCheck->isChecked();
+    net.dnsDomain = domainEdit->text().trimmed().toLower();
     net.dhcpRangeStart = dhcpStartEdit->text().trimmed();
     net.dhcpRangeEnd = dhcpEndEdit->text().trimmed();
     net.enableNat = natCheck->isChecked();

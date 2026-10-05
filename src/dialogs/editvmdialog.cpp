@@ -523,7 +523,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 
     hostnameEdit = new QLineEdit();
     hostnameEdit->setClearButtonEnabled(false);
-    hostnameEdit->setToolTip(i18n("DNS hostname of this VM inside the virtual network (\"<hostname>.<network>.lan\")"));
+    hostnameEdit->setToolTip(i18n("DNS hostname of this VM inside the virtual network (\"<hostname>.<DNS domain of the network>\")"));
     vdeLayout->addRow(i18n("Hostname:"), hostnameEdit);
 
     hostnameWarningLabel = new QLabel();
