@@ -19,7 +19,8 @@
  * internal port.
  *
  * Implements the RFC 2131 core exchange (DISCOVER/OFFER, REQUEST/ACK/NAK,
- * RELEASE, DECLINE) for a single IPv4 subnet. Leases are kept in memory and
+ * RELEASE, DECLINE) for a single IPv4 subnet. Declined addresses are held
+ * back for kDeclineHoldSeconds. Leases are kept in memory and
  * expire after kLeaseTimeSeconds; the pool is derived from the configured
  * address range. The gateway address and, optionally, a DNS server address
  * are advertised.
@@ -86,7 +87,9 @@ private:
     QSet<quint32> m_reserved;
 
     QHash<QByteArray, Lease> m_leases; // key: client MAC (6 bytes)
+    QHash<quint32, qint64> m_declined; // address -> held back until (ms)
     QElapsedTimer m_clock;
 
     static constexpr qint64 kLeaseTimeSeconds = 12 * 60 * 60;
+    static constexpr qint64 kDeclineHoldSeconds = 10 * 60;
 };

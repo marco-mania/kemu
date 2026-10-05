@@ -178,6 +178,11 @@ void DhcpServer::receiveFrame(const QByteArray &frame)
     const quint32 ciaddr = get32(bootp + 12);
     const QByteArray clientMac = QByteArray(bootp + 28, 6);
 
+    // No relay support: chaddr must be the sender, or one guest could
+    // drain the pool with invented client addresses.
+    if (clientMac != frame.mid(6, 6))
+        return;
+
     // Options.
     quint8 msgType = 0;
     quint32 requestedIp = 0;
@@ -216,20 +221,30 @@ void DhcpServer::receiveFrame(const QByteArray &frame)
     case kDhcpRequest: {
         // Renewal via ciaddr, selection/rebinding via requested IP.
         const quint32 wanted = requestedIp != 0 ? requestedIp : ciaddr;
-        if (wanted != 0 && isInPool(wanted) && !m_reserved.contains(wanted)) {
-            const auto it = m_leases.constFind(clientMac);
-            const bool ours = it != m_leases.constEnd() && it->ip == wanted;
-            const bool free = !isLeased(wanted);
-            if (ours || free) {
-                const quint32 ip = allocateLease(clientMac, wanted);
-                sendReply(kDhcpAck, clientMac, xid, ip, flags);
-                return;
-            }
+        const auto it = m_leases.constFind(clientMac);
+        const bool ours = it != m_leases.constEnd() && it->ip == wanted;
+        if (wanted != 0 && isInPool(wanted) && (ours || isLeasable(wanted))) {
+            // A client asking for another free address moves its lease there
+            // instead of being ACKed with an address it did not ask for.
+            if (!ours)
+                m_leases.remove(clientMac);
+            sendReply(kDhcpAck, clientMac, xid, allocateLease(clientMac, wanted), flags);
+            return;
         }
         sendReply(kDhcpNak, clientMac, xid, 0, kFlagBroadcast);
         break;
     }
-    case kDhcpDecline:
+    case kDhcpDecline: {
+        // The address is in use by someone else (e.g. a static setup):
+        // keep it out of the pool instead of handing it out again.
+        const auto it = m_leases.find(clientMac);
+        if (requestedIp != 0 && it != m_leases.end() && it->ip == requestedIp) {
+            m_declined.insert(requestedIp, m_clock.elapsed() + kDeclineHoldSeconds * 1000);
+            m_leases.erase(it);
+            qCWarning(KEMU) << "DhcpServer:" << ipString(requestedIp) << "declined by" << clientMac.toHex(':') << "- address held back";
+        }
+        break;
+    }
     case kDhcpRelease:
         releaseLease(clientMac, requestedIp != 0 ? requestedIp : ciaddr);
         break;
@@ -290,7 +305,7 @@ bool DhcpServer::isInPool(quint32 ip) const
 
 bool DhcpServer::isLeasable(quint32 ip) const
 {
-    return !m_reserved.contains(ip) && !isLeased(ip);
+    return !m_reserved.contains(ip) && !m_declined.contains(ip) && !isLeased(ip);
 }
 
 bool DhcpServer::isLeased(quint32 ip) const
@@ -309,6 +324,12 @@ void DhcpServer::expireLeases()
     for (auto it = m_leases.begin(); it != m_leases.end();) {
         if (it->expiresAtMs <= now)
             it = m_leases.erase(it);
+        else
+            ++it;
+    }
+    for (auto it = m_declined.begin(); it != m_declined.end();) {
+        if (it.value() <= now)
+            it = m_declined.erase(it);
         else
             ++it;
     }
