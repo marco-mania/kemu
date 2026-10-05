@@ -9,6 +9,7 @@
 #include <QFile>
 #include <QHostAddress>
 #include <QNetworkDatagram>
+#include <QRandomGenerator>
 #include <QStringList>
 #include <QTimer>
 #include <QUdpSocket>
@@ -33,12 +34,18 @@ constexpr quint16 kDnsPort = 53;
 constexpr quint16 kDnsTypeA = 1;
 constexpr quint16 kDnsTypePtr = 12;
 constexpr quint16 kDnsTypeAaaa = 28;
+constexpr quint16 kDnsTypeOpt = 41;
 constexpr quint16 kDnsTypeAny = 255;
 constexpr quint16 kDnsClassIn = 1;
 constexpr quint16 kDnsClassAny = 255;
 
 constexpr quint32 kDefaultTtl = 30;
 constexpr int kUpstreamTimeoutMs = 4000;
+constexpr int kMaxPendingQueries = 512;
+
+// Answers must fit into one Ethernet frame: no IP fragmentation here.
+constexpr int kMaxUdpPayload = 1500 - 20 - 8;
+constexpr quint16 kMaxEdnsPayload = 1232;
 
 quint16 ipChecksum(const uchar *data, int length)
 {
@@ -120,6 +127,49 @@ bool parseDnsName(const char *data, int size, int offset, QString *name, int *en
 
     *name = labels.join(u'.');
     return true;
+}
+
+/// Offset right after the (possibly compressed) name at offset, -1 if malformed.
+int skipDnsName(const char *data, int size, int offset)
+{
+    while (offset < size) {
+        const quint8 len = static_cast<quint8>(data[offset]);
+        if ((len & 0xc0) == 0xc0)
+            return offset + 2 <= size ? offset + 2 : -1;
+        if (len & 0xc0)
+            return -1;
+        offset += 1 + len;
+        if (len == 0)
+            return offset;
+    }
+    return -1;
+}
+
+/// Lowers the advertised EDNS UDP payload size of a query to kMaxEdnsPayload.
+void clampEdnsPayloadSize(QByteArray &msg)
+{
+    if (msg.size() < 12)
+        return;
+    char *data = msg.data();
+    const int size = msg.size();
+    const int answerRecords = get16(data + 6) + get16(data + 8);
+    const int records = answerRecords + get16(data + 10);
+
+    int offset = 12;
+    for (int i = 0; i < get16(data + 4); ++i) {
+        offset = skipDnsName(data, size, offset);
+        if (offset < 0)
+            return;
+        offset += 4;
+    }
+    for (int i = 0; i < records; ++i) {
+        offset = skipDnsName(data, size, offset);
+        if (offset < 0 || offset + 10 > size)
+            return;
+        if (i >= answerRecords && get16(data + offset) == kDnsTypeOpt && get16(data + offset + 2) > kMaxEdnsPayload)
+            qToBigEndian(kMaxEdnsPayload, data + offset + 2);
+        offset += 10 + get16(data + offset + 8);
+    }
 }
 
 void appendDnsName(QByteArray &buf, const QString &name)
@@ -285,7 +335,6 @@ void DnsServer::handleQuery(const QByteArray &frame)
     const quint32 clientIp = get32(ip + 12);
     const quint16 clientPort = get16(udp + 0);
 
-    const quint16 id = get16(dns + 0);
     const quint16 flags = get16(dns + 2);
     if (flags & 0x8000) // not a query
         return;
@@ -351,19 +400,19 @@ void DnsServer::handleQuery(const QByteArray &frame)
                 }
             }
         }
-        forwardQuery(id, clientMac, clientIp, clientPort, QByteArray(dns, dnsSize));
+        forwardQuery(clientMac, clientIp, clientPort, QByteArray(dns, dnsSize), questionEnd);
         return;
     }
 
     if (qclass != kDnsClassIn && qclass != kDnsClassAny) {
-        forwardQuery(id, clientMac, clientIp, clientPort, QByteArray(dns, dnsSize));
+        forwardQuery(clientMac, clientIp, clientPort, QByteArray(dns, dnsSize), questionEnd);
         return;
     }
 
     // Local zone: "<label>.<zone>".
     const bool inZone = qname == m_zone || qname.endsWith(u'.' + m_zone);
     if (!inZone) {
-        forwardQuery(id, clientMac, clientIp, clientPort, QByteArray(dns, dnsSize));
+        forwardQuery(clientMac, clientIp, clientPort, QByteArray(dns, dnsSize), questionEnd);
         return;
     }
 
@@ -410,8 +459,10 @@ void DnsServer::handleQuery(const QByteArray &frame)
     buildResponse(0, true, answers, count);
 }
 
-void DnsServer::forwardQuery(quint16 id, const QByteArray &clientMac, quint32 clientIp, quint16 clientPort, const QByteArray &dnsPayload)
+void DnsServer::forwardQuery(const QByteArray &clientMac, quint32 clientIp, quint16 clientPort, const QByteArray &dnsPayload, int questionEnd)
 {
+    const quint16 id = get16(dnsPayload.constData());
+
     if (!m_upstream || m_upstreamIp == 0) {
         // REFUSED on isolated networks, SERVFAIL if no resolver was found.
         const quint16 rcode = m_forwardUpstream ? 2 : 5;
@@ -424,28 +475,62 @@ void DnsServer::forwardQuery(quint16 id, const QByteArray &clientMac, quint32 cl
         return;
     }
 
-    PendingQuery pending{clientMac, clientIp, clientPort};
-    m_pending[id].append(pending);
-    QTimer::singleShot(kUpstreamTimeoutMs, this, [this, id]() {
-        m_pending.remove(id);
+    if (m_pending.size() >= kMaxPendingQueries) {
+        qCDebug(KEMU) << "DnsServer: too many pending queries, dropping id" << id;
+        return;
+    }
+
+    // Own transaction ids: guest ids may collide and must not be trusted.
+    quint16 upstreamId;
+    do {
+        upstreamId = static_cast<quint16>(QRandomGenerator::global()->bounded(0x10000u));
+    } while (m_pending.contains(upstreamId));
+
+    QByteArray query = dnsPayload;
+    clampEdnsPayloadSize(query);
+    qToBigEndian(upstreamId, query.data());
+
+    const quint64 serial = ++m_nextSerial;
+    m_pending.insert(upstreamId, {clientMac, clientIp, clientPort, id, dnsPayload.mid(12, questionEnd + 4 - 12), serial});
+    QTimer::singleShot(kUpstreamTimeoutMs, this, [this, upstreamId, serial]() {
+        const auto it = m_pending.constFind(upstreamId);
+        if (it != m_pending.cend() && it->serial == serial)
+            m_pending.erase(it);
     });
 
-    qCDebug(KEMU) << "DnsServer: forwarding query id" << id << "to" << QHostAddress(m_upstreamIp).toString();
-    m_upstream->writeDatagram(dnsPayload, QHostAddress(m_upstreamIp), kDnsPort);
+    qCDebug(KEMU) << "DnsServer: forwarding query id" << id << "as" << upstreamId << "to" << QHostAddress(m_upstreamIp).toString();
+    m_upstream->writeDatagram(query, QHostAddress(m_upstreamIp), kDnsPort);
 }
 
 void DnsServer::onUpstreamReadyRead()
 {
     while (m_upstream->hasPendingDatagrams()) {
-        const QByteArray answer = m_upstream->receiveDatagram().data();
-        if (answer.size() < 2)
+        const QNetworkDatagram datagram = m_upstream->receiveDatagram();
+        bool isIpv4 = false;
+        if (datagram.senderAddress().toIPv4Address(&isIpv4) != m_upstreamIp || !isIpv4 || datagram.senderPort() != kDnsPort)
             continue;
-        const quint16 id = get16(answer.constData());
-        const auto pendings = m_pending.take(id);
-        for (const PendingQuery &pending : pendings)
-            sendResponse(pending.clientMac, pending.clientIp, pending.clientPort, answer);
-        if (!pendings.isEmpty())
-            qCDebug(KEMU) << "DnsServer: relayed upstream answer for id" << id;
+
+        QByteArray answer = datagram.data();
+        if (answer.size() < 12)
+            continue;
+        const auto it = m_pending.find(get16(answer.constData()));
+        if (it == m_pending.end() || answer.mid(12, it->question.size()) != it->question)
+            continue;
+        const PendingQuery pending = it.value();
+        m_pending.erase(it);
+
+        qToBigEndian(pending.clientId, answer.data());
+        if (answer.size() > kMaxUdpPayload) {
+            // Header and question only, flagged as truncated (TC).
+            answer.truncate(12 + pending.question.size());
+            qToBigEndian<quint16>(get16(answer.constData() + 2) | 0x0200, answer.data() + 2);
+            qToBigEndian<quint16>(1, answer.data() + 4);
+            qToBigEndian<quint16>(0, answer.data() + 6);
+            qToBigEndian<quint16>(0, answer.data() + 8);
+            qToBigEndian<quint16>(0, answer.data() + 10);
+        }
+        qCDebug(KEMU) << "DnsServer: relayed upstream answer for id" << pending.clientId;
+        sendResponse(pending.clientMac, pending.clientIp, pending.clientPort, answer);
     }
 }
 

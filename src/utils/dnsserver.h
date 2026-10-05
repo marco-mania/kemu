@@ -60,12 +60,15 @@ private:
         QByteArray clientMac;
         quint32 clientIp = 0;
         quint16 clientPort = 0;
+        quint16 clientId = 0;
+        QByteArray question; // raw question section, must match the answer
+        quint64 serial = 0;
     };
 
     void answerArp(const QByteArray &frame);
     void handleQuery(const QByteArray &frame);
     void sendResponse(const QByteArray &clientMac, quint32 clientIp, quint16 clientPort, const QByteArray &dnsPayload);
-    void forwardQuery(quint16 id, const QByteArray &clientMac, quint32 clientIp, quint16 clientPort, const QByteArray &dnsPayload);
+    void forwardQuery(const QByteArray &clientMac, quint32 clientIp, quint16 clientPort, const QByteArray &dnsPayload, int questionEnd);
     void onUpstreamReadyRead();
 
     /// A record for hostname if it has a valid lease, 0 otherwise.
@@ -83,5 +86,6 @@ private:
     bool m_forwardUpstream = false;
     QUdpSocket *m_upstream = nullptr;
     quint32 m_upstreamIp = 0;
-    QHash<quint16, QList<PendingQuery>> m_pending; // key: DNS transaction id
+    QHash<quint16, PendingQuery> m_pending; // key: upstream transaction id
+    quint64 m_nextSerial = 0;
 };
