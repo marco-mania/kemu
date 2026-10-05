@@ -164,6 +164,10 @@ private:
 
     void cleanupRuntimeDir(const QString &name);
 
+    /// Reports an error and returns false for names that cannot become a
+    /// runtime directory or socket path.
+    bool validateName(const QString &name);
+
     /// Applies the network-level port forwards ("proto/host:guestIp:port")
     /// to the NAT uplink.
     void applyPortForwards(const QString &name, const VirtualNetwork &net);

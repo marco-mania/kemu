@@ -133,6 +133,12 @@ QByteArray macAddressToBytes(const QString &mac);
 // trailing '-'. Used for the per-network DNS names of VMs.
 bool isValidDnsHostname(const QString &hostname);
 
+// Name of a virtual network. Same character set as a VM name (see
+// VMConfig::isValidVmName), but shorter: the name becomes a directory under
+// XDG_RUNTIME_DIR and part of the unix socket paths handed to QEMU, which
+// must stay inside the 108-byte sun_path limit.
+bool isValidNetworkName(const QString &name, QString *error = nullptr);
+
 // Dot-separated list of valid host name labels, e.g. "lab.example.com".
 // Capped so that "<63-char host>.<domain>" stays a legal 253-byte name.
 bool isValidDnsDomain(const QString &domain);

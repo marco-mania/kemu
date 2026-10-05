@@ -6,6 +6,8 @@
 
 #include "utils.h"
 
+#include <KLocalizedString>
+
 #include "kemu_debug.h"
 
 extern "C" {
@@ -198,6 +200,31 @@ bool isValidDnsHostname(const QString &hostname)
 {
     static const QRegularExpression re(u"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"_s);
     return re.match(hostname).hasMatch();
+}
+
+bool isValidNetworkName(const QString &name, QString *error)
+{
+    const auto fail = [error](const QString &message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+
+    if (name.isEmpty())
+        return fail(i18n("A name is required."));
+    if (name.size() > 32)
+        return fail(i18n("The name must not be longer than 32 characters."));
+
+    static const QRegularExpression allowed(u"^[a-zA-Z0-9_\\-. ]+$"_s);
+    if (!allowed.match(name).hasMatch())
+        return fail(i18n("Only letters, digits, spaces and the characters _ - . are allowed."));
+
+    // The name becomes a directory: "." and ".." would escape the runtime
+    // directory, a leading dot would hide it.
+    if (name.startsWith(u'.') || name.endsWith(u'.'))
+        return fail(i18n("The name must not start or end with a dot."));
+
+    return true;
 }
 
 bool isValidDnsDomain(const QString &domain)

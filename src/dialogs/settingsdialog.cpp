@@ -647,6 +647,11 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
         nameEdit->setReadOnly(true);
     form->addRow(i18n("Name:"), nameEdit);
 
+    auto *nameHint = new QLabel;
+    nameHint->setWordWrap(true);
+    nameHint->setStyleSheet(u"color: palette(mid);"_s);
+    form->addRow(u""_s, nameHint);
+
     // --- Gateway / Subnet ---
     auto *gatewayEdit = new QLineEdit(net.gateway);
     gatewayEdit->setPlaceholderText(u"192.168.100.1"_s);
@@ -782,11 +787,21 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     form->addRow(buttons);
 
+    // The name becomes a directory and part of the socket paths QEMU gets,
+    // so it is only validated where it can still be changed.
+    const auto updateNameHint = [=]() {
+        QString reason;
+        const bool valid = !isNew || Utils::isValidNetworkName(nameEdit->text().trimmed(), &reason);
+        nameHint->setText(valid ? QString() : reason);
+        nameHint->setVisible(!valid);
+        return valid;
+    };
+
     const auto updateDomainHint = [=]() {
         const QString domain = domainEdit->text().trimmed().toLower();
         const bool dnsOn = dhcpCheck->isChecked() && dnsCheck->isChecked();
         const bool valid = domain.isEmpty() || Utils::isValidDnsDomain(domain);
-        buttons->button(QDialogButtonBox::Ok)->setEnabled(valid || !dnsOn);
+        buttons->button(QDialogButtonBox::Ok)->setEnabled((valid || !dnsOn) && updateNameHint());
 
         QString hint;
         if (!dnsOn || domain.isEmpty()) {
@@ -806,6 +821,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
         domainHint->setText(hint);
         domainHint->setVisible(!hint.isEmpty());
     };
+    QObject::connect(nameEdit, &QLineEdit::textChanged, &dlg, updateDomainHint);
     QObject::connect(domainEdit, &QLineEdit::textChanged, &dlg, updateDomainHint);
     QObject::connect(dnsCheck, &QCheckBox::toggled, &dlg, updateDomainHint);
     QObject::connect(dhcpCheck, &QCheckBox::toggled, &dlg, updateDomainHint);

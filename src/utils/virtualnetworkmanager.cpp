@@ -179,6 +179,9 @@ QStringList VirtualNetworkManager::networkNames() const
 
 bool VirtualNetworkManager::addNetwork(const VirtualNetwork &net)
 {
+    if (!validateName(net.name))
+        return false;
+
     for (const auto &n : m_networks)
         if (n.name == net.name)
             return false;
@@ -207,6 +210,9 @@ bool VirtualNetworkManager::removeNetwork(const QString &name)
 
 bool VirtualNetworkManager::updateNetwork(const VirtualNetwork &net)
 {
+    if (!validateName(net.name))
+        return false;
+
     for (auto &n : m_networks) {
         if (n.name == net.name) {
             n = net;
@@ -228,6 +234,9 @@ bool VirtualNetworkManager::startNetwork(const QString &name)
 
     if (isRunning(name))
         return true;
+
+    if (!validateName(name))
+        return false;
 
     const VirtualNetwork net = network(name);
     if (!net.isValid()) {
@@ -540,9 +549,28 @@ QString VirtualNetworkManager::portSocketPath(const QString &networkName, const 
 
 void VirtualNetworkManager::cleanupRuntimeDir(const QString &name)
 {
-    QDir dir(runtimeDir(name));
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation) + u"/kemu/net-"_s;
+    const QString path = runtimeDir(name);
+
+    // removeRecursively() on a path built from configuration data, so make
+    // sure the name cannot walk out of the runtime directory.
+    if (!path.startsWith(base) || path.contains(u"/.."_s) || path.endsWith(u"/.."_s)) {
+        qCWarning(KEMU) << "VirtualNetworkManager: refusing to remove" << path;
+        return;
+    }
+
+    QDir dir(path);
     if (dir.exists())
         dir.removeRecursively();
+}
+
+bool VirtualNetworkManager::validateName(const QString &name)
+{
+    QString reason;
+    if (Utils::isValidNetworkName(name, &reason))
+        return true;
+    setError(name, i18n("Invalid network name '%1': %2", name, reason));
+    return false;
 }
 
 // ============================================================================
