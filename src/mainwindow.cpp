@@ -3558,8 +3558,6 @@ void MainWindow::cloneVM()
             cloneConfig.setDeployState(VMConfig::DeployState::Complete);
 
             if (SettingsDialog::cloneRegenerateMac()) {
-                const QStringList macs = veModel->usedMacAddresses();
-
                 if (!cloneConfig.macAddress().isEmpty()) {
                     auto answer = KMessageBox::questionTwoActions(this,
                                                                   i18n("The source VM has an explicit MAC address (%1).\n\n"
@@ -3575,14 +3573,21 @@ void MainWindow::cloneVM()
                     if (answer == KMessageBox::PrimaryAction) {
                         bool macOk = false;
                         const QString newMac =
-                            QInputDialog::getText(this, i18n("New MAC Address"), i18n("MAC Address (e.g. 52:54:00:11:22:33):"), QLineEdit::Normal, {}, &macOk);
-                        cloneConfig.setMacAddress((macOk && !newMac.trimmed().isEmpty()) ? newMac.trimmed() : Utils::generateRandomMac(macs));
+                            QInputDialog::getText(this, i18n("New MAC Address"), i18n("MAC Address (e.g. 52:54:00:11:22:33):"), QLineEdit::Normal, {}, &macOk)
+                                .trimmed();
+                        // An invalid or already used address falls back to a
+                        // generated one; a duplicate would break the network.
+                        const bool usable = macOk && Utils::isValidMacAddress(newMac) && !usedMacs.contains(newMac, Qt::CaseInsensitive);
+                        cloneConfig.setMacAddress(usable ? newMac : Utils::generateRandomMac(usedMacs));
                     } else {
-                        cloneConfig.setMacAddress(Utils::generateRandomMac(macs));
+                        cloneConfig.setMacAddress(Utils::generateRandomMac(usedMacs));
                     }
                 } else {
-                    cloneConfig.setMacAddress(Utils::generateRandomMac(macs));
+                    cloneConfig.setMacAddress(Utils::generateRandomMac(usedMacs));
                 }
+            } else if (usedMacs.contains(cloneConfig.macAddress(), Qt::CaseInsensitive)) {
+                // The source VM keeps its MAC, so the clone cannot have it.
+                cloneConfig.setMacAddress(Utils::generateRandomMac(usedMacs));
             }
 
             saveVmConfig(dstPath, cloneConfig);

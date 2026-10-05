@@ -1561,6 +1561,8 @@ void EditVmDialog::validateForm()
         const auto mode = static_cast<VMSpecs::NetworkMode>(networkModeCombo->currentData().toInt());
         const QString netName = virtualNetworkCombo->currentData().toString();
 
+        // Every VM is checked: the first one holding this MAC may sit on
+        // another network while a later one shares ours.
         for (const auto &info : m_macUsageInfo) {
             if (m_mode == Mode::Edit && info.vmName == m_original.name())
                 continue;
@@ -1572,8 +1574,13 @@ void EditVmDialog::validateForm()
                 && info.virtualNetworkName == netName) {
                 macWarningText = i18n("MAC conflict with '%1' on network '%2'.", info.vmName, netName);
                 valid = false;
+                break;
             }
-            break;
+
+            // Duplicate elsewhere: harmless today, but it breaks as soon as
+            // both VMs end up on the same network.
+            if (macWarningText.isEmpty())
+                macWarningText = i18n("MAC address is already used by '%1'.", info.vmName);
         }
     }
 
