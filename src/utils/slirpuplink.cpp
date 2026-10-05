@@ -98,7 +98,9 @@ Q_SIGNALS:
 protected:
     void run() override
     {
-        if (pipe2(m_wakePipe, O_NONBLOCK) != 0) {
+        // O_CLOEXEC: every helper process KEMU starts would otherwise inherit
+        // both ends of this pipe.
+        if (pipe2(m_wakePipe, O_NONBLOCK | O_CLOEXEC) != 0) {
             m_initError = u"pipe2() failed"_s;
             m_initReady.release();
             return;
@@ -108,8 +110,7 @@ protected:
         if (!slirp) {
             m_initError = u"slirp_new() failed"_s;
             m_initReady.release();
-            close(m_wakePipe[0]);
-            close(m_wakePipe[1]);
+            closeWakePipe();
             return;
         }
         qCDebug(KEMU) << "SlirpUplink: libslirp" << slirp_version_string() << "initialized, poll loop starting";
@@ -162,8 +163,7 @@ protected:
             delete timer;
         m_timers.clear();
 
-        close(m_wakePipe[0]);
-        close(m_wakePipe[1]);
+        closeWakePipe();
         qCDebug(KEMU) << "SlirpUplink: cleanup done";
     }
 
@@ -184,11 +184,26 @@ private:
         return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
     }
 
+    // The pipe outlives neither run() nor a failed start, while wake() is
+    // called from other threads: without the lock a wake-up could land in a
+    // descriptor that someone else has reused by then.
     void wake()
     {
+        QMutexLocker locker(&m_wakeMutex);
+        if (m_wakePipe[1] < 0)
+            return;
         const char byte = 0;
-        if (m_wakePipe[1] >= 0)
-            Q_UNUSED(write(m_wakePipe[1], &byte, 1)); // EAGAIN when full is fine
+        Q_UNUSED(write(m_wakePipe[1], &byte, 1)); // EAGAIN when full is fine
+    }
+
+    void closeWakePipe()
+    {
+        QMutexLocker locker(&m_wakeMutex);
+        for (int &fd : m_wakePipe) {
+            if (fd >= 0)
+                close(fd);
+            fd = -1;
+        }
     }
 
     void fireTimers(Slirp *slirp)
@@ -322,6 +337,7 @@ private:
         return events;
     }
 
+    QMutex m_wakeMutex; // guards m_wakePipe against concurrent wake()
     int m_wakePipe[2] = {-1, -1};
     std::atomic<bool> m_stopRequested{false};
 
