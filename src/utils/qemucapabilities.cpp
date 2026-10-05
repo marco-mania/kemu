@@ -23,6 +23,7 @@ void QemuCapabilities::refresh()
     m_displays.clear();
     m_audiodevs.clear();
     m_seccompSandbox = false;
+    m_monitorObject = false;
     m_probeSucceeded = false;
 
     const QString qemu = ExternalTools::instance().path(ExternalTools::QemuSystem);
@@ -61,16 +62,20 @@ bool QemuCapabilities::hasAudiodev(const QString &name) const
 
 bool QemuCapabilities::runProbes(const QString &qemuPath, int timeoutMs)
 {
-    // Start both probes before awaiting either, so a refresh costs one
-    // timeout in total rather than one per help option.
+    // Start all probes before awaiting any, so a refresh costs one timeout
+    // in total rather than one per help option.
     KProcess displayProbe;
     KProcess audiodevProbe;
     KProcess sandboxProbe;
+    KProcess monitorProbe;
     startProbe(displayProbe, qemuPath, {u"-display"_s, u"help"_s});
     startProbe(audiodevProbe, qemuPath, {u"-audiodev"_s, u"help"_s});
     // Options are parsed in order, so -sandbox is checked before -version
     // exits. A QEMU without seccomp support fails right there.
     startProbe(sandboxProbe, qemuPath, {u"-sandbox"_s, KEMUConst::QemuSandboxOptions, u"-version"_s});
+    // Lists the properties and exits 0 if the type exists; older versions
+    // reject the unknown qom-type and exit 1.
+    startProbe(monitorProbe, qemuPath, {u"-object"_s, u"monitor-qmp,help"_s});
 
     QElapsedTimer elapsed;
     elapsed.start();
@@ -78,6 +83,7 @@ bool QemuCapabilities::runProbes(const QString &qemuPath, int timeoutMs)
     m_displays = collectProbe(displayProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
     m_audiodevs = collectProbe(audiodevProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
     m_seccompSandbox = collectExitStatus(sandboxProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
+    m_monitorObject = collectExitStatus(monitorProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
 
     return !m_displays.isEmpty() && !m_audiodevs.isEmpty();
 }

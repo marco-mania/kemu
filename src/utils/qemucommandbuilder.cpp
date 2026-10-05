@@ -445,7 +445,11 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         // Socketpair: nothing in the file system for other processes of this
         // user to connect to, and the monitor is up the moment QEMU starts.
         args << u"-chardev"_s << u"socket,id=%1,fd=%2"_s.arg(KEMUConst::QmpChardevId).arg(networkContext.monitorFd);
-        args << u"-mon"_s << u"chardev=%1,mode=control"_s.arg(KEMUConst::QmpChardevId);
+        // -mon is deprecated since QEMU 11.1; -qmp has no form for a passed fd.
+        if (QemuCapabilities::instance().hasMonitorObject())
+            args << u"-object"_s << u"monitor-qmp,id=%1-mon,chardev=%1"_s.arg(KEMUConst::QmpChardevId);
+        else
+            args << u"-mon"_s << u"chardev=%1,mode=control"_s.arg(KEMUConst::QmpChardevId);
     } else {
         // Export scripts cannot inherit descriptors, so QEMU listens instead.
         args << u"-qmp"_s << u"unix:%1,server,nowait"_s.arg(optPath(monitorSocketPath, relativePaths));
