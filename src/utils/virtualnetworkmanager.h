@@ -122,6 +122,11 @@ public:
      */
     void detachVm(const QString &networkName, const QString &vmName);
 
+    /// Detaches the VM from whichever running network holds it. Used on paths
+    /// that have to release an attachment without knowing (or trusting) the
+    /// VM's current configuration.
+    void detachVmFromAll(const QString &vmName);
+
     [[nodiscard]] int connectedVmCount(const QString &name) const;
 
     [[nodiscard]] QString lastError() const;

@@ -254,6 +254,13 @@ QString quoteShellArg(const QString &arg)
     return u"'"_s + escaped + u"'"_s;
 }
 
+QString escapeQemuOptionValue(const QString &value)
+{
+    QString escaped = value;
+    escaped.replace(u',', u",,"_s);
+    return escaped;
+}
+
 QString vmNameToHostname(const QString &vmName)
 {
     QString host;

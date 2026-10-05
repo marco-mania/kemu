@@ -519,6 +519,17 @@ void VirtualNetworkManager::detachVm(const QString &networkName, const QString &
         stopNetwork(networkName);
 }
 
+void VirtualNetworkManager::detachVmFromAll(const QString &vmName)
+{
+    // detachVm() may stop the network and erase it, so iterate over a copy.
+    const QStringList names = m_runtime.keys();
+    for (const QString &name : names) {
+        const auto it = m_runtime.constFind(name);
+        if (it != m_runtime.cend() && it->attachedVms.contains(vmName))
+            detachVm(name, vmName);
+    }
+}
+
 int VirtualNetworkManager::connectedVmCount(const QString &name) const
 {
     auto it = m_runtime.find(name);

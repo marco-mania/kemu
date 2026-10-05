@@ -31,6 +31,13 @@ QString mcastAddressFor(const QString &networkName)
     return u"230.0.0.1:%1"_s.arg(port);
 }
 
+/// Value of a path option: the bare file name for portable scripts, with
+/// commas doubled so QEMU does not split the value.
+QString optPath(const QString &path, bool relative)
+{
+    return Utils::escapeQemuOptionValue(relative ? QFileInfo(path).fileName() : path);
+}
+
 } // namespace
 
 QStringList QemuCommandBuilder::build(const VMConfig &config,
@@ -43,9 +50,9 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
 {
     QStringList args;
 
-    // Use guest= form so commas in the VM name aren't parsed as further -name
-    // options.
-    args << u"-name"_s << u"guest=%1"_s.arg(config.name());
+    // guest= does not protect against commas in the name, they still have to
+    // be escaped.
+    args << u"-name"_s << u"guest=%1"_s.arg(Utils::escapeQemuOptionValue(config.name()));
 
     // --- Chipset ---
     const QString accel = config.useKvm() ? u"kvm"_s : u"tcg"_s;
@@ -137,8 +144,8 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             if (config.useSecureBoot())
                 args << u"-global"_s << u"driver=cfi.pflash01,property=secure,value=on"_s;
 
-            args << u"-drive"_s << u"if=pflash,format=raw,readonly=on,unit=0,file=%1"_s.arg(ovmf.codePath);
-            args << u"-drive"_s << u"if=pflash,format=raw,unit=1,file=%1"_s.arg(relativePaths ? QFileInfo(localVarsPath).fileName() : localVarsPath);
+            args << u"-drive"_s << u"if=pflash,format=raw,readonly=on,unit=0,file=%1"_s.arg(Utils::escapeQemuOptionValue(ovmf.codePath));
+            args << u"-drive"_s << u"if=pflash,format=raw,unit=1,file=%1"_s.arg(optPath(localVarsPath, relativePaths));
         } else {
             if (ovmf.codePath.isEmpty())
                 args << u"-drive"_s << u"if=pflash,file=UEFI_CODE_NOT_FOUND"_s;
@@ -150,7 +157,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     // --- TPM ---
     if (config.useTpm()) {
         const QString sockPath = vmDir.absoluteFilePath(KEMUConst::SwtpmSocketFileName);
-        args << u"-chardev"_s << u"socket,id=chrtpm,path=%1"_s.arg(relativePaths ? QFileInfo(sockPath).fileName() : sockPath);
+        args << u"-chardev"_s << u"socket,id=chrtpm,path=%1"_s.arg(optPath(sockPath, relativePaths));
         args << u"-tpmdev"_s << u"emulator,id=tpm0,chardev=chrtpm"_s;
         // CRB preferred for Q35 / Windows 11; TIS as fallback.
         args << u"-device"_s << (config.machineType() == VMSpecs::MachineType::Q35 ? u"tpm-crb,tpmdev=tpm0"_s : u"tpm-tis,tpmdev=tpm0"_s);
@@ -169,7 +176,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
 
     // --- Disk ---
     const QString driveId = u"sysdisk"_s;
-    args << u"-drive"_s << u"file=%1,format=qcow2,if=none,id=%2"_s.arg(relativePaths ? QFileInfo(config.diskPath()).fileName() : config.diskPath(), driveId);
+    args << u"-drive"_s << u"file=%1,format=qcow2,if=none,id=%2"_s.arg(optPath(config.diskPath(), relativePaths), driveId);
 
     if (config.diskInterface() == VMSpecs::DiskInterface::Nvme)
         args << u"-device"_s << u"%1,drive=%2,serial=serial0"_s.arg(VMConfig::toQemuString(config.diskInterface()), driveId);
@@ -185,8 +192,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     // AHCI CD-ROM out of the box.
     if (!config.isoPath().isEmpty()) {
         args << u"-drive"_s
-             << u"file=%1,format=raw,if=none,id=drive-cdrom0,media=cdrom,readonly=on"_s.arg(relativePaths ? QFileInfo(config.isoPath()).fileName()
-                                                                                                          : config.isoPath());
+             << u"file=%1,format=raw,if=none,id=drive-cdrom0,media=cdrom,readonly=on"_s.arg(optPath(config.isoPath(), relativePaths));
     } else {
         args << u"-drive"_s << u"if=none,id=drive-cdrom0,media=cdrom"_s;
     }
@@ -196,8 +202,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     if (config.machineType() != VMSpecs::MachineType::Q35) {
         if (!config.floppyPath().isEmpty()) {
             args << u"-drive"_s
-                 << u"file=%1,format=raw,if=none,id=drive-fda,readonly=off"_s.arg(relativePaths ? QFileInfo(config.floppyPath()).fileName()
-                                                                                                : config.floppyPath());
+                 << u"file=%1,format=raw,if=none,id=drive-fda,readonly=off"_s.arg(optPath(config.floppyPath(), relativePaths));
         } else {
             args << u"-drive"_s << u"if=none,id=drive-fda"_s;
         }
@@ -208,7 +213,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     const QString cidataIso = vmDir.absoluteFilePath(u"cidata.iso"_s);
     if (QFile::exists(cidataIso)) {
         args << u"-drive"_s
-             << u"file=%1,format=raw,if=none,id=drive-cidata,media=cdrom,readonly=on"_s.arg(relativePaths ? QFileInfo(cidataIso).fileName() : cidataIso);
+             << u"file=%1,format=raw,if=none,id=drive-cidata,media=cdrom,readonly=on"_s.arg(optPath(cidataIso, relativePaths));
         args << u"-device"_s << u"ide-cd,drive=drive-cidata,id=cidata,%1"_s.arg(takeIdeSlot());
     }
 
@@ -244,8 +249,8 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             // QEMU connects via a vhost-user socket.
             const QString virtiofsSock = vmDir.absoluteFilePath(KEMUConst::VirtiofsdSocketFileName);
 
-            args << u"-chardev"_s << u"socket,id=char_virtiofs,path=%1"_s.arg(relativePaths ? QFileInfo(virtiofsSock).fileName() : virtiofsSock);
-            args << u"-device"_s << u"vhost-user-fs-pci,queue-size=1024,chardev=char_virtiofs,tag=%1"_s.arg(mountTag);
+            args << u"-chardev"_s << u"socket,id=char_virtiofs,path=%1"_s.arg(optPath(virtiofsSock, relativePaths));
+            args << u"-device"_s << u"vhost-user-fs-pci,queue-size=1024,chardev=char_virtiofs,tag=%1"_s.arg(Utils::escapeQemuOptionValue(mountTag));
 
             // Shared memory for virtio-fs
             QString memObj = u"memory-backend-file,id=mem,size=%1M,mem-path=/dev/shm,share=on"_s.arg(config.ramMb());
@@ -257,7 +262,9 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         } else {
             // -- 9p / VirtFS (for Linux/BSD/Unix guests) --
             // No additional daemon required. Always an absolute path.
-            args << u"-virtfs"_s << u"local,path=%1,mount_tag=%2,security_model=none,id=fs0"_s.arg(config.sharedPath(), mountTag);
+            args << u"-virtfs"_s
+                 << u"local,path=%1,mount_tag=%2,security_model=none,id=fs0"_s.arg(Utils::escapeQemuOptionValue(config.sharedPath()),
+                                                                                   Utils::escapeQemuOptionValue(mountTag));
         }
     }
 
@@ -369,7 +376,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
                            "VirtualNetwork mode requires NetworkContext::switchSocketPath or mcastAddress to be set");
                 args << u"-netdev"_s
                      << u"stream,id=%1,server=off,addr.type=unix,addr.path=%2"_s.arg(KEMUConst::NetdevId)
-                            .arg(relativePaths ? QFileInfo(networkContext.switchSocketPath).fileName() : networkContext.switchSocketPath);
+                            .arg(optPath(networkContext.switchSocketPath, relativePaths));
             }
         } else if (networkContext.useSlirp) {
             // Standalone export: QEMU's built-in usermode networking stands
@@ -389,8 +396,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
                        "UserMode requires NetworkContext::userNetSocketPath or useSlirp to be set");
             args << u"-netdev"_s
                  << u"stream,id=%1,server=off,addr.type=unix,addr.path=%2"_s.arg(KEMUConst::NetdevId)
-                        .arg(relativePaths ? QFileInfo(networkContext.userNetSocketPath).fileName()
-                                           : networkContext.userNetSocketPath);
+                        .arg(optPath(networkContext.userNetSocketPath, relativePaths));
         }
     }
 
@@ -433,7 +439,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         args << u"-device"_s << u"usb-kbd,bus=%1"_s.arg(usbBus);
 
     // --- Monitor / QMP ---
-    args << u"-qmp"_s << u"unix:%1,server,nowait"_s.arg(relativePaths ? QFileInfo(monitorSocketPath).fileName() : monitorSocketPath);
+    args << u"-qmp"_s << u"unix:%1,server,nowait"_s.arg(optPath(monitorSocketPath, relativePaths));
 
     // --- Extra Args ---
     if (!config.extraArgs().isEmpty())

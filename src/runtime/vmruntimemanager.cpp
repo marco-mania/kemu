@@ -28,11 +28,18 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
 {
     const QString &vmName = req.vmName;
 
+    // The caller attached the network and started the user-mode stack before
+    // launching, so both have to be released on every early return.
     const VmEntry *entry = m_model->entryByName(vmName);
-    if (!entry)
+    if (!entry) {
+        releaseNetwork(vmName);
+        stopUserModeNetwork(vmName);
         return;
-    if (req.deployment && entry->state != VmEntry::State::Deploying)
+    }
+    if (req.deployment && entry->state != VmEntry::State::Deploying) {
+        tearDown(vmName);
         return;
+    }
 
     // Copy: the model entry is mutated below and torn down on the failure path.
     const VMConfig config = entry->config;
@@ -55,7 +62,7 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     // - and independent of whether a window is shown, which since the GTK/SDL
     // change no longer follows from the same flag.
     if (req.unattendedDeployment)
-        args << u"-serial"_s << u"file:%1"_s.arg(path + u'/' + KEMUConst::DeploySerialLogFileName);
+        args << u"-serial"_s << u"file:%1"_s.arg(Utils::escapeQemuOptionValue(path + u'/' + KEMUConst::DeploySerialLogFileName));
 
     KProcess *process = createQemuProcess(vmName, args);
 
@@ -233,7 +240,7 @@ void VmRuntimeManager::tearDown(const QString &vmName)
     QFile::remove(virtiofsdPidPath(vmName));
     QFile::remove(monitorSocketPath(vmName));
 
-    releaseNetwork(entry->config);
+    releaseNetwork(vmName);
     m_model->clearRuntimeState(vmName);
 
     if (auto *rt = runtime(vmName)) {
@@ -464,15 +471,12 @@ QString VmRuntimeManager::ensureNetworkRunning(const QString &networkName,
     return socketPath;
 }
 
-void VmRuntimeManager::releaseNetwork(const VMConfig &config)
+void VmRuntimeManager::releaseNetwork(const QString &vmName)
 {
-    if (!m_network_manager)
-        return;
-    if (config.networkMode() != VMSpecs::NetworkMode::VirtualNetwork)
-        return;
-    if (config.virtualNetworkName().isEmpty())
-        return;
-    m_network_manager->detachVm(config.virtualNetworkName(), config.name());
+    // By name, not by the VM's current configuration: the attachment has to
+    // go even when the configuration changed or the entry is already gone.
+    if (m_network_manager)
+        m_network_manager->detachVmFromAll(vmName);
 }
 
 QDir VmRuntimeManager::baseDir() const

@@ -115,7 +115,7 @@ public:
                                  const QString &dnsHostname,
                                  const QByteArray &macAddress,
                                  QString *reason);
-    void releaseNetwork(const VMConfig &config);
+    void releaseNetwork(const QString &vmName);
 
     // Single source of truth for VM store locations.
     [[nodiscard]] QDir baseDir() const;
