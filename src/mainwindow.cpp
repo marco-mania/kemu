@@ -1500,7 +1500,8 @@ void MainWindow::generateShellScript(const QString &vmPath, const VMConfig &conf
         ? m_networkManager->network(config.virtualNetworkName())
         : VirtualNetwork{};
 
-    const QString script = QemuCommandBuilder::buildShellScript(config, QDir(vmPath), sockPath, netCtx, net, true);
+    const QString script =
+        QemuCommandBuilder::buildShellScript(config, QDir(vmPath), sockPath, netCtx, net, true, SettingsDialog::qemuSeccompSandbox());
 
     QFile scriptFile(vmPath + u"/qemu.sh"_s);
     if (scriptFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -2375,7 +2376,13 @@ void MainWindow::showCommand()
 
     const QString sockPath = getVmDir(currentConfig.name()).absoluteFilePath(KEMUConst::QemuMonitorSocketFileName);
     const bool portablePaths = SandboxCapabilities::instance().has(SandboxCapabilities::ExternalToolPaths);
-    QString cmd = QemuCommandBuilder::buildShellScript(currentConfig, getVmDir(currentConfig.name()), sockPath, netCtx, net, !portablePaths);
+    QString cmd = QemuCommandBuilder::buildShellScript(currentConfig,
+                                                       getVmDir(currentConfig.name()),
+                                                       sockPath,
+                                                       netCtx,
+                                                       net,
+                                                       !portablePaths,
+                                                       SettingsDialog::qemuSeccompSandbox());
 
     if (!portablePaths) {
         cmd.prepend(
@@ -3800,12 +3807,13 @@ void MainWindow::showQemuFailureDialog(const QString &vmName, bool startupFailed
         summary = i18n("QEMU for VM '%1' exited with code %2.", vmName, exitCode);
     }
 
-    // Our -sandbox kills on spawn and privilege changes, without a word on
+    // A -sandbox kills on spawn and privilege changes, without a word on
     // stderr. Startup failures land here too.
     if (exitStatus == KProcess::CrashExit && exitCode == SIGSYS)
         summary += u' '
-            + i18n("It was stopped by its seccomp sandbox because it tried to start another program or change its privileges. "
-                   "If a feature in the extra arguments needs that, add your own -sandbox option there.");
+            + i18n("It was stopped by a seccomp sandbox because it tried to start another program or change its privileges. "
+                   "Turn off \"Confine QEMU with its seccomp sandbox\" in the settings, or, if the VM's extra arguments carry "
+                   "their own -sandbox option, widen it there.");
 
     // Build the main body: summary + QEMU's stderr (the actually useful part)
     QString body = u"<p>"_s + summary.toHtmlEscaped() + u"</p>"_s;

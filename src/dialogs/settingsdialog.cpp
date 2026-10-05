@@ -83,6 +83,36 @@ void SettingsDialog::setupGeneralPage()
     importRegenerateMacCheck->setChecked(importRegenerateMac());
     layout->addWidget(importRegenerateMacCheck);
 
+    auto *sandboxLine = new QFrame(this);
+    sandboxLine->setFrameShape(QFrame::HLine);
+    sandboxLine->setFrameShadow(QFrame::Sunken);
+    layout->addWidget(sandboxLine);
+
+    seccompSandboxCheck = new QCheckBox(i18n("Confine QEMU with its seccomp sandbox"));
+    seccompSandboxCheck->setToolTip(
+        i18n("When <b>enabled</b>, QEMU is started with "
+             "<tt>-sandbox on,obsolete=deny,elevateprivileges=deny,spawn=deny,"
+             "resourcecontrol=deny</tt>. The seccomp filter limits what a guest "
+             "could reach if it broke out of QEMU: it may neither start other "
+             "programs nor change its privileges.\n"
+             "The filter applies to QEMU itself, so a feature that needs one of "
+             "those calls kills QEMU with SIGSYS, without a message on why. That "
+             "makes a sandboxed QEMU harder to diagnose.\n"
+             "When <b>disabled</b> (the default), QEMU runs unconfined. A VM whose "
+             "extra arguments carry their own <tt>-sandbox</tt> is never changed by "
+             "this setting."));
+    seccompSandboxCheck->setChecked(qemuSeccompSandbox());
+
+    // A -sandbox on a QEMU built without seccomp is fatal, so do not offer it.
+    if (!QemuCapabilities::instance().hasSeccompSandbox()) {
+        seccompSandboxCheck->setEnabled(false);
+        seccompSandboxCheck->setChecked(false);
+        seccompSandboxCheck->setToolTip(QemuCapabilities::instance().probeSucceeded()
+                                            ? i18n("The QEMU binary in use was built without seccomp support.")
+                                            : i18n("KEMU could not probe the QEMU binary in use for seccomp support."));
+    }
+    layout->addWidget(seccompSandboxCheck);
+
     layout->addStretch();
 
     auto *item = addPage(page, i18n("Virtual Machines"));
@@ -504,6 +534,10 @@ void SettingsDialog::saveSettings()
     general.writeEntry("ShowAllArchitectures", allArchCheck->isChecked());
     general.writeEntry("CloneRegenerateMac", cloneRegenerateMacCheck->isChecked());
     general.writeEntry("ImportRegenerateMac", importRegenerateMacCheck->isChecked());
+    // Only when the box was offered: a QEMU without seccomp shows it unchecked
+    // and must not overwrite the choice the user made for another binary.
+    if (seccompSandboxCheck->isEnabled())
+        general.writeEntry("QemuSeccompSandbox", seccompSandboxCheck->isChecked());
 
     general.writeEntry("DeployUser", deployUserEdit->text().trimmed());
     general.writeEntry("DeploySshKeys", deploySshKeysEdit->toPlainText().trimmed());
@@ -579,6 +613,13 @@ bool SettingsDialog::importRegenerateMac()
     const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
     const KConfigGroup general = config->group(u"General"_s);
     return general.readEntry("ImportRegenerateMac", false);
+}
+
+bool SettingsDialog::qemuSeccompSandbox()
+{
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
+    return general.readEntry("QemuSeccompSandbox", false);
 }
 
 bool SettingsDialog::inhibitScreensaverAlways()

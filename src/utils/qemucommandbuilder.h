@@ -94,22 +94,28 @@ public:
      * @param networkContext     Network-mode-specific context.
      * @param network            Virtual network config (if applicable).
      * @param relativePaths      Whether to emit relative paths (for portable scripts).
+     * @param seccompSandbox     Whether to emit the -sandbox block, so an
+     *                           exported script runs the way KEMU would.
      */
     static QString buildShellScript(const VMConfig &config,
                                     const QDir &vmDir,
                                     const QString &monitorSocketPath,
                                     const QemuNetworkContext &networkContext,
                                     const VirtualNetwork &network = {},
-                                    const bool relativePaths = false);
+                                    const bool relativePaths = false,
+                                    const bool seccompSandbox = false);
 
     /**
      * @brief The -sandbox option KEMU confines QEMU with.
      *
-     * Empty when the VM's extra arguments bring their own -sandbox: QEMU
-     * installs one filter per occurrence, so a later "-sandbox off" could
-     * not lift ours. The caller checks QemuCapabilities first.
+     * Empty unless @p enabled, which carries the global setting: the filter
+     * denies spawn, privilege changes and resource control, which some guest
+     * and host features need. Also empty when the VM's extra arguments bring
+     * their own -sandbox, as QEMU installs one filter per occurrence and a
+     * later "-sandbox off" could not lift ours. The caller checks
+     * QemuCapabilities first.
      */
-    static QStringList sandboxArgs(const VMConfig &config);
+    static QStringList sandboxArgs(const VMConfig &config, bool enabled);
 
     /**
      * @brief Formats the QEMU argument list into a readable multi-line string.

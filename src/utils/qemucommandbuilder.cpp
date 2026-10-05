@@ -473,7 +473,8 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
                                              const QString &monitorSocketPath,
                                              const QemuNetworkContext &networkContext,
                                              const VirtualNetwork &network,
-                                             const bool relativePaths)
+                                             const bool relativePaths,
+                                             const bool seccompSandbox)
 {
     // A standalone script has no QMP peer to add_client the p2p display;
     // fall back to a self-contained display backend.
@@ -558,7 +559,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
 
     // The target machine's QEMU may lack seccomp support, so the script
     // checks before it confines it.
-    const QStringList sandbox = sandboxArgs(config);
+    const QStringList sandbox = sandboxArgs(config, seccompSandbox);
     if (!sandbox.isEmpty()) {
         script += u"# Confine QEMU with its seccomp sandbox if it was built with one.\n"_s;
         script += u"SANDBOX=%1\n"_s.arg(sandbox.last());
@@ -576,8 +577,11 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     return script;
 }
 
-QStringList QemuCommandBuilder::sandboxArgs(const VMConfig &config)
+QStringList QemuCommandBuilder::sandboxArgs(const VMConfig &config, bool enabled)
 {
+    if (!enabled)
+        return {};
+
     const QStringList extra = KProcess::splitCommand(config.extraArgs());
     if (extra.contains(u"-sandbox"_s) || extra.contains(u"--sandbox"_s))
         return {};

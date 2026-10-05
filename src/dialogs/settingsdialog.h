@@ -70,6 +70,11 @@ public:
     static bool cloneRegenerateMac();
     static bool importRegenerateMac();
 
+    // Whether QEMU is started with its seccomp filter (-sandbox). Off by
+    // default: the filter denies spawn, privilege changes and resource
+    // control, which kills QEMU with SIGSYS when a feature needs them.
+    static bool qemuSeccompSandbox();
+
     static bool inhibitScreensaverAlways();
     static bool inhibitScreensaverFullscreen();
     static bool inhibitScreensaverPointerGrab();
@@ -135,6 +140,7 @@ private:
     QCheckBox *allArchCheck = nullptr;
     QCheckBox *cloneRegenerateMacCheck = nullptr;
     QCheckBox *importRegenerateMacCheck = nullptr;
+    QCheckBox *seccompSandboxCheck = nullptr;
 
     VirtualNetworkManager *m_networkManager = nullptr;
     QTableWidget *networkTable = nullptr;

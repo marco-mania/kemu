@@ -82,8 +82,12 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
         args << u"-serial"_s << u"file:%1"_s.arg(Utils::escapeQemuOptionValue(path + u'/' + KEMUConst::DeploySerialLogFileName));
 
     // A guest that breaks into QEMU could otherwise start programs, change
-    // credentials and reach obsolete or privileged syscalls.
-    const QStringList sandbox = QemuCapabilities::instance().hasSeccompSandbox() ? QemuCommandBuilder::sandboxArgs(config) : QStringList();
+    // credentials and reach obsolete or privileged syscalls. Off unless the
+    // user asks for it: the filter also stops QEMU features that need those
+    // calls, and it does so with SIGSYS rather than an error message.
+    const QStringList sandbox = QemuCapabilities::instance().hasSeccompSandbox()
+        ? QemuCommandBuilder::sandboxArgs(config, SettingsDialog::qemuSeccompSandbox())
+        : QStringList();
     args << sandbox;
 
     QList<int> inheritFds = {qmpFds[1]};

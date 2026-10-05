@@ -73,7 +73,9 @@ inline constexpr auto NetdevId = "nic0"_L1;
 inline constexpr auto QmpChardevId = "qmp0"_L1;
 
 // QEMU's seccomp filter, as libvirt applies it. Resource control calls fail
-// with EPERM; anything else on the deny lists kills QEMU with SIGSYS.
+// with EPERM; anything else on the deny lists kills QEMU with SIGSYS. Opt-in
+// through the "Confine QEMU with its seccomp sandbox" setting, because that
+// SIGSYS is indistinguishable from a QEMU bug and hides diagnostics.
 inline constexpr auto QemuSandboxOptions = "on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny"_L1;
 
 inline static constexpr int kExitPolicyTimeoutMs = 120'000;
