@@ -25,7 +25,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <li>Automated deployment utilizing Cloud-Init</li>
       <li>Snapshot support (QCOW2)</li>
       <li>Hot-swapping of ISO and floppy images</li>
-      <li>User-mode networking via <code>passt</code> or built-in SLIRP, plus rootless virtual networks within Linux user namespaces</li>
+      <li>User-mode networking, plus rootless virtual networks</li>
       <li>Shared folders via 9p/VirtFS (Linux/BSD) and virtio-fs (Windows)</li>
       <li>Portable VM storage: VMs are stored as self-contained directories with relative start scripts</li>
       <li>Export and import VMs as compressed archives (<code>.kemu.tar.zst</code>) for seamless backup or migration</li>
@@ -62,6 +62,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </recommends>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.6.0" date="2026-10-05">
+      <description>
+        <p>Security hardening (seccomp sandbox), use socket pairs and implement virtual networks without namespaces/external processes</p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-09-03">
       <description>
         <p>Split VM creation into compact and editor dialogs, parallel capability probing, and GPU cursor performance optimizations.</p>

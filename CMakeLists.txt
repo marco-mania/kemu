@@ -8,7 +8,7 @@ if(POLICY CMP0175)
   cmake_policy(SET CMP0175 OLD)
 endif()
 
-project(kemu VERSION 0.5.0)
+project(kemu VERSION 0.6.0)
 
 option(KEMU_SELF_CONTAINED "Application ships its own external tools" OFF)
 
