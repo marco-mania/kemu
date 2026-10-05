@@ -542,7 +542,6 @@ bool VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType type)
         // The integrated viewer talks to QEMU peer-to-peer over a socketpair
         // handed over via QMP add_client, so no bus daemon is involved.
         return QemuCapabilities::instance().hasDisplay(u"dbus"_s);
-    case VMSpecs::DisplayType::Gtk:
     case VMSpecs::DisplayType::Sdl:
         return QemuCapabilities::instance().hasDisplay(toQemuString(type));
     }
@@ -634,8 +633,6 @@ QString VMConfig::toQemuString(VMSpecs::DiskInterface interface)
 QString VMConfig::toQemuString(VMSpecs::DisplayType type)
 {
     switch (type) {
-    case VMSpecs::DisplayType::Gtk:
-        return u"gtk"_s;
     case VMSpecs::DisplayType::Sdl:
         return u"sdl"_s;
     case VMSpecs::DisplayType::Dbus:
@@ -790,8 +787,6 @@ QString VMConfig::toUIString(VMSpecs::GpuType type)
 QString VMConfig::toUIString(VMSpecs::DisplayType type)
 {
     switch (type) {
-    case VMSpecs::DisplayType::Gtk:
-        return i18n("GTK");
     case VMSpecs::DisplayType::Sdl:
         return i18n("SDL");
     case VMSpecs::DisplayType::Dbus:
@@ -957,14 +952,15 @@ QString VMConfig::toString(VMSpecs::CpuModel model)
 
 QString VMConfig::toString(VMSpecs::DisplayType type)
 {
+    // No default case: a new display type must not silently be written out
+    // as another one.
     switch (type) {
     case VMSpecs::DisplayType::Sdl:
         return u"sdl"_s;
     case VMSpecs::DisplayType::Dbus:
         return u"dbus"_s;
-    default:
-        return u"gtk"_s;
     }
+    return u"dbus"_s;
 }
 
 QString VMConfig::toString(VMSpecs::MachineType type)
@@ -1221,8 +1217,10 @@ VMSpecs::DisplayType VMConfig::parseDisplayType(const QString &str)
         return VMSpecs::DisplayType::Sdl;
     if (str_l_t == u"dbus"_s)
         return VMSpecs::DisplayType::Dbus;
+    // Legacy: the GTK display was removed; SDL is the same kind of native
+    // QEMU window.
     if (str_l_t == u"gtk"_s)
-        return VMSpecs::DisplayType::Gtk;
+        return VMSpecs::DisplayType::Sdl;
     // Legacy: the external SPICE viewer was removed; migrate to the
     // integrated D-Bus display.
     if (str_l_t == u"spice"_s)

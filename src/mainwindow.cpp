@@ -951,7 +951,7 @@ void MainWindow::updateActionStates()
     // A VM can be started if it is not busy OR if it is currently in 'Saved' state (it will resume).
     actionCollection()->action(u"vm_start"_s)->setEnabled(hasSelection && (!isBusy || isSavedOnly));
 
-    // GTK/SDL open a real display or none at all - fixed at QEMU's start,
+    // SDL opens a real display or none at all - fixed at QEMU's start,
     // with no way to attach one afterwards. Only the integrated viewer can
     // be reconnected later, so only it may be started headless.
     const bool supportsHeadless = entry && entry->config.displayType() == VMSpecs::DisplayType::Dbus;
@@ -959,7 +959,7 @@ void MainWindow::updateActionStates()
     QAction *startHeadlessAction = actionCollection()->action(u"vm_start_headless"_s);
     startHeadlessAction->setEnabled(hasSelection && supportsHeadless && (!isBusy || isSavedOnly));
     startHeadlessAction->setToolTip(supportsHeadless ? QString()
-                                                     : i18n("Not available for GTK/SDL displays: once started without a "
+                                                     : i18n("Not available for the SDL display: once started without a "
                                                             "window, none can be attached later. Switch to the integrated "
                                                             "viewer in the VM's settings to use this."));
 
@@ -2445,7 +2445,7 @@ void MainWindow::startVM(bool headless)
     m_runtimeManager->runtimeFor(vmName).resetRunState();
 
     if (!headless && !VMConfig::isDisplayTypeAvailable(currentConfig.displayType())) {
-        const auto fallback = VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType::Dbus) ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Gtk;
+        const auto fallback = VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType::Dbus) ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Sdl;
         const auto answer = KMessageBox::questionTwoActions(this,
                                                             i18n("The display type configured for '%1' is not available in this build. "
                                                                  "Switch this VM to '%2'?",
@@ -3888,8 +3888,8 @@ void MainWindow::startDeployment(const QString &vmName)
     }
 
     // Headless is a cloud-init concept: the guest configures itself and signals
-    // completion by shutting down. An installer ISO needs a display, and so do
-    // GTK/SDL - "-display none" cannot be undone once QEMU has started, only
+    // completion by shutting down. An installer ISO needs a display, and so
+    // does SDL - "-display none" cannot be undone once QEMU has started, only
     // the integrated viewer can attach later.
     const bool unattended = isUnattendedDeployment(vmName);
     const bool headless = unattended && config.displayType() == VMSpecs::DisplayType::Dbus;

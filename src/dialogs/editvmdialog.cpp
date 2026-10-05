@@ -360,15 +360,15 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     hwLayout->addRow(i18n("Keyboard:"), keyboardCombo);
 
     displayCombo = new QComboBox();
-    // Integrated Viewer first: it is the recommended default, GTK/SDL are the
+    // Integrated Viewer first: it is the recommended default, SDL is the
     // fallback for a QEMU build without dbus-display support, or for running
     // the exported qemu.sh script standalone, without KEMU as its peer.
-    for (const auto type : {VMSpecs::DisplayType::Dbus, VMSpecs::DisplayType::Gtk, VMSpecs::DisplayType::Sdl}) {
+    for (const auto type : {VMSpecs::DisplayType::Dbus, VMSpecs::DisplayType::Sdl}) {
         if (VMConfig::isDisplayTypeAvailable(type))
             displayCombo->addItem(VMConfig::toUIString(type), static_cast<int>(type));
     }
     displayCombo->setToolTip(
-        i18n("The integrated viewer is recommended for everyday use. GTK and SDL open "
+        i18n("The integrated viewer is recommended for everyday use. SDL opens "
              "a native QEMU window outside KEMU - useful for the standalone qemu.sh "
              "script, or if your QEMU build lacks dbus-display support."));
     hwLayout->addRow(i18n("Display:"), displayCombo);
@@ -391,7 +391,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     accel3dCheck = new QCheckBox(i18n("3D acceleration (GL)"));
     accel3dCheck->setToolTip(
         i18n("Enables GPU-accelerated 3D rendering via virtio-vga-gl.\n"
-             "Requires VirtIO GPU with GTK or SDL display.\n"
+             "Requires VirtIO GPU with the SDL display or the integrated viewer.\n"
              "Not available with Standard VGA/QXL."));
     accel3dCheck->setChecked(false);
     hwLayout->addRow(u""_s, accel3dCheck);
@@ -857,8 +857,8 @@ void EditVmDialog::setConfig(const VMConfig &config)
 
     if (!VMConfig::isDisplayTypeAvailable(config.displayType())) {
         const auto configuredType = config.displayType();
-        // Prefer the integrated viewer; GTK only if that is missing too.
-        const auto fallbackType = VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType::Dbus) ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Gtk;
+        // Prefer the integrated viewer; SDL only if that is missing too.
+        const auto fallbackType = VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType::Dbus) ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Sdl;
         KMessageBox::information(this,
                                  i18n("The configured display type '%1' is not available in this build.\n"
                                       "KEMU will use '%2' instead.",

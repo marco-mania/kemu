@@ -21,7 +21,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <ul>
       <li>Create, edit, and delete QEMU virtual machines</li>
       <li>Integrated D-Bus viewer with audio and clipboard sharing</li>
-      <li>Support for GTK and SDL display backends</li>
+      <li>Support for the SDL display backend</li>
       <li>Automated deployment utilizing Cloud-Init</li>
       <li>Snapshot support (QCOW2)</li>
       <li>Hot-swapping of ISO and floppy images</li>

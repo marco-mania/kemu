@@ -269,7 +269,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     }
 
     // --- Graphics ---
-    // 3D acceleration requires a GL display backend (GTK or SDL).
+    // 3D acceleration requires a GL display backend (SDL or D-Bus).
     // Disable it for headless mode.
     const bool effective3d = config.gpu3dAcceleration() && config.gpuType() == VMSpecs::GpuType::Virtio && !headless;
 
@@ -472,7 +472,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     // fall back to a self-contained display backend.
     VMConfig scriptConfig = config;
     if (scriptConfig.displayType() == VMSpecs::DisplayType::Dbus)
-        scriptConfig.setDisplayType(VMSpecs::DisplayType::Gtk);
+        scriptConfig.setDisplayType(VMSpecs::DisplayType::Sdl);
 
     // A standalone script cannot reach the in-memory switch inside the KEMU
     // process, so exported virtual networks run on QEMU's built-in multicast

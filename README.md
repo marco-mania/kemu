@@ -15,7 +15,6 @@ Widgets and KDE Frameworks 6 for deep desktop integration.
 
 - Create, edit, and delete QEMU virtual machines
 - Integrated D-Bus viewer with audio and clipboard sharing
-- Support for GTK and SDL display backends
 - Automated deployment utilizing Cloud-Init
 - Snapshot support (QCOW2)
 - Hot-swapping of ISO and floppy images
@@ -209,12 +208,11 @@ settings:
 
 | Backend   | Window          | 3D Acceleration | Audio Routing     | Clipboard Sharing | External Process |
 | --------- | --------------- | --------------- | ----------------- | ----------------- | ---------------- |
-| **GTK**   | QEMU built-in   | Yes (Virtio)    | System (PipeWire) | No                | None             |
 | **SDL**   | QEMU built-in   | Yes (Virtio)    | System (PipeWire) | No                | None             |
 | **D-Bus** | KEMU integrated | Yes (Virtio)    | Routed via D-Bus  | Yes (built-in)    | None             |
 
-**GTK** and **SDL** are the simplest options: QEMU opens its own window
-directly, with optional OpenGL passthrough for hardware-accelerated graphics.
+**SDL** is the simplest options: QEMU opens its own window directly, with
+optional OpenGL passthrough for hardware-accelerated graphics.
 The **D-Bus** backend combines hardware-accelerated rendering inside a viewer
 window managed by KEMU itself, featuring built-in audio and clipboard sharing.
 

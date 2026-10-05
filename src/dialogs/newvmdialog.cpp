@@ -709,7 +709,7 @@ VMConfig NewVmDialog::getResult() const
 
         // templates.json asks for the D-Bus display, which needs dbus-daemon.
         if (!VMConfig::isDisplayTypeAvailable(config.displayType()))
-            config.setDisplayType(VMSpecs::DisplayType::Gtk);
+            config.setDisplayType(VMSpecs::DisplayType::Sdl);
     }
 
     // The installer medium lives in this dialog's own field, so it must be

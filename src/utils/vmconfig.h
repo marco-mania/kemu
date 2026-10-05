@@ -35,7 +35,6 @@ namespace VMSpecs
 Q_NAMESPACE
 
 enum class DisplayType {
-    Gtk,
     Sdl,
     Dbus
 };

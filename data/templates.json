@@ -1079,7 +1079,7 @@
         "use_uefi": false,
         "use_acpi": false,
         "use_localtime": true,
-        "display_type": "gtk"
+        "display_type": "sdl"
       }
     },
     {
@@ -1125,7 +1125,7 @@
         "use_uefi": false,
         "use_acpi": false,
         "use_localtime": true,
-        "display_type": "gtk"
+        "display_type": "sdl"
       }
     },
     {
@@ -1206,7 +1206,7 @@
         "use_uefi": false,
         "use_acpi": false,
         "use_localtime": true,
-        "display_type": "gtk"
+        "display_type": "sdl"
       }
     },
     {
