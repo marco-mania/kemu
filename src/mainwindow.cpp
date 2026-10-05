@@ -2011,8 +2011,9 @@ void MainWindow::importVM()
             const QString vmDir = getVmDir(importJob->vmName()).absolutePath();
 
             VMConfig config = loadVmConfig(vmDir);
-            if (SettingsDialog::importRegenerateMac())
-                config.setMacAddress(Utils::generateRandomMac(veModel->usedMacAddresses()));
+            const QStringList used = veModel->usedMacAddresses();
+            if (SettingsDialog::importRegenerateMac() || used.contains(config.macAddress(), Qt::CaseInsensitive))
+                config.setMacAddress(Utils::generateRandomMac(used));
 
             // Always rewrite: this also regenerates qemu.sh, which is not part
             // of the archive because it contains host paths.
