@@ -60,7 +60,7 @@ Widgets and KDE Frameworks 6 for deep desktop integration.
 
 ### Arch Linux
 
-```bash
+```sh
 sudo pacman -S qt6-base qt6-declarative extra-cmake-modules \
   kconfig kcoreaddons ki18n kxmlgui kwidgetsaddons kdbusaddons \
   kiconthemes qemu-full edk2-ovmf libarchive libslirp libisofs \
@@ -69,13 +69,13 @@ sudo pacman -S qt6-base qt6-declarative extra-cmake-modules \
 
 Optional:
 
-```bash
+```sh
 sudo pacman -S swtpm virtiofsd
 ```
 
 ### Debian 13+ / (K)Ubuntu 26.04+ / KDE neon
 
-```bash
+```sh
 sudo apt install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-multimedia-dev \
   libkf6config-dev libkf6coreaddons-dev libkf6i18n-dev libkf6kio-dev \
   libkf6crash-dev libkf6xmlgui-dev libkf6widgetsaddons-dev libkf6iconthemes-dev \
@@ -88,13 +88,13 @@ sudo apt install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-multimedia-dev
 
 Optional:
 
-```bash
+```sh
 sudo apt install ovmf swtpm virtiofsd
 ```
 
 ### Fedora 40+
 
-```bash
+```sh
 sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
   qt6-qtmultimedia-devel kf6-kconfig-devel kf6-kcoreaddons-devel kf6-ki18n-devel \
   kf6-kio-devel kf6-kcrash-devel kf6-kxmlgui-devel kf6-kwidgetsaddons-devel \
@@ -108,7 +108,7 @@ sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
 
 Optional:
 
-```bash
+```sh
 sudo dnf install edk2-ovmf swtpm virtiofsd
 ```
 
@@ -116,7 +116,7 @@ sudo dnf install edk2-ovmf swtpm virtiofsd
 
 To **compile** and run KEMU:
 
-```bash
+```sh
 cmake -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_BUILD_TYPE=Debug -B build/
 cmake --build build/
 cd build/bin
@@ -128,7 +128,7 @@ cd build/bin
 Installs KEMU to your user's home directory (`~/.local`). This requires no root
 privileges.
 
-```bash
+```sh
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=~/.local -B build/
 cmake --build build/ --target install
 ```
@@ -144,14 +144,14 @@ rebuilt after a Qt minor version upgrade.
 
 Installs KEMU system-wide for all users (usually under `/usr/local/`).
 
-```bash
+```sh
 cmake -DCMAKE_BUILD_TYPE=Release -B build/
 sudo cmake --build build/ --target install
 ```
 
 To **uninstall**:
 
-```bash
+```sh
 sudo make uninstall
 ```
 
@@ -167,7 +167,7 @@ KEMU utilizes Qt logging categories. Two primary categories are defined:
 By default, only warnings and critical messages are printed. To enable debug
 output for a single run:
 
-```bash
+```sh
 QT_LOGGING_RULES="org.kde.kemu.debug=true" kemu
 QT_LOGGING_RULES="org.kde.kemu*=true" kemu # enables both categories
 ```
@@ -177,7 +177,7 @@ toggled via the GUI.
 
 When filing a bug report, please attach the full debug output:
 
-```bash
+```sh
 QT_LOGGING_RULES="org.kde.kemu*=true" kemu 2>&1 | tee kemu.log
 ```
 
@@ -240,8 +240,7 @@ peer-to-peer D-Bus connection between KEMU and QEMU.
   PipeWire on the host side via Qt Multimedia.
 - **Clipboard synchronization**: Toggle between off, guest->host, host->guest,
   or bidirectional synchronization in the viewer's Devices menu. This requires a
-  clipboard agent in the guest (e.g., `qemu-guest-agent` with the appropriate
-  addon, or the SPICE vdagent, which also works on the D-Bus interface).
+  clipboard agent in the guest (SPICE vdagent).
 - **Reconnect support**: Closing the viewer window switches the VM to headless
   mode instead of terminating it. You can reconnect later via the VM's context
   menu.
@@ -254,6 +253,55 @@ peer-to-peer D-Bus connection between KEMU and QEMU.
 - The guest requires no special drivers for video or input; QEMU handles
   everything on its side. For clipboard features, simply install the standard
   SPICE vdagent in the guest.
+  
+### Wayland guests and clipboard sharing
+
+When running a Wayland-based Linux guest, clipboard sharing from the guest to
+the host can sometimes fail or behave inconsistently.
+
+This issue occurs because many clipboard integration tools rely on X11 protocol
+calls (`xclip`/`xsel`), which are not yet (or running within older guests)
+natively supported under Wayland without a bridging mechanism.
+
+Create a shell script that continuously syncs the Wayland clipboard to the
+X11 clipboard buffer:
+
+```sh
+#!/bin/sh
+# clip-bridge.sh: Syncs Wayland clipboard buffer to X11 (xclip)
+new=$(cat; printf x); new=${new%x}
+cur=$(xclip -selection clipboard -o -t UTF8_STRING 2>/dev/null; printf x); cur=${cur%x}
+[ "$new" = "$cur" ] && exit 0
+printf %s "$new" | xclip -selection clipboard -i -t UTF8_STRING
+```
+
+Either run it manually with
+
+```sh
+wl-paste --type text --watch /path/to/clip-bridge.sh
+```
+
+or create the service file at `~/.config/systemd/user/wl-clip-bridge.service`:
+
+```ini
+[Unit]
+Description=Wayland to X11 Clipboard Bridge
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/wl-paste --type text --watch /path/to/clip-bridge.sh
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target
+```
+
+and enable and start with:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now wl-clip-bridge.service
+```
 
 ## Networking
 
@@ -390,7 +438,7 @@ Mounting via 9p (Example: using the tag `exchange` mounted to `/mnt/shared`).
 
 - **Linux:**
 
-```bash
+```sh
 sudo mount -t 9p -o trans=virtio exchange /mnt/shared
 ```
 
@@ -398,7 +446,7 @@ _fstab:_ `exchange /mnt/shared 9p trans=virtio,version=9p2000.L,rw,nofail 0 0`
 
 - **FreeBSD (13+):**
 
-```bash
+```sh
 sudo mount -t virtfs -o trans=virtio exchange /mnt/shared
 ```
 
