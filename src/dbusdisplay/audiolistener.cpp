@@ -10,6 +10,16 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+namespace
+{
+// What the backend reads ahead of the device. Kept small: the reserve lives
+// in the jitter buffer, where the drift controller can see it.
+constexpr qint64 kSinkBufferUs = 30'000;
+
+constexpr int kStatsIntervalMs = 10'000;
+constexpr int kRestartDelayMs = 250;
+} // namespace
+
 // =============================================================================
 // D-Bus Interface XML for AudioOutListener
 // =============================================================================
@@ -275,6 +285,14 @@ bool QemuAudioOutWorker::setup(int fd, const QAudioDevice &device)
         return false;
     }
 
+    // Created here, on the audio thread, so the timer belongs to it.
+    if (!m_statsTimer) {
+        m_statsTimer = new QTimer(this);
+        m_statsTimer->setInterval(kStatsIntervalMs);
+        connect(m_statsTimer, &QTimer::timeout, this, &QemuAudioOutWorker::logStats);
+    }
+    m_statsTimer->start();
+
     startDispatching();
     qCDebug(KEMU_DBUSDISPLAY) << "Audio: Listener ready on" << QThread::currentThread()->objectName();
     return true;
@@ -296,6 +314,9 @@ void QemuAudioOutWorker::startDispatching()
 void QemuAudioOutWorker::shutdown()
 {
     m_closed = true;
+
+    if (m_statsTimer)
+        m_statsTimer->stop();
 
     // Stop dispatching before the streams go away, otherwise a queued call
     // could still reach a half-deleted stream.
@@ -411,59 +432,53 @@ void QemuAudioOutWorker::handleInit(GVariant *parameters, GDBusMethodInvocation 
         }
     }
 
-    // Create stream object
-    auto *stream = new AudioStream;
-    stream->format = format;
-    stream->enabled = false;
-    stream->drainTimer.setSingleShot(true);
-    stream->drainTimer.setInterval(5);
-    connect(&stream->drainTimer, &QTimer::timeout, this, [this, id] {
-        flushStream(id);
-    });
-
     // Pushed in from the GUI thread; querying QMediaDevices from here would
     // move Qt's media backend onto the audio thread.
     const QAudioDevice defaultDevice = m_device;
     if (defaultDevice.isNull()) {
         // No device at all - tell QEMU instead of pretending to accept the stream.
-        delete stream;
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No audio output device available on host");
         return;
     }
 
-    if (!defaultDevice.isFormatSupported(format)) {
-        // Qt's QAudioSink can sometimes still play a non-listed format via
-        // the platform plugin's resampler. Log a warning but proceed; if the
-        // sink really cannot open we'll catch it on the start() call later.
-        qCWarning(KEMU_DBUSDISPLAY) << "Audio: format not advertised as supported"
-                                    << "(rate=" << format.sampleRate() << "ch=" << format.channelCount() << "fmt=" << format.sampleFormat() << ")";
+    // The jitter buffer resamples in float anyway, so float is the natural
+    // sink format (native in PipeWire and PulseAudio). Same rate and layout
+    // as QEMU: any real rate conversion stays with the sound server.
+    QAudioFormat sinkFormat = format;
+    sinkFormat.setSampleFormat(QAudioFormat::Float);
+    if (!defaultDevice.isFormatSupported(sinkFormat)) {
+        sinkFormat = format;
+        if (!defaultDevice.isFormatSupported(sinkFormat)) {
+            // The backend may still convert it; if not, start() fails and
+            // the error handler below reports it.
+            qCWarning(KEMU_DBUSDISPLAY) << "Audio: format not advertised as supported"
+                                        << "(rate=" << format.sampleRate() << "ch=" << format.channelCount() << "fmt=" << format.sampleFormat() << ")";
+        }
     }
 
-    stream->sink = new QAudioSink(defaultDevice, format);
+    auto *stream = new AudioStream;
+    stream->format = format;
+    stream->enabled = false;
 
+    const double targetMs = AudioJitterBuffer::targetMsFromEnv();
+    stream->jitter = new AudioJitterBuffer(format, sinkFormat, targetMs);
+    stream->jitter->open(QIODevice::ReadOnly);
+
+    stream->sink = new QAudioSink(defaultDevice, sinkFormat);
+    stream->sink->setBufferSize(sinkFormat.bytesForDuration(kSinkBufferUs));
+
+    // In pull mode the jitter buffer never runs dry from the sink's view
+    // (it hands out silence while prebuffering), so the only state change
+    // worth acting on is a stop with an error.
     connect(stream->sink, &QAudioSink::stateChanged, this, [this, id](QAudio::State state) {
         auto *stream = m_streams.value(id, nullptr);
-        if (!stream || state != QAudio::IdleState || stream->sink->error() != QAudio::NoError) {
+        if (!stream || state != QAudio::StoppedState || stream->sink->error() == QAudio::NoError)
             return;
-        }
-        const int pending = stream->buffer.size();
-        if (pending > 0) {
-            qCWarning(KEMU_DBUSDISPLAY) << "Audio: underrun with" << pending << "bytes pending on stream" << id;
-        } else {
-            // Nothing queued: the guest simply stopped producing audio.
-            qCDebug(KEMU_DBUSDISPLAY) << "Audio: sink idle on stream" << id;
-        }
+        qCWarning(KEMU_DBUSDISPLAY) << "Audio: sink stopped with" << stream->sink->error() << "on stream" << id;
+        scheduleRestart(id);
     });
 
-    // Qt's default is small and platform-dependent. Writes now arrive on the
-    // audio thread, but the host's scheduler still has no latency guarantee,
-    // so the sink keeps enough slack to ride out a late wakeup.
-    stream->sink->setBufferSize(format.bytesForDuration(80'000)); // 80 ms
-
-    // Backlog budget. Anything beyond this is latency we can never play back
-    // in time, so the ring drops the oldest frames instead of growing.
-    constexpr int kBacklogUs = 200'000;
-    stream->buffer.reset(qMax<int>(32768, static_cast<int>(format.bytesForDuration(kBacklogUs))), format.bytesPerFrame());
+    qCDebug(KEMU_DBUSDISPLAY) << "Audio: stream" << id << "pull mode, sink format" << sinkFormat.sampleFormat() << "reserve" << targetMs << "ms";
 
     m_streams.insert(id, stream);
 
@@ -499,17 +514,12 @@ void QemuAudioOutWorker::handleWrite(GVariant *parameters, GDBusMethodInvocation
     if (stream && stream->enabled && !m_muted) {
         gsize dataLen = 0;
         const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
-
-        if (data && dataLen > 0) {
-            const int dropped = stream->buffer.write(reinterpret_cast<const char *>(data), static_cast<int>(dataLen));
-            if (dropped > 0) {
-                qCWarning(KEMU_DBUSDISPLAY) << "Audio: backlog full on stream" << id << "- dropped" << dropped << "bytes";
-            }
-        }
-        flushStream(id);
-    } else if (stream) {
-        stream->buffer.clear(); // muted/disabled: discard, don't replay later
-        stream->drainTimer.stop();
+        if (data && dataLen > 0)
+            stream->jitter->push(reinterpret_cast<const char *>(data), qint64(dataLen));
+    } else if (stream && m_muted) {
+        // Muting has to bite now: drop what is queued, the sink plays
+        // silence until audio arrives again after unmuting.
+        stream->jitter->restartBuffering();
     }
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
@@ -529,22 +539,16 @@ void QemuAudioOutWorker::handleSetEnabled(GVariant *parameters, GDBusMethodInvoc
     auto *stream = m_streams.value(id, nullptr);
     if (stream && stream->sink) {
         stream->enabled = enabled;
+        // Either way the old audio is stale: prebuffer from scratch.
+        stream->jitter->restartBuffering();
         if (enabled) {
-            // Start and fetch QIODevice
-            if (!stream->ioDevice) {
-                stream->ioDevice = stream->sink->start();
-                if (!stream->ioDevice) {
-                    qCWarning(KEMU_DBUSDISPLAY) << "Audio: QAudioSink::start() failed:" << stream->sink->error();
-                }
-            } else if (stream->sink->state() == QAudio::SuspendedState) {
+            // Stopped also covers a sink that failed while disabled.
+            if (!stream->started || stream->sink->state() == QAudio::StoppedState)
+                startStream(id);
+            else if (stream->sink->state() == QAudio::SuspendedState)
                 stream->sink->resume();
-            }
-        } else {
-            if (stream->sink->state() == QAudio::ActiveState) {
-                stream->sink->suspend();
-            }
-            stream->buffer.clear();
-            stream->drainTimer.stop();
+        } else if (stream->sink->state() == QAudio::ActiveState || stream->sink->state() == QAudio::IdleState) {
+            stream->sink->suspend();
         }
     }
 
@@ -581,50 +585,80 @@ void QemuAudioOutWorker::handleSetVolume(GVariant *parameters, GDBusMethodInvoca
     g_dbus_method_invocation_return_value(invocation, nullptr);
 }
 
-void QemuAudioOutWorker::flushStream(quint64 id)
+// =============================================================================
+// Pull-mode sink control
+// =============================================================================
+void QemuAudioOutWorker::startStream(quint64 id)
 {
     auto *stream = m_streams.value(id, nullptr);
-    if (!stream || !stream->enabled || m_muted) {
+    if (!stream || !stream->sink || !stream->jitter)
         return;
-    }
 
-    // A sink stopped on an error never accepts data again; restart it instead
-    // of piling up a backlog nobody drains.
-    if (stream->sink && stream->sink->state() == QAudio::StoppedState && stream->sink->error() != QAudio::NoError) {
-        qCWarning(KEMU_DBUSDISPLAY) << "Audio: restarting sink on stream" << id << "after" << stream->sink->error();
-        stream->ioDevice = stream->sink->start();
-    }
-    if (!stream->ioDevice) {
+    // Pull mode: the sink reads from the jitter buffer at the sound card's
+    // pace. A (re)start replaces whatever the sink was doing before.
+    stream->jitter->restartBuffering();
+    stream->sink->start(stream->jitter);
+    stream->started = true;
+    if (stream->sink->error() != QAudio::NoError)
+        qCWarning(KEMU_DBUSDISPLAY) << "Audio: QAudioSink::start() failed on stream" << id << ":" << stream->sink->error();
+}
+
+void QemuAudioOutWorker::scheduleRestart(quint64 id)
+{
+    auto *stream = m_streams.value(id, nullptr);
+    if (!stream || stream->restartPending || !stream->enabled)
         return;
-    }
+    stream->restartPending = true;
 
-    // Write straight out of the ring: at most two passes, one per wrap half.
-    // The span stays valid until the next write() into the buffer.
-    while (!stream->buffer.isEmpty()) {
-        int len = 0;
-        const char *src = stream->buffer.peek(len);
-        if (len <= 0) {
-            break;
+    // Delayed, so a sink that fails again right away cannot spin the thread.
+    // SetEnabled(true) restarts a stopped sink as well, for streams that
+    // were disabled when it failed.
+    QTimer::singleShot(kRestartDelayMs, this, [this, id] {
+        auto *stream = m_streams.value(id, nullptr);
+        if (!stream)
+            return;
+        stream->restartPending = false;
+        if (stream->enabled && !m_closed) {
+            qCDebug(KEMU_DBUSDISPLAY) << "Audio: restarting sink on stream" << id;
+            startStream(id);
         }
-        const qint64 written = stream->ioDevice->write(src, len);
-        if (written < 0) {
-            qCWarning(KEMU_DBUSDISPLAY) << "Audio: write failed on stream" << id << stream->sink->error();
-            break;
-        }
-        stream->buffer.discard(static_cast<int>(written));
-        if (written < len) {
-            break; // sink is full
+    });
+}
+
+void QemuAudioOutWorker::logStats()
+{
+    // One line per playing stream every few seconds. Anything that was
+    // audible (underrun, resync, overflow) is a warning; a quiet report
+    // stays at debug level and shows the reserve and the drift being
+    // compensated - the numbers to look at when tuning KEMU_AUDIO_BUFFER_MS.
+    for (auto it = m_streams.cbegin(); it != m_streams.cend(); ++it) {
+        AudioStream *s = it.value();
+        if (!s->enabled || !s->jitter)
+            continue;
+
+        const AudioJitterCore::Stats st = s->jitter->takeStats();
+        const quint64 underruns = st.underruns - s->loggedUnderruns;
+        const quint64 resyncs = st.resyncs - s->loggedResyncs;
+        const quint64 overflow = st.overflowFrames - s->loggedOverflow;
+        s->loggedUnderruns = st.underruns;
+        s->loggedResyncs = st.resyncs;
+        s->loggedOverflow = st.overflowFrames;
+
+        if (!st.playing && underruns == 0)
+            continue; // guest silent, nothing to say
+
+        const int fillMs = qRound(st.fillMs);
+        const int minFillMs = qRound(st.minFillMs);
+        const int ppm = qRound(st.correctionPpm);
+        if (underruns || resyncs || overflow) {
+            qCWarning(KEMU_DBUSDISPLAY).nospace() << "Audio stream " << it.key() << ": " << underruns << " underrun(s), " << resyncs << " resync(s), "
+                                                  << overflow << " frame(s) dropped in " << kStatsIntervalMs / 1000 << " s - reserve " << fillMs
+                                                  << " ms (min " << minFillMs << " ms), drift correction " << ppm << " ppm";
+        } else {
+            qCDebug(KEMU_DBUSDISPLAY).nospace() << "Audio stream " << it.key() << ": reserve " << fillMs << " ms (min " << minFillMs
+                                                << " ms), drift correction " << ppm << " ppm";
         }
     }
-
-    if (stream->buffer.isEmpty()) {
-        stream->drainTimer.stop();
-        return;
-    }
-
-    // Retry on our own. Waiting for the next Write is what let the sink run
-    // dry while data was queued.
-    stream->drainTimer.start();
 }
 
 void QemuAudioOutWorker::cleanupConnection()

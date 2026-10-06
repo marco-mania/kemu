@@ -207,6 +207,9 @@ target_sources(
           dbusdisplay/displaywidget.h
           dbusdisplay/listener.cpp
           dbusdisplay/listener.h
+          dbusdisplay/audiojittercore.h
+          dbusdisplay/audiojitterbuffer.cpp
+          dbusdisplay/audiojitterbuffer.h
           dbusdisplay/audiolistener.cpp
           dbusdisplay/audiolistener.h
           dbusdisplay/audioinlistener.cpp
@@ -229,9 +232,8 @@ target_sources(
           dbusdisplay/waylandsubsurface.cpp
           dbusdisplay/waylandsubsurface.h)
 
-target_include_directories(
-  ${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-                          ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+                                                   ${CMAKE_CURRENT_BINARY_DIR})
 
 target_link_libraries(
   ${PROJECT_NAME}

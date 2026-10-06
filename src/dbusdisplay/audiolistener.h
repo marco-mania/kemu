@@ -24,8 +24,8 @@
 
 #include <atomic>
 
+#include "dbusdisplay/audiojitterbuffer.h"
 #include "dbusdisplay/glibeventbridge.h"
-#include "dbusdisplay/pcmringbuffer.h"
 
 using namespace Qt::StringLiterals;
 
@@ -44,7 +44,7 @@ class QemuAudioOutWorker;
 //   4. QEMU calls Init/Write/Fini on our listener
 //
 // Threading: this class is only the GUI-thread face of the listener. D-Bus
-// dispatch, the PCM ring and the QAudioSink all live on a private audio
+// dispatch, the jitter buffer and the QAudioSink all live on a private audio
 // thread (QemuAudioOutWorker), so a busy GUI thread cannot delay playback and
 // the sink's timers add no wakeups to the GUI thread. Every method here is
 // meant to be called from the GUI thread; nothing else may touch the worker.
@@ -157,28 +157,39 @@ private:
     void handleSetEnabled(GVariant *parameters, GDBusMethodInvocation *invocation);
     void handleSetVolume(GVariant *parameters, GDBusMethodInvocation *invocation);
 
-    // One entry per stream
+    // One entry per stream. The sink runs in pull mode and reads from the
+    // jitter buffer, which QEMU's Write() blocks fill.
     struct AudioStream {
-        QAudioFormat format;
+        QAudioFormat format; // what QEMU sends
         QAudioSink *sink = nullptr;
-        QIODevice *ioDevice = nullptr;
+        AudioJitterBuffer *jitter = nullptr;
         bool enabled = false;
+        bool started = false; // sink->start(jitter) has run
+        bool restartPending = false;
 
-        PcmRingBuffer buffer;
-        QTimer drainTimer; // retries a partial write without waiting for QEMU
+        // Last logged counters, to report only what is new
+        quint64 loggedUnderruns = 0;
+        quint64 loggedResyncs = 0;
+        quint64 loggedOverflow = 0;
 
         ~AudioStream()
         {
+            // The sink reads from the jitter buffer: stop it first.
             if (sink) {
                 sink->stop();
                 delete sink;
             }
+            delete jitter;
         }
     };
-    void flushStream(quint64 id);
+    void startStream(quint64 id);
+    void scheduleRestart(quint64 id);
+    void logStats();
 
     void cleanupConnection();
     void startDispatching();
+
+    QTimer *m_statsTimer = nullptr;
 
     QemuAudioListener *m_facade = nullptr;
 

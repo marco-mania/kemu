@@ -14,6 +14,20 @@
 #include "dbusdisplay/gvariantptr.h"
 #include "kemu_dbusdisplay_debug.h"
 
+namespace
+{
+// Slack the capture backend keeps of its own, against a late audio thread.
+// It adds no latency: readyRead hands over whatever has been captured.
+constexpr qint64 kSourceBufferUs = 100'000;
+
+// QEMU reads every few milliseconds while the guest records. A longer gap
+// means nobody is consuming (VM paused, guest stalled): stop queueing and
+// start fresh on the next Read() instead of serving a stale backlog.
+constexpr qint64 kConsumerIdleMs = 200;
+
+constexpr int kStatsIntervalMs = 10'000;
+} // namespace
+
 // =============================================================================
 // D-Bus Interface XML for AudioInListener
 // =============================================================================
@@ -286,6 +300,14 @@ bool QemuAudioInWorker::setup(int fd, const QAudioDevice &device)
         return false;
     }
 
+    // Created here, on the audio thread, so the timer belongs to it.
+    if (!m_statsTimer) {
+        m_statsTimer = new QTimer(this);
+        m_statsTimer->setInterval(kStatsIntervalMs);
+        connect(m_statsTimer, &QTimer::timeout, this, &QemuAudioInWorker::logStats);
+    }
+    m_statsTimer->start();
+
     startDispatching();
     qCDebug(KEMU_DBUSDISPLAY) << "AudioIn: Listener ready on" << QThread::currentThread()->objectName();
     return true;
@@ -307,6 +329,9 @@ void QemuAudioInWorker::startDispatching()
 void QemuAudioInWorker::shutdown()
 {
     m_closed = true;
+
+    if (m_statsTimer)
+        m_statsTimer->stop();
 
     // Stop dispatching before the streams go away, otherwise a queued call
     // could still reach a half-deleted stream.
@@ -441,17 +466,29 @@ void QemuAudioInWorker::handleInit(GVariant *parameters, GDBusMethodInvocation *
                                     << "(rate=" << format.sampleRate() << "ch=" << format.channelCount() << "fmt=" << format.sampleFormat() << ")";
     }
 
-    stream->source = new QAudioSource(inputDevice, format);
-    // Same reasoning as the sink: capture callbacks land on the audio thread,
-    // whose wakeups the host scheduler still does not guarantee, so the
-    // source keeps slack of its own.
-    stream->source->setBufferSize(format.bytesForDuration(100'000));
+    // The jitter buffer resamples in float anyway, so capture in float where
+    // the device offers it (native in PipeWire and PulseAudio) and convert to
+    // QEMU's format on the way out. Same rate and layout as QEMU: any real
+    // rate conversion stays with the sound server.
+    QAudioFormat sourceFormat = format;
+    sourceFormat.setSampleFormat(QAudioFormat::Float);
+    if (!inputDevice.isFormatSupported(sourceFormat)) {
+        sourceFormat = format;
+        if (!inputDevice.isFormatSupported(sourceFormat)) {
+            qCWarning(KEMU_DBUSDISPLAY) << "AudioIn: format not advertised as supported"
+                                        << "(rate=" << format.sampleRate() << "ch=" << format.channelCount() << "fmt=" << format.sampleFormat() << ")";
+        }
+    }
 
-    // Capture cushion. The ring holds clearly more than the prime level so a
-    // late Read does not immediately run into the drop path.
-    constexpr int kCaptureBufferUs = 350'000;
-    stream->primeBytes = static_cast<int>(format.bytesForDuration(50'000)); // 50 ms
-    stream->buffer.reset(qMax<int>(32768, static_cast<int>(format.bytesForDuration(kCaptureBufferUs))), format.bytesPerFrame());
+    const double targetMs = AudioJitterBuffer::targetMsFromEnv();
+    stream->jitter = new AudioJitterBuffer(sourceFormat, format, targetMs);
+
+    stream->source = new QAudioSource(inputDevice, sourceFormat);
+    // Capture callbacks land on the audio thread, whose wakeups the host
+    // scheduler does not guarantee, so the source keeps slack of its own.
+    stream->source->setBufferSize(sourceFormat.bytesForDuration(kSourceBufferUs));
+
+    qCDebug(KEMU_DBUSDISPLAY) << "AudioIn: stream" << id << "source format" << sourceFormat.sampleFormat() << "reserve" << targetMs << "ms";
 
     m_streams.insert(id, stream);
 
@@ -486,22 +523,27 @@ void QemuAudioInWorker::handleSetEnabled(GVariant *parameters, GDBusMethodInvoca
         stream->enabled = enabled;
 
         if (enabled && !wasEnabled) {
+            stream->jitter->restartBuffering();
+            stream->lastRead.invalidate();
             stream->ioDevice = stream->source->start();
             if (stream->ioDevice) {
                 stream->readyReadConn = connect(stream->ioDevice, &QIODevice::readyRead, this, [stream]() {
+                    // Always drain the source, so its own buffer cannot fill.
                     const QByteArray chunk = stream->ioDevice->readAll();
-                    // Overwrite-oldest is intentional here: if QEMU stops
-                    // fetching, the guest should get fresh audio on resume,
-                    // not a stale backlog.
-                    stream->buffer.write(chunk.constData(), static_cast<int>(chunk.size()));
+                    // Queue only while QEMU is consuming. Otherwise the
+                    // backlog would just be stale audio to throw away later.
+                    if (stream->lastRead.isValid() && !stream->lastRead.hasExpired(kConsumerIdleMs))
+                        stream->jitter->push(chunk.constData(), chunk.size());
                 });
+            } else {
+                qCWarning(KEMU_DBUSDISPLAY) << "AudioIn: QAudioSource::start() failed:" << stream->source->error();
             }
         } else if (!enabled && wasEnabled) {
             disconnect(stream->readyReadConn);
             stream->readyReadConn = {};
             stream->source->stop();
             stream->ioDevice = nullptr;
-            stream->clear();
+            stream->jitter->restartBuffering();
         }
     }
 
@@ -559,32 +601,60 @@ void QemuAudioInWorker::handleRead(GVariant *parameters, GDBusMethodInvocation *
     QByteArray data(static_cast<int>(size), '\0');
 
     auto *stream = m_streams.value(id, nullptr);
-    if (stream) {
+    if (stream && stream->jitter) {
+        // QEMU is back after a pause, or reads for the first time: whatever
+        // is queued predates it. Prebuffer from fresh audio.
+        if (!stream->lastRead.isValid() || stream->lastRead.hasExpired(kConsumerIdleMs))
+            stream->jitter->restartBuffering();
+        stream->lastRead.start();
+
         if (!stream->enabled || m_muted) {
             // Return silence AND drop the backlog, so unmuting does not
-            // replay up to ~341 ms of stale microphone audio.
-            stream->clear();
+            // replay stale microphone audio.
+            stream->jitter->restartBuffering();
         } else if (!data.isEmpty()) {
-            // Build a cushion before serving. Without it the ring hovers at
-            // zero and almost every read gets padded with silence.
-            if (!stream->primed && stream->buffer.size() >= stream->primeBytes) {
-                stream->primed = true;
-            }
-
-            if (stream->primed) {
-                const int got = stream->buffer.read(data.data(), static_cast<int>(data.size()));
-                if (got == 0) {
-                    qCWarning(KEMU_DBUSDISPLAY) << "AudioIn: ring empty on stream" << id << "- rebuilding cushion";
-                    stream->primed = false;
-                } else if (got < data.size()) {
-                    qCWarning(KEMU_DBUSDISPLAY) << "AudioIn: short read" << got << "of" << data.size() << "on stream" << id;
-                }
-            }
+            // Always the full size: silence while (re)building the reserve,
+            // resampled audio from then on. Underruns show up in logStats().
+            stream->jitter->pull(data.data(), data.size());
         }
     }
 
     GVariant *result = g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, data.constData(), data.size(), sizeof(guint8));
     g_dbus_method_invocation_return_value(invocation, g_variant_new_tuple(&result, 1));
+}
+
+void QemuAudioInWorker::logStats()
+{
+    // Same report as on playback. An underrun is a gap in what the guest
+    // records; resyncs and overflow mean QEMU fell behind the microphone.
+    for (auto it = m_streams.cbegin(); it != m_streams.cend(); ++it) {
+        AudioInStream *s = it.value();
+        if (!s->enabled || !s->jitter)
+            continue;
+
+        const AudioJitterCore::Stats st = s->jitter->takeStats();
+        const quint64 underruns = st.underruns - s->loggedUnderruns;
+        const quint64 resyncs = st.resyncs - s->loggedResyncs;
+        const quint64 overflow = st.overflowFrames - s->loggedOverflow;
+        s->loggedUnderruns = st.underruns;
+        s->loggedResyncs = st.resyncs;
+        s->loggedOverflow = st.overflowFrames;
+
+        if (!st.playing && underruns == 0)
+            continue; // guest not recording, nothing to say
+
+        const int fillMs = qRound(st.fillMs);
+        const int minFillMs = qRound(st.minFillMs);
+        const int ppm = qRound(st.correctionPpm);
+        if (underruns || resyncs || overflow) {
+            qCWarning(KEMU_DBUSDISPLAY).nospace() << "AudioIn stream " << it.key() << ": " << underruns << " underrun(s), " << resyncs << " resync(s), "
+                                                  << overflow << " frame(s) dropped in " << kStatsIntervalMs / 1000 << " s - reserve " << fillMs
+                                                  << " ms (min " << minFillMs << " ms), drift correction " << ppm << " ppm";
+        } else {
+            qCDebug(KEMU_DBUSDISPLAY).nospace() << "AudioIn stream " << it.key() << ": reserve " << fillMs << " ms (min " << minFillMs
+                                                << " ms), drift correction " << ppm << " ppm";
+        }
+    }
 }
 
 void QemuAudioInWorker::cleanupConnection()

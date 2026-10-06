@@ -14,16 +14,18 @@
 #include <QAudioDevice>
 #include <QAudioFormat>
 #include <QAudioSource>
+#include <QElapsedTimer>
 #include <QHash>
 #include <QIODevice>
 #include <QMediaDevices>
 #include <QObject>
 #include <QThread>
+#include <QTimer>
 
 #include <atomic>
 
 #include "dbusdisplay/glibeventbridge.h"
-#include "dbusdisplay/pcmringbuffer.h"
+#include "dbusdisplay/audiojitterbuffer.h"
 
 using namespace Qt::StringLiterals;
 
@@ -38,6 +40,10 @@ class QemuAudioInWorker;
 //    - QEMU calls Init/Fini/SetEnabled on our listener
 //    - QEMU calls Read(id, size) to fetch data
 //    - We buffer the microphone data and return it during Read()
+//
+// The microphone runs on the sound card's clock, Read() on QEMU's. The two
+// drift apart, so the data passes through the same adaptive jitter buffer as
+// playback: a fixed reserve, kept there by resampling (see AudioJitterCore).
 //
 // Threading: Read() is a *synchronous* D-Bus call - QEMU's audio timer waits
 // for our reply. Dispatching it on the GUI thread meant a repaint could stall
@@ -152,19 +158,18 @@ private:
         QAudioFormat format;
         QAudioSource *source = nullptr;
         QIODevice *ioDevice = nullptr;
+        AudioJitterBuffer *jitter = nullptr; // source format in, QEMU's out
         bool enabled = false;
 
-        PcmRingBuffer buffer;
-
-        bool primed = false; // cushion built up before serving QEMU
-        int primeBytes = 0; // target fill level, set from the format
+        // Time since QEMU's last Read(). Invalid until the first one; while
+        // it is stale nobody is consuming, so captured audio is not queued.
+        QElapsedTimer lastRead;
         QMetaObject::Connection readyReadConn;
 
-        void clear()
-        {
-            buffer.clear();
-            primed = false;
-        }
+        // Last logged counters, to report only what is new
+        quint64 loggedUnderruns = 0;
+        quint64 loggedResyncs = 0;
+        quint64 loggedOverflow = 0;
 
         ~AudioInStream()
         {
@@ -173,11 +178,15 @@ private:
                 source->stop();
                 delete source;
             }
+            delete jitter;
         }
     };
+    void logStats();
 
     void cleanupConnection();
     void startDispatching();
+
+    QTimer *m_statsTimer = nullptr;
 
     QemuAudioInListener *m_facade = nullptr;
 
