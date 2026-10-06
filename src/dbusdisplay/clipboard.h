@@ -96,7 +96,9 @@ private:
 
     guint m_registrationId = 0;
 
+    // Serial of the latest grab; only meaningful once m_haveSerial is set.
     uint m_currentSerial = 0;
+    bool m_haveSerial = false;
     bool m_weAreOwner = false;
     bool m_registered = false;
 

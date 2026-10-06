@@ -221,6 +221,7 @@ void QemuClipboardManager::resetSession()
 {
     // Spec: the serial counter restarts at 0 on every (re-)registration.
     m_currentSerial = 0;
+    m_haveSerial = false;
     m_weAreOwner = false;
     // Offer the host content again to a (re)connected guest agent.
     m_lastSharedText.clear();
@@ -243,16 +244,17 @@ void QemuClipboardManager::handleGrab(uint selection, uint serial, const QString
     // Serial protocol: discard stale grabs; on tie the client (us) wins.
     // Tracked in every direction, or our next host grab would carry a stale
     // serial that QEMU drops silently.
-    if (serial < m_currentSerial) {
+    if (m_haveSerial && serial < m_currentSerial) {
         qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: stale Grab discarded (serial" << serial << "<" << m_currentSerial << ")";
         return;
     }
-    if (serial == m_currentSerial && m_weAreOwner) {
+    if (m_haveSerial && serial == m_currentSerial && m_weAreOwner) {
         qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: tied Grab rejected (client wins on equal serial)";
         return;
     }
 
     m_currentSerial = serial;
+    m_haveSerial = true;
     m_weAreOwner = false;
 
     if (m_direction != ClipboardDirection::ToHost && m_direction != ClipboardDirection::Both) {
@@ -406,7 +408,10 @@ void QemuClipboardManager::onHostClipboardChanged()
         u"UTF8_STRING"_s,
     };
 
-    m_currentSerial++;
+    // The first grab after (re-)registration carries serial 0: the guest
+    // agent silently discards anything but the serial it expects next.
+    m_currentSerial = m_haveSerial ? m_currentSerial + 1 : 0;
+    m_haveSerial = true;
     m_weAreOwner = true;
 
     qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Host->Guest Grab (serial:" << m_currentSerial << ")";
