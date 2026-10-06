@@ -1391,8 +1391,7 @@ void MainWindow::updateDetails()
     if ((isRunning || isDeploying) && currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !currentConfig.virtualNetworkName().isEmpty()
         && m_networkManager && m_networkManager->isRunning(currentConfig.virtualNetworkName())) {
         const int vmCount = m_networkManager->connectedVmCount(currentConfig.virtualNetworkName());
-        const QString vnetVal =
-            u"%1  [%2]"_s.arg(currentConfig.virtualNetworkName(), i18np("%1 VM connected", "%1 VMs connected", vmCount));
+        const QString vnetVal = u"%1  [%2]"_s.arg(currentConfig.virtualNetworkName(), i18np("%1 VM connected", "%1 VMs connected", vmCount));
         rows.append({u"network-server"_s, i18n("Virtual Network"), vnetVal, false, false});
     }
 
@@ -1500,8 +1499,7 @@ void MainWindow::generateShellScript(const QString &vmPath, const VMConfig &conf
         ? m_networkManager->network(config.virtualNetworkName())
         : VirtualNetwork{};
 
-    const QString script =
-        QemuCommandBuilder::buildShellScript(config, QDir(vmPath), sockPath, netCtx, net, true, SettingsDialog::qemuSeccompSandbox());
+    const QString script = QemuCommandBuilder::buildShellScript(config, QDir(vmPath), sockPath, netCtx, net, true, SettingsDialog::qemuSeccompSandbox());
 
     QFile scriptFile(vmPath + u"/qemu.sh"_s);
     if (scriptFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -2108,8 +2106,6 @@ void MainWindow::saveScreenshot()
         KMessageBox::error(this, i18n("Failed to save screenshot to %1", filePath), i18n("Error"));
     }
 }
-
-
 
 void MainWindow::reconnectViewer()
 {
@@ -3807,25 +3803,76 @@ void MainWindow::showQemuFailureDialog(const QString &vmName, bool startupFailed
         summary = i18n("QEMU for VM '%1' exited with code %2.", vmName, exitCode);
     }
 
-    // A -sandbox kills on spawn and privilege changes, without a word on
-    // stderr. Startup failures land here too.
-    if (exitStatus == KProcess::CrashExit && exitCode == SIGSYS)
+    if (exitStatus == KProcess::CrashExit && exitCode == SIGSYS) {
         summary += u' '
             + i18n("It was stopped by a seccomp sandbox because it tried to start another program or change its privileges. "
                    "Turn off \"Confine QEMU with its seccomp sandbox\" in the settings, or, if the VM's extra arguments carry "
                    "their own -sandbox option, widen it there.");
+    }
 
-    // Build the main body: summary + QEMU's stderr (the actually useful part)
-    QString body = u"<p>"_s + summary.toHtmlEscaped() + u"</p>"_s;
+    QDialog dialog(this);
+    dialog.setWindowTitle(title);
+    dialog.resize(650, 450);
+
+    auto *mainLayout = new QVBoxLayout(&dialog);
+
+    auto *headerLayout = new QHBoxLayout();
+
+    auto *iconLabel = new QLabel(&dialog);
+    QIcon errorIcon = QIcon::fromTheme(QStringLiteral("dialog-error"), dialog.style()->standardIcon(QStyle::SP_MessageBoxCritical));
+    iconLabel->setPixmap(errorIcon.pixmap(64, 64));
+    headerLayout->addWidget(iconLabel, 0, Qt::AlignTop);
+
+    auto *summaryLabel = new QLabel(summary, &dialog);
+    summaryLabel->setWordWrap(true);
+    summaryLabel->setTextFormat(Qt::PlainText);
+    headerLayout->addWidget(summaryLabel, 1);
+
+    mainLayout->addLayout(headerLayout);
 
     const QString stderrText = QString::fromUtf8(stderrTail).trimmed();
     if (!stderrText.isEmpty()) {
-        body += u"<pre style='white-space: pre-wrap;'>"_s + stderrText.toHtmlEscaped() + u"</pre>"_s;
+        mainLayout->addSpacing(10);
+
+        auto *textEdit = new QPlainTextEdit(&dialog);
+        textEdit->setPlainText(stderrText);
+        textEdit->setReadOnly(true);
+
+        textEdit->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+
+        QPalette themePalette = textEdit->palette();
+        themePalette.setColor(QPalette::Base, themePalette.color(QPalette::AlternateBase));
+        textEdit->setPalette(themePalette);
+
+        mainLayout->addWidget(textEdit);
+
+        auto *copyBtn = new QPushButton(QIcon::fromTheme(QStringLiteral("edit-copy")), i18n("Copy Log"), &dialog);
+        copyBtn->setToolTip(i18n("Copy the diagnostic output to the clipboard"));
+
+        QObject::connect(copyBtn, &QPushButton::clicked, [stderrText]() {
+            if (QClipboard *clipboard = QGuiApplication::clipboard()) {
+                clipboard->setText(stderrText);
+            }
+        });
+
+        auto *buttonLayout = new QHBoxLayout();
+        buttonLayout->addStretch();
+        buttonLayout->addWidget(copyBtn);
+        mainLayout->addLayout(buttonLayout);
+
     } else {
-        body += u"<p><i>"_s + i18n("(No diagnostic output captured.)").toHtmlEscaped() + u"</i></p>"_s;
+        mainLayout->addSpacing(10);
+        auto *emptyLogLabel = new QLabel(i18n("<i>(No diagnostic output captured.)</i>"), &dialog);
+        emptyLogLabel->setTextFormat(Qt::RichText);
+        mainLayout->addWidget(emptyLogLabel);
     }
 
-    KMessageBox::error(this, body, title);
+    // Standard OK-Button
+    auto *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok, &dialog);
+    QObject::connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    mainLayout->addWidget(buttonBox);
+
+    dialog.exec();
 }
 
 void MainWindow::startDeployment(const QString &vmName)
