@@ -3428,13 +3428,18 @@ void MainWindow::editVM()
             }
 
             KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
-            KConfigGroup grp = config->group(u"Folders"_s);
-            const QString folder = grp.readEntry(oldName, {});
-            if (!folder.isEmpty()) {
-                grp.deleteEntry(oldName);
-                grp.writeEntry(newName, folder);
-                config->sync();
-            }
+            // Assignments live in [FolderAssignments]; [Folders] only still
+            // holds them in configs from before the migration.
+            KConfigGroup assignGrp = config->group(u"FolderAssignments"_s);
+            KConfigGroup legacyGrp = config->group(u"Folders"_s);
+            QString folder = assignGrp.readEntry(oldName, {});
+            if (folder.isEmpty())
+                folder = legacyGrp.readEntry(oldName, {});
+            assignGrp.deleteEntry(oldName);
+            legacyGrp.deleteEntry(oldName);
+            if (!folder.isEmpty())
+                assignGrp.writeEntry(newName, folder);
+            config->sync();
             // migrate per-VM viewer preferences to the new name
             if (config->group(u"ViewerState"_s).hasGroup(oldName)) {
                 const ViewerDevicePrefs vp = loadViewerPrefs(oldName);
