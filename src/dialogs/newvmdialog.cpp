@@ -106,7 +106,8 @@ void NewVmDialog::buildUi()
     warningLabel = new QLabel();
     warningLabel->setStyleSheet(u"color: %1; font-size: 11px;"_s.arg(scheme.foreground(KColorScheme::NegativeText).color().name()));
     warningLabel->setWordWrap(true);
-    warningLabel->setFixedHeight(warningLabel->fontMetrics().height() + 2);
+    // Grow to a second line for long messages instead of clipping them.
+    warningLabel->setMinimumHeight(warningLabel->fontMetrics().height() + 2);
     nameLayout->addRow({}, warningLabel);
 
     topLayout->addLayout(nameLayout, 1);
@@ -454,8 +455,14 @@ void NewVmDialog::onOsChanged()
 
     const bool cloudAvailable = hasCloudDeploy();
     cloudRadio->setEnabled(cloudAvailable);
-    if (!cloudAvailable && cloudRadio->isChecked())
-        isoRadio->setChecked(true);
+    if (!cloudAvailable && cloudRadio->isChecked()) {
+        // A detection-driven switch must not block the dialog: the ISO source
+        // requires a file and is only ever selected deliberately.
+        if (m_detectingOs)
+            blankRadio->setChecked(true);
+        else
+            isoRadio->setChecked(true);
+    }
 
     applyTemplateDefaults();
     updateIcon();
@@ -481,6 +488,7 @@ void NewVmDialog::onSourceChanged()
 
 void NewVmDialog::onNameEdited()
 {
+    detectOsFromName();
     updateDeployInfo();
     validateForm();
 }
@@ -560,6 +568,54 @@ void NewVmDialog::updateCloudImages()
 
     for (int i = 0; i < m_cloudImages.size(); ++i)
         cloudImageCombo->addItem(m_cloudImages.at(i).arch, i);
+}
+
+void NewVmDialog::detectOsFromName()
+{
+    if (!m_imageDatabase)
+        return;
+
+    const QString name = nameEdit->text();
+    if (name.isEmpty())
+        return;
+
+    // The longest matching keyword wins, and a release whose version is also
+    // in the name beats one without ("debian12" picks Debian 12 directly).
+    int bestIndex = -1;
+    int bestScore = -1;
+    for (int i = 0; i < osCombo->count(); ++i) {
+        const QStringList data = osCombo->itemData(i).toStringList();
+        const QString id = data.value(0);
+        if (id.isEmpty())
+            continue;
+
+        int keywordLength = 0;
+        if (name.contains(id, Qt::CaseInsensitive)) {
+            keywordLength = id.size();
+        } else if (const TemplateInfo *tpl = m_imageDatabase->findById(id)) {
+            // The id need not be what users type ("win11" vs. "windows").
+            if (!tpl->displayName.isEmpty() && name.contains(tpl->displayName, Qt::CaseInsensitive))
+                keywordLength = tpl->displayName.size();
+        }
+        if (keywordLength == 0)
+            continue;
+
+        int score = keywordLength;
+        const QString version = data.value(1);
+        if (!version.isEmpty() && name.contains(version, Qt::CaseInsensitive))
+            score += 1000;
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestIndex = i;
+        }
+    }
+
+    if (bestIndex >= 0 && bestIndex != osCombo->currentIndex()) {
+        m_detectingOs = true;
+        osCombo->setCurrentIndex(bestIndex);
+        m_detectingOs = false;
+    }
 }
 
 void NewVmDialog::applyTemplateDefaults()

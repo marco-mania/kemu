@@ -86,6 +86,7 @@ private Q_SLOTS:
 private:
     void buildUi();
     void populateOsCombo();
+    void detectOsFromName();
     void applyTemplateDefaults();
     void updateCloudImages();
     void updateIcon();
@@ -142,6 +143,10 @@ private:
 
     // Stays false once the user has typed a host name of their own.
     bool m_hostnameIsDerived = true;
+
+    // Set while detection changes the OS, so onOsChanged() can tell an
+    // implicit switch from a deliberate one.
+    bool m_detectingOs = false;
 
     QList<CloudImageInfo> m_cloudImages;
 
