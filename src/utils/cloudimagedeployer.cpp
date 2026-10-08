@@ -11,7 +11,75 @@
 #include "utils/isoimagebuilder.h"
 #include "utils/utils.h"
 
+#include <archive.h>
+#include <archive_entry.h>
+
+#include <QFile>
+#include <QScopeGuard>
+
 using namespace Qt::StringLiterals;
+
+namespace
+{
+
+enum class UnpackResult {
+    NotCompressed,
+    Unpacked,
+    Failed,
+};
+
+// Distributions ship some cloud images compressed (FreeBSD: .qcow2.xz).
+// libarchive's raw format detects the compression by content and streams
+// the payload; uncompressed images are left alone.
+UnpackResult unpackImage(const QString &sourcePath, const QString &targetPath, QString &errorOut, const CloudImageDeployer::ProgressReport &progress)
+{
+    archive *a = archive_read_new();
+    const auto freeArchive = qScopeGuard([a] {
+        archive_read_free(a);
+    });
+    archive_read_support_filter_all(a);
+    archive_read_support_format_raw(a);
+
+    archive_entry *entry = nullptr;
+    if (archive_read_open_filename(a, QFile::encodeName(sourcePath).constData(), 1 << 20) != ARCHIVE_OK
+        || archive_read_next_header(a, &entry) != ARCHIVE_OK) {
+        errorOut = i18n("Could not read the cloud image: %1", QString::fromLocal8Bit(archive_error_string(a)));
+        return UnpackResult::Failed;
+    }
+
+    if (archive_filter_code(a, 0) == ARCHIVE_FILTER_NONE)
+        return UnpackResult::NotCompressed;
+
+    if (progress)
+        progress(0, i18n("Decompressing the cloud image..."));
+
+    QFile out(targetPath);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        errorOut = i18n("Could not create %1: %2", targetPath, out.errorString());
+        return UnpackResult::Failed;
+    }
+
+    QByteArray buffer(1 << 20, Qt::Uninitialized);
+    for (;;) {
+        const la_ssize_t read = archive_read_data(a, buffer.data(), static_cast<size_t>(buffer.size()));
+        if (read == 0)
+            break;
+        if (read < 0) {
+            errorOut = i18n("Decompressing the cloud image failed: %1", QString::fromLocal8Bit(archive_error_string(a)));
+            out.remove();
+            return UnpackResult::Failed;
+        }
+        if (out.write(buffer.constData(), read) != read) {
+            errorOut = i18n("Writing %1 failed: %2", targetPath, out.errorString());
+            out.remove();
+            return UnpackResult::Failed;
+        }
+    }
+
+    return UnpackResult::Unpacked;
+}
+
+} // namespace
 
 CloudImageDeployer::Result
 CloudImageDeployer::deploy(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, const CloudDeployConfig &config, const ProgressReport &progress)
@@ -79,11 +147,27 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage,
         return false;
     }
 
+    QString sourcePath = sourceImage;
+    const QString unpackedPath = vmDir.absoluteFilePath(u"disk.unpacked"_s);
+    const auto removeUnpacked = qScopeGuard([&unpackedPath] {
+        QFile::remove(unpackedPath);
+    });
+
+    switch (unpackImage(sourceImage, unpackedPath, errorOut, progress)) {
+    case UnpackResult::Failed:
+        return false;
+    case UnpackResult::Unpacked:
+        sourcePath = unpackedPath;
+        break;
+    case UnpackResult::NotCompressed:
+        break;
+    }
+
     KProcess proc;
     proc.setOutputChannelMode(KProcess::SeparateChannels);
 
     // Detect source format
-    proc.setProgram(qemuImg, {u"info"_s, u"--output=json"_s, sourceImage});
+    proc.setProgram(qemuImg, {u"info"_s, u"--output=json"_s, sourcePath});
     if (proc.execute(10000) < 0) {
         errorOut = i18n("qemu-img info timed out or failed to start.");
         return false;
@@ -104,14 +188,15 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage,
     }
 
     if (srcFormat == u"qcow2"_s) {
-        if (!QFile::copy(sourceImage, diskPathOut)) {
+        const bool placed = sourcePath == unpackedPath ? QFile::rename(unpackedPath, diskPathOut) : QFile::copy(sourceImage, diskPathOut);
+        if (!placed) {
             errorOut = i18n("Failed to copy cloud image.");
             return false;
         }
         // Ensure writable
         QFile::setPermissions(diskPathOut, QFile::ReadOwner | QFile::WriteOwner | QFile::ReadGroup);
     } else {
-        proc.setProgram(qemuImg, {u"convert"_s, u"-f"_s, srcFormat, u"-O"_s, u"qcow2"_s, sourceImage, diskPathOut});
+        proc.setProgram(qemuImg, {u"convert"_s, u"-f"_s, srcFormat, u"-O"_s, u"qcow2"_s, sourcePath, diskPathOut});
         if (proc.execute(120000) != 0) {
             errorOut = i18n("qemu-img convert failed: %1", QString::fromUtf8(proc.readAllStandardError()).trimmed());
             return false;
