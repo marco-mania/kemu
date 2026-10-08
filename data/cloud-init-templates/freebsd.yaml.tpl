@@ -2,24 +2,6 @@
 hostname: {{ HOSTNAME }}
 manage_etc_hosts: true
 
-{% if DESKTOP_ENVIRONMENT %}
-write_files:
-  - path: /usr/local/etc/X11/xorg.conf.d/10-kemu-video.conf
-    content: |
-      Section "Device"
-          Identifier "Card0"
-          Driver "scfb"
-      EndSection
-  - path: /usr/local/etc/X11/xorg.conf.d/20-kemu-keyboard.conf
-    content: |
-      Section "InputClass"
-          Identifier "KeyboardDefaults"
-          MatchIsKeyboard "on"
-          Option "XkbLayout" "{{ KB_LAYOUT }}"
-          Option "XkbVariant" "{{ KB_VARIANT }}"
-      EndSection
-{% endif %}
-
 users:
   - name: {{ USERNAME }}
 {% if DESKTOP_ENVIRONMENT %}
@@ -30,10 +12,10 @@ users:
     shell: /bin/sh
     sudo: ALL=(ALL) NOPASSWD:ALL
 {% if PASSWORD_HASH %}
-    lock_passwd: false
     passwd: {{ PASSWORD_HASH }}
 {% else %}
-    lock_passwd: true
+    # nuageinit ignores lock_passwd and would leave the password empty.
+    passwd: "*"
 {% endif %}
 {% if SSH_KEYS %}
     ssh_authorized_keys:
@@ -68,16 +50,30 @@ chpasswd:
   expire: false
 
 runcmd:
-  - sysrc qemu_guest_agent_enable=YES
-  - service qemu-guest-agent start
 {% if DESKTOP_ENVIRONMENT %}
   - sysrc -f /boot/loader.conf hw.usb.usbhid.enable=1
   - sysrc dbus_enable=YES
   - sysrc lightdm_enable=YES
+  - mkdir -p /usr/local/etc/X11/xorg.conf.d
+  - |
+    cat > /usr/local/etc/X11/xorg.conf.d/10-kemu-video.conf <<'EOF'
+    Section "Device"
+        Identifier "Card0"
+        Driver "scfb"
+    EndSection
+    EOF
+  - |
+    cat > /usr/local/etc/X11/xorg.conf.d/20-kemu-keyboard.conf <<'EOF'
+    Section "InputClass"
+        Identifier "KeyboardDefaults"
+        MatchIsKeyboard "on"
+        Option "XkbLayout" "{{ KB_LAYOUT }}"
+        Option "XkbVariant" "{{ KB_VARIANT }}"
+    EndSection
+    EOF
 {% endif %}
-
-power_state:
-  delay: "+1"
-  mode: poweroff
-  message: "cloud-init configuration complete"
-  condition: true
+  # nuageinit in FreeBSD 14.x/15.1 ignores power_state; KEMU waits for the
+  # poweroff. Delayed so /etc/rc can finish and clear /firstboot; the reboot
+  # firstboot_pkg_upgrade may have requested would otherwise win.
+  - rm -f /firstboot-reboot
+  - shutdown -p +1
