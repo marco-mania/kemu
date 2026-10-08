@@ -8,6 +8,7 @@
 
 #include "const.h"
 #include "dbusdisplay/dbusdisplayconst.h"
+#include "dialogs/deploymentabortdialog.h"
 #include "dialogs/editvmdialog.h"
 #include "dialogs/missingtoolsdialog.h"
 #include "dialogs/newvmdialog.h"
@@ -2849,31 +2850,17 @@ void MainWindow::shutdownVMByName(const QString &vmName)
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry)
         return;
+
+    if (entry->state == VmEntry::State::Deploying) {
+        confirmDeploymentAbort(vmName);
+        return;
+    }
+
     QWidget *parentW = dialogParentFor(vmName);
 
     const QPointer<QMPClient> client = entry->qmpClient;
     if (!client || !client->isConnected()) {
         KMessageBox::error(parentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
-        return;
-    }
-
-    // Handle deployment shutdown
-    if (entry && entry->state == VmEntry::State::Deploying) {
-        const auto answer = KMessageBox::questionTwoActionsCancel(parentW,
-                                                                  i18n("VM '%1' is currently being deployed.\n\n"
-                                                                       "Stopping now will abort the installation. "
-                                                                       "Do you also want to delete the VM?",
-                                                                       vmName),
-                                                                  i18n("Abort Deployment"),
-                                                                  KGuiItem(i18n("Stop && Keep"), u"media-playback-stop"_s),
-                                                                  KGuiItem(i18n("Stop && Delete"), u"edit-delete"_s),
-                                                                  KStandardGuiItem::cancel(),
-                                                                  u"ConfirmVmShutdownDeployment"_s); // remembered via kemurc
-
-        if (answer == KMessageBox::PrimaryAction)
-            abortDeployment(vmName, false);
-        else if (answer == KMessageBox::SecondaryAction)
-            abortDeployment(vmName, true);
         return;
     }
 
@@ -2959,22 +2946,7 @@ void MainWindow::powerOffVMByName(const QString &vmName)
 
     // Deployment is a separate flow: an in-progress install cannot be saved.
     if (entry->state == VmEntry::State::Deploying) {
-        const auto answer = KMessageBox::questionTwoActionsCancel(safeParentW,
-                                                                  i18n("VM '%1' is currently being deployed.\n\n"
-                                                                       "Forcing a power-off now will abort the installation "
-                                                                       "and may leave the disk filesystem in an inconsistent state.\n\n"
-                                                                       "Do you also want to delete the VM?",
-                                                                       vmName),
-                                                                  i18n("Abort Deployment"),
-                                                                  KGuiItem(i18n("Power-off && Keep"), u"media-playback-stop"_s),
-                                                                  KGuiItem(i18n("Power-off && Delete"), u"edit-delete"_s),
-                                                                  KStandardGuiItem::cancel(),
-                                                                  u"ConfirmVmPowerOffDeployment"_s);
-
-        if (answer == KMessageBox::PrimaryAction)
-            abortDeployment(vmName, false);
-        else if (answer == KMessageBox::SecondaryAction)
-            abortDeployment(vmName, true);
+        confirmDeploymentAbort(vmName);
         return;
     }
 
@@ -3995,12 +3967,75 @@ void MainWindow::finalizeDeployment(const QString &vmName)
     statusBar()->showMessage(i18n("Deployment of '%1' complete. VM is ready.", vmName));
 }
 
+void MainWindow::confirmDeploymentAbort(const QString &vmName)
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry)
+        return;
+
+    const bool canShutdown = entry->qmpClient && entry->qmpClient->isConnected();
+
+    switch (DeploymentAbortDialog::ask(vmName, canShutdown, dialogParentFor(vmName))) {
+    case DeploymentAbortDialog::Choice::ShutdownAndKeep:
+        shutdownDeployment(vmName);
+        break;
+    case DeploymentAbortDialog::Choice::PowerOffAndKeep:
+        abortDeployment(vmName, false);
+        break;
+    case DeploymentAbortDialog::Choice::PowerOffAndDelete:
+        abortDeployment(vmName, true);
+        break;
+    case DeploymentAbortDialog::Choice::Cancel:
+        break;
+    }
+}
+
+void MainWindow::shutdownDeployment(const QString &vmName)
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry || entry->state != VmEntry::State::Deploying)
+        return;
+
+    const QPointer<QMPClient> client = entry->qmpClient;
+    if (!client || !client->isConnected())
+        return;
+
+    // Registered before the guest powers off: a regular exit would otherwise
+    // be taken for a completed deployment.
+    const bool registered = !m_pendingDeploymentAbort.contains(vmName);
+    if (registered)
+        m_pendingDeploymentAbort.insert(vmName, false);
+    m_runtimeManager->runtimeFor(vmName).userInitiatedShutdown = true;
+
+    const QMPResult result = client->sendCommandSync(u"system_powerdown"_s);
+    if (!result.success) {
+        if (registered)
+            m_pendingDeploymentAbort.remove(vmName);
+        if (auto *rt = m_runtimeManager->runtime(vmName))
+            rt->userInitiatedShutdown = false;
+        KMessageBox::error(dialogParentFor(vmName), result.errorMessage, i18n("Shutdown Failed"));
+        return;
+    }
+
+    statusBar()->showMessage(i18n("Shutting down '%1'. The deployment is cancelled once the guest has powered off.", vmName));
+}
+
 void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
 {
     // Reentrancy guard: killing QEMU makes onVmExited() call back into the
     // abort, and onVmExited() may itself ask for an abort on an abnormal exit.
-    if (m_pendingDeploymentAbort.contains(vmName))
+    // A clean shutdown may still be waiting for the guest, though; a power-off
+    // requested meanwhile takes over.
+    if (m_pendingDeploymentAbort.contains(vmName)) {
+        if (deleteVm)
+            m_pendingDeploymentAbort[vmName] = true;
+        const VmEntry *pending = veModel->entryByName(vmName);
+        if (pending && pending->qemuProcess && pending->qemuProcess->state() == KProcess::Running) {
+            stopDbusViewer(vmName);
+            pending->qemuProcess->kill();
+        }
         return;
+    }
 
     if (auto *rt = m_runtimeManager->runtime(vmName))
         rt->deployment.reset();

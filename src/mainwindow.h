@@ -227,6 +227,8 @@ private:
 
     void startDeployment(const QString &vmName);
     void finalizeDeployment(const QString &vmName);
+    void confirmDeploymentAbort(const QString &vmName);
+    void shutdownDeployment(const QString &vmName);
     void abortDeployment(const QString &vmName, bool deleteVm);
     void finishDeploymentAbort(const QString &vmName, bool deleteVm);
     void showDeploymentLog(const QString &vmName, bool allowMissing = false);
@@ -239,8 +241,9 @@ private:
     // the user closes the window (WA_DeleteOnClose).
     QMap<QString, QPointer<DeploymentLogWindow>> m_deploymentLogWindows;
 
-    // Deployments whose QEMU process has been killed and whose cleanup is
-    // waiting for the exit signal. Value = delete the VM directory as well.
+    // Deployments whose QEMU process has been killed or asked to shut down and
+    // whose cleanup is waiting for the exit signal. Value = delete the VM
+    // directory as well.
     // Doubles as a reentrancy guard for abortDeployment().
     QMap<QString, bool> m_pendingDeploymentAbort;
 
