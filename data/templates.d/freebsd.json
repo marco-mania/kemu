@@ -58,30 +58,6 @@
           ],
           "installer_isos": [],
           "min_disk_gb": 10
-        },
-        {
-          "version": "14.2",
-          "quick_deploy": true,
-          "codename": "",
-          "lts": false,
-          "cloud_images": [
-            {
-              "arch": "x86_64",
-              "url": "https://download.freebsd.org/releases/VM-IMAGES/14.2-RELEASE/amd64/Latest/FreeBSD-14.2-RELEASE-amd64.qcow2.xz",
-              "format": "qcow2",
-              "checksum_url": "",
-              "default_user": "freebsd"
-            },
-            {
-              "arch": "aarch64",
-              "url": "https://download.freebsd.org/releases/VM-IMAGES/14.2-RELEASE/aarch64/Latest/FreeBSD-14.2-RELEASE-aarch64.qcow2.xz",
-              "format": "qcow2",
-              "checksum_url": "",
-              "default_user": "freebsd"
-            }
-          ],
-          "installer_isos": [],
-          "min_disk_gb": 10
         }
       ],
       "qemu_defaults": {
