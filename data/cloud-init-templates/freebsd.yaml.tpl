@@ -73,7 +73,9 @@ runcmd:
     EOF
 {% endif %}
   # nuageinit in FreeBSD 14.x/15.1 ignores power_state; KEMU waits for the
-  # poweroff. Delayed so /etc/rc can finish and clear /firstboot; the reboot
-  # firstboot_pkg_upgrade may have requested would otherwise win.
-  - rm -f /firstboot-reboot
-  - shutdown -p +1
+  # poweroff. runcmd runs on every boot while /firstboot exists, and the
+  # reboot firstboot_pkg_upgrade may have requested would beat the poweroff.
+  - rm -f /firstboot /firstboot-reboot
+  # Delayed so /etc/rc can finish; the forked shutdown must not hold the
+  # pipe nuageinit tees runcmd output through, or /etc/rc blocks on it.
+  - shutdown -p +1 < /dev/null > /dev/null 2>&1
