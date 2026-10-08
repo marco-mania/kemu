@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "fedora",
+      "display_name": "Fedora",
+      "cloud_init_template": "fedora",
+      "network_template": "network-v2",
+      "os_type": "linux",
+      "sort_order": 140,
+      "homepage": "https://fedoraproject.org",
+      "icon_hint": "fedora",
+      "releases": [
+        {
+          "version": "44",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-44-1.7-x86_64-CHECKSUM",
+              "default_user": "fedora"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-44-1.7.aarch64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/aarch64/images/Fedora-Cloud-44-1.7-aarch64-CHECKSUM",
+              "default_user": "fedora"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
+          "version": "43",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-43-1.6-x86_64-CHECKSUM",
+              "default_user": "fedora"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-43-1.6.aarch64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/aarch64/images/Fedora-Cloud-43-1.6-aarch64-CHECKSUM",
+              "default_user": "fedora"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
+          "version": "42",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-42-1.1-x86_64-CHECKSUM",
+              "default_user": "fedora"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-42-1.1.aarch64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/aarch64/images/Fedora-Cloud-42-1.1-aarch64-CHECKSUM",
+              "default_user": "fedora"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
+          "version": "41",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-41-1.4-x86_64-CHECKSUM",
+              "default_user": "fedora"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-41-1.4.aarch64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/aarch64/images/Fedora-Cloud-41-1.4-aarch64-CHECKSUM",
+              "default_user": "fedora"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 40,
+        "pointer_device": "virtio-tablet"
+      }
+    }
+  ]
+}

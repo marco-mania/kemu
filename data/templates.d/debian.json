@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "debian",
+      "display_name": "Debian",
+      "cloud_init_template": "debian",
+      "network_template": "network-v2",
+      "os_type": "linux",
+      "sort_order": 130,
+      "homepage": "https://www.debian.org",
+      "icon_hint": "debian",
+      "releases": [
+        {
+          "version": "12",
+          "quick_deploy": true,
+          "codename": "Bookworm",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS",
+              "default_user": "debian"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS",
+              "default_user": "debian"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 8
+        },
+        {
+          "version": "13",
+          "quick_deploy": true,
+          "codename": "Trixie",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS",
+              "default_user": "debian"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS",
+              "default_user": "debian"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 8
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 30,
+        "pointer_device": "virtio-tablet"
+      }
+    }
+  ]
+}

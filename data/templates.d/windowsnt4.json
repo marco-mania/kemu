@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "windowsnt4",
+      "display_name": "Windows NT 4.0",
+      "os_type": "windows",
+      "sort_order": 150,
+      "homepage": "https://en.wikipedia.org/wiki/Windows_NT_4.0",
+      "icon_hint": "windows",
+      "releases": [
+        {
+          "version": "4.0",
+          "quick_deploy": false,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "i386",
+              "edition": "Workstation",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "i386",
+              "edition": "Server",
+              "url": "",
+              "note": "Installation media required"
+            }
+          ],
+          "min_disk_gb": 1
+        }
+      ],
+      "qemu_defaults": {
+        "use_kvm": false,
+        "ram": 128,
+        "use_balloon": false,
+        "cpu_model": "pentium",
+        "cpu_cores": 1,
+        "disk_size_gb": 4,
+        "machine_type": "pc",
+        "gpu_type": "vga",
+        "gpu_3d_acceleration": false,
+        "gpu_mem": 8,
+        "audio_device": "sb16",
+        "sb16_config": {
+          "irq": 7,
+          "dma": 1,
+          "dma16": 5,
+          "iobase": 544
+        },
+        "disk_interface": "sataide",
+        "net_card": "pcnet",
+        "usb_controller": "none",
+        "pointer_device": "ps2",
+        "use_uefi": false,
+        "use_acpi": false,
+        "extra_args": "-serial none"
+      }
+    }
+  ]
+}

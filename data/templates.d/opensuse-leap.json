@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "opensuse-leap",
+      "display_name": "openSUSE Leap",
+      "cloud_init_template": "opensuse-leap",
+      "network_template": "network-v1",
+      "os_type": "linux",
+      "sort_order": 150,
+      "homepage": "https://www.opensuse.org",
+      "icon_hint": "opensuse",
+      "releases": [
+        {
+          "version": "16.0",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://download.opensuse.org/repositories/openSUSE:/Leap:/16.0:/Images/images/Leap-16.0-Minimal-VM.x86_64-Cloud.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://download.opensuse.org/repositories/openSUSE:/Leap:/16.0:/Images/images/Leap-16.0-Minimal-VM.x86_64-Cloud.qcow2.sha256",
+              "default_user": "opensuse"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://download.opensuse.org/repositories/openSUSE:/Leap:/16.0:/Images/images/Leap-16.0-Minimal-VM.aarch64-Cloud.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://download.opensuse.org/repositories/openSUSE:/Leap:/16.0:/Images/images/Leap-16.0-Minimal-VM.aarch64-Cloud.qcow2.sha256",
+              "default_user": "opensuse"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
+          "version": "15.6",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://download.opensuse.org/repositories/Cloud:/Images:/Leap_15.6/images/openSUSE-Leap-15.6.x86_64-NoCloud.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "opensuse"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://download.opensuse.org/repositories/Cloud:/Images:/Leap_15.6/images/openSUSE-Leap-15.6.aarch64-NoCloud.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "opensuse"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 40,
+        "pointer_device": "virtio-tablet"
+      }
+    }
+  ]
+}

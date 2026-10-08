@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "windowsxp",
+      "display_name": "Windows XP",
+      "os_type": "windows",
+      "sort_order": 130,
+      "homepage": "https://en.wikipedia.org/wiki/Windows_XP",
+      "icon_hint": "windows",
+      "releases": [
+        {
+          "version": "SP3",
+          "quick_deploy": false,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "i386",
+              "edition": "Professional",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "i386",
+              "edition": "Home",
+              "url": "",
+              "note": "Installation media required"
+            }
+          ],
+          "min_disk_gb": 5
+        }
+      ],
+      "qemu_defaults": {
+        "use_kvm": true,
+        "ram": 1024,
+        "use_balloon": false,
+        "cpu_model": "qemu32",
+        "cpu_cores": 1,
+        "disk_size_gb": 20,
+        "machine_type": "pc",
+        "gpu_type": "vga",
+        "gpu_3d_acceleration": false,
+        "gpu_mem": 16,
+        "audio_device": "ac97",
+        "disk_interface": "sataide",
+        "net_card": "rtl8139",
+        "usb_controller": "ehci",
+        "pointer_device": "ps2",
+        "use_uefi": false,
+        "use_acpi": true,
+        "use_localtime": true,
+        "extra_args": "-serial none"
+      }
+    }
+  ]
+}

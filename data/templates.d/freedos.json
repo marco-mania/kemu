@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "freedos",
+      "display_name": "FreeDOS",
+      "os_type": "dos",
+      "sort_order": 110,
+      "homepage": "https://www.freedos.org",
+      "icon_hint": "freedos",
+      "releases": [
+        {
+          "version": "1.4",
+          "quick_deploy": false,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "i386",
+              "edition": "Full",
+              "url": "",
+              "note": "Download from freedos.org"
+            }
+          ],
+          "min_disk_gb": 1
+        }
+      ],
+      "qemu_defaults": {
+        "use_kvm": false,
+        "ram": 64,
+        "use_balloon": false,
+        "cpu_model": "qemu32",
+        "cpu_cores": 1,
+        "disk_size_gb": 1,
+        "machine_type": "pc_isa",
+        "gpu_type": "isa-vga",
+        "gpu_3d_acceleration": false,
+        "gpu_mem": 1,
+        "audio_device": "sb16",
+        "disk_interface": "sataide",
+        "net_card": "ne2000",
+        "usb_controller": "none",
+        "pointer_device": "ps2",
+        "use_uefi": false,
+        "use_acpi": false,
+        "use_localtime": true,
+        "display_type": "sdl"
+      }
+    }
+  ]
+}

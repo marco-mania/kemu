@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "ubuntu",
+      "display_name": "Ubuntu",
+      "cloud_init_template": "ubuntu",
+      "network_template": "network-v2",
+      "os_type": "linux",
+      "sort_order": 100,
+      "homepage": "https://ubuntu.com",
+      "icon_hint": "ubuntu",
+      "releases": [
+        {
+          "version": "26.04",
+          "quick_deploy": true,
+          "codename": "Resolute Raccoon",
+          "lts": true,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-amd64.img",
+              "format": "qcow2",
+              "checksum_url": "https://cloud-images.ubuntu.com/resolute/current/SHA256SUMS",
+              "default_user": "ubuntu"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-arm64.img",
+              "format": "qcow2",
+              "checksum_url": "https://cloud-images.ubuntu.com/resolute/current/SHA256SUMS",
+              "default_user": "ubuntu"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
+          "version": "24.04",
+          "quick_deploy": true,
+          "codename": "Noble Numbat",
+          "lts": true,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img",
+              "format": "qcow2",
+              "checksum_url": "https://cloud-images.ubuntu.com/noble/current/SHA256SUMS",
+              "default_user": "ubuntu"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-arm64.img",
+              "format": "qcow2",
+              "checksum_url": "https://cloud-images.ubuntu.com/noble/current/SHA256SUMS",
+              "default_user": "ubuntu"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
+          "version": "22.04",
+          "quick_deploy": true,
+          "codename": "Jammy Jellyfish",
+          "lts": true,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img",
+              "format": "qcow2",
+              "checksum_url": "https://cloud-images.ubuntu.com/jammy/current/SHA256SUMS",
+              "default_user": "ubuntu"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-arm64.img",
+              "format": "qcow2",
+              "checksum_url": "https://cloud-images.ubuntu.com/jammy/current/SHA256SUMS",
+              "default_user": "ubuntu"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 40,
+        "pointer_device": "virtio-tablet"
+      }
+    }
+  ]
+}

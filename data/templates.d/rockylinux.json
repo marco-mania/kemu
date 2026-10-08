@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "rockylinux",
+      "display_name": "Rocky Linux",
+      "cloud_init_template": "rhel",
+      "network_template": "network-v1",
+      "os_type": "linux",
+      "sort_order": 180,
+      "homepage": "https://rockylinux.org",
+      "icon_hint": "rockylinux",
+      "releases": [
+        {
+          "version": "10",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://dl.rockylinux.org/pub/rocky/10/images/x86_64/CHECKSUM",
+              "default_user": "rocky"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://dl.rockylinux.org/pub/rocky/10/images/aarch64/Rocky-10-GenericCloud-Base.latest.aarch64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "https://dl.rockylinux.org/pub/rocky/10/images/aarch64/CHECKSUM",
+              "default_user": "rocky"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
+          "version": "9",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "rocky"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://download.rockylinux.org/pub/rocky/9/images/aarch64/Rocky-9-GenericCloud-Base.latest.aarch64.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "rocky"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 40,
+        "pointer_device": "virtio-tablet"
+      }
+    }
+  ]
+}

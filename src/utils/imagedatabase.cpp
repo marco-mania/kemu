@@ -9,7 +9,40 @@
 
 #include "kemu_debug.h"
 
+#include <QDir>
+#include <QFileInfo>
+#include <QHash>
+
+#include <algorithm>
+#include <optional>
+
 using namespace Qt::StringLiterals;
+
+namespace
+{
+
+std::optional<QJsonObject> readJsonObject(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        qCWarning(KEMU) << "Cannot read template file" << path << ":" << file.errorString();
+        return std::nullopt;
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError) {
+        qCWarning(KEMU) << "Malformed template file" << path << "at offset" << parseError.offset << ":" << parseError.errorString();
+        return std::nullopt;
+    }
+    if (!doc.isObject()) {
+        qCWarning(KEMU) << "Template file" << path << "does not contain a JSON object.";
+        return std::nullopt;
+    }
+    return doc.object();
+}
+
+} // namespace
 
 QString ReleaseInfo::displayString() const
 {
@@ -20,38 +53,89 @@ QString ReleaseInfo::displayString() const
 
 ImageDatabase::ImageDatabase() = default;
 
-bool ImageDatabase::loadFromFile(const QString &jsonPath)
+bool ImageDatabase::load()
+{
+    // A copy of templates.json in the user's data dir would pin the defaults
+    // across updates, so it is only used when no system-wide file exists.
+    const QString userDataDir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + u'/';
+    const QStringList candidates = QStandardPaths::locateAll(QStandardPaths::GenericDataLocation, KEMUConst::TemplateDbFilePath);
+    const auto systemFile = std::find_if(candidates.cbegin(), candidates.cend(), [&userDataDir](const QString &path) {
+        return !path.startsWith(userDataDir);
+    });
+    const QString defaultsPath = systemFile != candidates.cend() ? *systemFile : candidates.value(0);
+
+    const QStringList templateDirs =
+        QStandardPaths::locateAll(QStandardPaths::GenericDataLocation, KEMUConst::TemplateDropInDirPath, QStandardPaths::LocateDirectory);
+
+    return load(defaultsPath, templateDirs);
+}
+
+bool ImageDatabase::load(const QString &defaultsPath, const QStringList &templateDirs)
 {
     m_templates.clear();
     m_globalDefaults = {};
 
-    if (jsonPath.isEmpty()) {
+    if (defaultsPath.isEmpty()) {
         qCWarning(KEMU) << "Template database not found in the application data directories.";
-        return false;
+    } else if (const auto root = readJsonObject(defaultsPath)) {
+        m_globalDefaults = VMConfig::fromJson(root->value(u"global_qemu_defaults"_s).toObject());
     }
 
-    QFile file(jsonPath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        qCWarning(KEMU) << "Cannot read template database" << jsonPath << ":" << file.errorString();
-        return false;
+    struct DropIn {
+        qsizetype priority; // index into templateDirs, lower wins
+        QString path;
+    };
+
+    QMap<QString, DropIn> dropIns;
+    for (qsizetype i = 0; i < templateDirs.size(); ++i) {
+        // QDir::System lets a symlink to /dev/null mask a file.
+        const QFileInfoList entries = QDir(templateDirs.at(i)).entryInfoList({u"*.json"_s}, QDir::Files | QDir::System, QDir::Name);
+        for (const QFileInfo &entry : entries) {
+            if (!dropIns.contains(entry.fileName()))
+                dropIns.insert(entry.fileName(), DropIn{i, entry.absoluteFilePath()});
+        }
     }
 
-    QJsonParseError parseError;
-    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
-    if (parseError.error != QJsonParseError::NoError) {
-        qCWarning(KEMU) << "Malformed template database" << jsonPath << "at offset" << parseError.offset << ":" << parseError.errorString();
-        return false;
+    QList<DropIn> loadOrder = dropIns.values();
+    std::stable_sort(loadOrder.begin(), loadOrder.end(), [](const DropIn &a, const DropIn &b) {
+        return a.priority > b.priority;
+    });
+
+    QHash<QString, qsizetype> indexById;
+    for (const DropIn &dropIn : std::as_const(loadOrder)) {
+        if (QFileInfo(dropIn.path).size() == 0)
+            continue;
+
+        const auto root = readJsonObject(dropIn.path);
+        if (!root)
+            continue;
+
+        const QJsonArray arr = root->value(u"templates"_s).toArray();
+        for (const auto &val : arr) {
+            TemplateInfo tpl = parseTemplate(val.toObject(), m_globalDefaults);
+            if (tpl.id.isEmpty()) {
+                qCWarning(KEMU) << "Skipping template without id in" << dropIn.path;
+                continue;
+            }
+
+            if (const auto it = indexById.constFind(tpl.id); it != indexById.cend()) {
+                qCInfo(KEMU) << "Template" << tpl.id << "from" << dropIn.path << "replaces an earlier definition.";
+                m_templates[it.value()] = std::move(tpl);
+            } else {
+                indexById.insert(tpl.id, m_templates.size());
+                m_templates.append(std::move(tpl));
+            }
+        }
     }
 
-    const QJsonObject rootObj = doc.object();
-    m_globalDefaults = VMConfig::fromJson(rootObj[u"global_qemu_defaults"_s].toObject());
-
-    const QJsonArray arr = rootObj[u"templates"_s].toArray();
-    for (const auto &val : arr)
-        m_templates.append(parseTemplate(val.toObject(), m_globalDefaults));
+    std::stable_sort(m_templates.begin(), m_templates.end(), [](const TemplateInfo &a, const TemplateInfo &b) {
+        if (a.sortOrder != b.sortOrder)
+            return a.sortOrder < b.sortOrder;
+        return QString::localeAwareCompare(a.displayName, b.displayName) < 0;
+    });
 
     if (m_templates.isEmpty()) {
-        qCWarning(KEMU) << "Template database" << jsonPath << "contains no templates.";
+        qCWarning(KEMU) << "No OS templates found in" << templateDirs;
         return false;
     }
 
@@ -196,6 +280,7 @@ TemplateInfo ImageDatabase::parseTemplate(const QJsonObject &obj, const VMConfig
 
     const QString osTypeStr = obj[u"os_type"_s].toString();
     d.osType = VMConfig::parseOsType(osTypeStr);
+    d.sortOrder = obj[u"sort_order"_s].toInt(KEMUConst::DefaultTemplateSortOrder);
 
     for (const auto &val : obj[u"releases"_s].toArray())
         d.releases.append(parseRelease(val.toObject()));

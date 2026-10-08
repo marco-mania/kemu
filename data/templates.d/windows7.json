@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "windows7",
+      "display_name": "Windows 7",
+      "os_type": "windows",
+      "sort_order": 120,
+      "homepage": "https://en.wikipedia.org/wiki/Windows_7",
+      "icon_hint": "windows",
+      "releases": [
+        {
+          "version": "SP1",
+          "quick_deploy": false,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "x86_64",
+              "edition": "Home",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "i386",
+              "edition": "Home",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "x86_64",
+              "edition": "Professional",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "i386",
+              "edition": "Professional",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "x86_64",
+              "edition": "Ultimate",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "i386",
+              "edition": "Ultimate",
+              "url": "",
+              "note": "Installation media required"
+            }
+          ],
+          "min_disk_gb": 16
+        }
+      ],
+      "qemu_defaults": {
+        "use_kvm": true,
+        "ram": 2048,
+        "use_balloon": false,
+        "cpu_model": "core2duo",
+        "cpu_cores": 2,
+        "disk_size_gb": 40,
+        "machine_type": "pc",
+        "gpu_type": "vga",
+        "gpu_3d_acceleration": false,
+        "gpu_mem": 32,
+        "display_type": "sdl",
+        "audio_device": "hda",
+        "disk_interface": "sataide",
+        "net_card": "e1000",
+        "usb_controller": "ehci",
+        "pointer_device": "ps2",
+        "use_uefi": false,
+        "use_acpi": true,
+        "use_localtime": true
+      }
+    }
+  ]
+}

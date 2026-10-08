@@ -14,6 +14,7 @@
 #include <QMap>
 #include <QStandardPaths>
 #include <QString>
+#include <QStringList>
 
 #include "const.h"
 #include "utils/vmconfig.h"
@@ -51,6 +52,7 @@ struct TemplateInfo {
     QString id;
     QString displayName;
     VMSpecs::OsType osType = VMSpecs::OsType::Linux;
+    int sortOrder = KEMUConst::DefaultTemplateSortOrder;
     QString homepage;
     QString iconHint;
     QString cloudInitTemplate;
@@ -64,7 +66,12 @@ class ImageDatabase
 public:
     ImageDatabase();
 
-    bool loadFromFile(const QString &jsonPath);
+    // Loads templates.json and all templates.d drop-ins from the XDG data dirs.
+    bool load();
+    // templateDirs in descending priority; a file name in an earlier directory
+    // shadows the same name in later ones, and a later loaded template id
+    // replaces an earlier one completely.
+    bool load(const QString &defaultsPath, const QStringList &templateDirs);
 
     [[nodiscard]] QList<TemplateInfo> templates() const;
     [[nodiscard]] QList<TemplateInfo> templatesForType(VMSpecs::OsType type) const;

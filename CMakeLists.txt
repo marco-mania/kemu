@@ -114,6 +114,11 @@ install(DIRECTORY data/cloud-init-templates
         DESTINATION ${KDE_INSTALL_DATADIR}/${PROJECT_NAME}/data)
 install(FILES data/templates.json
         DESTINATION ${KDE_INSTALL_DATADIR}/${PROJECT_NAME}/data)
+install(
+  DIRECTORY data/templates.d
+  DESTINATION ${KDE_INSTALL_DATADIR}/${PROJECT_NAME}/data
+  FILES_MATCHING
+  PATTERN "*.json")
 
 install(FILES org.kde.kemu.desktop DESTINATION ${KDE_INSTALL_APPDIR})
 install(FILES assets/org.kde.kemu.svg

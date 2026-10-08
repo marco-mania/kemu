@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "windows11",
+      "display_name": "Windows 11",
+      "os_type": "windows",
+      "sort_order": 100,
+      "homepage": "https://www.microsoft.com/windows",
+      "icon_hint": "windows",
+      "releases": [
+        {
+          "version": "25H2",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "x86_64",
+              "edition": "Consumer",
+              "url": "",
+              "note": "Download from microsoft.com required"
+            },
+            {
+              "arch": "aarch64",
+              "edition": "Consumer",
+              "url": "",
+              "note": "Download from microsoft.com required (Windows on ARM)"
+            }
+          ],
+          "min_disk_gb": 60
+        },
+        {
+          "version": "24H2",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "x86_64",
+              "edition": "Consumer",
+              "url": "",
+              "note": "Download from microsoft.com required"
+            },
+            {
+              "arch": "aarch64",
+              "edition": "Consumer",
+              "url": "",
+              "note": "Download from microsoft.com required (Windows on ARM)"
+            }
+          ],
+          "min_disk_gb": 60
+        }
+      ],
+      "qemu_defaults": {
+        "ram": 8192,
+        "cpu_cores": 4,
+        "disk_size_gb": 160,
+        "disk_interface": "nvme",
+        "net_card": "e1000",
+        "usb_controller": "xhci",
+        "use_tpm": true,
+        "use_secureboot": true,
+        "use_localtime": true
+      }
+    }
+  ]
+}

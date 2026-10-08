@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "windows10",
+      "display_name": "Windows 10",
+      "os_type": "windows",
+      "sort_order": 110,
+      "homepage": "https://www.microsoft.com/windows",
+      "icon_hint": "windows",
+      "releases": [
+        {
+          "version": "22H2",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "x86_64",
+              "edition": "Consumer",
+              "url": "",
+              "note": "Download from microsoft.com required"
+            }
+          ],
+          "min_disk_gb": 40
+        }
+      ],
+      "qemu_defaults": {
+        "ram": 4096,
+        "cpu_cores": 2,
+        "disk_size_gb": 100,
+        "gpu_type": "virtio",
+        "gpu_3d_acceleration": false,
+        "disk_interface": "sataide",
+        "net_card": "e1000",
+        "usb_controller": "xhci",
+        "use_tpm": true,
+        "use_secureboot": true,
+        "use_localtime": true
+      }
+    }
+  ]
+}

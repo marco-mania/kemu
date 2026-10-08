@@ -37,7 +37,7 @@ using namespace Qt::StringLiterals;
  * Only asks for what has no sensible default -- operating system,
  * installation source and name -- plus the three resource values users
  * expect to adjust. Everything else comes from the OS template in
- * data/templates.json.
+ * data/templates.d/.
  *
  * "Customise..." opens EditVmDialog as a modal child; this dialog stays open
  * behind it and keeps the result, so getResult() then builds on the customised

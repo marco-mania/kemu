@@ -183,14 +183,59 @@ QT_LOGGING_RULES="org.kde.kemu*=true" kemu 2>&1 | tee kemu.log
 
 ## File Locations
 
-| Purpose                              | Path                        |
-| ------------------------------------ | --------------------------- |
-| VM data                              | `~/.local/share/kemu/vms/`  |
-| Cloud Image DB, Cloud-Init templates | `~/.local/share/kemu/data/` |
-| Configuration                        | `~/.config/kemurc`          |
+| Purpose                     | Path                                             |
+| --------------------------- | ------------------------------------------------ |
+| VM data                     | `~/.local/share/kemu/vms/`                       |
+| User OS templates           | `~/.local/share/kemu/data/templates.d/`          |
+| User Cloud-Init templates   | `~/.local/share/kemu/data/cloud-init-templates/` |
+| Configuration               | `~/.config/kemurc`                               |
 
 Each VM is stored as a subdirectory containing `config.json`, `disk.qcow2`,
 `OVMF_VARS.fd` (optional), and `qemu.sh`.
+
+## OS Templates
+
+OS presets and Quick Deploy sources come from the template database:
+`data/templates.json` holds the global QEMU defaults, `data/templates.d/` one
+JSON file per template. Templates in `~/.local/share/kemu/data/templates.d/`
+are added on top:
+
+- A file replaces the shipped file of the same name; an empty file (or a
+  symlink to `/dev/null`) hides it.
+- A template with an existing `id` replaces the shipped one completely.
+- `sort_order` sets the position within the OS group (shipped: 100–199,
+  default: 500, "Other": 1000).
+- `cloud_init_template` and `network_template` name a `.yaml.tpl` file, looked
+  up in the user's `cloud-init-templates/` first.
+
+Minimal example (`mydistro.json`):
+
+```json
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "mydistro",
+      "display_name": "My Distro",
+      "os_type": "linux",
+      "cloud_init_template": "debian",
+      "network_template": "network-v2",
+      "releases": [
+        {
+          "version": "1.0",
+          "cloud_images": [
+            { "arch": "x86_64", "url": "https://example.org/mydistro-1.0.qcow2" }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+Valid `os_type` values are `linux`, `windows`, `bsd`, `dos` and `other`.
+Templates are read at startup; malformed files are skipped with a warning (see
+[Debug Logging](#debug-logging)).
 
 ## Secure Boot Firmware Package Names
 

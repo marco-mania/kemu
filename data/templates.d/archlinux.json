@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "archlinux",
+      "display_name": "Arch Linux",
+      "cloud_init_template": "archlinux",
+      "network_template": "network-v1",
+      "os_type": "linux",
+      "sort_order": 160,
+      "homepage": "https://archlinux.org",
+      "icon_hint": "archlinux",
+      "releases": [
+        {
+          "version": "latest",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2",
+              "format": "qcow2",
+              "checksum_url": "",
+              "default_user": "arch"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 8
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 40,
+        "pointer_device": "virtio-tablet"
+      }
+    }
+  ]
+}

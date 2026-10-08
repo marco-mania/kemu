@@ -18,7 +18,13 @@ SPDX-License-Identifier = "CC0-1.0"
 path = "data/cloud-init-templates/**"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Marco Nelles <marco@maniatek.de>"
-SPDX-License-Identifier = "GPL-3.0-or-later"
+SPDX-License-Identifier = "CC0-1.0"
+
+[[annotations]]
+path = "data/templates.d/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Marco Nelles <marco@maniatek.de>"
+SPDX-License-Identifier = "CC0-1.0"
 
 [[annotations]]
 path = "screenshots/**"

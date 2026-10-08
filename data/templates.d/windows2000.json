@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "windows2000",
+      "display_name": "Windows 2000",
+      "os_type": "windows",
+      "sort_order": 140,
+      "homepage": "https://en.wikipedia.org/wiki/Windows_2000",
+      "icon_hint": "windows",
+      "releases": [
+        {
+          "version": "2000",
+          "quick_deploy": false,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "i386",
+              "edition": "Professional",
+              "url": "",
+              "note": "Installation media required"
+            },
+            {
+              "arch": "i386",
+              "edition": "Server",
+              "url": "",
+              "note": "Installation media required"
+            }
+          ],
+          "min_disk_gb": 1
+        }
+      ],
+      "qemu_defaults": {
+        "use_kvm": true,
+        "ram": 512,
+        "use_balloon": false,
+        "cpu_model": "qemu32",
+        "cpu_cores": 1,
+        "disk_size_gb": 10,
+        "machine_type": "pc",
+        "gpu_type": "vga",
+        "gpu_3d_acceleration": false,
+        "gpu_mem": 8,
+        "audio_device": "ac97",
+        "disk_interface": "sataide",
+        "net_card": "rtl8139",
+        "usb_controller": "default",
+        "pointer_device": "ps2",
+        "use_uefi": false,
+        "use_acpi": true,
+        "extra_args": "-serial none"
+      }
+    }
+  ]
+}

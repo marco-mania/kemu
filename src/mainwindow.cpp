@@ -115,8 +115,7 @@ MainWindow::MainWindow(QWidget *parent)
         saveFolderStructure();
     });
 
-    const QString templatesPath = QStandardPaths::locate(QStandardPaths::AppDataLocation, u"data/templates.json"_s);
-    if (!m_imageDatabase.loadFromFile(templatesPath)) {
+    if (!m_imageDatabase.load()) {
         // Non-fatal: VMs can still be created manually, only the OS presets
         // and automated deployment are unavailable.
         KMessageBox::information(this,

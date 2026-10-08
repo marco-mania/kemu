@@ -29,6 +29,11 @@ inline constexpr auto VMDefaultIcon = "computer"_L1;
 
 inline constexpr auto OsIconDirPath = "kemu/icons"_L1;
 
+inline constexpr auto TemplateDbFilePath = "kemu/data/templates.json"_L1;
+inline constexpr auto TemplateDropInDirPath = "kemu/data/templates.d"_L1;
+inline constexpr auto CloudInitTemplateDirPath = "kemu/data/cloud-init-templates"_L1;
+
+inline constexpr auto DefaultTemplateSortOrder = 500;
 inline constexpr auto DefaultMinDiskSizeGB = 8;
 inline constexpr auto DefaultZSTDCompressionLevelForExport = 10;
 inline constexpr auto DefaultDisplaySize = QSize(1280, 720);

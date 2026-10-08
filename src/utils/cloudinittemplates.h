@@ -10,6 +10,8 @@
 #include <QStandardPaths>
 #include <QString>
 
+#include "const.h"
+
 using namespace Qt::StringLiterals;
 
 namespace CloudInitTemplates
@@ -17,7 +19,7 @@ namespace CloudInitTemplates
 
 inline QString templateDir()
 {
-    return u"kemu/data/cloud-init-templates"_s;
+    return KEMUConst::CloudInitTemplateDirPath;
 }
 
 inline QString locateTemplate(const QString &templateId)

@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "kdeneon",
+      "display_name": "KDE neon",
+      "os_type": "linux",
+      "sort_order": 120,
+      "homepage": "https://neon.kde.org",
+      "icon_hint": "neon",
+      "releases": [
+        {
+          "version": "User Edition",
+          "quick_deploy": false,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "x86_64",
+              "edition": "User",
+              "url": "https://files.kde.org/neon/images/user/current/neon-user-current.iso",
+              "note": "Live/Install ISO based on Ubuntu 24.04 LTS. Manual installation via Calamares; no cloud-init support."
+            }
+          ],
+          "min_disk_gb": 20
+        },
+        {
+          "version": "Testing Edition",
+          "quick_deploy": false,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [],
+          "installer_isos": [
+            {
+              "arch": "x86_64",
+              "edition": "Testing",
+              "url": "https://files.kde.org/neon/images/testing/current/neon-testing-current.iso",
+              "note": "Pre-release KDE software from bugfix branches. Will contain bugs. Manual installation; no cloud-init support."
+            }
+          ],
+          "min_disk_gb": 20
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 40,
+        "pointer_device": "virtio-tablet"
+      }
+    }
+  ]
+}
