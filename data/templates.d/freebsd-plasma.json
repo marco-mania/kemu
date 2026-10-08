@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "freebsd-plasma",
+      "display_name": "FreeBSD (KDE Plasma)",
+      "cloud_init_template": "freebsd-plasma",
+      "network_template": "network-freebsd",
+      "os_type": "bsd",
+      "sort_order": 110,
+      "homepage": "https://www.freebsd.org",
+      "icon_hint": "freebsd",
+      "releases": [
+        {
+          "version": "15.1",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/amd64/Latest/FreeBSD-15.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz",
+              "format": "qcow2",
+              "checksum_url": "https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/amd64/Latest/CHECKSUM.SHA512",
+              "default_user": "freebsd"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/aarch64/Latest/FreeBSD-15.1-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz",
+              "format": "qcow2",
+              "checksum_url": "https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/aarch64/Latest/CHECKSUM.SHA512",
+              "default_user": "freebsd"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        },
+        {
+          "version": "14.4",
+          "quick_deploy": true,
+          "codename": "",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://download.freebsd.org/releases/VM-IMAGES/14.4-RELEASE/amd64/Latest/FreeBSD-14.4-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz",
+              "format": "qcow2",
+              "checksum_url": "https://download.freebsd.org/releases/VM-IMAGES/14.4-RELEASE/amd64/Latest/CHECKSUM.SHA512",
+              "default_user": "freebsd"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://download.freebsd.org/releases/VM-IMAGES/14.4-RELEASE/aarch64/Latest/FreeBSD-14.4-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz",
+              "format": "qcow2",
+              "checksum_url": "https://download.freebsd.org/releases/VM-IMAGES/14.4-RELEASE/aarch64/Latest/CHECKSUM.SHA512",
+              "default_user": "freebsd"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 10
+        }
+      ],
+      "qemu_defaults": {
+        "disk_size_gb": 30
+      }
+    }
+  ]
+}
