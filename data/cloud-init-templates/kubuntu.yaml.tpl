@@ -2,8 +2,8 @@
 hostname: {{ HOSTNAME }}
 manage_etc_hosts: true
 
-write_files:
 {% if DESKTOP_ENVIRONMENT %}
+write_files:
   - path: /etc/default/grub.d/99-kemu-desktop.cfg
     content: |
       GRUB_TERMINAL_OUTPUT="gfxterm"
@@ -41,7 +41,9 @@ locale: {{ LOCALE }}
 
 keyboard:
   layout: {{ KB_LAYOUT }}
+{% if KB_VARIANT %}
   variant: {{ KB_VARIANT }}
+{% endif %}
 
 debconf_selections: |
   keyboard-configuration keyboard-configuration/layout select {{ KB_LAYOUT }}

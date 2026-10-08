@@ -2,8 +2,8 @@
 hostname: {{ HOSTNAME }}
 manage_etc_hosts: true
 
-write_files:
 {% if DESKTOP_ENVIRONMENT %}
+write_files:
   - path: /etc/default/grub.d/99-kemu-desktop.cfg
     content: |
       GRUB_TERMINAL_OUTPUT="gfxterm"
@@ -39,7 +39,9 @@ locale: {{ LOCALE }}
 
 keyboard:
   layout: {{ KB_LAYOUT }}
+{% if KB_VARIANT %}
   variant: {{ KB_VARIANT }}
+{% endif %}
 
 debconf_selections: |
   keyboard-configuration keyboard-configuration/layout select {{ KB_LAYOUT }}
@@ -81,7 +83,7 @@ runcmd:
   - update-grub
   - DEBIAN_FRONTEND=noninteractive apt-get install -y plymouth plymouth-themes
 # GNOME keyboard settings
-  - mkdir -p /etc/dconf/db/local.d
+  - mkdir -p /etc/dconf/db/local.d /etc/dconf/profile
   - echo "user-db:user" > /etc/dconf/profile/user
   - echo "system-db:local" >> /etc/dconf/profile/user
   - |

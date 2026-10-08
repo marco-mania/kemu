@@ -27,9 +27,12 @@ locale: {{ LOCALE }}
 
 keyboard:
   layout: {{ KB_LAYOUT }}
+{% if KB_VARIANT %}
   variant: {{ KB_VARIANT }}
+{% endif %}
 
 packages:
+  - glibc-langpack-{{ LANG_SHORT }}
 {% for pkg in PACKAGES %}
   - {{ pkg }}
 {% endfor %}
@@ -48,7 +51,6 @@ chpasswd:
 runcmd:
   - localectl set-locale LANG={{ LOCALE }}
   - localectl set-x11-keymap {{ KB_LAYOUT }} "" {{ KB_VARIANT }}
-  - dnf install -y glibc-langpack-{{ LANG_SHORT }}
 {% if DESKTOP_ENVIRONMENT %}
   - systemctl set-default graphical.target
   - grubby --update-kernel=ALL --args='quiet splash'

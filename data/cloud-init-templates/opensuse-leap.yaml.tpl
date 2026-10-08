@@ -2,10 +2,10 @@
 hostname: {{ HOSTNAME }}
 manage_etc_hosts: true
 
-write_files:
 {% if DESKTOP_ENVIRONMENT %}
-- path: /etc/default/grub.d/99-kemu-desktop.cfg
-    permissions: 0644
+write_files:
+  - path: /etc/default/grub.d/99-kemu-desktop.cfg
+    permissions: '0644'
     content: |
       GRUB_TERMINAL_OUTPUT="gfxterm"
       GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
@@ -13,7 +13,7 @@ write_files:
 
 users:
   - name: {{ USERNAME }}
-    groups: [users, sudo]
+    groups: [users, wheel]
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
 {% if PASSWORD_HASH %}
@@ -36,12 +36,15 @@ locale: {{ LOCALE }}
 
 keyboard:
   layout: {{ KB_LAYOUT }}
+{% if KB_VARIANT %}
   variant: {{ KB_VARIANT }}
+{% endif %}
 
 package_update: true
 package_upgrade: true
 
 packages:
+  - glibc-locale
 {% for pkg in PACKAGES %}
   - {{ pkg }}
 {% endfor %}

@@ -27,9 +27,13 @@ locale: {{ LOCALE }}
 
 keyboard:
   layout: {{ KB_LAYOUT }}
+{% if KB_VARIANT %}
   variant: {{ KB_VARIANT }}
+{% endif %}
 
+{% if PACKAGES or DESKTOP_ENVIRONMENT %}
 packages:
+{% endif %}
 {% for pkg in PACKAGES %}
   - {{ pkg }}
 {% endfor %}
@@ -38,7 +42,8 @@ packages:
   - sddm
   - sddm-kcm
   - networkmanager
-  - plasma-nm plasma-pa
+  - plasma-nm
+  - plasma-pa
   - xdg-desktop-portal-kde
   - powerdevil
   - kinfocenter
@@ -47,6 +52,8 @@ packages:
   - dolphin-plugins
   - konsole
 {% endif %}
+package_update: true
+package_upgrade: true
 
 growpart:
   mode: auto
@@ -61,9 +68,9 @@ runcmd:
   - echo "LANG={{ LOCALE }}" > /etc/locale.conf
   - echo "KEYMAP={{ KB_LAYOUT }}" > /etc/vconsole.conf
   - localectl set-x11-keymap {{ KB_LAYOUT }} "" {{ KB_VARIANT }}
-  - pacman -Syu --noconfirm
 {% if DESKTOP_ENVIRONMENT %}
   - systemctl set-default graphical.target
+  - systemctl disable systemd-networkd.service systemd-networkd.socket systemd-networkd-wait-online.service
   - systemctl enable NetworkManager.service
   - systemctl enable sddm.service
   - sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=\"\"/GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash\"/g' /etc/default/grub

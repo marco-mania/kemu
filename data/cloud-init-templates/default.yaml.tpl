@@ -27,12 +27,16 @@ locale: {{ LOCALE }}
 
 keyboard:
   layout: {{ KB_LAYOUT }}
+{% if KB_VARIANT %}
   variant: {{ KB_VARIANT }}
+{% endif %}
 
+{% if PACKAGES %}
 packages:
 {% for pkg in PACKAGES %}
   - {{ pkg }}
 {% endfor %}
+{% endif %}
 package_update: true
 
 growpart:
