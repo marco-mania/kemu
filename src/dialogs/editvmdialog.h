@@ -149,6 +149,7 @@ private:
     QCheckBox *secureBootCheck = nullptr;
     QCheckBox *acpiCheck = nullptr;
     QComboBox *exitActionCombo = nullptr;
+    QComboBox *guestShutdownActionCombo = nullptr;
     QLineEdit *sharedPathEdit = nullptr;
     QLineEdit *sharedNameEdit = nullptr;
     QComboBox *netCombo = nullptr;

@@ -194,6 +194,8 @@ target_sources(
           dialogs/deploymentabortdialog.h
           dialogs/deploymentlogwindow.cpp
           dialogs/deploymentlogwindow.h
+          dialogs/hostshutdowndialog.cpp
+          dialogs/hostshutdowndialog.h
           widgets/virtualenvironmentitemdelegate.cpp
           widgets/virtualenvironmentitemdelegate.h
           widgets/virtualenvironmenttreeview.h

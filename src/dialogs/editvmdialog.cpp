@@ -8,6 +8,7 @@
 
 #include "const.h"
 #include "dialogs/settingsdialog.h"
+#include "utils/sandboxcapabilities.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
 
@@ -281,6 +282,23 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         i18n("What to do with this machine if it is still running when KEMU quits. "
              "A confirmation dialog lets you override this."));
     sysLayout->addRow(i18n("When KEMU exits:"), exitActionCombo);
+
+    guestShutdownActionCombo = new QComboBox(this);
+    for (const auto action : {VMSpecs::GuestShutdownAction::None, VMSpecs::GuestShutdownAction::ShutdownHost}) {
+        guestShutdownActionCombo->addItem(VMConfig::toUIString(action), QVariant::fromValue(action));
+    }
+    const auto &caps = SandboxCapabilities::instance();
+    if (caps.has(SandboxCapabilities::HostPowerOff)) {
+        guestShutdownActionCombo->setToolTip(
+            i18n("Shut down the host once the guest operating system has powered itself off. "
+                 "Shutting the machine down from KEMU never does this, and a countdown lets you "
+                 "cancel. This can also be changed for a single run in the VM menu."));
+    } else {
+        // Keep the stored value: the VM may move to a host where this works.
+        guestShutdownActionCombo->setEnabled(false);
+        guestShutdownActionCombo->setToolTip(caps.unavailableReason(SandboxCapabilities::HostPowerOff));
+    }
+    sysLayout->addRow(i18n("When the guest shuts down:"), guestShutdownActionCombo);
 
     // RAM
     auto *ramContainer = new QVBoxLayout();
@@ -889,6 +907,7 @@ void EditVmDialog::setConfig(const VMConfig &config)
     setCombo(keyboardCombo, config.keyboardDevice());
 
     setCombo(exitActionCombo, config.exitAction());
+    setCombo(guestShutdownActionCombo, config.guestShutdownAction());
 
     uefiCheck->setChecked(config.useUefi());
     localTimeCheck->setChecked(config.useLocalTime());
@@ -1218,6 +1237,7 @@ VMConfig EditVmDialog::getResult() const
     c.setUseUefi(uefiCheck->isChecked());
     c.setUseLocalTime(localTimeCheck->isChecked());
     c.setExitAction(static_cast<VMSpecs::ExitAction>(exitActionCombo->currentData().toInt()));
+    c.setGuestShutdownAction(static_cast<VMSpecs::GuestShutdownAction>(guestShutdownActionCombo->currentData().toInt()));
     c.setUseTpm(tpmCheck->isChecked());
     c.setUseSecureBoot(secureBootCheck->isChecked());
     c.setUseAcpi(acpiCheck->isChecked());
@@ -1693,6 +1713,7 @@ void EditVmDialog::resetToFactoryDefaults()
     acpiCheck->setChecked(GlobalDefaults.useAcpi);
     localTimeCheck->setChecked(GlobalDefaults.useLocalTime);
     setCombo(exitActionCombo, GlobalDefaults.exitAction);
+    setCombo(guestShutdownActionCombo, GlobalDefaults.guestShutdownAction);
 
     m_sb16Config = Sb16Config();
 

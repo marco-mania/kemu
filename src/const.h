@@ -85,4 +85,7 @@ inline constexpr auto QemuSandboxOptions = "on,obsolete=deny,elevateprivileges=d
 
 inline static constexpr int kExitPolicyTimeoutMs = 120'000;
 
+// Time to cancel a host shutdown that follows a guest power-off.
+inline constexpr int kHostShutdownCountdownSec = 30;
+
 } // namespace KEMUConst

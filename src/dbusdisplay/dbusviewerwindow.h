@@ -109,11 +109,15 @@ public:
 
     void setSuspended(bool suspended);
 
+    // Reflects the per-run "shut down host with guest" switch.
+    void setShutdownHostWithGuest(bool armed, bool available, const QString &unavailableReason = {});
+
 Q_SIGNALS:
     void viewerClosed();
     void shutdownRequested();
     void resetRequested();
     void powerOffRequested();
+    void shutdownHostWithGuestToggled(bool armed);
     void snapshotManagerRequested();
 
     void changeIsoRequested();
@@ -189,6 +193,7 @@ private:
     QAction *m_actShutdown = nullptr;
     QAction *m_actReset = nullptr;
     QAction *m_actPowerOff = nullptr;
+    QAction *m_actShutdownHost = nullptr;
     QAction *m_actSendCAD = nullptr;
     QAction *m_actSnapshots = nullptr;
     QAction *m_actQuit = nullptr;

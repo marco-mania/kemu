@@ -147,6 +147,11 @@ enum class ExitAction {
     PowerOff // kill QEMU (last resort)
 };
 
+enum class GuestShutdownAction {
+    None,
+    ShutdownHost // power off the host once the guest has powered itself off
+};
+
 Q_ENUM_NS(DisplayType)
 Q_ENUM_NS(GpuType)
 Q_ENUM_NS(AudioDevice)
@@ -161,6 +166,7 @@ Q_ENUM_NS(KeyboardDevice)
 Q_ENUM_NS(OsType)
 Q_ENUM_NS(Architecture)
 Q_ENUM_NS(ExitAction)
+Q_ENUM_NS(GuestShutdownAction)
 
 struct Defaults {
     bool useKvm = true;
@@ -192,6 +198,7 @@ struct Defaults {
     NetworkMode networkMode = NetworkMode::UserMode;
     QString macAddress = u"52:54:00:12:34:56"_s;
     ExitAction exitAction = ExitAction::SaveState;
+    GuestShutdownAction guestShutdownAction = GuestShutdownAction::None;
 };
 
 } // namespace VMSpecs
@@ -483,6 +490,10 @@ public:
     {
         return m_exitAction;
     }
+    [[nodiscard]] VMSpecs::GuestShutdownAction guestShutdownAction() const
+    {
+        return m_guestShutdownAction;
+    }
 
     static VMSpecs::MachineType recommendedMachineType(VMSpecs::CpuModel type);
     static int maxCoresForModel(VMSpecs::CpuModel type);
@@ -726,6 +737,10 @@ public:
     {
         m_exitAction = action;
     }
+    void setGuestShutdownAction(const VMSpecs::GuestShutdownAction action)
+    {
+        m_guestShutdownAction = action;
+    }
 
     // --- Bus Type Helpers ---
     [[nodiscard]] static bool isIsaDevice(VMSpecs::GpuType type);
@@ -784,6 +799,7 @@ public:
     [[nodiscard]] static QString toUIString(VMSpecs::Architecture arch);
     [[nodiscard]] static QString toUIString(VMSpecs::NetworkMode mode);
     [[nodiscard]] static QString toUIString(VMSpecs::ExitAction action);
+    [[nodiscard]] static QString toUIString(VMSpecs::GuestShutdownAction action);
     [[nodiscard]] static QString firmwareToUIString(bool useUefi, bool useSecureBoot);
 
     // --- Common Strings ---
@@ -802,6 +818,7 @@ public:
     [[nodiscard]] static QString toString(VMSpecs::Architecture arch);
     [[nodiscard]] static QString toString(VMSpecs::NetworkMode mode);
     [[nodiscard]] static QString toString(VMSpecs::ExitAction action);
+    [[nodiscard]] static QString toString(VMSpecs::GuestShutdownAction action);
     [[nodiscard]] static QString toString(ImageType type);
     [[nodiscard]] static QString toString(DeployState state);
     [[nodiscard]] static QString toString(IconSource src);
@@ -822,6 +839,7 @@ public:
     [[nodiscard]] static VMSpecs::Architecture parseArchitecture(const QString &str);
     [[nodiscard]] static VMSpecs::NetworkMode parseNetworkMode(const QString &str);
     [[nodiscard]] static VMSpecs::ExitAction parseExitAction(const QString &str);
+    [[nodiscard]] static VMSpecs::GuestShutdownAction parseGuestShutdownAction(const QString &str);
     [[nodiscard]] static ImageType parseImageType(const QString &str);
     [[nodiscard]] static DeployState parseDeployState(const QString &str);
     [[nodiscard]] static IconSource parseIconSource(const QString &str);
@@ -897,4 +915,5 @@ private:
     DeployState m_deployState = DeployState::None;
 
     VMSpecs::ExitAction m_exitAction = GlobalDefaults.exitAction;
+    VMSpecs::GuestShutdownAction m_guestShutdownAction = GlobalDefaults.guestShutdownAction;
 };

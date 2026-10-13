@@ -5,6 +5,7 @@
  */
 
 #include "sandboxcapabilities.h"
+#include "sessionguard.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -78,6 +79,15 @@ ProbeResult probeExternalToolPaths()
 #endif
 }
 
+ProbeResult probeHostPowerOff(bool flatpak)
+{
+    if (SessionGuard::powerOffBackend() != SessionGuard::PowerOffBackend::None)
+        return {true, {}};
+    if (flatpak)
+        return {false, i18n("The sandbox does not permit shutting down the computer.")};
+    return {false, i18n("Shutting down the computer is not permitted.")};
+}
+
 } // namespace
 
 SandboxCapabilities &SandboxCapabilities::instance()
@@ -101,6 +111,7 @@ void SandboxCapabilities::refresh()
     store(PipeWireAudio, probePipeWireAudio());
     store(PulseAudio, probePulseAudio());
     store(ExternalToolPaths, probeExternalToolPaths());
+    store(HostPowerOff, probeHostPowerOff(m_isFlatpak));
 }
 
 bool SandboxCapabilities::has(Capability capability) const
@@ -139,6 +150,8 @@ QString SandboxCapabilities::configName(Capability capability)
         return u"pulseaudio"_s;
     case ExternalToolPaths:
         return u"external-tool-paths"_s;
+    case HostPowerOff:
+        return u"host-power-off"_s;
     }
     return {};
 }
@@ -156,5 +169,5 @@ bool SandboxCapabilities::parseCapability(const QString &name, Capability *capab
 
 QList<SandboxCapabilities::Capability> SandboxCapabilities::allCapabilities()
 {
-    return {UsbPassthrough, HostTerminal, PipeWireAudio, PulseAudio, ExternalToolPaths};
+    return {UsbPassthrough, HostTerminal, PipeWireAudio, PulseAudio, ExternalToolPaths, HostPowerOff};
 }

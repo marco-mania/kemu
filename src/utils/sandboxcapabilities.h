@@ -20,6 +20,7 @@ public:
         PipeWireAudio,
         PulseAudio,
         ExternalToolPaths,
+        HostPowerOff,
     };
 
     static SandboxCapabilities &instance();

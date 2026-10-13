@@ -45,6 +45,8 @@ public:
         bool startupFailureAlreadyShown = false;
         bool wasDeploying = false;
         bool savestatePresent = false;
+        bool guestPoweredOff = false; // by the guest itself, not through KEMU
+        bool shutdownHostWithGuest = false;
         QByteArray stderrTail;
     };
 

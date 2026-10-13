@@ -48,6 +48,7 @@
 
 #include "dbusdisplay/dbusviewerwindow.h"
 #include "dialogs/deploymentlogwindow.h"
+#include "dialogs/hostshutdowndialog.h"
 #include "dialogs/settingsdialog.h"
 #include "jobs/clouddeployjob.h"
 #include "jobs/createvmjob.h"
@@ -272,6 +273,12 @@ private:
 
     void updateSessionInhibitors();
     void applyExitPolicy();
+
+    void setShutdownHostWithGuest(const QString &vmName, bool armed);
+    void pushHostShutdownStateToViewer(const QString &vmName);
+    [[nodiscard]] QStringList busyVmNames() const;
+    void offerHostShutdown(const QString &vmName);
+    QPointer<HostShutdownDialog> m_hostShutdownDialog;
 
     SessionGuard *m_sessionGuard = nullptr;
     bool m_suspendInProgress = false;

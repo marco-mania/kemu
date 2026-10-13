@@ -59,7 +59,7 @@ int main(int argc, char *argv[])
     QCommandLineOption disableCapabilityOption(u"disable-capability"_s,
                                                i18n("Disable a capability for testing. May be given more than once. "
                                                     "Known names: usb-passthrough, host-terminal, "
-                                                    "pipewire-audio, pulseaudio, external-tool-paths."),
+                                                    "pipewire-audio, pulseaudio, external-tool-paths, host-power-off."),
                                                u"name"_s);
     parser.addOption(disableCapabilityOption);
 

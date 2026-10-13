@@ -150,6 +150,8 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     m_model->setHeadless(vmName, req.headless);
     m_model->setQemuProcess(vmName, process);
 
+    runtimeFor(vmName).shutdownHostWithGuest = !req.deployment && config.guestShutdownAction() == VMSpecs::GuestShutdownAction::ShutdownHost;
+
     // Deployment stays in state Deploying: onQemuExit() routes it to finalize
     // or abort when QEMU exits.
     if (!req.deployment)
@@ -296,6 +298,8 @@ void VmRuntimeManager::tearDown(const QString &vmName)
         rt->stderrTail.clear();
         rt->userInitiatedShutdown = false;
         rt->resumingFromSavestate = false;
+        rt->guestPoweredOff = false;
+        rt->shutdownHostWithGuest = false;
     }
 }
 
@@ -560,6 +564,8 @@ void VmRuntimeManager::onQemuExit(const QString &vmName, int exitCode, KProcess:
     info.startupFailureAlreadyShown = rt.startupFailureShown;
     info.wasDeploying = entry->state == VmEntry::State::Deploying;
     info.savestatePresent = SaveStateManager::hasSavestate(vmPath(vmName), vmName);
+    info.guestPoweredOff = rt.guestPoweredOff && !rt.userInitiatedShutdown;
+    info.shutdownHostWithGuest = rt.shutdownHostWithGuest;
 
     if (p)
         rt.stderrTail.append(p->readAllStandardError());
@@ -588,6 +594,10 @@ void VmRuntimeManager::setUpQmpClient(const LaunchRequest &req, int monitorFd, b
     m_model->setQmpClient(vmName, client);
 
     connect(client, &QMPClient::eventReceived, this, [this, vmName](const QString &eventName, const QJsonObject &data) {
+        // Also sent after KEMU's own system_powerdown; onQemuExit() filters that out.
+        if (eventName == u"SHUTDOWN"_s && data.value(u"guest"_s).toBool() && data.value(u"reason"_s).toString() == u"guest-shutdown"_s)
+            runtimeFor(vmName).guestPoweredOff = true;
+
         Q_EMIT qmpEvent(vmName, eventName, data);
     });
 

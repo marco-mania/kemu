@@ -568,6 +568,24 @@ demonstrated below:
 SUBSYSTEM=="usb", ATTR{idVendor}=="0951", ATTR{idProduct}=="1666", MODE="0664", GROUP="kvm"
 ```
 
+## Host Shutdown with Guest
+
+KEMU can shut down the host once a guest has powered itself off, for example
+after a long-running update or when a VM is used as the primary desktop.
+
+- Per VM: Edit -> System -> When the guest shuts down.
+- Per run: Shut Down Host with Guest in the VM menu, the context menu, or
+  the viewer’s Machine menu. The VM setting is the default for each start.
+
+Only a power-off initiated by the guest counts. Shutting the VM down from KEMU,
+the exit policy, crashes, reboots and deployments never trigger it. If other
+VMs are still running or busy the host stays on. Otherwise a 30-second
+countdown allows cancelling.
+
+On Plasma, the session is ended properly, so applications can save their work
+or abort the shutdown. Elsewhere, KEMU asks logind directly; polkit may ask for
+a password.
+
 ## OVA Import/Export Limitations
 
 - OVA support is limited to single-disk VMs; multi-disk configurations are not
@@ -579,6 +597,8 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="0951", ATTR{idProduct}=="1666", MODE="0664", 
   they are system-specific.
 - OVF parsing covers common VirtualBox/VMware OVAs, but it may fail to handle
   highly customized or exotic configurations.
+- Host shutdown feature requires `--talk-name=org.kde.Shutdown` (Plasma) or
+  `--system-talk-name=org.freedesktop.login1`. Without the option is disabled.
 
 ## Credits and Trademarks
 

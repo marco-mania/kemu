@@ -7,7 +7,9 @@
 #include "sessionguard.h"
 
 #include <QDBusConnection>
+#include <QDBusConnectionInterface>
 #include <QDBusMessage>
+#include <QDBusPendingCallWatcher>
 #include <QDBusReply>
 
 #include <KLocalizedString>
@@ -23,6 +25,18 @@ constexpr auto Login1Manager = "org.freedesktop.login1.Manager"_L1;
 constexpr auto SaverService = "org.freedesktop.ScreenSaver"_L1;
 constexpr auto SaverPath = "/org/freedesktop/ScreenSaver"_L1;
 constexpr auto SaverIface = "org.freedesktop.ScreenSaver"_L1;
+
+constexpr auto PlasmaShutdownService = "org.kde.Shutdown"_L1;
+constexpr auto PlasmaShutdownPath = "/Shutdown"_L1;
+
+// Generous: polkit may be waiting for a password.
+constexpr int kPowerOffCallTimeoutMs = 120'000;
+
+bool isServiceReachable(const QDBusConnection &bus, const QString &name)
+{
+    const QDBusConnectionInterface *iface = bus.interface();
+    return iface && (iface->isServiceRegistered(name).value() || iface->activatableServiceNames().value().contains(name));
+}
 }
 
 SessionGuard::SessionGuard(QObject *parent)
@@ -133,4 +147,51 @@ void SessionGuard::setScreensaverInhibited(bool inhibited, const QString &reason
         return;
     }
     m_screensaverCookie = reply.arguments().constFirst().toUInt();
+}
+
+SessionGuard::PowerOffBackend SessionGuard::powerOffBackend()
+{
+    // plasma-shutdown is D-Bus activated wherever Plasma is installed, but it
+    // only works inside a Plasma session.
+    const bool plasmaSession = qEnvironmentVariable("XDG_CURRENT_DESKTOP").split(u':').contains(u"KDE"_s, Qt::CaseInsensitive);
+    if (plasmaSession && isServiceReachable(QDBusConnection::sessionBus(), PlasmaShutdownService))
+        return PowerOffBackend::Plasma;
+
+    const QDBusMessage msg = QDBusMessage::createMethodCall(Login1Service, Login1Path, Login1Manager, u"CanPowerOff"_s);
+    const QDBusMessage reply = QDBusConnection::systemBus().call(msg, QDBus::Block, 2000);
+    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty())
+        return PowerOffBackend::None;
+
+    // "challenge": polkit will ask for authentication, which is fine.
+    const QString answer = reply.arguments().constFirst().toString();
+    return (answer == u"yes"_s || answer == u"challenge"_s) ? PowerOffBackend::Logind : PowerOffBackend::None;
+}
+
+void SessionGuard::requestPowerOff()
+{
+    QDBusConnection bus = QDBusConnection::sessionBus();
+    QDBusMessage msg;
+
+    switch (powerOffBackend()) {
+    case PowerOffBackend::Plasma:
+        msg = QDBusMessage::createMethodCall(PlasmaShutdownService, PlasmaShutdownPath, PlasmaShutdownService, u"logoutAndShutdown"_s);
+        break;
+    case PowerOffBackend::Logind:
+        bus = QDBusConnection::systemBus();
+        msg = QDBusMessage::createMethodCall(Login1Service, Login1Path, Login1Manager, u"PowerOff"_s);
+        msg << true; // interactive
+        break;
+    case PowerOffBackend::None:
+        Q_EMIT powerOffFailed(i18n("No service is available to shut down this computer."));
+        return;
+    }
+
+    auto *watcher = new QDBusPendingCallWatcher(bus.asyncCall(msg, kPowerOffCallTimeoutMs), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
+        w->deleteLater();
+        if (w->isError()) {
+            qCWarning(KEMU) << "SessionGuard: power-off request failed:" << w->error().message();
+            Q_EMIT powerOffFailed(w->error().message());
+        }
+    });
 }

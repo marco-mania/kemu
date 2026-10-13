@@ -41,10 +41,22 @@ public:
 
     void setScreensaverInhibited(bool inhibited, const QString &reason);
 
+    enum class PowerOffBackend {
+        None,
+        Plasma, // ends the session first: applications may save or veto
+        Logind
+    };
+    // Blocking D-Bus probe; cheap enough for startup.
+    [[nodiscard]] static PowerOffBackend powerOffBackend();
+
+    // Asynchronous; failure is reported through powerOffFailed().
+    void requestPowerOff();
+
 Q_SIGNALS:
     void aboutToSleep();
     void wokeUp();
     void aboutToShutdown();
+    void powerOffFailed(const QString &error);
 
 private Q_SLOTS:
     void onPrepareForSleep(bool starting);

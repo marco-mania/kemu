@@ -85,6 +85,9 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_sessionGuard, &SessionGuard::wokeUp, this, &MainWindow::onWokeUp);
     // Forced shutdown: same damage control as for sleep, nothing slower fits.
     connect(m_sessionGuard, &SessionGuard::aboutToShutdown, this, &MainWindow::onAboutToSleep);
+    connect(m_sessionGuard, &SessionGuard::powerOffFailed, this, [this](const QString &error) {
+        KMessageBox::error(this, i18n("The host could not be shut down:\n%1", error), i18nc("@title:window", "Shutdown Failed"));
+    });
 
     connect(veModel, &VirtualEnvironmentModel::vmStateChanged, this, [this]() {
         updateSessionInhibitors();
@@ -154,6 +157,8 @@ MainWindow::~MainWindow()
     // not open dialogs while the destructor runs.
     if (m_runtimeManager)
         m_runtimeManager->disconnect(this);
+
+    delete m_hostShutdownDialog; // parentless, see offerHostShutdown()
 
     for (auto job : std::as_const(creatingVMs)) {
         if (job) {
@@ -627,6 +632,10 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                              manageSnapshotsForVm(vmName);
                          });
 
+                         connect(state.window, &DbusViewerWindow::shutdownHostWithGuestToggled, this, [this, vmName](bool armed) {
+                             setShutdownHostWithGuest(vmName, armed);
+                         });
+
                          connect(state.window, &DbusViewerWindow::inhibitStateChanged, this, [this]() {
                              updateSessionInhibitors();
                          });
@@ -685,6 +694,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
 
                          pushMediaStateToViewer(vmName);
                          pushNetworkStateToViewer(vmName);
+                         pushHostShutdownStateToViewer(vmName);
 
                          // Audio: asynchronous registration chain (see
                          // registerAudioListeners); runs against the map entry, so it
@@ -829,6 +839,14 @@ void MainWindow::setupActions()
     actionPowerOff->setText(i18n("Power-off"));
     connect(actionPowerOff, &QAction::triggered, this, &MainWindow::powerOffVM);
 
+    auto *actionShutdownHost = ac->addAction(u"vm_shutdown_host_with_guest"_s);
+    actionShutdownHost->setIcon(QIcon::fromTheme(u"system-shutdown"_s));
+    actionShutdownHost->setText(i18n("Shut Down Host with Guest"));
+    actionShutdownHost->setCheckable(true);
+    connect(actionShutdownHost, &QAction::triggered, this, [this](bool armed) {
+        setShutdownHostWithGuest(selectedVmName(), armed);
+    });
+
     auto *actionSaveState = ac->addAction(u"vm_save_state"_s);
     actionSaveState->setIcon(QIcon::fromTheme(u"document-save"_s));
     actionSaveState->setText(i18n("Save State"));
@@ -966,6 +984,16 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_shutdown"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
     actionCollection()->action(u"vm_reset"_s)->setEnabled(hasSelection && isRunning);
     actionCollection()->action(u"vm_poweroff"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
+
+    const auto &caps = SandboxCapabilities::instance();
+    const bool canPowerOffHost = caps.has(SandboxCapabilities::HostPowerOff);
+    const VmRuntimeInfo *rt = (hasSelection && m_runtimeManager) ? m_runtimeManager->runtime(name) : nullptr;
+    QAction *shutdownHostAction = actionCollection()->action(u"vm_shutdown_host_with_guest"_s);
+    shutdownHostAction->setEnabled(isRunning && canPowerOffHost);
+    shutdownHostAction->setChecked(isRunning && rt && rt->shutdownHostWithGuest);
+    shutdownHostAction->setToolTip(canPowerOffHost ? i18n("Shut down the host once the guest has powered itself off. "
+                                                          "Applies to the current run; the default is set in the VM's settings.")
+                                                   : caps.unavailableReason(SandboxCapabilities::HostPowerOff));
 
     const QString saveStateBlocker = saveStateBlockReason(entry);
     auto *saveStateAction = actionCollection()->action(u"vm_save_state"_s);
@@ -2199,6 +2227,13 @@ void MainWindow::onVmExited(const VmRuntimeManager::ExitInfo &info)
         statusBar()->showMessage(i18n("VM '%1' stopped.", info.vmName));
     }
 
+    if (info.shutdownHostWithGuest && info.guestPoweredOff && !info.abnormal && !info.wasDeploying) {
+        // Queued: the remaining exit handling must not wait on the dialog.
+        QTimer::singleShot(0, this, [this, vmName = info.vmName] {
+            offerHostShutdown(vmName);
+        });
+    }
+
     if (selectedVmName() == info.vmName) {
         updateDetails();
         updateActionStates();
@@ -2331,6 +2366,7 @@ void MainWindow::showContextMenu(const QPoint &pos)
                 contextMenu.addAction(actionCollection()->action(u"vm_shutdown"_s));
                 contextMenu.addAction(actionCollection()->action(u"vm_reset"_s));
                 contextMenu.addAction(actionCollection()->action(u"vm_poweroff"_s));
+                contextMenu.addAction(actionCollection()->action(u"vm_shutdown_host_with_guest"_s));
 
                 contextMenu.addSeparator();
 
@@ -4353,6 +4389,92 @@ void MainWindow::applyExitPolicy()
         close();
     });
     watch->start(500);
+}
+
+void MainWindow::setShutdownHostWithGuest(const QString &vmName, bool armed)
+{
+    const VmEntry *e = veModel->entryByName(vmName);
+    if (!e || e->state != VmEntry::State::Running)
+        return;
+
+    m_runtimeManager->runtimeFor(vmName).shutdownHostWithGuest = armed;
+    pushHostShutdownStateToViewer(vmName);
+    if (selectedVmName() == vmName)
+        updateActionStates();
+
+    statusBar()->showMessage(armed ? i18n("The host will shut down once '%1' has powered itself off.", vmName)
+                                   : i18n("The host will keep running when '%1' shuts down.", vmName));
+}
+
+void MainWindow::pushHostShutdownStateToViewer(const QString &vmName)
+{
+    auto *win = m_runtimeManager->viewerWindow(vmName);
+    if (!win)
+        return;
+
+    // Deployments end in finalizeDeployment(), never in a host shutdown.
+    const VmEntry *e = veModel->entryByName(vmName);
+    const bool deploying = e && e->state == VmEntry::State::Deploying;
+
+    const auto &caps = SandboxCapabilities::instance();
+    const VmRuntimeInfo *rt = m_runtimeManager->runtime(vmName);
+    win->setShutdownHostWithGuest(rt && rt->shutdownHostWithGuest,
+                                  caps.has(SandboxCapabilities::HostPowerOff) && !deploying,
+                                  caps.unavailableReason(SandboxCapabilities::HostPowerOff));
+}
+
+QStringList MainWindow::busyVmNames() const
+{
+    QStringList names;
+    for (const QString &name : veModel->vmNames()) {
+        const VmEntry *e = veModel->entryByName(name);
+        if (e && e->state != VmEntry::State::Stopped && e->state != VmEntry::State::Saved)
+            names << name;
+    }
+    for (auto it = m_cloudDeployJobs.cbegin(); it != m_cloudDeployJobs.cend(); ++it) {
+        if (it.value() && !names.contains(it.key()))
+            names << it.key();
+    }
+    return names;
+}
+
+void MainWindow::offerHostShutdown(const QString &vmName)
+{
+    if (m_hostShutdownDialog)
+        return;
+
+    const auto &caps = SandboxCapabilities::instance();
+    if (!caps.has(SandboxCapabilities::HostPowerOff)) {
+        statusBar()->showMessage(caps.unavailableReason(SandboxCapabilities::HostPowerOff));
+        return;
+    }
+
+    // A power-off would take running guests and pending jobs down hard.
+    const auto refuseIfBusy = [this, vmName]() {
+        const QStringList busy = busyVmNames();
+        if (busy.isEmpty())
+            return false;
+        KMessageBox::information(this,
+                                 i18n("'%1' has shut down, but the host keeps running because these virtual machines "
+                                      "are still running or busy:\n\n%2",
+                                      vmName,
+                                      busy.join(u'\n')),
+                                 i18nc("@title:window", "Host Shutdown Skipped"));
+        return true;
+    };
+    if (refuseIfBusy())
+        return;
+
+    // No parent: the main window may be minimized or hidden behind other windows.
+    m_hostShutdownDialog = new HostShutdownDialog(vmName, KEMUConst::kHostShutdownCountdownSec);
+    m_hostShutdownDialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(m_hostShutdownDialog, &QDialog::accepted, this, [this, refuseIfBusy]() {
+        if (!refuseIfBusy())
+            m_sessionGuard->requestPowerOff();
+    });
+    m_hostShutdownDialog->show();
+    m_hostShutdownDialog->raise();
+    m_hostShutdownDialog->activateWindow();
 }
 
 QWidget *MainWindow::dialogParentFor(const QString &vmName)

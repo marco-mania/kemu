@@ -111,6 +111,14 @@ void DbusViewerWindow::createActions()
     m_actPowerOff->setStatusTip(i18n("Force power-off the virtual machine (may cause data loss)"));
     connect(m_actPowerOff, &QAction::triggered, this, &DbusViewerWindow::powerOffRequested);
 
+    m_actShutdownHost = new QAction(QIcon::fromTheme(u"system-shutdown"_s), i18n("Shut Down &Host with Guest"), this);
+    m_actShutdownHost->setCheckable(true);
+    m_actShutdownHost->setStatusTip(i18n("Shut down the host once the guest has powered itself off"));
+    connect(m_actShutdownHost, &QAction::triggered, this, [this](bool armed) {
+        showOsd(armed ? i18n("The host will shut down with the guest") : i18n("The host will keep running"));
+        Q_EMIT shutdownHostWithGuestToggled(armed);
+    });
+
     m_actSendCAD = new QAction(QIcon::fromTheme(u"input-keyboard"_s), i18n("Send Ctrl+Alt+&Del"), this);
     m_actSendCAD->setStatusTip(i18n("Send the Ctrl+Alt+Del key sequence to the guest"));
     connect(m_actSendCAD, &QAction::triggered, m_display, &QemuDisplayWidget::sendCtrlAltDel);
@@ -265,6 +273,8 @@ void DbusViewerWindow::createMenus()
     machineMenu->addAction(m_actShutdown);
     machineMenu->addAction(m_actReset);
     machineMenu->addAction(m_actPowerOff);
+    machineMenu->addSeparator();
+    machineMenu->addAction(m_actShutdownHost);
     machineMenu->addSeparator();
     machineMenu->addAction(m_actSendCAD);
     machineMenu->addSeparator();
@@ -752,6 +762,14 @@ void DbusViewerWindow::setSuspended(bool suspended)
 
     if (m_actNetworkLink)
         m_actNetworkLink->setEnabled(m_hasNic && !suspended);
+}
+
+void DbusViewerWindow::setShutdownHostWithGuest(bool armed, bool available, const QString &unavailableReason)
+{
+    QSignalBlocker block(m_actShutdownHost);
+    m_actShutdownHost->setChecked(armed && available);
+    m_actShutdownHost->setEnabled(available);
+    m_actShutdownHost->setToolTip(unavailableReason);
 }
 
 // =============================================================================

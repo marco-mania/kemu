@@ -53,6 +53,12 @@ struct VmRuntimeInfo {
 
     bool pausedBySuspend = false;
 
+    // --- host power-off with the guest ---
+
+    // Armed from the VM's configuration at launch; the menus toggle it per run.
+    bool shutdownHostWithGuest = false;
+    bool guestPoweredOff = false;
+
     // --- deployment ---
 
     struct PendingDeployment {
@@ -78,5 +84,6 @@ struct VmRuntimeInfo {
         userInitiatedShutdown = false;
         resumingFromSavestate = false;
         startupFailureShown = false;
+        guestPoweredOff = false;
     }
 };

@@ -899,6 +899,17 @@ QString VMConfig::toUIString(VMSpecs::ExitAction action)
     return {};
 }
 
+QString VMConfig::toUIString(VMSpecs::GuestShutdownAction action)
+{
+    switch (action) {
+    case VMSpecs::GuestShutdownAction::None:
+        return i18n("Keep the host running");
+    case VMSpecs::GuestShutdownAction::ShutdownHost:
+        return i18n("Shut down the host");
+    }
+    return {};
+}
+
 QString VMConfig::firmwareToUIString(bool useUefi, bool useSecureBoot)
 {
     if (!useUefi)
@@ -1120,6 +1131,17 @@ QString VMConfig::toString(VMSpecs::ExitAction action)
         return u"power_off"_s;
     }
     return u"shut_down"_s;
+}
+
+QString VMConfig::toString(VMSpecs::GuestShutdownAction action)
+{
+    switch (action) {
+    case VMSpecs::GuestShutdownAction::None:
+        return u"none"_s;
+    case VMSpecs::GuestShutdownAction::ShutdownHost:
+        return u"shut_down_host"_s;
+    }
+    return u"none"_s;
 }
 
 QString VMConfig::toString(ImageType type)
@@ -1387,6 +1409,13 @@ VMSpecs::ExitAction VMConfig::parseExitAction(const QString &str)
     return VMSpecs::ExitAction::Shutdown;
 }
 
+VMSpecs::GuestShutdownAction VMConfig::parseGuestShutdownAction(const QString &str)
+{
+    if (str.toLower().trimmed() == u"shut_down_host"_s)
+        return VMSpecs::GuestShutdownAction::ShutdownHost;
+    return VMSpecs::GuestShutdownAction::None;
+}
+
 VMConfig::ImageType VMConfig::parseImageType(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
@@ -1593,6 +1622,7 @@ QJsonObject VMConfig::toJson() const
     j[u"deploy_state"_s] = toString(m_deployState);
 
     j[u"exit_action"_s] = toString(m_exitAction);
+    j[u"guest_shutdown_action"_s] = toString(m_guestShutdownAction);
 
     return j;
 }
@@ -1697,6 +1727,7 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
     c.m_deployState = parseDeployState(j[u"deploy_state"_s].toString());
 
     c.m_exitAction = parseExitAction(j[u"exit_action"_s].toString());
+    c.m_guestShutdownAction = parseGuestShutdownAction(j[u"guest_shutdown_action"_s].toString());
 
     return c;
 }
