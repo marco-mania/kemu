@@ -89,8 +89,9 @@ MainWindow::MainWindow(QWidget *parent)
         KMessageBox::error(this, i18n("The host could not be shut down:\n%1", error), i18nc("@title:window", "Shutdown Failed"));
     });
 
-    connect(veModel, &VirtualEnvironmentModel::vmStateChanged, this, [this]() {
+    connect(veModel, &VirtualEnvironmentModel::vmStateChanged, this, [this](const QString &vmName) {
         updateSessionInhibitors();
+        pushHostShutdownStateToViewer(vmName);
     });
     updateSessionInhibitors();
 
@@ -2377,10 +2378,6 @@ void MainWindow::showContextMenu(const QPoint &pos)
                 contextMenu.addAction(usbActionMenu);
                 contextMenu.addSeparator();
                 contextMenu.addAction(actionCollection()->action(u"vm_manage_snapshots"_s));
-                contextMenu.addSeparator();
-                contextMenu.addSeparator();
-
-                contextMenu.addAction(actionCollection()->action(u"vm_poweroff"_s));
             }
         }
     } else {
@@ -4412,14 +4409,15 @@ void MainWindow::pushHostShutdownStateToViewer(const QString &vmName)
     if (!win)
         return;
 
-    // Deployments end in finalizeDeployment(), never in a host shutdown.
+    // Same rule as setShutdownHostWithGuest(): deployments end in
+    // finalizeDeployment(), and a run that is saving its state is over.
     const VmEntry *e = veModel->entryByName(vmName);
-    const bool deploying = e && e->state == VmEntry::State::Deploying;
+    const bool running = e && e->state == VmEntry::State::Running;
 
     const auto &caps = SandboxCapabilities::instance();
     const VmRuntimeInfo *rt = m_runtimeManager->runtime(vmName);
     win->setShutdownHostWithGuest(rt && rt->shutdownHostWithGuest,
-                                  caps.has(SandboxCapabilities::HostPowerOff) && !deploying,
+                                  caps.has(SandboxCapabilities::HostPowerOff) && running,
                                   caps.unavailableReason(SandboxCapabilities::HostPowerOff));
 }
 
