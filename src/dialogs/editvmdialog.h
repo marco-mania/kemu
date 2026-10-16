@@ -96,6 +96,7 @@ private:
     void updateDiskInterfaceHint();
     void updateDeviceAvailability();
     void updateInputDeviceAvailability();
+    void updateNetworkCardDependencies();
 
     void validateForm();
 

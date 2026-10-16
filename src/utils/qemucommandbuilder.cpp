@@ -191,8 +191,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     // takes over from the firmware. Every guest OS we support can read an
     // AHCI CD-ROM out of the box.
     if (!config.isoPath().isEmpty()) {
-        args << u"-drive"_s
-             << u"file=%1,format=raw,if=none,id=drive-cdrom0,media=cdrom,readonly=on"_s.arg(optPath(config.isoPath(), relativePaths));
+        args << u"-drive"_s << u"file=%1,format=raw,if=none,id=drive-cdrom0,media=cdrom,readonly=on"_s.arg(optPath(config.isoPath(), relativePaths));
     } else {
         args << u"-drive"_s << u"if=none,id=drive-cdrom0,media=cdrom"_s;
     }
@@ -201,8 +200,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     // --- Floppy ---
     if (config.machineType() != VMSpecs::MachineType::Q35) {
         if (!config.floppyPath().isEmpty()) {
-            args << u"-drive"_s
-                 << u"file=%1,format=raw,if=none,id=drive-fda,readonly=off"_s.arg(optPath(config.floppyPath(), relativePaths));
+            args << u"-drive"_s << u"file=%1,format=raw,if=none,id=drive-fda,readonly=off"_s.arg(optPath(config.floppyPath(), relativePaths));
         } else {
             args << u"-drive"_s << u"if=none,id=drive-fda"_s;
         }
@@ -212,8 +210,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     // --- Cloud-Init NoCloud ISO ---
     const QString cidataIso = vmDir.absoluteFilePath(u"cidata.iso"_s);
     if (QFile::exists(cidataIso)) {
-        args << u"-drive"_s
-             << u"file=%1,format=raw,if=none,id=drive-cidata,media=cdrom,readonly=on"_s.arg(optPath(cidataIso, relativePaths));
+        args << u"-drive"_s << u"file=%1,format=raw,if=none,id=drive-cidata,media=cdrom,readonly=on"_s.arg(optPath(cidataIso, relativePaths));
         args << u"-device"_s << u"ide-cd,drive=drive-cidata,id=cidata,%1"_s.arg(takeIdeSlot());
     }
 
@@ -374,8 +371,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
                 // process and is unreachable from a script. localaddr keeps
                 // the group on the loopback interface; without it the guest's
                 // frames leave for the physical network.
-                args << u"-netdev"_s
-                     << u"socket,id=%1,mcast=%2,localaddr=127.0.0.1"_s.arg(KEMUConst::NetdevId, networkContext.mcastAddress);
+                args << u"-netdev"_s << u"socket,id=%1,mcast=%2,localaddr=127.0.0.1"_s.arg(KEMUConst::NetdevId, networkContext.mcastAddress);
             } else {
                 Q_ASSERT_X(networkContext.switchFd >= 0,
                            "QemuCommandBuilder::build",
@@ -395,11 +391,11 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         } else {
             // User mode: QEMU gets one end of the socketpair KEMU's
             // in-process slirp network (UserModeNetwork) listens on.
-            Q_ASSERT_X(networkContext.userNetFd >= 0,
-                       "QemuCommandBuilder::build",
-                       "UserMode requires NetworkContext::userNetFd or useSlirp to be set");
+            Q_ASSERT_X(networkContext.userNetFd >= 0, "QemuCommandBuilder::build", "UserMode requires NetworkContext::userNetFd or useSlirp to be set");
             args << u"-netdev"_s << u"stream,id=%1,server=off,addr.type=fd,addr.str=%2"_s.arg(KEMUConst::NetdevId).arg(networkContext.userNetFd);
         }
+    } else {
+        args << u"-nic"_s << u"none"_s;
     }
 
     // --- USB controller ---
@@ -539,8 +535,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
                 + u"# KEMU's in-memory switch. Every exported VM of this network shares\n"_s
                 + u"# the same group on this machine and reaches the others at L2; the\n"_s
                 + u"# group stays on the loopback interface. There is no DHCP and\n"_s
-                + u"# no internet access here - configure static addresses inside the\n"_s
-                + u"# guests or run a DHCP server in one of them.\n\n"_s;
+                + u"# no internet access here - configure static addresses inside the\n"_s + u"# guests or run a DHCP server in one of them.\n\n"_s;
         } else if (networkContext.useSlirp) {
             // Nothing to start - QEMU's own -netdev user is already in args.
         }

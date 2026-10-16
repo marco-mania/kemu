@@ -765,21 +765,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         validateForm();
     });
 
-    connect(netCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
-        const bool hasNetwork = static_cast<VMSpecs::NetworkCard>(netCombo->currentData().toInt()) != VMSpecs::NetworkCard::None;
-        networkModeCombo->setEnabled(hasNetwork);
-        macEdit->setEnabled(hasNetwork);
-        userModeGroup->setEnabled(hasNetwork);
-        vdeGroup->setEnabled(hasNetwork);
-        portForwardTable->setEnabled(hasNetwork);
-        addPortFwdButton->setEnabled(hasNetwork);
-        auto card = static_cast<VMSpecs::NetworkCard>(netCombo->currentData().toInt());
-        const bool hasNet = (card != VMSpecs::NetworkCard::None);
-        regenerateMacButton->setEnabled(hasNet);
-        if (hasNet && macEdit->text().isEmpty())
-            macEdit->setText(Utils::generateRandomMac(usedMacAddresses()));
-        validateForm();
-    });
+    connect(netCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::updateNetworkCardDependencies);
 
     connect(regenerateMacButton, &QPushButton::clicked, this, [this]() {
         macEdit->setText(Utils::generateRandomMac(usedMacAddresses()));
@@ -795,9 +781,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     connect(buttonBox->button(QDialogButtonBox::RestoreDefaults), &QPushButton::clicked, this, &EditVmDialog::resetToFactoryDefaults);
     mainLayout->addWidget(buttonBox);
 
-    if (macEdit->text().isEmpty() && netCombo->currentData().toInt() != static_cast<int>(VMSpecs::NetworkCard::None)) {
-        macEdit->setText(Utils::generateRandomMac(usedMacAddresses()));
-    }
+    updateNetworkCardDependencies();
 
     onGpuDisplayChanged();
     updateDiskInterfaceHint();
@@ -893,6 +877,7 @@ void EditVmDialog::setConfig(const VMConfig &config)
     setCombo(audioCombo, config.audioDevice());
     m_sb16Config = config.sb16Config();
     setCombo(netCombo, config.networkCard());
+    updateNetworkCardDependencies();
     setCombo(networkModeCombo, config.networkMode());
     if (virtualNetworkCombo->count() > 0) {
         const int vnIdx = virtualNetworkCombo->findData(config.virtualNetworkName());
@@ -1643,6 +1628,25 @@ void EditVmDialog::validateForm()
 
     if (auto *ok = buttonBox ? buttonBox->button(QDialogButtonBox::Ok) : nullptr)
         ok->setEnabled(valid);
+}
+
+void EditVmDialog::updateNetworkCardDependencies()
+{
+    const auto card = static_cast<VMSpecs::NetworkCard>(netCombo->currentData().toInt());
+    const bool hasNetwork = (card != VMSpecs::NetworkCard::None);
+
+    networkModeCombo->setEnabled(hasNetwork);
+    macEdit->setEnabled(hasNetwork);
+    regenerateMacButton->setEnabled(hasNetwork);
+    userModeGroup->setEnabled(hasNetwork);
+    vdeGroup->setEnabled(hasNetwork);
+    portForwardTable->setEnabled(hasNetwork);
+    addPortFwdButton->setEnabled(hasNetwork);
+
+    if (hasNetwork && macEdit->text().isEmpty())
+        macEdit->setText(Utils::generateRandomMac(usedMacAddresses()));
+
+    validateForm();
 }
 
 void EditVmDialog::applyModeConstraints()
