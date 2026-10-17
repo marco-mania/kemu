@@ -264,8 +264,26 @@ void VmRuntimeManager::tearDown(const QString &vmName)
     auto reapHelper = [](QPointer<KProcess> &p, int waitMs) {
         if (!p)
             return;
-        if (!p->waitForFinished(waitMs))
+        // waitForFinished() also returns false for a process that has already
+        // been reaped, so check the state rather than the return value.
+        if (!p->waitForFinished(waitMs) && p->state() != KProcess::NotRunning) {
+            qCWarning(KEMU) << "Helper" << p->program() << "did not exit after SIGTERM, sending SIGKILL";
             p->kill();
+            // kill() only sends the signal: QProcess keeps reporting Running
+            // until the child has been reaped. Deleting it before then makes
+            // ~QProcess warn "Destroyed while process is still running" and
+            // block the GUI thread in another waitForFinished() of up to 30 s.
+            if (!p->waitForFinished(kHelperKillWaitMs) && p->state() != KProcess::NotRunning) {
+                // Not even SIGKILL got through in time (e.g. the child is in
+                // uninterruptible sleep on the shared directory). Let it be
+                // reaped asynchronously instead of destroying it while running.
+                qCWarning(KEMU) << "Helper" << p->program() << "still running after SIGKILL, reaping it later";
+                KProcess *straggler = p.data();
+                QObject::connect(straggler, &KProcess::finished, straggler, &QObject::deleteLater);
+                p = nullptr;
+                return;
+            }
+        }
         delete p; // QPointer auto-nullifies
     };
 

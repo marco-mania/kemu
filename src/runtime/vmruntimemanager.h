@@ -179,6 +179,8 @@ Q_SIGNALS:
 private:
     static constexpr int kQemuStartupProbeMs = 750;
     static constexpr int kHelperShutdownMs = 3000;
+    // Grace period for the kernel to reap a helper after SIGKILL.
+    static constexpr int kHelperKillWaitMs = 1000;
 
     VirtualEnvironmentModel *m_model = nullptr;
     VirtualNetworkManager *m_network_manager = nullptr;
