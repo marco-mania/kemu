@@ -31,7 +31,7 @@ namespace
 // config.json is written separately and must remain the first archive entry.
 QStringList payloadFileNames()
 {
-    return {KEMUConst::VMDiskFileName, u"OVMF_VARS.fd"_s, u"tpm2-00.permall"_s};
+    return {KEMUConst::VMDiskFileName, KEMUConst::OvmfVarsFileName, u"tpm2-00.permall"_s};
 }
 
 constexpr qint64 kSpaceHeadroom = 50LL << 20;

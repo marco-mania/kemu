@@ -110,6 +110,30 @@ struct OvmfPaths {
  */
 OvmfPaths findOvmfPaths(bool secureBoot = false, const QString &customDir = {});
 
+/// Firmware directory from the settings; empty means auto-detect.
+QString configuredOvmfDir();
+
+struct OvmfVarsResult {
+    enum class Status {
+        Created,
+        Present,
+        FirmwareMissing,
+        CopyFailed
+    };
+    Status status = Status::FirmwareMissing;
+    QString templatePath;
+    /// Secure Boot was requested, but the template has no pre-enrolled keys.
+    bool keysMissing = false;
+};
+
+/**
+ * @brief Makes sure a VM can boot with UEFI: the firmware is installed and the
+ * VM directory holds its own copy of the matching VARS template.
+ *
+ * An existing VARS file is never replaced, it carries the VM's NVRAM.
+ */
+OvmfVarsResult ensureOvmfVars(const QDir &vmDir, bool secureBoot);
+
 /**
  * @brief Detects the host's configured keyboard layout via KDE System Settings.
  *

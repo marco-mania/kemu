@@ -195,6 +195,9 @@ private:
     void registerAudioListeners(const QString &vmName);
 
     bool requireTool(const ExternalTools::Tool tool);
+    /// Creates the VM's UEFI variable store if needed and reports problems.
+    /// False if the VM cannot boot with UEFI.
+    bool requireUefiFirmware(const QString &vmPath, const VMConfig &config, QWidget *parent);
 
     VirtualEnvironmentTreeView *veTreeView = nullptr;
     VirtualEnvironmentModel *veModel = nullptr;

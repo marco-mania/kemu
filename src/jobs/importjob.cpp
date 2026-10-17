@@ -154,7 +154,7 @@ bool ImportJob::isExpectedEntry(const QString &name) const
 {
     static const QSet<QString> allowed = {KEMUConst::VMConfigFileName,
                                           KEMUConst::VMDiskFileName,
-                                          u"OVMF_VARS.fd"_s,
+                                          KEMUConst::OvmfVarsFileName,
                                           u"tpm2-00.permall"_s,
                                           VMConfig::customIconFileName()};
     return allowed.contains(name) || m_extraDiskFileNames.contains(name);

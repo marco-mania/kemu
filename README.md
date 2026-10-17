@@ -251,6 +251,12 @@ Templates are read at startup; malformed files are skipped with a warning (see
 | **Fedora**        | `edk2-ovmf`        | `/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd`   |
 | **openSUSE**      | `qemu-ovmf-x86_64` | `/usr/share/qemu/ovmf-x86_64-smm-ms-code.bin` |
 
+A firmware directory set under Settings -> UEFI Firmware is searched first.
+Each UEFI VM keeps its own copy of the matching VARS template as
+`OVMF_VARS.fd`, which holds its NVRAM. KEMU creates it when the VM is created
+or UEFI is enabled, and on start if it is missing; an existing file is never
+replaced.
+
 ## Display Backends
 
 KEMU supports three display backends, which can be selected per VM in the VM

@@ -573,9 +573,7 @@ QString SettingsDialog::getVmBasePath()
 
 QString SettingsDialog::getOvmfPath()
 {
-    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
-    const KConfigGroup general = config->group(u"General"_s);
-    return general.readEntry("OvmfPath", {});
+    return Utils::configuredOvmfDir();
 }
 
 bool SettingsDialog::isPerformanceMonitorEnabled()

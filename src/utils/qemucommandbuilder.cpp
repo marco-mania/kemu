@@ -151,8 +151,8 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
 
     // --- UEFI / OVMF ---
     if (config.useUefi()) {
-        const Utils::OvmfPaths ovmf = Utils::findOvmfPaths(config.useSecureBoot());
-        const QString localVarsPath = vmDir.filePath(u"OVMF_VARS.fd"_s);
+        const Utils::OvmfPaths ovmf = Utils::findOvmfPaths(config.useSecureBoot(), Utils::configuredOvmfDir());
+        const QString localVarsPath = vmDir.filePath(KEMUConst::OvmfVarsFileName);
 
         if (!ovmf.codePath.isEmpty() && QFile::exists(localVarsPath)) {
             if (config.useSecureBoot())

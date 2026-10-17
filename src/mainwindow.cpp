@@ -789,6 +789,39 @@ bool MainWindow::requireTool(const ExternalTools::Tool tool)
     return false;
 }
 
+bool MainWindow::requireUefiFirmware(const QString &vmPath, const VMConfig &config, QWidget *parent)
+{
+    const Utils::OvmfVarsResult result = Utils::ensureOvmfVars(QDir(vmPath), config.useSecureBoot());
+
+    switch (result.status) {
+    case Utils::OvmfVarsResult::Status::Present:
+        return true;
+    case Utils::OvmfVarsResult::Status::Created:
+        if (result.keysMissing) {
+            KMessageBox::information(parent,
+                                     i18n("The OVMF VARS template found does not appear to contain "
+                                          "pre-enrolled Microsoft keys. Secure Boot may require "
+                                          "manual key enrollment in the UEFI firmware setup.\n\n"
+                                          "For pre-enrolled keys, install the appropriate package "
+                                          "(e.g. 'edk2-ovmf' on Arch, 'ovmf' on Debian/Ubuntu)."),
+                                     i18n("Note"));
+        }
+        return true;
+    case Utils::OvmfVarsResult::Status::FirmwareMissing:
+        KMessageBox::error(parent,
+                           i18n("The UEFI firmware (OVMF) was not found. Please install 'edk2-ovmf' "
+                                "or set the firmware path in Settings."),
+                           i18n("UEFI Firmware Missing"));
+        return false;
+    case Utils::OvmfVarsResult::Status::CopyFailed:
+        KMessageBox::error(parent,
+                           i18n("Could not copy the UEFI variable store %1 into the folder of the virtual machine.", result.templatePath),
+                           i18n("UEFI Firmware"));
+        return false;
+    }
+    return false;
+}
+
 void MainWindow::setupActions()
 {
     KActionCollection *ac = actionCollection();
@@ -2549,6 +2582,8 @@ void MainWindow::startVM(bool headless)
         return;
     if (!currentConfig.sharedPath().isEmpty() && currentConfig.osType() == VMSpecs::OsType::Windows && !requireTool(ExternalTools::Virtiofsd))
         return;
+    if (currentConfig.useUefi() && !requireUefiFirmware(vmDirPath, currentConfig, dialogParentFor(vmName)))
+        return;
 
     auto *chain = new StartupChain(this);
 
@@ -3322,31 +3357,10 @@ void MainWindow::createNewVM()
         }
     }
 
-    // --- UEFI / OVMF ---
-    if (newConfig.useUefi()) {
-        const Utils::OvmfPaths ovmf = Utils::findOvmfPaths(newConfig.useSecureBoot());
-        if (!ovmf.varsPath.isEmpty() && QFile::exists(ovmf.varsPath)) {
-            QFile::copy(ovmf.varsPath, vmPath + u"/OVMF_VARS.fd"_s);
-            QFile varsFile(vmPath + u"/OVMF_VARS.fd"_s);
-            varsFile.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ReadUser | QFile::WriteUser);
-
-            if (newConfig.useSecureBoot() && !ovmf.varsPath.contains(u"ms"_s, Qt::CaseInsensitive)
-                && !ovmf.varsPath.contains(u"secboot"_s, Qt::CaseInsensitive)) {
-                KMessageBox::information(this,
-                                         i18n("The OVMF VARS template found does not appear to contain "
-                                              "pre-enrolled Microsoft keys. Secure Boot may require "
-                                              "manual key enrollment in the UEFI firmware setup.\n\n"
-                                              "For pre-enrolled keys, install the appropriate package "
-                                              "(e.g. 'edk2-ovmf' on Arch, 'ovmf' on Debian/Ubuntu)."),
-                                         i18n("Note"));
-            }
-        } else {
-            KMessageBox::error(this,
-                               i18n("Could not find OVMF_VARS template. Please install 'edk2-ovmf' "
-                                    "or set the firmware path in Settings."),
-                               i18n("Warning"));
-        }
-    }
+    // The VM is created anyway: once the firmware is installed, starting it
+    // creates the variable store.
+    if (newConfig.useUefi())
+        requireUefiFirmware(vmPath, newConfig, this);
 
     // ======== CLOUD DEPLOY ========
     if (source == NewVmDialog::Source::CloudImage) {
@@ -3513,8 +3527,8 @@ void MainWindow::editVM()
 
         QString vmPath = getVmDir(newConfig.name()).absolutePath();
 
-        if (newConfig.useUefi() && !QFile::exists(vmPath + u"/OVMF_VARS.fd"_s))
-            KMessageBox::information(this, i18n("UEFI enabled. A VARS file will be required on next start."));
+        if (newConfig.useUefi() && !QDir(vmPath).exists(KEMUConst::OvmfVarsFileName))
+            requireUefiFirmware(vmPath, newConfig, this);
 
         // --- Additional disks ---
         const QDir vmDir(vmPath);
@@ -4074,6 +4088,10 @@ void MainWindow::startDeployment(const QString &vmName)
     // Pre-flight: bail out before starting helpers if QEMU is missing,
     // so we don't leave half-set-up helpers running.
     if (!requireTool(ExternalTools::QemuSystem)) {
+        abortDeployment(vmName, false);
+        return;
+    }
+    if (config.useUefi() && !requireUefiFirmware(vmPath, config, this)) {
         abortDeployment(vmName, false);
         return;
     }

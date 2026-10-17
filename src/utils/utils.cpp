@@ -6,6 +6,8 @@
 
 #include "utils.h"
 
+#include "const.h"
+
 #include <KLocalizedString>
 
 #include "kemu_debug.h"
@@ -150,6 +152,42 @@ OvmfPaths findOvmfPaths(bool secureBoot, const QString &customDir)
     }
 
     return searchDirs(customDir, code, vars);
+}
+
+QString configuredOvmfDir()
+{
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    return config->group(u"General"_s).readEntry("OvmfPath", QString());
+}
+
+OvmfVarsResult ensureOvmfVars(const QDir &vmDir, bool secureBoot)
+{
+    OvmfVarsResult result;
+    const OvmfPaths ovmf = findOvmfPaths(secureBoot, configuredOvmfDir());
+    if (ovmf.codePath.isEmpty())
+        return result;
+
+    const QString target = vmDir.filePath(KEMUConst::OvmfVarsFileName);
+    if (QFileInfo::exists(target)) {
+        result.status = OvmfVarsResult::Status::Present;
+        return result;
+    }
+    if (ovmf.varsPath.isEmpty())
+        return result;
+
+    result.templatePath = ovmf.varsPath;
+    const QString name = QFileInfo(ovmf.varsPath).fileName();
+    result.keysMissing = secureBoot && !name.contains(".ms."_L1) && !name.contains("-ms-"_L1) && !name.contains("secboot"_L1);
+
+    // Templates are read-only; QEMU writes the NVRAM into this copy.
+    if (!QFile::copy(ovmf.varsPath, target) || !QFile::setPermissions(target, QFile::ReadOwner | QFile::WriteOwner)) {
+        QFile::remove(target);
+        result.status = OvmfVarsResult::Status::CopyFailed;
+        return result;
+    }
+
+    result.status = OvmfVarsResult::Status::Created;
+    return result;
 }
 
 QString detectHostKeyboardLayout()
