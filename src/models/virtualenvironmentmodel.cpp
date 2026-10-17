@@ -714,6 +714,16 @@ QStringList VirtualEnvironmentModel::usedMacAddresses() const
     return macs;
 }
 
+QMap<QString, QUuid> VirtualEnvironmentModel::vmUuids() const
+{
+    QMap<QString, QUuid> result;
+    for (const VmEntry &e : m_vms) {
+        if (!e.config.uuid().isNull())
+            result.insert(e.name, e.config.uuid());
+    }
+    return result;
+}
+
 // -- Private helpers --
 
 VirtualEnvironmentModel::Node *VirtualEnvironmentModel::nodeFromIndex(const QModelIndex &index) const

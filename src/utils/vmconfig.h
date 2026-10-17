@@ -22,10 +22,13 @@
 #include <QStandardPaths>
 #include <QString>
 #include <QSysInfo>
+#include <QUuid>
 #include <QtSvg>
 
 #include <KLocalizedString>
 #include <qtmetamacros.h>
+
+#include <utility>
 
 using namespace Qt::StringLiterals;
 
@@ -229,6 +232,32 @@ struct DiskConfig {
     QString serial;
 
     bool operator==(const DiskConfig &other) const = default;
+};
+
+/// SMBIOS type 1 (system information). Empty fields keep QEMU's defaults.
+struct SmbiosSystemInfo {
+    QString manufacturer;
+    QString product;
+    QString version;
+    QString serial;
+    QString sku;
+    QString family;
+
+    [[nodiscard]] bool isEmpty() const
+    {
+        return manufacturer.isEmpty() && product.isEmpty() && version.isEmpty() && serial.isEmpty() && sku.isEmpty() && family.isEmpty();
+    }
+    bool operator==(const SmbiosSystemInfo &other) const = default;
+};
+
+/// JSON keys, identical to the property names of QEMU's -smbios type=1.
+inline constexpr std::pair<QLatin1StringView, QString SmbiosSystemInfo::*> SmbiosSystemFields[] = {
+    {"manufacturer"_L1, &SmbiosSystemInfo::manufacturer},
+    {"product"_L1, &SmbiosSystemInfo::product},
+    {"version"_L1, &SmbiosSystemInfo::version},
+    {"serial"_L1, &SmbiosSystemInfo::serial},
+    {"sku"_L1, &SmbiosSystemInfo::sku},
+    {"family"_L1, &SmbiosSystemInfo::family},
 };
 
 struct Sb16Config {
@@ -492,6 +521,17 @@ public:
     /// dnsHostname() if set, otherwise derived from the VM name.
     [[nodiscard]] QString effectiveDnsHostname() const;
 
+    /// Null for VMs created before KEMU stored one: QEMU then reports an
+    /// all-zero UUID, and changing that is up to the user.
+    [[nodiscard]] QUuid uuid() const
+    {
+        return m_uuid;
+    }
+    [[nodiscard]] SmbiosSystemInfo smbiosSystemInfo() const
+    {
+        return m_smbiosSystemInfo;
+    }
+
     [[nodiscard]] QList<PortForwardRule> portForwards() const
     {
         return m_portForwards;
@@ -734,6 +774,17 @@ public:
         m_dnsHostname = hostname;
     }
 
+    void setUuid(const QUuid &uuid)
+    {
+        m_uuid = uuid;
+    }
+    /// Assigns a random UUID not contained in @p usedUuids.
+    void regenerateUuid(const QList<QUuid> &usedUuids);
+    void setSmbiosSystemInfo(const SmbiosSystemInfo &info)
+    {
+        m_smbiosSystemInfo = info;
+    }
+
     void setPortForwards(const QList<PortForwardRule> &rules)
     {
         m_portForwards = rules;
@@ -810,6 +861,12 @@ public:
     /// reason. The seed ISO of a pending cloud-init deployment takes an IDE
     /// slot of its own.
     [[nodiscard]] QString storageLayoutError(bool seedIsoPresent = false) const;
+
+    // --- Machine identity ---
+    /// Printable ASCII, at most KEMUConst::MaxSmbiosStringLength characters.
+    /// Empty means unset and is valid.
+    [[nodiscard]] static bool isValidSmbiosString(const QString &value);
+    [[nodiscard]] static bool supportsSmbios(VMSpecs::Architecture arch);
 
     [[nodiscard]] static QString toQemuSystemBinary(VMSpecs::Architecture arch);
 
@@ -948,6 +1005,9 @@ private:
     QString m_macAddress = GlobalDefaults.macAddress;
     QString m_virtualNetworkName;
     QString m_dnsHostname;
+
+    QUuid m_uuid;
+    SmbiosSystemInfo m_smbiosSystemInfo;
 
     QList<PortForwardRule> m_portForwards;
 

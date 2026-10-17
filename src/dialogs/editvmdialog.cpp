@@ -611,13 +611,65 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 
     // --- Advanced Tab ---
     auto *advTab = new QWidget();
-    auto *advLayout = new QFormLayout(advTab);
+    auto *advMainLayout = new QVBoxLayout(advTab);
+    auto *advLayout = new QFormLayout();
     advLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     extraArgsEdit = new QLineEdit();
     extraArgsEdit->setPlaceholderText(i18n("Additional QEMU parameters"));
     extraArgsEdit->setClearButtonEnabled(true);
     advLayout->addRow(i18n("Extra Arguments:"), extraArgsEdit);
+    advMainLayout->addLayout(advLayout);
+
+    auto *identityGroup = new QGroupBox(i18n("System Identity (SMBIOS)"));
+    auto *identityLayout = new QFormLayout(identityGroup);
+    identityLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+
+    auto *uuidLayout = new QHBoxLayout();
+    uuidEdit = new QLineEdit();
+    uuidEdit->setPlaceholderText(m_mode == Mode::Edit ? i18n("Not set (all zeros)") : i18n("Assigned when the VM is created"));
+    uuidEdit->setValidator(new QRegularExpressionValidator(QRegularExpression(u"^\\{?[0-9A-Fa-f-]{0,36}\\}?$"_s), this));
+
+    regenerateUuidButton = new QPushButton(QIcon::fromTheme(u"view-refresh"_s), {});
+    regenerateUuidButton->setToolTip(i18n("Generate a new random UUID"));
+    regenerateUuidButton->setFixedWidth(regenerateUuidButton->sizeHint().height());
+
+    uuidLayout->addWidget(uuidEdit);
+    uuidLayout->addWidget(regenerateUuidButton);
+    identityLayout->addRow(i18n("UUID:"), uuidLayout);
+
+    uuidWarningLabel = new QLabel();
+    uuidWarningLabel->setStyleSheet(infoStyle(KColorScheme::NegativeText));
+    uuidWarningLabel->setVisible(false);
+    identityLayout->addRow({}, uuidWarningLabel);
+
+    const QList<std::pair<QString SmbiosSystemInfo::*, QString>> smbiosLabels = {
+        {&SmbiosSystemInfo::manufacturer, i18n("Manufacturer:")},
+        {&SmbiosSystemInfo::product, i18n("Product:")},
+        {&SmbiosSystemInfo::version, i18n("Version:")},
+        {&SmbiosSystemInfo::serial, i18n("Serial Number:")},
+        {&SmbiosSystemInfo::sku, i18n("SKU:")},
+        {&SmbiosSystemInfo::family, i18n("Family:")},
+    };
+    const QRegularExpression smbiosRx(u"^[\\x20-\\x7e]*$"_s);
+    for (const auto &[member, label] : smbiosLabels) {
+        auto *edit = new QLineEdit();
+        edit->setPlaceholderText(i18nc("@info:placeholder SMBIOS field", "QEMU default"));
+        edit->setMaxLength(KEMUConst::MaxSmbiosStringLength);
+        edit->setValidator(new QRegularExpressionValidator(smbiosRx, edit));
+        identityLayout->addRow(label, edit);
+        m_smbiosEdits.append({member, edit});
+    }
+
+    auto *identityHint =
+        new QLabel(i18n("The guest sees these values as its hardware identity. Changing them on an installed system can affect software licensing and "
+                        "Windows activation."));
+    identityHint->setWordWrap(true);
+    identityHint->setStyleSheet(infoStyle(KColorScheme::InactiveText));
+    identityLayout->addRow(identityHint);
+
+    advMainLayout->addWidget(identityGroup);
+    advMainLayout->addStretch();
 
     tabs->addTab(advTab, QIcon::fromTheme(u"configure"_s), i18n("Advanced"));
 
@@ -827,6 +879,14 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         validateForm();
     });
 
+    connect(regenerateUuidButton, &QPushButton::clicked, this, [this]() {
+        VMConfig scratch;
+        scratch.regenerateUuid(m_vmUuids.values());
+        uuidEdit->setText(scratch.uuid().toString(QUuid::WithoutBraces));
+        validateForm();
+    });
+    connect(uuidEdit, &QLineEdit::textEdited, this, &EditVmDialog::validateForm);
+
     buttonBox = new QDialogButtonBox(QDialogButtonBox::RestoreDefaults | QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -888,6 +948,16 @@ void EditVmDialog::setConfig(const VMConfig &config)
     floppyPathRequester->setText(config.floppyPath());
     bootFromFloppyCheck->setChecked(config.bootFromFloppy());
     macEdit->setText(config.macAddress());
+
+    uuidEdit->setText(config.uuid().isNull() ? QString() : config.uuid().toString(QUuid::WithoutBraces));
+    const SmbiosSystemInfo smbios = config.smbiosSystemInfo();
+    const bool smbiosSupported = VMConfig::supportsSmbios(config.architecture());
+    for (const auto &[member, edit] : std::as_const(m_smbiosEdits)) {
+        edit->setText(smbios.*member);
+        edit->setEnabled(smbiosSupported);
+        edit->setToolTip(smbiosSupported ? QString() : i18n("Not supported for this architecture."));
+    }
+
     for (const auto &rule : config.portForwards()) {
         addPortForwardRow();
         const int row = portForwardTable->rowCount() - 1;
@@ -1197,6 +1267,11 @@ void EditVmDialog::setMacUsageInfo(const QList<MacUsageInfo> &info)
     m_macUsageInfo = info;
 }
 
+void EditVmDialog::setVmUuids(const QMap<QString, QUuid> &vmUuids)
+{
+    m_vmUuids = vmUuids;
+}
+
 void EditVmDialog::setImageDatabase(ImageDatabase *db)
 {
     m_imageDatabase = db;
@@ -1316,6 +1391,13 @@ VMConfig EditVmDialog::getResult() const
         rules.append(rule);
     }
     c.setPortForwards(rules);
+
+    c.setUuid(QUuid::fromString(uuidEdit->text().trimmed()));
+    SmbiosSystemInfo smbios;
+    for (const auto &[member, edit] : m_smbiosEdits)
+        smbios.*member = edit->text().trimmed();
+    c.setSmbiosSystemInfo(smbios);
+
     c.setDiskInterface(static_cast<VMSpecs::DiskInterface>(diskInterfaceCombo->currentData().toInt()));
 
     // Imported images join the configuration once their conversion is done.
@@ -1696,6 +1778,26 @@ void EditVmDialog::validateForm()
     } else {
         hostnameWarningLabel->clear();
     }
+
+    // A duplicate UUID only confuses guest software, so it does not block.
+    QString uuidWarningText;
+    const QString uuidText = uuidEdit->text().trimmed();
+    if (!uuidText.isEmpty()) {
+        const QUuid uuid = QUuid::fromString(uuidText);
+        if (uuid.isNull()) {
+            uuidWarningText = i18n("Enter a valid, non-zero UUID or leave the field empty.");
+            valid = false;
+        } else {
+            for (auto it = m_vmUuids.cbegin(); it != m_vmUuids.cend(); ++it) {
+                if (it.value() == uuid && !(m_mode == Mode::Edit && it.key() == m_original.name())) {
+                    uuidWarningText = i18n("This UUID is already used by '%1'.", it.key());
+                    break;
+                }
+            }
+        }
+    }
+    uuidWarningLabel->setText(uuidWarningText);
+    uuidWarningLabel->setVisible(!uuidWarningText.isEmpty());
 
     if (storageWarningLabel) {
         const QString storageError = storageLayoutError();

@@ -10,6 +10,8 @@
 #include "utils/qemucapabilities.h"
 #include "utils/utils.h"
 
+#include <algorithm>
+
 using namespace Qt::StringLiterals;
 
 int VMConfig::maxCoresForModel(VMSpecs::CpuModel type)
@@ -141,6 +143,28 @@ void VMConfig::ensureMacAddress(const QStringList &usedMacs)
     if (m_networkCard == VMSpecs::NetworkCard::None)
         return;
     m_macAddress = Utils::generateRandomMac(usedMacs);
+}
+
+void VMConfig::regenerateUuid(const QList<QUuid> &usedUuids)
+{
+    do {
+        m_uuid = QUuid::createUuid();
+    } while (usedUuids.contains(m_uuid));
+}
+
+bool VMConfig::isValidSmbiosString(const QString &value)
+{
+    if (value.size() > KEMUConst::MaxSmbiosStringLength)
+        return false;
+    return std::all_of(value.cbegin(), value.cend(), [](QChar ch) {
+        return ch.unicode() >= 0x20 && ch.unicode() <= 0x7e;
+    });
+}
+
+bool VMConfig::supportsSmbios(VMSpecs::Architecture arch)
+{
+    // QEMU 8.2 builds no SMBIOS tables on riscv virt.
+    return arch != VMSpecs::Architecture::Riscv64;
 }
 
 QString VMConfig::effectiveDnsHostname() const
@@ -1720,6 +1744,17 @@ QJsonObject VMConfig::toJson() const
     j[u"virtual_network"_s] = m_virtualNetworkName;
     j[u"dns_hostname"_s] = m_dnsHostname;
 
+    if (!m_uuid.isNull())
+        j[u"uuid"_s] = m_uuid.toString(QUuid::WithoutBraces);
+    if (!m_smbiosSystemInfo.isEmpty()) {
+        QJsonObject smbios;
+        for (const auto &[key, member] : SmbiosSystemFields) {
+            if (!(m_smbiosSystemInfo.*member).isEmpty())
+                smbios[key] = m_smbiosSystemInfo.*member;
+        }
+        j[u"smbios_system"_s] = smbios;
+    }
+
     if (!m_portForwards.isEmpty()) {
         QJsonArray portFwdArray;
         for (const auto &rule : m_portForwards) {
@@ -1834,6 +1869,14 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
     c.m_networkMode = parseNetworkMode(j[u"network_mode"_s].toString());
     c.m_virtualNetworkName = j[u"virtual_network"_s].toString();
     c.m_dnsHostname = j[u"dns_hostname"_s].toString();
+
+    c.m_uuid = QUuid::fromString(j[u"uuid"_s].toString());
+    const QJsonObject smbios = j[u"smbios_system"_s].toObject();
+    for (const auto &[key, member] : SmbiosSystemFields) {
+        const QString value = smbios[key].toString();
+        if (isValidSmbiosString(value))
+            c.m_smbiosSystemInfo.*member = value;
+    }
 
     if (j.contains(u"port_forwards"_s)) {
         const QJsonArray arr = j[u"port_forwards"_s].toArray();

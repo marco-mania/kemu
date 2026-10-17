@@ -198,6 +198,9 @@ public:
     [[nodiscard]] QList<MacUsageInfo> macUsageInfo() const;
     [[nodiscard]] QStringList usedMacAddresses() const;
 
+    /// VM name to UUID, for VMs that have one.
+    [[nodiscard]] QMap<QString, QUuid> vmUuids() const;
+
 Q_SIGNALS:
     void vmStateChanged(const QString &vmName, VmEntry::State newState);
 

@@ -309,6 +309,11 @@ void NewVmDialog::setMacUsageInfo(const QList<MacUsageInfo> &info)
     m_macUsageInfo = info;
 }
 
+void NewVmDialog::setVmUuids(const QMap<QString, QUuid> &vmUuids)
+{
+    m_vmUuids = vmUuids;
+}
+
 // --- Operating system list ---
 
 void NewVmDialog::populateOsCombo()
@@ -400,8 +405,13 @@ void NewVmDialog::openCustomiseDialog()
     editor.setImageDatabase(m_imageDatabase);
     editor.setNetworkManager(m_networkManager);
     editor.setMacUsageInfo(m_macUsageInfo);
+    editor.setVmUuids(m_vmUuids);
 
-    editor.setConfig(getResult());
+    // Show the UUID the VM will get, so it can be checked before creation.
+    VMConfig preset = getResult();
+    if (preset.uuid().isNull())
+        preset.regenerateUuid(m_vmUuids.values());
+    editor.setConfig(preset);
 
     if (editor.exec() != QDialog::Accepted)
         return;

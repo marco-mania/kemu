@@ -2091,6 +2091,11 @@ void MainWindow::importVM()
             if (SettingsDialog::importRegenerateMac() || used.contains(config.macAddress(), Qt::CaseInsensitive))
                 config.setMacAddress(Utils::generateRandomMac(used));
 
+            // The archive keeps its identity unless the source VM is still here.
+            const QList<QUuid> usedUuids = veModel->vmUuids().values();
+            if (!config.uuid().isNull() && usedUuids.contains(config.uuid()))
+                config.regenerateUuid(usedUuids);
+
             // Always rewrite: this also regenerates qemu.sh, which is not part
             // of the archive because it contains host paths.
             saveVmConfig(vmDir, config);
@@ -2811,6 +2816,8 @@ void MainWindow::importOVA(const QString &filePath)
             const QStringList used = veModel->usedMacAddresses();
             if (SettingsDialog::importRegenerateMac() || used.contains(config.macAddress(), Qt::CaseInsensitive))
                 config.setMacAddress(Utils::generateRandomMac(used));
+            if (config.uuid().isNull())
+                config.regenerateUuid(veModel->vmUuids().values());
             saveVmConfig(getVmDir(config.name()).absolutePath(), config);
 
             statusBar()->showMessage(i18n("VM '%1' imported from OVA.", config.name()));
@@ -3268,6 +3275,7 @@ void MainWindow::createNewVM()
     dialog.setImageDatabase(&m_imageDatabase);
     dialog.setNetworkManager(m_networkManager);
     dialog.setMacUsageInfo(veModel->macUsageInfo());
+    dialog.setVmUuids(veModel->vmUuids());
 
     if (dialog.exec() != QDialog::Accepted)
         return;
@@ -3287,6 +3295,8 @@ void MainWindow::createNewVM()
         return;
 
     newConfig.ensureMacAddress(veModel->usedMacAddresses());
+    if (newConfig.uuid().isNull())
+        newConfig.regenerateUuid(veModel->vmUuids().values());
 
     baseDir.mkdir(newConfig.name());
     const QString vmPath = baseDir.filePath(newConfig.name());
@@ -3437,6 +3447,7 @@ void MainWindow::editVM()
     dialog.setImageDatabase(&m_imageDatabase);
     dialog.setNetworkManager(m_networkManager);
     dialog.setMacUsageInfo(veModel->macUsageInfo());
+    dialog.setVmUuids(veModel->vmUuids());
 
     const QDir vmDirBefore = getVmDir(currentConfig.name());
     dialog.setVmDirectory(vmDirBefore.absolutePath(), CloudImageDeployer::hasNoCloudIso(vmDirBefore));
@@ -3757,6 +3768,11 @@ void MainWindow::cloneVM()
                 // The source VM keeps its MAC, so the clone cannot have it.
                 cloneConfig.setMacAddress(Utils::generateRandomMac(usedMacs));
             }
+
+            // A clone is a machine of its own. Legacy VMs without a UUID stay
+            // that way.
+            if (!cloneConfig.uuid().isNull())
+                cloneConfig.regenerateUuid(veModel->vmUuids().values());
 
             saveVmConfig(dstPath, cloneConfig);
             loadVmList();

@@ -74,6 +74,20 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         args << u"-machine"_s << machineTypeParam;
     }
 
+    // --- Identity ---
+    if (!config.uuid().isNull())
+        args << u"-uuid"_s << config.uuid().toString(QUuid::WithoutBraces);
+
+    const SmbiosSystemInfo smbios = config.smbiosSystemInfo();
+    if (!smbios.isEmpty() && VMConfig::supportsSmbios(config.architecture())) {
+        QString type1 = u"type=1"_s;
+        for (const auto &[key, member] : SmbiosSystemFields) {
+            if (!(smbios.*member).isEmpty())
+                type1 += u",%1=%2"_s.arg(key, Utils::escapeQemuOptionValue(smbios.*member));
+        }
+        args << u"-smbios"_s << type1;
+    }
+
     // --- CPU ---
     QString cpuArg = VMConfig::toQemuString(config.cpuModel());
     if (config.useKvm() && config.cpuModel() == VMSpecs::CpuModel::Host) {

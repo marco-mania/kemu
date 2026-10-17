@@ -72,6 +72,7 @@ public:
 
     void setExistingVmNames(const QStringList &names);
     void setMacUsageInfo(const QList<MacUsageInfo> &info);
+    void setVmUuids(const QMap<QString, QUuid> &vmUuids);
 
     void setImageDatabase(ImageDatabase *db);
     void setNetworkManager(VirtualNetworkManager *mgr);
@@ -198,6 +199,11 @@ private:
     QLabel *macWarningLabel = nullptr;
     QLabel *hostnameWarningLabel = nullptr;
 
+    QLineEdit *uuidEdit = nullptr;
+    QPushButton *regenerateUuidButton = nullptr;
+    QLabel *uuidWarningLabel = nullptr;
+    QList<std::pair<QString SmbiosSystemInfo::*, QLineEdit *>> m_smbiosEdits;
+
     QDialogButtonBox *buttonBox = nullptr;
 
     ImageDatabase *m_imageDatabase = nullptr;
@@ -205,6 +211,7 @@ private:
 
     QList<MacUsageInfo> m_macUsageInfo;
     QStringList usedMacAddresses() const;
+    QMap<QString, QUuid> m_vmUuids;
 
     Mode m_mode = Mode::Edit;
     bool m_readOnly = false;

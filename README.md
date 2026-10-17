@@ -18,6 +18,7 @@ Widgets and KDE Frameworks 6 for deep desktop integration.
 - Automated deployment utilizing Cloud-Init
 - Snapshot support (QCOW2)
 - Optional additional disks per VM, each with its own controller
+- Persistent machine identity: system UUID and SMBIOS system information
 - Hot-swapping of ISO and floppy images
 - Networking: User-mode networking or in-process virtual networks
   (in-memory L2 switch with built-in DHCP and optional libslirp NAT)
@@ -563,6 +564,23 @@ directory. The original image is not modified.
 - Compacting, cloning, export and OVA export include all disks.
 - When removing a disk its image can be deleted or moved to another location.
 
+## System Identity
+
+Every new VM gets a random system UUID, which the guest reads from its
+firmware (`/sys/class/dmi/id/product_uuid` on Linux,
+`Get-CimInstance Win32_ComputerSystemProduct` on Windows). Under
+Advanced -> System Identity the UUID can be changed and the SMBIOS system
+information (manufacturer, product, version, serial number, SKU, family) can
+be set. Empty fields keep QEMU's defaults.
+
+- VMs created with older KEMU versions have no UUID, and QEMU reports all
+  zeros. KEMU does not assign one on its own, because a changed identity can
+  affect software licensing and Windows activation in an installed guest.
+- A clone gets a UUID of its own unless the source has none; the SMBIOS
+  strings are copied. An imported archive keeps its UUID unless the source VM
+  still exists, an OVA import gets a new one.
+- SMBIOS strings are limited to printable ASCII and 64 characters.
+
 ## Screenshots
 
 KEMU uses QEMU's `screendump` command to capture VM screenshots via the software
@@ -618,7 +636,8 @@ a password.
 - Additional disks of an OVA are attached via SATA. If the PC chipset runs out
   of slots, the import switches to Q35.
 - UEFI, TPM, and Secure Boot settings cannot be represented in the OVA format
-  and will be lost upon export.
+  and will be lost upon export. The same applies to the system UUID and the
+  SMBIOS system information.
 - Snapshots are not preserved during OVA export (as VMDK does not support them).
 - The shared folder path and ISO path are stripped from native exports because
   they are system-specific.

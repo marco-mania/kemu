@@ -54,6 +54,7 @@ public:
     void setImageDatabase(ImageDatabase *db);
     void setNetworkManager(VirtualNetworkManager *mgr);
     void setMacUsageInfo(const QList<MacUsageInfo> &info);
+    void setVmUuids(const QMap<QString, QUuid> &vmUuids);
 
     enum class Source {
         CloudImage,
@@ -132,6 +133,7 @@ private:
     VirtualNetworkManager *m_networkManager = nullptr;
     QStringList m_existingVmNames;
     QList<MacUsageInfo> m_macUsageInfo;
+    QMap<QString, QUuid> m_vmUuids;
 
     // Set once the user has been through EditVmDialog. getResult() then builds
     // on this instead of the template defaults.
