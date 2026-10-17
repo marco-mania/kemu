@@ -149,6 +149,8 @@ target_sources(
           utils/guestlocales.h
           utils/archivepaths.cpp
           utils/archivepaths.h
+          utils/ovfparser.cpp
+          utils/ovfparser.h
           utils/qemuimgprocess.h
           utils/qemuimgprocess.cpp
           utils/3rdparty/crypt_sha512.c

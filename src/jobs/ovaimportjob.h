@@ -47,10 +47,6 @@ private:
     void onConvertFinished(bool ok);
     [[nodiscard]] QString targetPathFor(qsizetype index) const;
 
-    // Converts an OVF quantity plus AllocationUnits to bytes. Handles the
-    // programmatic form ("byte * 2^20") and textual units ("MegaBytes").
-    static qint64 ovfQuantityToBytes(qint64 quantity, const QString &units, qint64 defaultUnitBytes);
-
     QString m_ovaPath;
     QString m_vmBaseDir;
     int m_diskSizeGb;

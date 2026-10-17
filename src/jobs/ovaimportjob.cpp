@@ -14,14 +14,12 @@ extern "C" {
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QHash>
-#include <QRegularExpression>
-#include <QXmlStreamReader>
 #include <QtMath>
 
 #include <KLocalizedString>
 
 #include "utils/archivepaths.h"
+#include "utils/ovfparser.h"
 #include "utils/qemuimgprocess.h"
 
 using namespace Qt::StringLiterals;
@@ -30,50 +28,6 @@ namespace
 {
 
 constexpr int kExtractBand = 150;
-
-const QString kOvfNs = u"http://schemas.dmtf.org/ovf/envelope/1"_s;
-
-// Namespace-aware lookup with a fallback for descriptors that declare no
-// namespace at all.
-QString ovfAttr(const QXmlStreamReader &xml, const QString &name)
-{
-    const QXmlStreamAttributes attrs = xml.attributes();
-    if (attrs.hasAttribute(kOvfNs, name))
-        return attrs.value(kOvfNs, name).toString();
-    return attrs.value(u"ovf:"_s + name).toString();
-}
-
-// Collects the children of one <Item> so that element order does not matter.
-// The CIM schema sorts them alphabetically, which puts AllocationUnits before
-// ResourceType.
-QHash<QString, QString> readItem(QXmlStreamReader &xml)
-{
-    QHash<QString, QString> fields;
-
-    while (!xml.atEnd()) {
-        xml.readNext();
-        if (xml.isEndElement() && xml.name() == u"Item")
-            break;
-        if (xml.isStartElement())
-            fields.insert(xml.name().toString(), xml.readElementText());
-    }
-
-    return fields;
-}
-
-QString normalizeMac(QString mac)
-{
-    mac.remove(u':');
-    mac.remove(u'-');
-    if (mac.length() != 12)
-        return {};
-
-    QStringList parts;
-    for (int i = 0; i < 12; i += 2)
-        parts << mac.mid(i, 2);
-    return parts.join(u':').toLower();
-}
-
 }
 
 OvaImportJob::OvaImportJob(const QString &ovaPath, const QString &vmBaseDir, int diskSizeGb, QObject *parent)
@@ -239,114 +193,39 @@ bool OvaImportJob::parseOvf()
     if (m_ovfPath.isEmpty())
         return false;
 
-    QFile ovfFile(m_ovfPath);
-    if (!ovfFile.open(QIODevice::ReadOnly))
+    const std::optional<OvfDescriptor> ovf = OvfParser::parseFile(m_ovfPath);
+    if (!ovf)
         return false;
 
-    QXmlStreamReader xml(&ovfFile);
-
-    int ramMb = GlobalDefaults.ramMb;
-    int cpuCoreCount = GlobalDefaults.cpuCoreCount;
-    qint64 diskCapacityBytes = 0;
-    QString vmName;
-    QString macAddress;
-
-    QHash<QString, QString> fileHrefs; // ovf:id -> ovf:href
-    QStringList diskFileRefs;
-
-    while (!xml.atEnd()) {
-        xml.readNext();
-        if (!xml.isStartElement())
-            continue;
-
-        const QStringView element = xml.name();
-
-        if (element == u"VirtualSystem") {
-            if (vmName.isEmpty())
-                vmName = ovfAttr(xml, u"id"_s);
-
-        } else if (element == u"Name") {
-            const QString text = xml.readElementText();
-            if (!text.isEmpty())
-                vmName = text;
-
-        } else if (element == u"File") {
-            const QString id = ovfAttr(xml, u"id"_s);
-            const QString href = ovfAttr(xml, u"href"_s);
-            if (!href.isEmpty())
-                fileHrefs.insert(id, href);
-
-        } else if (element == u"Disk") {
-            diskFileRefs << ovfAttr(xml, u"fileRef"_s);
-
-            if (diskCapacityBytes == 0) {
-                const qint64 capacity = ovfAttr(xml, u"capacity"_s).toLongLong();
-                const QString units = ovfAttr(xml, u"capacityAllocationUnits"_s);
-                if (capacity > 0)
-                    diskCapacityBytes = ovfQuantityToBytes(capacity, units, 1); // default unit: byte
-            }
-
-        } else if (element == u"Item") {
-            const QHash<QString, QString> item = readItem(xml);
-
-            switch (item.value(u"ResourceType"_s).toInt()) {
-            case 3:
-                cpuCoreCount = item.value(u"VirtualQuantity"_s).toInt();
-                break;
-
-            case 4: {
-                const qint64 quantity = item.value(u"VirtualQuantity"_s).toLongLong();
-                const QString units = item.value(u"AllocationUnits"_s);
-                // Default to MiB, the common OVF case, when units are absent.
-                ramMb = static_cast<int>(ovfQuantityToBytes(quantity, units, 1024LL * 1024) / (1024LL * 1024));
-                break;
-            }
-
-            case 10: {
-                // OVF carries the MAC in rasd:Address; rasd:MACAddress is a
-                // non-standard extension some tools emit.
-                QString raw = item.value(u"Address"_s);
-                if (raw.isEmpty())
-                    raw = item.value(u"MACAddress"_s);
-                if (macAddress.isEmpty())
-                    macAddress = normalizeMac(raw);
-                break;
-            }
-
-            default:
-                break;
-            }
-        }
+    // The descriptor is untrusted: a disk must not point outside the archive.
+    const QDir stagingDir(m_stagingDir->path());
+    for (const OvfDisk &disk : ovf->disks) {
+        const QString path = ArchivePaths::resolveWithin(stagingDir, disk.href);
+        if (path.isEmpty())
+            return false;
+        m_sourceDisks << path;
     }
 
-    if (xml.hasError())
-        return false;
-
-    // Disks in the order of the DiskSection, the first one is the system disk.
-    // Taking File references directly would pick up ISOs and NVRAM blobs.
-    for (const QString &ref : std::as_const(diskFileRefs)) {
-        const QString href = fileHrefs.value(ref);
-        if (!href.isEmpty())
-            m_sourceDisks << m_stagingDir->filePath(href);
-    }
-    if (m_sourceDisks.isEmpty() && !fileHrefs.isEmpty())
-        m_sourceDisks << m_stagingDir->filePath(fileHrefs.constBegin().value());
-
-    if (vmName.isEmpty())
-        vmName = QFileInfo(m_ovaPath).completeBaseName();
-
-    m_vmName = ArchivePaths::sanitizeVmName(vmName);
+    m_vmName = ArchivePaths::sanitizeVmName(ovf->name.isEmpty() ? QFileInfo(m_ovaPath).completeBaseName() : ovf->name);
     if (m_vmName.isEmpty())
         return false;
 
+    qint64 diskCapacityBytes = 0;
+    for (const OvfDisk &disk : ovf->disks) {
+        if (disk.capacityBytes > 0) {
+            diskCapacityBytes = disk.capacityBytes;
+            break;
+        }
+    }
     const int diskCapacityGb = diskCapacityBytes > 0 ? static_cast<int>((diskCapacityBytes + (1LL << 30) - 1) / (1LL << 30)) : 0;
 
     m_importedConfig.setName(m_vmName);
+    const int ramMb = static_cast<int>(ovf->memoryBytes / (1024LL * 1024));
     m_importedConfig.setRamMb(ramMb > 0 ? ramMb : GlobalDefaults.ramMb);
-    m_importedConfig.setCpuCoreCount(cpuCoreCount > 0 ? cpuCoreCount : GlobalDefaults.cpuCoreCount);
+    m_importedConfig.setCpuCoreCount(ovf->cpuCount > 0 ? ovf->cpuCount : GlobalDefaults.cpuCoreCount);
     m_importedConfig.setDiskSizeGb(diskCapacityGb > 0 ? diskCapacityGb : (m_diskSizeGb > 0 ? m_diskSizeGb : GlobalDefaults.diskSizeGb));
-    if (!macAddress.isEmpty())
-        m_importedConfig.setMacAddress(macAddress);
+    if (!ovf->macAddress.isEmpty())
+        m_importedConfig.setMacAddress(ovf->macAddress);
 
     // Conservative profile for foreign appliances: maximise the chance the
     // imported guest boots without extra drivers.
@@ -447,28 +326,4 @@ void OvaImportJob::onConvertFinished(bool ok)
 
     emitPercent(1000, 1000);
     emitResult();
-}
-
-qint64 OvaImportJob::ovfQuantityToBytes(qint64 quantity, const QString &units, qint64 defaultUnitBytes)
-{
-    if (quantity <= 0)
-        return 0;
-
-    static const QRegularExpression powRx(uR"(byte\s*\*\s*2\^(\d+))"_s, QRegularExpression::CaseInsensitiveOption);
-    const QRegularExpressionMatch m = powRx.match(units);
-    if (m.hasMatch())
-        return quantity * (1LL << m.captured(1).toInt());
-
-    const QString u = units.trimmed().toLower();
-    if (u.isEmpty())
-        return quantity * defaultUnitBytes;
-    if (u == u"byte"_s || u == u"bytes"_s)
-        return quantity;
-    if (u.startsWith(u"kilo"_s))
-        return quantity * 1024LL;
-    if (u.startsWith(u"mega"_s))
-        return quantity * 1024LL * 1024;
-    if (u.startsWith(u"giga"_s))
-        return quantity * 1024LL * 1024 * 1024;
-    return quantity * defaultUnitBytes;
 }
