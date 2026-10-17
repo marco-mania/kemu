@@ -649,9 +649,14 @@ a password.
 - A manifest (`.mf`) in the archive is verified; a checksum mismatch stops the
   import. Signatures (`.cert`) are not checked.
 - Compressed (`ovf:compression`) or chunked disk files are not supported.
-- UEFI, TPM, and Secure Boot settings cannot be represented in the OVA format
-  and will be lost upon export. The same applies to the system UUID and the
-  SMBIOS system information.
+- The export describes the hardware the way VirtualBox and VMware read it:
+  firmware and Secure Boot (VMware extension), controller per disk (AHCI on
+  Q35, IDE on the PC chipsets, NVMe), the network adapter model, the operating
+  system and the VM's comment. VirtIO disks have no OVF equivalent and are
+  exported on AHCI; whether a tool evaluates the firmware setting differs.
+- TPM state, the UEFI variable store, the system UUID and the SMBIOS system
+  information are not exported. For a faithful copy between KEMU
+  installations, use the native export.
 - Snapshots are not preserved during OVA export (as VMDK does not support them).
 - The shared folder path and ISO path are stripped from native exports because
   they are system-specific.

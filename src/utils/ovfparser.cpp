@@ -250,12 +250,18 @@ std::optional<OvfDescriptor> OvfParser::parse(QIODevice *device)
                 result.osType = text;
             continue;
 
-        } else if (inSystem && element == u"Config" && ns == kVmwNs) {
+        } else if (inSystem && parent == u"AnnotationSection" && element == u"Annotation") {
+            result.annotation = xml.readElementText().trimmed();
+            continue;
+
+        } else if (inSystem && (element == u"Config" || element == u"ExtraConfig") && ns == kVmwNs) {
+            // vmw:Config carries vSphere API properties, vmw:ExtraConfig raw
+            // .vmx keys; exports use either.
             const QString key = attrs.value(kVmwNs, u"key"_s).toString();
             const QString value = attrs.value(kVmwNs, u"value"_s).toString().toLower();
             if (key == u"firmware"_s)
                 result.firmware = value == u"efi"_s ? OvfFirmware::Efi : OvfFirmware::Bios;
-            else if (key == u"uefi.secureBoot.enabled"_s)
+            else if (key == u"bootOptions.efiSecureBootEnabled"_s || key == u"uefi.secureBoot.enabled"_s)
                 result.secureBoot = value == u"true"_s;
 
         } else if (inSystem && element == u"Machine" && ns == kVboxNs) {

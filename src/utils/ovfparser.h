@@ -15,9 +15,19 @@
 
 class QIODevice;
 
-enum class OvfStorageBus { Unknown, Ide, Scsi, Sata, Nvme };
+enum class OvfStorageBus {
+    Unknown,
+    Ide,
+    Scsi,
+    Sata,
+    Nvme
+};
 
-enum class OvfFirmware { Unknown, Bios, Efi };
+enum class OvfFirmware {
+    Unknown,
+    Bios,
+    Efi
+};
 
 struct OvfDisk {
     QString href; // as written in the descriptor, untrusted; empty: blank disk
@@ -41,6 +51,7 @@ struct OvfNetworkAdapter {
 /// descriptor leaves out are empty or 0; choosing defaults is up to the caller.
 struct OvfDescriptor {
     QString name;
+    QString annotation; // AnnotationSection, the VM's description
     int virtualSystemCount = 0; // > 1 for a VirtualSystemCollection
     int cpuCount = 0;
     qint64 memoryBytes = 0;

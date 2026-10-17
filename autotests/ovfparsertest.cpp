@@ -75,6 +75,35 @@ private Q_SLOTS:
         QCOMPARE(ovf.osId, 36);
         QCOMPARE(ovf.osType, u"other3xLinux64Guest"_s);
         QCOMPARE(ovf.osDescription, u"Other 3.x or later Linux (64-bit)"_s);
+        QCOMPARE(ovf.annotation, u"Photon OS appliance"_s);
+    }
+
+    void vmwareExtraConfig()
+    {
+        const OvfDescriptor ovf = parse("vmware-extraconfig.ovf");
+        QCOMPARE(ovf.firmware, OvfFirmware::Efi);
+        QVERIFY(ovf.secureBoot);
+    }
+
+    // What KEMU's own OVA export writes must come back unchanged.
+    void kemuExport()
+    {
+        const OvfDescriptor ovf = parse("kemu-export.ovf");
+        QCOMPARE(ovf.name, u"q35-uefi-sb-nvme"_s);
+        QCOMPARE(ovf.annotation, u"Build server\nwith two lines"_s);
+        QCOMPARE(ovf.cpuCount, 2);
+        QCOMPARE(ovf.memoryBytes, 2048LL << 20);
+        QCOMPARE(ovf.firmware, OvfFirmware::Efi);
+        QVERIFY(ovf.secureBoot);
+        QCOMPARE(ovf.osId, 36);
+        QCOMPARE(ovf.osType, u"Debian_64"_s);
+        QCOMPARE(ovf.networkAdapters.size(), 1);
+        QCOMPARE(ovf.networkAdapters.at(0).model, u"virtio"_s);
+        QCOMPARE(ovf.firstMacAddress(), u"52:54:00:ab:cd:ef"_s);
+        QCOMPARE(hrefs(ovf), QStringList({u"q35-uefi-sb-nvme-disk1.vmdk"_s, u"q35-uefi-sb-nvme-disk2.vmdk"_s}));
+        QCOMPARE(ovf.disks.at(0).bus, OvfStorageBus::Nvme);
+        QCOMPARE(ovf.disks.at(1).bus, OvfStorageBus::Sata);
+        QCOMPARE(ovf.disks.at(0).capacityBytes, 48LL << 20);
     }
 
     void diskSectionFallback()

@@ -15,7 +15,10 @@ extern "C" {
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QXmlStreamWriter>
+
+#include <algorithm>
 
 #include <KLocalizedString>
 
@@ -30,10 +33,127 @@ constexpr int kConvertBand = 800;
 constexpr int kManifestBand = 900;
 constexpr qsizetype kHashChunk = 1 << 20;
 
-// DMTF CIM_OperatingSystem OSType. 36 = Linux, 1 = Other. Extend as needed.
-int cimOsType(VMSpecs::OsType type)
+const QString kVmwNs = u"http://www.vmware.com/schema/ovf"_s;
+const QString kVboxNs = u"http://www.virtualbox.org/ovf/machine"_s;
+
+struct GuestOs {
+    int cimId = 1; // CIM_OperatingSystem OSType, 1: Other
+    QString vbox; // VirtualBox OS type
+    QString vmware; // VMware guestId
+    QString description;
+};
+
+// Other tools pick their defaults from the vendor ids, the CIM id is only a
+// fallback. Only CIM ids that are unambiguous are used.
+GuestOs guestOsFor(const VMConfig &config)
 {
-    return type == VMSpecs::OsType::Linux ? 36 : 1;
+    const bool is64 = config.architecture() != VMSpecs::Architecture::I386;
+    const QString suffix = is64 ? u"_64"_s : QString();
+    const QString distro = config.distroId();
+
+    switch (config.osType()) {
+    case VMSpecs::OsType::Windows: {
+        struct Windows {
+            QString distro;
+            int cimId;
+            QString vbox;
+            QString vmware32;
+            QString vmware64;
+            QString description;
+        };
+        static const QList<Windows> versions = {
+            {u"windows11"_s, 1, u"Windows11"_s, u"windows11_64Guest"_s, u"windows11_64Guest"_s, u"Windows 11"_s},
+            {u"windows10"_s, 1, u"Windows10"_s, u"windows9Guest"_s, u"windows9_64Guest"_s, u"Windows 10"_s},
+            {u"windows7"_s, 105, u"Windows7"_s, u"windows7Guest"_s, u"windows7_64Guest"_s, u"Windows 7"_s},
+            {u"windowsxp"_s, 67, u"WindowsXP"_s, u"winXPProGuest"_s, u"winXPPro64Guest"_s, u"Windows XP"_s},
+            {u"windows2000"_s, 58, u"Windows2000"_s, u"win2000ProGuest"_s, u"win2000ProGuest"_s, u"Windows 2000"_s},
+            {u"windowsnt4"_s, 18, u"WindowsNT4"_s, u"winNTGuest"_s, u"winNTGuest"_s, u"Windows NT 4"_s},
+        };
+        for (const Windows &w : versions) {
+            if (w.distro == distro) {
+                // VirtualBox has no 64-bit variants of the oldest versions.
+                const bool vbox64 = is64 && w.cimId != 58 && w.cimId != 18;
+                return {w.cimId, w.vbox + (vbox64 ? u"_64"_s : QString()), is64 ? w.vmware64 : w.vmware32, w.description};
+            }
+        }
+        return {1, u"Windows10"_s + suffix, is64 ? u"windows9_64Guest"_s : u"windows9Guest"_s, u"Windows"_s};
+    }
+
+    case VMSpecs::OsType::Linux: {
+        static const QHash<QString, std::pair<QString, QString>> distros = {
+            {u"debian"_s, {u"Debian"_s, u"Debian"_s}},
+            {u"ubuntu"_s, {u"Ubuntu"_s, u"Ubuntu"_s}},
+            {u"kubuntu"_s, {u"Ubuntu"_s, u"Kubuntu"_s}},
+            {u"kdeneon"_s, {u"Ubuntu"_s, u"KDE neon"_s}},
+            {u"linuxmint"_s, {u"Ubuntu"_s, u"Linux Mint"_s}},
+            {u"fedora"_s, {u"Fedora"_s, u"Fedora"_s}},
+            {u"archlinux"_s, {u"ArchLinux"_s, u"Arch Linux"_s}},
+            {u"manjaro"_s, {u"ArchLinux"_s, u"Manjaro"_s}},
+            {u"opensuse"_s, {u"OpenSUSE"_s, u"openSUSE"_s}},
+            {u"redhat"_s, {u"RedHat"_s, u"Red Hat Enterprise Linux"_s}},
+            {u"centos"_s, {u"RedHat"_s, u"CentOS"_s}},
+            {u"gentoo"_s, {u"Gentoo"_s, u"Gentoo"_s}},
+        };
+        const auto [vbox, name] = distros.value(distro, {u"Linux"_s, u"Linux"_s});
+        const bool ubuntuFamily = vbox == u"Ubuntu"_s;
+        const QString vmware = ubuntuFamily ? (is64 ? u"ubuntu64Guest"_s : u"ubuntuGuest"_s) : (is64 ? u"otherLinux64Guest"_s : u"otherLinuxGuest"_s);
+        // VirtualBox calls 32-bit generic Linux "Linux26".
+        const QString vboxId = vbox == u"Linux"_s && !is64 ? u"Linux26"_s : vbox + suffix;
+        return {36, vboxId, vmware, name};
+    }
+
+    case VMSpecs::OsType::BSD:
+        if (distro == u"openbsd"_s)
+            return {1, u"OpenBSD"_s + suffix, is64 ? u"other64Guest"_s : u"otherGuest"_s, u"OpenBSD"_s};
+        return {42, u"FreeBSD"_s + suffix, is64 ? u"freebsd64Guest"_s : u"freebsdGuest"_s, u"FreeBSD"_s};
+
+    case VMSpecs::OsType::DOS:
+        return {14, u"DOS"_s, u"dosGuest"_s, u"DOS"_s};
+
+    default:
+        return {1, u"Other"_s + suffix, is64 ? u"other64Guest"_s : u"otherGuest"_s, u"Other"_s};
+    }
+}
+
+// rasd:ResourceSubType as VirtualBox and VMware write it. Models they lack
+// are exported as E1000, which every guest has a driver for.
+QString networkSubTypeFor(VMSpecs::NetworkCard card)
+{
+    switch (card) {
+    case VMSpecs::NetworkCard::Virtio:
+        return u"virtio"_s;
+    case VMSpecs::NetworkCard::Pcnet:
+        return u"PCNet32"_s;
+    default:
+        return u"E1000"_s;
+    }
+}
+
+struct Controller {
+    enum class Kind {
+        Ide,
+        Sata,
+        Nvme
+    };
+    Kind kind;
+    int instanceId;
+    int address; // n-th controller of its kind
+    int ports;
+    int usedPorts = 0;
+};
+
+// KEMU's SATA/IDE is AHCI on Q35 and PIIX IDE otherwise. virtio-blk has no
+// OVF equivalent; AHCI is what other tools and the guest support best.
+Controller::Kind controllerKindFor(VMSpecs::DiskInterface diskInterface, VMSpecs::MachineType machine)
+{
+    switch (diskInterface) {
+    case VMSpecs::DiskInterface::Nvme:
+        return Controller::Kind::Nvme;
+    case VMSpecs::DiskInterface::SataIde:
+        return machine == VMSpecs::MachineType::Q35 ? Controller::Kind::Sata : Controller::Kind::Ide;
+    default:
+        return Controller::Kind::Sata;
+    }
 }
 
 void writeRasd(QXmlStreamWriter &xml, const QString &element, const QString &text)
@@ -202,16 +322,21 @@ bool OvaExportJob::createOvfDescriptor()
     if (!file.open(QIODevice::WriteOnly))
         return false;
 
+    const bool hasNetwork = m_config.networkCard() != VMSpecs::NetworkCard::None;
+    const GuestOs os = guestOsFor(m_config);
+
     QXmlStreamWriter xml(&file);
     xml.setAutoFormatting(true);
     xml.writeStartDocument();
 
     xml.writeStartElement(u"Envelope"_s);
+    xml.writeAttribute(u"ovf:version"_s, u"1.0"_s);
     xml.writeAttribute(u"xmlns"_s, u"http://schemas.dmtf.org/ovf/envelope/1"_s);
     xml.writeAttribute(u"xmlns:ovf"_s, u"http://schemas.dmtf.org/ovf/envelope/1"_s);
     xml.writeAttribute(u"xmlns:rasd"_s, u"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData"_s);
     xml.writeAttribute(u"xmlns:vssd"_s, u"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData"_s);
-    xml.writeAttribute(u"xmlns:xsi"_s, u"http://www.w3.org/2001/XMLSchema-instance"_s);
+    xml.writeAttribute(u"xmlns:vmw"_s, kVmwNs);
+    xml.writeAttribute(u"xmlns:vbox"_s, kVboxNs);
 
     // References
     xml.writeStartElement(u"References"_s);
@@ -239,24 +364,38 @@ bool OvaExportJob::createOvfDescriptor()
     xml.writeEndElement();
 
     // NetworkSection
-    xml.writeStartElement(u"NetworkSection"_s);
-    xml.writeTextElement(u"Info"_s, u"Network information"_s);
-    xml.writeStartElement(u"Network"_s);
-    xml.writeAttribute(u"ovf:name"_s, u"NAT"_s);
-    xml.writeTextElement(u"Description"_s, u"NAT network"_s);
-    xml.writeEndElement();
-    xml.writeEndElement();
+    if (hasNetwork) {
+        xml.writeStartElement(u"NetworkSection"_s);
+        xml.writeTextElement(u"Info"_s, u"Network information"_s);
+        xml.writeStartElement(u"Network"_s);
+        xml.writeAttribute(u"ovf:name"_s, u"NAT"_s);
+        xml.writeTextElement(u"Description"_s, u"NAT network"_s);
+        xml.writeEndElement();
+        xml.writeEndElement();
+    }
 
     // VirtualSystem
     xml.writeStartElement(u"VirtualSystem"_s);
     xml.writeAttribute(u"ovf:id"_s, m_vmName);
-    xml.writeTextElement(u"Info"_s, m_config.comment().isEmpty() ? u"Exported from KEMU"_s : m_config.comment());
+    xml.writeTextElement(u"Info"_s, u"A virtual machine exported from KEMU"_s);
     xml.writeTextElement(u"Name"_s, m_vmName);
 
+    if (!m_config.comment().isEmpty()) {
+        xml.writeStartElement(u"AnnotationSection"_s);
+        xml.writeTextElement(u"Info"_s, u"Description of the virtual machine"_s);
+        xml.writeTextElement(u"Annotation"_s, m_config.comment());
+        xml.writeEndElement();
+    }
+
     xml.writeStartElement(u"OperatingSystemSection"_s);
-    xml.writeAttribute(u"ovf:id"_s, QString::number(cimOsType(m_config.osType())));
+    xml.writeAttribute(u"ovf:id"_s, QString::number(os.cimId));
+    xml.writeAttribute(u"vmw:osType"_s, os.vmware);
     xml.writeTextElement(u"Info"_s, u"Guest operating system"_s);
-    xml.writeTextElement(u"Description"_s, VMConfig::toString(m_config.osType()));
+    xml.writeTextElement(u"Description"_s, os.description);
+    xml.writeStartElement(u"vbox:OSType"_s);
+    xml.writeAttribute(u"ovf:required"_s, u"false"_s);
+    xml.writeCharacters(os.vbox);
+    xml.writeEndElement();
     xml.writeEndElement();
 
     xml.writeStartElement(u"VirtualHardwareSection"_s);
@@ -265,6 +404,7 @@ bool OvaExportJob::createOvfDescriptor()
     xml.writeStartElement(u"System"_s);
     xml.writeTextElement(u"vssd:ElementName"_s, u"Virtual Hardware Family"_s);
     xml.writeTextElement(u"vssd:InstanceID"_s, u"0"_s);
+    xml.writeTextElement(u"vssd:VirtualSystemIdentifier"_s, m_vmName);
     xml.writeTextElement(u"vssd:VirtualSystemType"_s, u"vmx-13"_s);
     xml.writeEndElement();
 
@@ -290,46 +430,100 @@ bool OvaExportJob::createOvfDescriptor()
     writeRasd(xml, u"VirtualQuantity"_s, QString::number(m_config.ramMb()));
     xml.writeEndElement();
 
-    // SATA controller
-    xml.writeStartElement(u"Item"_s);
-    writeRasd(xml, u"Description"_s, u"SATA Controller"_s);
-    writeRasd(xml, u"ElementName"_s, u"SATA Controller"_s);
-    writeRasd(xml, u"InstanceID"_s, u"3"_s);
-    writeRasd(xml, u"ResourceSubType"_s, u"AHCI"_s);
-    writeRasd(xml, u"ResourceType"_s, u"20"_s);
-    xml.writeEndElement();
+    // Controllers are created in the order the disks need them, so the
+    // system disk sits on the first one: OVF has no boot order of its own.
+    int instanceId = 3;
+    QList<Controller> controllers;
+    QList<std::pair<int, int>> diskSlots; // controller InstanceID, port
+    const QList<DiskConfig> extraDisks = m_config.extraDisks();
+    for (qsizetype i = 0; i < m_disks.size(); ++i) {
+        const VMSpecs::DiskInterface diskInterface = i == 0 || i > extraDisks.size() ? m_config.diskInterface() : extraDisks.at(i - 1).diskInterface;
+        const Controller::Kind kind = controllerKindFor(diskInterface, m_config.machineType());
+
+        auto it = std::find_if(controllers.begin(), controllers.end(), [kind](const Controller &c) {
+            return c.kind == kind && c.usedPorts < c.ports;
+        });
+        if (it == controllers.end()) {
+            const int sameKind = static_cast<int>(std::count_if(controllers.cbegin(), controllers.cend(), [kind](const Controller &c) {
+                return c.kind == kind;
+            }));
+            // An IDE channel holds master and slave; AHCI has 30 ports.
+            controllers.append({kind, instanceId++, sameKind, kind == Controller::Kind::Ide ? 2 : 30});
+            it = controllers.end() - 1;
+        }
+        diskSlots.append({it->instanceId, it->usedPorts++});
+    }
+
+    for (const Controller &c : std::as_const(controllers)) {
+        xml.writeStartElement(u"Item"_s);
+        writeRasd(xml, u"Address"_s, QString::number(c.address));
+        switch (c.kind) {
+        case Controller::Kind::Ide:
+            writeRasd(xml, u"Description"_s, u"IDE Controller"_s);
+            writeRasd(xml, u"ElementName"_s, u"ideController%1"_s.arg(c.address));
+            writeRasd(xml, u"InstanceID"_s, QString::number(c.instanceId));
+            writeRasd(xml, u"ResourceSubType"_s, u"PIIX4"_s);
+            writeRasd(xml, u"ResourceType"_s, u"5"_s);
+            break;
+        case Controller::Kind::Sata:
+            writeRasd(xml, u"Description"_s, u"SATA Controller"_s);
+            writeRasd(xml, u"ElementName"_s, u"sataController%1"_s.arg(c.address));
+            writeRasd(xml, u"InstanceID"_s, QString::number(c.instanceId));
+            writeRasd(xml, u"ResourceSubType"_s, u"AHCI"_s);
+            writeRasd(xml, u"ResourceType"_s, u"20"_s);
+            break;
+        case Controller::Kind::Nvme:
+            writeRasd(xml, u"Description"_s, u"NVMe Controller"_s);
+            writeRasd(xml, u"ElementName"_s, u"nvmeController%1"_s.arg(c.address));
+            writeRasd(xml, u"InstanceID"_s, QString::number(c.instanceId));
+            writeRasd(xml, u"ResourceSubType"_s, u"vmware.nvme.controller"_s);
+            writeRasd(xml, u"ResourceType"_s, u"20"_s);
+            break;
+        }
+        xml.writeEndElement();
+    }
 
     // Hard disks
-    int instanceId = 4;
     for (qsizetype i = 0; i < m_disks.size(); ++i) {
         xml.writeStartElement(u"Item"_s);
-        writeRasd(xml, u"AddressOnParent"_s, QString::number(i));
+        writeRasd(xml, u"AddressOnParent"_s, QString::number(diskSlots.at(i).second));
         writeRasd(xml, u"Description"_s, u"Hard disk image"_s);
         writeRasd(xml, u"ElementName"_s, u"disk%1"_s.arg(i + 1));
         writeRasd(xml, u"HostResource"_s, u"ovf:/disk/vmdisk%1"_s.arg(i + 1));
         writeRasd(xml, u"InstanceID"_s, QString::number(instanceId++));
-        writeRasd(xml, u"Parent"_s, u"3"_s);
+        writeRasd(xml, u"Parent"_s, QString::number(diskSlots.at(i).first));
         writeRasd(xml, u"ResourceType"_s, u"17"_s);
         xml.writeEndElement();
     }
 
     // Network adapter
-    if (m_config.networkCard() != VMSpecs::NetworkCard::None) {
+    if (hasNetwork) {
         xml.writeStartElement(u"Item"_s);
-        if (!m_config.macAddress().isEmpty()) {
-            QString mac = m_config.macAddress();
-            mac.remove(u':');
-            // OVF carries the MAC in rasd:Address; rasd:MACAddress is not part
-            // of the CIM schema and is ignored by other tools.
-            writeRasd(xml, u"Address"_s, mac);
-        }
+        // OVF carries the MAC in rasd:Address; rasd:MACAddress is not part of
+        // the CIM schema and is ignored by other tools.
+        if (!m_config.macAddress().isEmpty())
+            writeRasd(xml, u"Address"_s, m_config.macAddress().toLower());
         writeRasd(xml, u"AutomaticAllocation"_s, u"true"_s);
         writeRasd(xml, u"Connection"_s, u"NAT"_s);
         writeRasd(xml, u"ElementName"_s, u"Network Adapter 1"_s);
         writeRasd(xml, u"InstanceID"_s, QString::number(instanceId++));
+        writeRasd(xml, u"ResourceSubType"_s, networkSubTypeFor(m_config.networkCard()));
         writeRasd(xml, u"ResourceType"_s, u"10"_s);
         xml.writeEndElement();
     }
+
+    // Firmware: OVF 1.x has no field for it, VMware's extension is the one
+    // other tools know.
+    const auto writeVmwConfig = [&xml](const QString &key, const QString &value) {
+        xml.writeStartElement(u"vmw:Config"_s);
+        xml.writeAttribute(u"ovf:required"_s, u"false"_s);
+        xml.writeAttribute(u"vmw:key"_s, key);
+        xml.writeAttribute(u"vmw:value"_s, value);
+        xml.writeEndElement();
+    };
+    writeVmwConfig(u"firmware"_s, m_config.useUefi() ? u"efi"_s : u"bios"_s);
+    if (m_config.useUefi())
+        writeVmwConfig(u"bootOptions.efiSecureBootEnabled"_s, m_config.useSecureBoot() ? u"true"_s : u"false"_s);
 
     xml.writeEndElement(); // VirtualHardwareSection
     xml.writeEndElement(); // VirtualSystem

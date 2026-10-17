@@ -4,6 +4,10 @@
   <DiskSection><Disk ovf:capacity="16" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="vmdisk1" ovf:fileRef="file1"/></DiskSection>
   <VirtualSystem ovf:id="vm">
     <Name>Photon Appliance</Name>
+    <AnnotationSection>
+      <Info>A human-readable annotation</Info>
+      <Annotation>Photon OS appliance</Annotation>
+    </AnnotationSection>
     <OperatingSystemSection ovf:id="36" vmw:osType="other3xLinux64Guest">
       <Info>The kind of installed guest operating system</Info>
       <Description>Other 3.x or later Linux (64-bit)</Description>
@@ -15,7 +19,7 @@
       <Item><rasd:AddressOnParent>0</rasd:AddressOnParent><rasd:HostResource>ovf:/disk/vmdisk1</rasd:HostResource><rasd:InstanceID>4</rasd:InstanceID><rasd:Parent>3</rasd:Parent><rasd:ResourceType>17</rasd:ResourceType></Item>
       <Item><rasd:Address>00-50-56-AA-BB-CC</rasd:Address><rasd:ResourceSubType>VmxNet3</rasd:ResourceSubType><rasd:ResourceType>10</rasd:ResourceType></Item>
       <vmw:Config ovf:required="false" vmw:key="firmware" vmw:value="efi"/>
-      <vmw:Config ovf:required="false" vmw:key="uefi.secureBoot.enabled" vmw:value="true"/>
+      <vmw:Config ovf:required="false" vmw:key="bootOptions.efiSecureBootEnabled" vmw:value="true"/>
     </VirtualHardwareSection>
   </VirtualSystem>
 </Envelope>

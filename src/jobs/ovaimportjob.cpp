@@ -363,7 +363,7 @@ bool OvaImportJob::parseOvf(QString *error)
     m_importedConfig.setGpuType(VMSpecs::GpuType::Vga);
     m_importedConfig.setPointerDevice(VMSpecs::PointerDevice::Ps2);
     m_importedConfig.setKeyboardDevice(VMSpecs::KeyboardDevice::Ps2);
-    m_importedConfig.setComment(i18n("Imported from OVA"));
+    m_importedConfig.setComment(ovf->annotation.isEmpty() ? i18n("Imported from OVA") : ovf->annotation);
 
     if (ovf->virtualSystemCount > 1)
         Q_EMIT infoMessage(this, i18n("The appliance contains %1 virtual machines; only the first one, '%2', is imported.", ovf->virtualSystemCount, m_vmName));
