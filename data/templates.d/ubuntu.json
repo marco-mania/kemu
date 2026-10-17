@@ -12,6 +12,30 @@
       "icon_hint": "ubuntu",
       "releases": [
         {
+          "version": "26.10",
+          "quick_deploy": true,
+          "codename": "Stonking Stingray",
+          "lts": false,
+          "cloud_images": [
+            {
+              "arch": "x86_64",
+              "url": "https://cloud-images.ubuntu.com/stonking/current/stonking-server-cloudimg-amd64.img",
+              "format": "qcow2",
+              "checksum_url": "https://cloud-images.ubuntu.com/stonking/current/SHA256SUMS",
+              "default_user": "ubuntu"
+            },
+            {
+              "arch": "aarch64",
+              "url": "https://cloud-images.ubuntu.com/stonking/current/stonking-server-cloudimg-arm64.img",
+              "format": "qcow2",
+              "checksum_url": "https://cloud-images.ubuntu.com/stonking/current/SHA256SUMS",
+              "default_user": "ubuntu"
+            }
+          ],
+          "installer_isos": [],
+          "min_disk_gb": 20
+        },
+        {
           "version": "26.04",
           "quick_deploy": true,
           "codename": "Resolute Raccoon",
