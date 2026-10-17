@@ -102,6 +102,11 @@ find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
 
 add_subdirectory(src)
 
+if(BUILD_TESTING)
+  find_package(Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED COMPONENTS Test)
+  add_subdirectory(autotests)
+endif()
+
 install(FILES src/kemuui.rc
         DESTINATION ${KDE_INSTALL_KXMLGUIDIR}/${PROJECT_NAME})
 install(

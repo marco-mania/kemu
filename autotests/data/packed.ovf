@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1" xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">
+ <References><File ovf:id="f1" ovf:href="disk.vmdk.gz" ovf:compression="gzip"/><File ovf:id="f2" ovf:href="big.vmdk" ovf:chunkSize="2147483648"/></References>
+ <DiskSection><Disk ovf:diskId="d1" ovf:fileRef="f1"/><Disk ovf:diskId="d2" ovf:fileRef="f2"/></DiskSection>
+ <VirtualSystem ovf:id="packed"/>
+</Envelope>

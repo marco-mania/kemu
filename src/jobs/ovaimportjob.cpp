@@ -18,6 +18,9 @@ extern "C" {
 
 #include <KLocalizedString>
 
+#include <algorithm>
+#include <limits>
+
 #include "utils/archivepaths.h"
 #include "utils/ovfparser.h"
 #include "utils/qemuimgprocess.h"
@@ -134,9 +137,10 @@ void OvaImportJob::workerFinished(bool ok)
         return;
     }
 
-    if (!parseOvf()) {
+    QString parseError;
+    if (!parseOvf(&parseError)) {
         setError(ContentError);
-        setErrorText(i18n("Failed to parse the OVF descriptor or unsupported format."));
+        setErrorText(parseError.isEmpty() ? i18n("Failed to parse the OVF descriptor or unsupported format.") : parseError);
         emitResult();
         return;
     }
@@ -156,17 +160,17 @@ void OvaImportJob::workerFinished(bool ok)
         return;
     }
 
-    if (m_sourceDisks.isEmpty() || !QFile::exists(m_sourceDisks.first())) {
+    if (m_sourceDisks.isEmpty()) {
         setError(ContentError);
         setErrorText(i18n("No disk image found in the OVA archive."));
         emitResult();
         return;
     }
 
-    for (const QString &path : std::as_const(m_sourceDisks)) {
-        if (!QFile::exists(path)) {
+    for (const SourceDisk &disk : std::as_const(m_sourceDisks)) {
+        if (!disk.path.isEmpty() && !QFile::exists(disk.path)) {
             setError(ContentError);
-            setErrorText(i18n("The disk image %1 is missing from the OVA archive.", QFileInfo(path).fileName()));
+            setErrorText(i18n("The disk image %1 is missing from the OVA archive.", QFileInfo(disk.path).fileName()));
             emitResult();
             return;
         }
@@ -188,7 +192,7 @@ void OvaImportJob::abortExternalTools()
         m_converter->abort();
 }
 
-bool OvaImportJob::parseOvf()
+bool OvaImportJob::parseOvf(QString *error)
 {
     if (m_ovfPath.isEmpty())
         return false;
@@ -197,13 +201,27 @@ bool OvaImportJob::parseOvf()
     if (!ovf)
         return false;
 
-    // The descriptor is untrusted: a disk must not point outside the archive.
     const QDir stagingDir(m_stagingDir->path());
     for (const OvfDisk &disk : ovf->disks) {
-        const QString path = ArchivePaths::resolveWithin(stagingDir, disk.href);
-        if (path.isEmpty())
+        if (disk.isBlank()) {
+            if (disk.capacityBytes <= 0) {
+                *error = i18n("The appliance defines an empty disk without a size.");
+                return false;
+            }
+            m_sourceDisks.append({{}, disk.capacityBytes});
+            continue;
+        }
+        if (!disk.compression.isEmpty() || disk.chunkSize > 0) {
+            *error = i18n("The disk image %1 is stored compressed or split into chunks, which is not supported yet.", disk.href);
             return false;
-        m_sourceDisks << path;
+        }
+        // The descriptor is untrusted: a disk must not point outside the archive.
+        const QString path = ArchivePaths::resolveWithin(stagingDir, disk.href);
+        if (path.isEmpty()) {
+            *error = i18n("The OVF descriptor refers to a disk image outside the archive (%1).", disk.href);
+            return false;
+        }
+        m_sourceDisks.append({path, 0});
     }
 
     m_vmName = ArchivePaths::sanitizeVmName(ovf->name.isEmpty() ? QFileInfo(m_ovaPath).completeBaseName() : ovf->name);
@@ -220,9 +238,10 @@ bool OvaImportJob::parseOvf()
     const int diskCapacityGb = diskCapacityBytes > 0 ? static_cast<int>((diskCapacityBytes + (1LL << 30) - 1) / (1LL << 30)) : 0;
 
     m_importedConfig.setName(m_vmName);
-    const int ramMb = static_cast<int>(ovf->memoryBytes / (1024LL * 1024));
-    m_importedConfig.setRamMb(ramMb > 0 ? ramMb : GlobalDefaults.ramMb);
-    m_importedConfig.setCpuCoreCount(ovf->cpuCount > 0 ? ovf->cpuCount : GlobalDefaults.cpuCoreCount);
+    const qint64 ramMb = ovf->memoryBytes / (1024LL * 1024);
+    m_importedConfig.setRamMb(ramMb > 0 ? static_cast<int>(std::min<qint64>(ramMb, std::numeric_limits<int>::max())) : GlobalDefaults.ramMb);
+    const int maxCores = VMConfig::maxCoresForModel(m_importedConfig.cpuModel());
+    m_importedConfig.setCpuCoreCount(ovf->cpuCount > 0 ? std::min(ovf->cpuCount, maxCores) : std::min(GlobalDefaults.cpuCoreCount, maxCores));
     m_importedConfig.setDiskSizeGb(diskCapacityGb > 0 ? diskCapacityGb : (m_diskSizeGb > 0 ? m_diskSizeGb : GlobalDefaults.diskSizeGb));
     if (!ovf->macAddress.isEmpty())
         m_importedConfig.setMacAddress(ovf->macAddress);
@@ -237,6 +256,9 @@ bool OvaImportJob::parseOvf()
     m_importedConfig.setPointerDevice(VMSpecs::PointerDevice::Ps2);
     m_importedConfig.setKeyboardDevice(VMSpecs::KeyboardDevice::Ps2);
     m_importedConfig.setComment(i18n("Imported from OVA"));
+
+    if (ovf->virtualSystemCount > 1)
+        Q_EMIT infoMessage(this, i18n("The appliance contains %1 virtual machines; only the first one, '%2', is imported.", ovf->virtualSystemCount, m_vmName));
 
     QList<DiskConfig> extraDisks;
     QStringList taken;
@@ -293,7 +315,11 @@ void OvaImportJob::convertDisk()
     });
     connect(m_converter, &QemuImgProcess::finished, this, &OvaImportJob::onConvertFinished);
 
-    if (!m_converter->start({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, m_sourceDisks.at(m_convertIndex), targetPathFor(m_convertIndex)})) {
+    const SourceDisk &disk = m_sourceDisks.at(m_convertIndex);
+    const QString target = targetPathFor(m_convertIndex);
+    const QStringList args = disk.path.isEmpty() ? QStringList{u"create"_s, u"-q"_s, u"-f"_s, u"qcow2"_s, target, QString::number(disk.blankBytes)}
+                                                 : QStringList{u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, disk.path, target};
+    if (!m_converter->start(args)) {
         QDir(m_targetDir).removeRecursively();
         setError(ToolError);
         setErrorText(m_converter->errorText());

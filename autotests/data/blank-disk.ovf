@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1" xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">
+ <References><File ovf:id="iso" ovf:href="installer.iso"/></References>
+ <DiskSection><Disk ovf:diskId="d1" ovf:capacity="20" ovf:capacityAllocationUnits="byte * 2^30"/></DiskSection>
+ <VirtualSystem ovf:id="blank"/>
+</Envelope>

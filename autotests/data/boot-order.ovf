@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1" xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">
+ <References><File ovf:id="data" ovf:href="data.vmdk"/><File ovf:id="sys" ovf:href="system.vmdk"/></References>
+ <DiskSection>
+  <Disk ovf:diskId="vmdisk2" ovf:fileRef="data" ovf:capacity="100" ovf:capacityAllocationUnits="byte * 2^30"/>
+  <Disk ovf:diskId="vmdisk1" ovf:fileRef="sys" ovf:capacity="20" ovf:capacityAllocationUnits="byte * 2^30"/>
+ </DiskSection>
+ <VirtualSystem ovf:id="order"><VirtualHardwareSection>
+  <Item><rasd:InstanceID>5</rasd:InstanceID><rasd:ResourceSubType>AHCI</rasd:ResourceSubType><rasd:ResourceType>20</rasd:ResourceType></Item>
+  <Item><rasd:AddressOnParent>0</rasd:AddressOnParent><rasd:HostResource>ovf:/disk/vmdisk1</rasd:HostResource><rasd:Parent>5</rasd:Parent><rasd:ResourceType>17</rasd:ResourceType></Item>
+  <Item><rasd:AddressOnParent>1</rasd:AddressOnParent><rasd:HostResource>ovf:/disk/vmdisk2</rasd:HostResource><rasd:Parent>5</rasd:Parent><rasd:ResourceType>17</rasd:ResourceType></Item>
+ </VirtualHardwareSection></VirtualSystem>
+</Envelope>

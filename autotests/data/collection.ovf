@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1" xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">
+ <References><File ovf:id="f1" ovf:href="web.vmdk"/><File ovf:id="f2" ovf:href="db.vmdk"/></References>
+ <DiskSection><Disk ovf:diskId="d1" ovf:fileRef="f1" ovf:capacity="10" ovf:capacityAllocationUnits="byte * 2^30"/><Disk ovf:diskId="d2" ovf:fileRef="f2" ovf:capacity="50" ovf:capacityAllocationUnits="byte * 2^30"/></DiskSection>
+ <VirtualSystemCollection ovf:id="stack">
+  <VirtualSystem ovf:id="web"><Name>web</Name><VirtualHardwareSection>
+   <Item><rasd:ResourceType>3</rasd:ResourceType><rasd:VirtualQuantity>1</rasd:VirtualQuantity></Item>
+   <Item><rasd:ResourceType>4</rasd:ResourceType><rasd:VirtualQuantity>512</rasd:VirtualQuantity></Item>
+   <Item><rasd:HostResource>ovf:/disk/d1</rasd:HostResource><rasd:ResourceType>17</rasd:ResourceType></Item>
+  </VirtualHardwareSection></VirtualSystem>
+  <VirtualSystem ovf:id="db"><Name>db</Name><VirtualHardwareSection>
+   <Item><rasd:ResourceType>3</rasd:ResourceType><rasd:VirtualQuantity>8</rasd:VirtualQuantity></Item>
+   <Item><rasd:ResourceType>4</rasd:ResourceType><rasd:VirtualQuantity>16384</rasd:VirtualQuantity></Item>
+   <Item><rasd:HostResource>ovf:/disk/d2</rasd:HostResource><rasd:ResourceType>17</rasd:ResourceType></Item>
+  </VirtualHardwareSection></VirtualSystem>
+ </VirtualSystemCollection>
+</Envelope>

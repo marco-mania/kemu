@@ -42,7 +42,7 @@ protected:
     void abortExternalTools() override;
 
 private:
-    bool parseOvf();
+    bool parseOvf(QString *error);
     void convertDisk();
     void onConvertFinished(bool ok);
     [[nodiscard]] QString targetPathFor(qsizetype index) const;
@@ -53,7 +53,11 @@ private:
 
     std::unique_ptr<QTemporaryDir> m_stagingDir;
     QString m_ovfPath;
-    QStringList m_sourceDisks; // staged images, system disk first
+    struct SourceDisk {
+        QString path; // staged image; empty: create a blank disk
+        qint64 blankBytes = 0;
+    };
+    QList<SourceDisk> m_sourceDisks; // system disk first
     qsizetype m_convertIndex = 0;
 
     QString m_vmName;

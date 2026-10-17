@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1" xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">
+ <References><File ovf:id="f1" ovf:href="d.vmdk"/></References>
+ <DiskSection><Disk ovf:diskId="d1" ovf:fileRef="f1" ovf:capacity="9223372036854775807" ovf:capacityAllocationUnits="byte * 2^70"/></DiskSection>
+ <VirtualSystem ovf:id="big"><VirtualHardwareSection>
+  <Item><rasd:ResourceType>4</rasd:ResourceType><rasd:AllocationUnits>byte * 2^40</rasd:AllocationUnits><rasd:VirtualQuantity>99999999</rasd:VirtualQuantity></Item>
+ </VirtualHardwareSection></VirtualSystem>
+</Envelope>
