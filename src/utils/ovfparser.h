@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <QByteArray>
+#include <QCryptographicHash>
 #include <QList>
 #include <QString>
 
@@ -13,16 +15,26 @@
 
 class QIODevice;
 
+enum class OvfStorageBus { Unknown, Ide, Scsi, Sata, Nvme };
+
+enum class OvfFirmware { Unknown, Bios, Efi };
+
 struct OvfDisk {
     QString href; // as written in the descriptor, untrusted; empty: blank disk
     qint64 capacityBytes = 0; // 0: not specified
     QString compression; // ovf:compression, e.g. "gzip"
     qint64 chunkSize = 0; // ovf:chunkSize; > 0: split into numbered chunks
+    OvfStorageBus bus = OvfStorageBus::Unknown; // controller the disk is attached to
 
     [[nodiscard]] bool isBlank() const
     {
         return href.isEmpty();
     }
+};
+
+struct OvfNetworkAdapter {
+    QString model; // rasd:ResourceSubType as written, e.g. "E1000", "VmxNet3"
+    QString macAddress; // "aa:bb:cc:dd:ee:ff", empty if unknown
 };
 
 /// What an OVF descriptor says about its first virtual system. Values the
@@ -32,8 +44,31 @@ struct OvfDescriptor {
     int virtualSystemCount = 0; // > 1 for a VirtualSystemCollection
     int cpuCount = 0;
     qint64 memoryBytes = 0;
-    QString macAddress; // first network adapter, "aa:bb:cc:dd:ee:ff"
+    QList<OvfNetworkAdapter> networkAdapters;
     QList<OvfDisk> disks; // attachment order, boot disk first
+
+    // VMware and VirtualBox extensions; OVF itself has no firmware setting.
+    OvfFirmware firmware = OvfFirmware::Unknown;
+    bool secureBoot = false;
+
+    int osId = 0; // CIM operating system id, 0: not specified
+    QString osType; // vendor id, e.g. "debian10_64Guest" or "Debian_64"
+    QString osDescription;
+
+    [[nodiscard]] QString firstMacAddress() const
+    {
+        for (const OvfNetworkAdapter &adapter : networkAdapters) {
+            if (!adapter.macAddress.isEmpty())
+                return adapter.macAddress;
+        }
+        return {};
+    }
+};
+
+struct OvfManifestEntry {
+    QString fileName;
+    QCryptographicHash::Algorithm algorithm = QCryptographicHash::Sha256;
+    QByteArray digest; // lower-case hex
 };
 
 /// Reader for OVF 1.x/2.x descriptors as written by VirtualBox and VMware.
@@ -42,6 +77,10 @@ class OvfParser
 public:
     [[nodiscard]] static std::optional<OvfDescriptor> parse(QIODevice *device);
     [[nodiscard]] static std::optional<OvfDescriptor> parseFile(const QString &path);
+
+    /// Reads an OVA manifest ("SHA256(file)= digest" per line). Fails on any
+    /// line it does not understand.
+    [[nodiscard]] static std::optional<QList<OvfManifestEntry>> parseManifest(QIODevice *device);
 
     /// Converts an OVF quantity plus allocation units to bytes. Handles the
     /// programmatic form ("byte * 2^20", "byte * 10^9") and textual units

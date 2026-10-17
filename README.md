@@ -639,8 +639,16 @@ a password.
 
 ## OVA Import/Export Limitations
 
-- Additional disks of an OVA are attached via SATA. If the PC chipset runs out
-  of slots, the import switches to Q35.
+- The import keeps the guest's firmware (BIOS/UEFI, Secure Boot) and boot
+  controller where the descriptor states them (VMware and VirtualBox
+  extensions), so the guest finds the hardware it was installed on: UEFI or a
+  SATA controller selects Q35, NVMe disks stay on NVMe. IDE, SCSI and unknown
+  controllers become SATA/IDE. Network adapters without a QEMU counterpart
+  (VmxNet3, E1000e) become E1000. The operating system is taken over as well.
+- If the PC chipset runs out of disk slots, the import switches to Q35.
+- A manifest (`.mf`) in the archive is verified; a checksum mismatch stops the
+  import. Signatures (`.cert`) are not checked.
+- Compressed (`ovf:compression`) or chunked disk files are not supported.
 - UEFI, TPM, and Secure Boot settings cannot be represented in the OVA format
   and will be lost upon export. The same applies to the system UUID and the
   SMBIOS system information.

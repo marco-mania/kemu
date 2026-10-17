@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+#include <QFile>
 #include <QTest>
 
 #include "utils/ovfparser.h"
@@ -40,12 +41,22 @@ private Q_SLOTS:
         QCOMPARE(ovf.virtualSystemCount, 1);
         QCOMPARE(ovf.cpuCount, 2);
         QCOMPARE(ovf.memoryBytes, 3072LL << 20);
-        QCOMPARE(ovf.macAddress, QString());
         // Attachment order, not item order; the ISO on the IDE controller is
         // no disk.
         QCOMPARE(hrefs(ovf), QStringList({u"Debian-disk001.vmdk"_s, u"Debian-disk002.vmdk"_s}));
         QCOMPARE(ovf.disks.at(0).capacityBytes, 20LL << 30);
         QCOMPARE(ovf.disks.at(1).capacityBytes, 10LL << 30);
+        QCOMPARE(ovf.disks.at(0).bus, OvfStorageBus::Sata);
+
+        // From the VirtualBox section: the standard part has no MAC.
+        QCOMPARE(ovf.networkAdapters.size(), 1);
+        QCOMPARE(ovf.networkAdapters.at(0).model, u"E1000"_s);
+        QCOMPARE(ovf.firstMacAddress(), u"08:00:27:aa:bb:cc"_s);
+        QCOMPARE(ovf.firmware, OvfFirmware::Efi);
+        QVERIFY(!ovf.secureBoot);
+        QCOMPARE(ovf.osId, 96);
+        QCOMPARE(ovf.osType, u"Debian_64"_s);
+        QCOMPARE(ovf.osDescription, u"Debian_64"_s);
     }
 
     void vmware()
@@ -54,16 +65,25 @@ private Q_SLOTS:
         QCOMPARE(ovf.name, u"Photon Appliance"_s);
         QCOMPARE(ovf.cpuCount, 4);
         QCOMPARE(ovf.memoryBytes, 8192LL << 20);
-        QCOMPARE(ovf.macAddress, u"00:50:56:aa:bb:cc"_s);
+        QCOMPARE(ovf.firstMacAddress(), u"00:50:56:aa:bb:cc"_s);
         QCOMPARE(hrefs(ovf), QStringList({u"appliance-disk1.vmdk"_s}));
         QCOMPARE(ovf.disks.at(0).capacityBytes, 16LL << 30);
+        QCOMPARE(ovf.disks.at(0).bus, OvfStorageBus::Nvme);
+        QCOMPARE(ovf.networkAdapters.at(0).model, u"VmxNet3"_s);
+        QCOMPARE(ovf.firmware, OvfFirmware::Efi);
+        QVERIFY(ovf.secureBoot);
+        QCOMPARE(ovf.osId, 36);
+        QCOMPARE(ovf.osType, u"other3xLinux64Guest"_s);
+        QCOMPARE(ovf.osDescription, u"Other 3.x or later Linux (64-bit)"_s);
     }
 
     void diskSectionFallback()
     {
         const OvfDescriptor ovf = parse("no-disk-items.ovf");
         QCOMPARE(hrefs(ovf), QStringList({u"Debian-disk001.vmdk"_s, u"Debian-disk002.vmdk"_s}));
-        QCOMPARE(ovf.macAddress, u"08:00:27:aa:bb:cc"_s);
+        QCOMPARE(ovf.disks.at(0).bus, OvfStorageBus::Unknown);
+        QCOMPARE(ovf.firstMacAddress(), u"08:00:27:aa:bb:cc"_s);
+        QCOMPARE(ovf.firmware, OvfFirmware::Unknown);
     }
 
     void noDiskSection()
@@ -71,7 +91,7 @@ private Q_SLOTS:
         const OvfDescriptor ovf = parse("no-disksection.ovf");
         QCOMPARE(hrefs(ovf), QStringList({u"only.vmdk"_s}));
         // The invalid address is skipped, the next adapter's is taken.
-        QCOMPARE(ovf.macAddress, u"52:54:00:01:02:03"_s);
+        QCOMPARE(ovf.firstMacAddress(), u"52:54:00:01:02:03"_s);
     }
 
     void bootOrder()
@@ -112,7 +132,7 @@ private Q_SLOTS:
         const OvfDescriptor ovf = parse("ovf2.ovf");
         QCOMPARE(ovf.name, u"ovf2vm"_s);
         QCOMPARE(ovf.cpuCount, 2);
-        QCOMPARE(ovf.macAddress, u"00:50:56:01:02:03"_s);
+        QCOMPARE(ovf.firstMacAddress(), u"00:50:56:01:02:03"_s);
         QCOMPARE(hrefs(ovf), QStringList({u"v2.vmdk"_s}));
     }
 
@@ -152,6 +172,37 @@ private Q_SLOTS:
         QFETCH(QString, file);
         QVERIFY(!OvfParser::parseFile(QFINDTESTDATA(u"data/"_s + file)));
         QVERIFY(!OvfParser::parseFile(u"/nonexistent/descriptor.ovf"_s));
+    }
+
+    void manifest()
+    {
+        QFile file(QFINDTESTDATA("data/valid.mf"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto entries = OvfParser::parseManifest(&file);
+        QVERIFY(entries);
+        QCOMPARE(entries->size(), 2);
+        QCOMPARE(entries->at(0).fileName, u"appliance.ovf"_s);
+        QCOMPARE(entries->at(0).algorithm, QCryptographicHash::Sha256);
+        QCOMPARE(entries->at(0).digest, QByteArray(64, 'a'));
+        QCOMPARE(entries->at(1).fileName, u"appliance-disk1.vmdk"_s);
+        QCOMPARE(entries->at(1).algorithm, QCryptographicHash::Sha1);
+        QCOMPARE(entries->at(1).digest, QByteArray(40, 'b'));
+    }
+
+    void invalidManifests_data()
+    {
+        QTest::addColumn<QString>("file");
+        QTest::newRow("short digest") << u"short-digest.mf"_s;
+        QTest::newRow("unknown algorithm") << u"unknown-algorithm.mf"_s;
+        QTest::newRow("not a manifest") << u"vmware.ovf"_s;
+    }
+
+    void invalidManifests()
+    {
+        QFETCH(QString, file);
+        QFile f(QFINDTESTDATA(u"data/"_s + file));
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QVERIFY(!OvfParser::parseManifest(&f));
     }
 
     void quantityToBytes_data()

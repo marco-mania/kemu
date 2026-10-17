@@ -8,11 +8,14 @@
 
 #include <memory>
 
+#include <QHash>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QTemporaryDir>
 
 #include "jobs/archivestreamjob.h"
+#include "utils/ovfparser.h"
 #include "utils/vmconfig.h"
 
 class QemuImgProcess;
@@ -43,6 +46,8 @@ protected:
 
 private:
     bool parseOvf(QString *error);
+    bool readManifest(const QString &path);
+    bool verifyRemainingManifestEntries();
     void convertDisk();
     void onConvertFinished(bool ok);
     [[nodiscard]] QString targetPathFor(qsizetype index) const;
@@ -53,6 +58,11 @@ private:
 
     std::unique_ptr<QTemporaryDir> m_stagingDir;
     QString m_ovfPath;
+
+    // Worker thread only.
+    bool m_hasManifest = false;
+    QHash<QString, OvfManifestEntry> m_manifest; // by cleaned file name
+    QSet<QString> m_verified;
     struct SourceDisk {
         QString path; // staged image; empty: create a blank disk
         qint64 blankBytes = 0;

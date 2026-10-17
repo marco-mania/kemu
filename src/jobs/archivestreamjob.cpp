@@ -11,6 +11,7 @@ extern "C" {
 #include <archive_entry.h>
 }
 
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
@@ -225,7 +226,7 @@ bool ArchiveStreamJob::writeBufferEntry(archive *a, const QByteArray &data, cons
     return true;
 }
 
-bool ArchiveStreamJob::extractEntryTo(archive *a, const QString &destPath)
+bool ArchiveStreamJob::extractEntryTo(archive *a, const QString &destPath, QCryptographicHash *hash)
 {
     QFile out(destPath);
     if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -251,6 +252,8 @@ bool ArchiveStreamJob::extractEntryTo(archive *a, const QString &destPath)
             recordError(i18n("Cannot write %1: %2", destPath, out.errorString()));
             return false;
         }
+        if (hash)
+            hash->addData(QByteArrayView(chunk.constData(), read));
 
         // archive_filter_bytes(-1) counts compressed input, matching the
         // archive size used as the phase total.

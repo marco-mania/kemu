@@ -2853,7 +2853,10 @@ void MainWindow::importOVA(const QString &filePath)
                 config.setMacAddress(Utils::generateRandomMac(used));
             if (config.uuid().isNull())
                 config.regenerateUuid(veModel->vmUuids().values());
-            saveVmConfig(getVmDir(config.name()).absolutePath(), config);
+            const QString vmPath = getVmDir(config.name()).absolutePath();
+            saveVmConfig(vmPath, config);
+            if (config.useUefi())
+                requireUefiFirmware(vmPath, config, this);
 
             statusBar()->showMessage(i18n("VM '%1' imported from OVA.", config.name()));
             loadVmList();

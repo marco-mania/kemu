@@ -11,6 +11,7 @@ extern "C" {
 #include <archive_entry.h>
 }
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -20,6 +21,7 @@ extern "C" {
 
 #include <algorithm>
 #include <limits>
+#include <optional>
 
 #include "utils/archivepaths.h"
 #include "utils/ovfparser.h"
@@ -31,6 +33,36 @@ namespace
 {
 
 constexpr int kExtractBand = 150;
+
+// KEMU has no SCSI controller; SATA/IDE is what every guest has a driver for.
+VMSpecs::DiskInterface diskInterfaceFor(OvfStorageBus bus)
+{
+    return bus == OvfStorageBus::Nvme ? VMSpecs::DiskInterface::Nvme : VMSpecs::DiskInterface::SataIde;
+}
+
+// Models without a QEMU counterpart (VmxNet3, E1000e, ...) fall back to E1000.
+VMSpecs::NetworkCard networkCardFor(const QString &model)
+{
+    const QString lower = model.toLower();
+    if (lower.contains(u"virtio"_s))
+        return VMSpecs::NetworkCard::Virtio;
+    if (lower.contains(u"pcnet"_s) || lower.contains(u"am79c97"_s))
+        return VMSpecs::NetworkCard::Pcnet;
+    if (lower.contains(u"8139"_s))
+        return VMSpecs::NetworkCard::Rtl8139;
+    return VMSpecs::NetworkCard::E1000;
+}
+
+QByteArray fileDigest(const QString &path, QCryptographicHash::Algorithm algorithm)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    QCryptographicHash hash(algorithm);
+    if (!hash.addData(&file))
+        return {};
+    return hash.result().toHex();
+}
 }
 
 OvaImportJob::OvaImportJob(const QString &ovaPath, const QString &vmBaseDir, int diskSizeGb, QObject *parent)
@@ -113,19 +145,79 @@ bool OvaImportJob::runWorker()
         // Some OVAs nest files in subdirectories.
         QDir().mkpath(QFileInfo(destPath).path());
 
-        if (!extractEntryTo(a, destPath)) {
+        // The manifest usually precedes the disks, so they are hashed while
+        // they are extracted.
+        const auto expected = m_manifest.constFind(QDir::cleanPath(name));
+        std::optional<QCryptographicHash> hash;
+        if (expected != m_manifest.constEnd())
+            hash.emplace(expected->algorithm);
+
+        if (!extractEntryTo(a, destPath, hash ? &*hash : nullptr)) {
             ok = false;
             break;
         }
 
-        if (name.endsWith(u".ovf"_s, Qt::CaseInsensitive))
+        if (hash) {
+            if (hash->result().toHex() != expected->digest) {
+                recordError(i18n("The checksum of %1 does not match the manifest. The OVA archive is damaged or was modified.", name));
+                ok = false;
+                break;
+            }
+            m_verified.insert(expected.key());
+        }
+
+        if (name.endsWith(u".ovf"_s, Qt::CaseInsensitive) && m_ovfPath.isEmpty())
             m_ovfPath = destPath;
+
+        if (name.endsWith(u".mf"_s, Qt::CaseInsensitive) && !m_hasManifest && !readManifest(destPath)) {
+            ok = false;
+            break;
+        }
     }
 
     archive_read_close(a);
     archive_read_free(a);
 
-    return ok;
+    return ok && verifyRemainingManifestEntries();
+}
+
+bool OvaImportJob::readManifest(const QString &path)
+{
+    QFile file(path);
+    const auto entries = file.open(QIODevice::ReadOnly) ? OvfParser::parseManifest(&file) : std::nullopt;
+    if (!entries) {
+        recordError(i18n("The manifest of the OVA archive could not be read."));
+        return false;
+    }
+
+    m_hasManifest = true;
+    for (const OvfManifestEntry &entry : *entries)
+        m_manifest.insert(QDir::cleanPath(entry.fileName), entry);
+    return true;
+}
+
+// Entries extracted before the manifest, in archives that do not follow the
+// order OVF prescribes.
+bool OvaImportJob::verifyRemainingManifestEntries()
+{
+    const QDir stagingDir(m_stagingDir->path());
+    for (auto it = m_manifest.cbegin(); it != m_manifest.cend(); ++it) {
+        if (m_verified.contains(it.key()))
+            continue;
+        if (isCancelled())
+            return false;
+
+        const QString path = ArchivePaths::resolveWithin(stagingDir, it.key());
+        if (path.isEmpty() || !QFile::exists(path)) {
+            recordError(i18n("%1 is listed in the manifest but missing from the OVA archive.", it.key()));
+            return false;
+        }
+        if (fileDigest(path, it->algorithm) != it->digest) {
+            recordError(i18n("The checksum of %1 does not match the manifest. The OVA archive is damaged or was modified.", it.key()));
+            return false;
+        }
+    }
+    return true;
 }
 
 void OvaImportJob::workerFinished(bool ok)
@@ -243,15 +335,31 @@ bool OvaImportJob::parseOvf(QString *error)
     const int maxCores = VMConfig::maxCoresForModel(m_importedConfig.cpuModel());
     m_importedConfig.setCpuCoreCount(ovf->cpuCount > 0 ? std::min(ovf->cpuCount, maxCores) : std::min(GlobalDefaults.cpuCoreCount, maxCores));
     m_importedConfig.setDiskSizeGb(diskCapacityGb > 0 ? diskCapacityGb : (m_diskSizeGb > 0 ? m_diskSizeGb : GlobalDefaults.diskSizeGb));
-    if (!ovf->macAddress.isEmpty())
-        m_importedConfig.setMacAddress(ovf->macAddress);
+    if (const QString mac = ovf->firstMacAddress(); !mac.isEmpty())
+        m_importedConfig.setMacAddress(mac);
 
-    // Conservative profile for foreign appliances: maximise the chance the
-    // imported guest boots without extra drivers.
-    m_importedConfig.setMachineType(VMSpecs::MachineType::Pc);
-    m_importedConfig.setUseUefi(false);
-    m_importedConfig.setDiskInterface(VMSpecs::DiskInterface::SataIde);
-    m_importedConfig.setNetworkCard(VMSpecs::NetworkCard::E1000);
+    const QString osText = ovf->osType + u' ' + ovf->osDescription;
+    bool osFound = false;
+    auto [osType, distroId] = VMConfig::guessOSFromText(osText, &osFound);
+    if (!osFound && osText.contains(u"linux"_s, Qt::CaseInsensitive))
+        osType = VMSpecs::OsType::Linux;
+    m_importedConfig.setOsType(osType);
+    m_importedConfig.setDistroId(distroId);
+    // Windows keeps the hardware clock in local time.
+    m_importedConfig.setUseLocalTime(osType == VMSpecs::OsType::Windows);
+
+    // Keep what the guest was installed with where KEMU has it: a changed
+    // firmware or boot controller leaves most guests unbootable. Everything
+    // else falls back to devices every guest has drivers for.
+    const bool efi = ovf->firmware == OvfFirmware::Efi;
+    const bool ahci = std::any_of(ovf->disks.cbegin(), ovf->disks.cend(), [](const OvfDisk &disk) {
+        return disk.bus == OvfStorageBus::Sata;
+    });
+    m_importedConfig.setMachineType(efi || ahci ? VMSpecs::MachineType::Q35 : VMSpecs::MachineType::Pc);
+    m_importedConfig.setUseUefi(efi);
+    m_importedConfig.setUseSecureBoot(efi && ovf->secureBoot);
+    m_importedConfig.setDiskInterface(diskInterfaceFor(ovf->disks.isEmpty() ? OvfStorageBus::Unknown : ovf->disks.first().bus));
+    m_importedConfig.setNetworkCard(networkCardFor(ovf->networkAdapters.isEmpty() ? QString() : ovf->networkAdapters.first().model));
     m_importedConfig.setGpuType(VMSpecs::GpuType::Vga);
     m_importedConfig.setPointerDevice(VMSpecs::PointerDevice::Ps2);
     m_importedConfig.setKeyboardDevice(VMSpecs::KeyboardDevice::Ps2);
@@ -265,7 +373,7 @@ bool OvaImportJob::parseOvf(QString *error)
     for (qsizetype i = 1; i < m_sourceDisks.size(); ++i) {
         DiskConfig disk;
         disk.fileName = VMConfig::nextExtraDiskFileName(taken);
-        disk.diskInterface = VMSpecs::DiskInterface::SataIde;
+        disk.diskInterface = diskInterfaceFor(ovf->disks.at(i).bus);
         disk.serial = VMConfig::defaultDiskSerial(disk.fileName);
         taken << disk.fileName;
         extraDisks << disk;

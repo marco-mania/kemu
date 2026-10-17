@@ -14,6 +14,8 @@
 
 #include <KJob>
 
+class QCryptographicHash;
+
 extern "C" {
 struct archive;
 struct archive_entry;
@@ -79,7 +81,8 @@ protected:
 
     bool writeFileEntry(archive *a, const QString &sourcePath, const QString &entryName);
     bool writeBufferEntry(archive *a, const QByteArray &data, const QString &entryName);
-    bool extractEntryTo(archive *a, const QString &destPath);
+    /// Feeds the extracted data into @p hash as well, if given.
+    bool extractEntryTo(archive *a, const QString &destPath, QCryptographicHash *hash = nullptr);
     bool closeWriteArchive(archive *a, bool ok);
 
     void recordArchiveError(archive *a, const QString &context);
