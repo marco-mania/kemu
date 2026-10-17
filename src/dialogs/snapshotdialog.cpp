@@ -9,15 +9,17 @@
 #include "dialogs/takesnapshotdialog.h"
 #include "utils/utils.h"
 
+#include <QFileInfo>
+
 static constexpr int SnapshotInfoRole = Qt::UserRole;
 static constexpr int IsCurrentStateRole = Qt::UserRole + 1;
 
-SnapshotDialog::SnapshotDialog(const QString &vmName, const QString &diskPath, QMPClient *qmp, bool imageInUse, QWidget *parent)
+SnapshotDialog::SnapshotDialog(const QString &vmName, const QStringList &diskPaths, QMPClient *qmp, bool imageInUse, QWidget *parent)
     : QDialog(parent)
     , m_qmp(qmp)
     , m_imageInUse(imageInUse)
     , m_vmName(vmName)
-    , m_diskPath(diskPath)
+    , m_diskPaths(diskPaths)
 {
     setWindowTitle(i18n("Snapshot Manager – %1", vmName));
     resize(820, 520);
@@ -118,7 +120,7 @@ void SnapshotDialog::loadSnapshots()
     m_snapshotNames.clear();
 
     QString listError;
-    const QList<SnapshotInfo> snaps = m_manager.listSnapshots(m_diskPath, &listError);
+    const QList<SnapshotInfo> snaps = m_manager.listSnapshots(m_diskPaths.value(0), &listError);
 
     QTreeWidgetItem *lastItem = nullptr;
 
@@ -219,11 +221,11 @@ void SnapshotDialog::onTakeSnapshot()
 
     setBusy(true);
 
-    m_manager.createSnapshot(m_diskPath, name, m_qmp, m_imageInUse, [this, name, desc](bool ok, QString err) {
+    m_manager.createSnapshot(m_diskPaths, name, m_qmp, m_imageInUse, [this, name, desc](bool ok, QString err) {
         setBusy(false);
 
         if (ok) {
-            m_manager.saveDescription(m_diskPath, name, desc);
+            m_manager.saveDescription(m_diskPaths.value(0), name, desc);
         } else {
             // Keep the message box off the QMP teardown stack.
             QTimer::singleShot(0, this, [this, name, err] {
@@ -261,19 +263,35 @@ void SnapshotDialog::onRevertSnapshot()
                                          m_vmName,
                                          snap.name);
 
-    if (KMessageBox::questionTwoActions(this, warning, i18n("Revert Snapshot"), KGuiItem(i18n("Revert"), u"edit-undo"_s), KStandardGuiItem::cancel())
+    QString untouched;
+    if (m_diskPaths.size() > 1) {
+        QStringList names;
+        for (const QString &path : m_manager.disksWithoutSnapshot(m_diskPaths.mid(1), snap.name))
+            names << QFileInfo(path).fileName().toHtmlEscaped();
+        if (!names.isEmpty())
+            untouched = u"<br/><br/>"_s + i18n("These disks were added after the snapshot and keep their current content: %1", names.join(u", "_s));
+    }
+
+    if (KMessageBox::questionTwoActions(this,
+                                        warning + untouched,
+                                        i18n("Revert Snapshot"),
+                                        KGuiItem(i18n("Revert"), u"edit-undo"_s),
+                                        KStandardGuiItem::cancel())
         != KMessageBox::PrimaryAction)
         return;
 
     setBusy(true);
 
-    m_manager.revertSnapshot(m_diskPath, snap.name, m_qmp, m_imageInUse, [this, snap](bool ok, QString err) {
+    m_manager.revertSnapshot(m_diskPaths, snap.name, m_qmp, m_imageInUse, [this, snap, isLive](bool ok, QString err) {
         setBusy(false);
 
         if (!ok) {
+            if (isLive)
+                err += u"\n\n"_s + i18n("If disks were removed since the snapshot was taken, shut down the VM and revert the snapshot while it is off.");
+
             // Keep the message box off the QMP teardown stack.
             QTimer::singleShot(0, this, [this, snap, err] {
-                KMessageBox::error(this, i18n("Could not create snapshot \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
+                KMessageBox::error(this, i18n("Could not revert to snapshot \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
             });
         } else
             KMessageBox::information(this, i18n("Successfully reverted to snapshot \"%1\".", snap.name), i18n("Snapshot Restored"));
@@ -306,11 +324,11 @@ void SnapshotDialog::onDeleteSnapshot()
 
     setBusy(true);
 
-    m_manager.deleteSnapshot(m_diskPath, snap.name, m_qmp, m_imageInUse, [this, snap](bool ok, QString err) {
+    m_manager.deleteSnapshot(m_diskPaths, snap.name, m_qmp, m_imageInUse, [this, snap](bool ok, QString err) {
         setBusy(false);
 
         if (ok) {
-            m_manager.removeDescription(m_diskPath, snap.name);
+            m_manager.removeDescription(m_diskPaths.value(0), snap.name);
         } else {
             QTimer::singleShot(0, this, [this, snap, err] {
                 KMessageBox::error(this, i18n("Could not delete snapshot \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));

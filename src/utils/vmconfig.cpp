@@ -518,6 +518,111 @@ bool VMConfig::isValidVmName(const QString &name, QString *error)
     return true;
 }
 
+namespace
+{
+const QRegularExpression &extraDiskFileNameRx()
+{
+    static const QRegularExpression rx(u"^disk-([1-9][0-9]{0,2})\\.qcow2$"_s);
+    return rx;
+}
+
+// ATA, NVMe and virtio-blk all cap the serial at 20 characters.
+QString sanitizeDiskSerial(const QString &serial)
+{
+    QString out;
+    for (const QChar c : serial) {
+        if (c.isLetterOrNumber() && c.unicode() < 0x80)
+            out += c;
+        else if (c == u'-' || c == u'_' || c == u'.')
+            out += c;
+    }
+    return out.left(20);
+}
+
+QString diskDisplayName(const DiskConfig &disk)
+{
+    return disk.label.isEmpty() ? disk.fileName : disk.label;
+}
+}
+
+bool VMConfig::isValidExtraDiskFileName(const QString &fileName)
+{
+    return extraDiskFileNameRx().match(fileName).hasMatch();
+}
+
+QString VMConfig::nextExtraDiskFileName(const QStringList &taken)
+{
+    for (int n = 2; n < 1000; ++n) {
+        const QString candidate = u"disk-%1.qcow2"_s.arg(n);
+        if (!taken.contains(candidate))
+            return candidate;
+    }
+    return {};
+}
+
+QString VMConfig::extraDiskDriveId(const QString &fileName)
+{
+    return QFileInfo(fileName).completeBaseName();
+}
+
+QString VMConfig::defaultDiskSerial(const QString &fileName)
+{
+    return sanitizeDiskSerial(u"KEMU-"_s + extraDiskDriveId(fileName).toUpper());
+}
+
+int VMConfig::ideSlotCapacity(VMSpecs::MachineType type)
+{
+    // ich9-ahci: six ports with one unit each; PIIX and ISA IDE: two buses
+    // with master and slave.
+    return type == VMSpecs::MachineType::Q35 ? 6 : 4;
+}
+
+QString VMConfig::storageLayoutError(bool seedIsoPresent) const
+{
+    if (m_extraDisks.size() > KEMUConst::MaxExtraDisks)
+        return i18n("At most %1 additional disks are supported.", KEMUConst::MaxExtraDisks);
+
+    // CD-ROM drive, always present.
+    int ideSlots = 1;
+    if (m_diskInterface == VMSpecs::DiskInterface::SataIde)
+        ++ideSlots;
+    if (seedIsoPresent)
+        ++ideSlots;
+
+    for (const DiskConfig &disk : m_extraDisks) {
+        if (disk.diskInterface == VMSpecs::DiskInterface::SataIde) {
+            ++ideSlots;
+        } else if (!supportsPciBus(m_machineType)) {
+            return i18n("Disk '%1' uses %2, which requires a PCI bus. Choose SATA/IDE for it.", diskDisplayName(disk), toUIString(disk.diskInterface));
+        }
+    }
+
+    const int capacity = ideSlotCapacity(m_machineType);
+    if (ideSlots > capacity) {
+        return i18n("Too many SATA/IDE devices: the %1 chipset has %2 slots, including the CD/DVD drive. Attach additional disks via VirtIO or NVMe.",
+                    toUIString(m_machineType),
+                    capacity);
+    }
+
+    return {};
+}
+
+QStringList VMConfig::diskFileNames() const
+{
+    QStringList names{m_diskPath.isEmpty() ? QString(KEMUConst::VMDiskFileName) : QFileInfo(m_diskPath).fileName()};
+    for (const DiskConfig &disk : m_extraDisks)
+        names << disk.fileName;
+    return names;
+}
+
+QStringList VMConfig::diskPaths(const QDir &vmDir) const
+{
+    QStringList paths{m_diskPath.isEmpty() ? vmDir.absoluteFilePath(KEMUConst::VMDiskFileName) : m_diskPath};
+    for (const DiskConfig &disk : m_extraDisks)
+        paths << vmDir.absoluteFilePath(disk.fileName);
+    return paths;
+}
+
 QString VMConfig::toQemuSystemBinary(VMSpecs::Architecture arch)
 {
     switch (arch) {
@@ -1570,6 +1675,19 @@ QJsonObject VMConfig::toJson() const
     j[u"disk_file"_s] = u"disk.qcow2"_s;
     j[u"disk_size_gb"_s] = m_diskSizeGb;
 
+    if (!m_extraDisks.isEmpty()) {
+        QJsonArray disks;
+        for (const DiskConfig &disk : m_extraDisks) {
+            disks.append(QJsonObject{
+                {u"file"_s, disk.fileName},
+                {u"label"_s, disk.label},
+                {u"interface"_s, toString(disk.diskInterface)},
+                {u"serial"_s, disk.serial},
+            });
+        }
+        j[u"extra_disks"_s] = disks;
+    }
+
     j[u"shared_path"_s] = m_sharedPath;
     j[u"shared_name"_s] = m_sharedName;
     j[u"use_uefi"_s] = m_useUefi;
@@ -1664,6 +1782,25 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
     c.m_bootFromFloppy = j[u"boot_floppy"_s].toBool(false);
     c.m_extraArgs = j[u"extra_args"_s].toString();
     c.m_diskPath = j[u"disk_file"_s].toString(KEMUConst::VMDiskFileName);
+
+    // config.json may come from an archive: anything but a plain disk-<n>.qcow2
+    // in the VM directory is ignored.
+    const QJsonArray extraDisks = j[u"extra_disks"_s].toArray();
+    for (const QJsonValue &value : extraDisks) {
+        const QJsonObject o = value.toObject();
+        DiskConfig disk;
+        disk.fileName = o[u"file"_s].toString();
+        if (!isValidExtraDiskFileName(disk.fileName) || c.diskFileNames().contains(disk.fileName))
+            continue;
+        if (c.m_extraDisks.size() >= KEMUConst::MaxExtraDisks)
+            break;
+        disk.label = o[u"label"_s].toString().simplified().left(64);
+        disk.diskInterface = parseDiskInterface(o[u"interface"_s].toString());
+        disk.serial = sanitizeDiskSerial(o[u"serial"_s].toString());
+        if (disk.serial.isEmpty())
+            disk.serial = defaultDiskSerial(disk.fileName);
+        c.m_extraDisks.append(disk);
+    }
 
     c.m_displayType = parseDisplayType(j[u"display_type"_s].toString());
     c.m_gpuType = parseGpuType(j[u"gpu_type"_s].toString());
@@ -1778,6 +1915,15 @@ QStringList VMConfig::dropUntrustedSettings(const QDir &baseDir)
 
     // Disk and icon always live inside the VM directory.
     m_diskPath = baseDir.absoluteFilePath(KEMUConst::VMDiskFileName);
+
+    for (auto it = m_extraDisks.begin(); it != m_extraDisks.end();) {
+        if (QFileInfo(baseDir.filePath(it->fileName)).isFile()) {
+            ++it;
+            continue;
+        }
+        dropped << i18n("Additional disk '%1' (missing from the archive)", diskDisplayName(*it));
+        it = m_extraDisks.erase(it);
+    }
     if (m_iconSource == IconSource::Custom)
         m_iconIdentifier = QFileInfo(m_iconIdentifier).fileName();
 

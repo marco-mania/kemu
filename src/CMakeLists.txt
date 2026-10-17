@@ -174,6 +174,8 @@ target_sources(
           jobs/clouddeployjob.cpp
           jobs/archivestreamjob.h
           jobs/archivestreamjob.cpp
+          jobs/diskimportjob.cpp
+          jobs/diskimportjob.h
           dialogs/editvmdialog.cpp
           dialogs/editvmdialog.h
           dialogs/newvmdialog.cpp
@@ -196,6 +198,8 @@ target_sources(
           dialogs/deploymentlogwindow.h
           dialogs/hostshutdowndialog.cpp
           dialogs/hostshutdowndialog.h
+          dialogs/diskdialog.cpp
+          dialogs/diskdialog.h
           widgets/virtualenvironmentitemdelegate.cpp
           widgets/virtualenvironmentitemdelegate.h
           widgets/virtualenvironmenttreeview.h

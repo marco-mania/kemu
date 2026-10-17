@@ -17,6 +17,7 @@ Widgets and KDE Frameworks 6 for deep desktop integration.
 - Integrated D-Bus viewer with audio and clipboard sharing
 - Automated deployment utilizing Cloud-Init
 - Snapshot support (QCOW2)
+- Optional additional disks per VM, each with its own controller
 - Hot-swapping of ISO and floppy images
 - Networking: User-mode networking or in-process virtual networks
   (in-memory L2 switch with built-in DHCP and optional libslirp NAT)
@@ -29,7 +30,9 @@ Widgets and KDE Frameworks 6 for deep desktop integration.
 
 ## Limitations
 
-- Currently limited to a single storage drive per virtual machine.
+- Additional disks are always qcow2 images inside the VM directory; host
+  block devices and images elsewhere on the host cannot be attached directly.
+- Disks cannot be added or removed while the VM is running.
 - Pointer capture in the D-Bus viewer requires a Wayland session. Under X11 or
   XWayland the capture action is disabled; guests with an absolute pointing
   device (tablet) are unaffected and work everywhere.
@@ -191,7 +194,8 @@ QT_LOGGING_RULES="org.kde.kemu*=true" kemu 2>&1 | tee kemu.log
 | Configuration               | `~/.config/kemurc`                               |
 
 Each VM is stored as a subdirectory containing `config.json`, `disk.qcow2`,
-`OVMF_VARS.fd` (optional), and `qemu.sh`.
+`OVMF_VARS.fd` (optional), and `qemu.sh`. Additional disks are stored next to
+the system disk as `disk-2.qcow2`, `disk-3.qcow2`, and so on.
 
 ## OS Templates
 
@@ -536,6 +540,29 @@ Start-Service VirtioFsSvc
 sc.exe config VirtioFsSvc start=auto
 ```
 
+## Additional Disks
+
+The system disk is all most VMs need. Further disks can be added in the VM
+settings under Hardware -> Additional Disks, either as new, empty images or by
+copying an existing image (qcow2, raw, VMDK, VDI, VHD/VHDX) into the VM
+directory. The original image is not modified.
+
+- Each disk has its own controller: VirtIO, NVMe or SATA/IDE. New disks default
+  to the controller of the system disk, for which the guest already has a
+  driver.
+- SATA/IDE slots are shared with the CD/DVD drive: Q35 (AHCI) offers six, the
+  PC chipsets four. VirtIO and NVMe need a PCI bus.
+- Every disk gets a stable serial number (`KEMU-DISK-2`, ...), so Linux guests
+  find it under `/dev/disk/by-id/`.
+- Snapshots always cover all disks. A disk added after a snapshot was taken
+  keeps its content when the VM is reverted to that snapshot. Once a disk has
+  been removed, snapshots with a saved running state can only be restored while
+  the VM is shut down.
+- QEMU cannot migrate its NVMe controller: With a NVMe disk attached, neither
+  Save State nor snapshots of the running VM are available.
+- Compacting, cloning, export and OVA export include all disks.
+- When removing a disk its image can be deleted or moved to another location.
+
 ## Screenshots
 
 KEMU uses QEMU's `screendump` command to capture VM screenshots via the software
@@ -588,8 +615,8 @@ a password.
 
 ## OVA Import/Export Limitations
 
-- OVA support is limited to single-disk VMs; multi-disk configurations are not
-  supported.
+- Additional disks of an OVA are attached via SATA. If the PC chipset runs out
+  of slots, the import switches to Q35.
 - UEFI, TPM, and Secure Boot settings cannot be represented in the OVA format
   and will be lost upon export.
 - Snapshots are not preserved during OVA export (as VMDK does not support them).

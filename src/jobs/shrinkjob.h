@@ -9,6 +9,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QObject>
+#include <QStringList>
 
 #include <KJob>
 #include <KLocalizedString>
@@ -16,12 +17,14 @@
 
 using namespace Qt::StringLiterals;
 
+class QemuImgProcess;
+
 class ShrinkJob : public KJob
 {
     Q_OBJECT
 
 public:
-    explicit ShrinkJob(const QString &vmName, const QString &diskPath, QObject *parent = nullptr);
+    explicit ShrinkJob(const QString &vmName, const QStringList &diskPaths, QObject *parent = nullptr);
 
     void start() override;
 
@@ -33,15 +36,13 @@ public:
 protected:
     bool doKill() override;
 
-private Q_SLOTS:
-    void onReadyReadStdout();
-    void onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus);
-
 private:
-    QString m_vmName;
-    QString m_diskPath;
-    QString m_tmpPath;
-    KProcess *m_process = nullptr;
+    void startNext();
+    void onConvertFinished(bool ok);
 
-    QByteArray m_outputBuffer;
+    QString m_vmName;
+    QStringList m_diskPaths;
+    qsizetype m_index = 0;
+    QString m_tmpPath;
+    QemuImgProcess *m_process = nullptr;
 };

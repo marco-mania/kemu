@@ -202,11 +202,20 @@ void OvaImportJob::workerFinished(bool ok)
         return;
     }
 
-    if (m_diskPath.isEmpty() || !QFile::exists(m_diskPath)) {
+    if (m_sourceDisks.isEmpty() || !QFile::exists(m_sourceDisks.first())) {
         setError(ContentError);
         setErrorText(i18n("No disk image found in the OVA archive."));
         emitResult();
         return;
+    }
+
+    for (const QString &path : std::as_const(m_sourceDisks)) {
+        if (!QFile::exists(path)) {
+            setError(ContentError);
+            setErrorText(i18n("The disk image %1 is missing from the OVA archive.", QFileInfo(path).fileName()));
+            emitResult();
+            return;
+        }
     }
 
     QDir().mkpath(m_targetDir);
@@ -313,22 +322,15 @@ bool OvaImportJob::parseOvf()
     if (xml.hasError())
         return false;
 
-    // Prefer the file referenced by the first Disk; taking the first File
-    // reference would pick up ISOs and NVRAM blobs.
-    QString href;
+    // Disks in the order of the DiskSection, the first one is the system disk.
+    // Taking File references directly would pick up ISOs and NVRAM blobs.
     for (const QString &ref : std::as_const(diskFileRefs)) {
-        href = fileHrefs.value(ref);
+        const QString href = fileHrefs.value(ref);
         if (!href.isEmpty())
-            break;
+            m_sourceDisks << m_stagingDir->filePath(href);
     }
-    if (href.isEmpty() && !fileHrefs.isEmpty())
-        href = fileHrefs.constBegin().value();
-
-    if (!href.isEmpty())
-        m_diskPath = m_stagingDir->filePath(href);
-
-    if (diskFileRefs.size() > 1)
-        Q_EMIT infoMessage(this, i18n("The appliance contains several disks; only the first one is imported."));
+    if (m_sourceDisks.isEmpty() && !fileHrefs.isEmpty())
+        m_sourceDisks << m_stagingDir->filePath(fileHrefs.constBegin().value());
 
     if (vmName.isEmpty())
         vmName = QFileInfo(m_ovaPath).completeBaseName();
@@ -357,7 +359,40 @@ bool OvaImportJob::parseOvf()
     m_importedConfig.setKeyboardDevice(VMSpecs::KeyboardDevice::Ps2);
     m_importedConfig.setComment(i18n("Imported from OVA"));
 
+    QList<DiskConfig> extraDisks;
+    QStringList taken;
+    for (qsizetype i = 1; i < m_sourceDisks.size(); ++i) {
+        DiskConfig disk;
+        disk.fileName = VMConfig::nextExtraDiskFileName(taken);
+        disk.diskInterface = VMSpecs::DiskInterface::SataIde;
+        disk.serial = VMConfig::defaultDiskSerial(disk.fileName);
+        taken << disk.fileName;
+        extraDisks << disk;
+    }
+
+    // Prefer the plain PC chipset, but not at the price of a data disk: AHCI
+    // on Q35 has more ports than PIIX IDE.
+    const int availableDisks = static_cast<int>(extraDisks.size());
+    m_importedConfig.setExtraDisks(extraDisks);
+    if (!m_importedConfig.storageLayoutError().isEmpty())
+        m_importedConfig.setMachineType(VMSpecs::MachineType::Q35);
+    while (!extraDisks.isEmpty() && !m_importedConfig.storageLayoutError().isEmpty()) {
+        extraDisks.removeLast();
+        m_importedConfig.setExtraDisks(extraDisks);
+    }
+
+    if (extraDisks.size() < availableDisks) {
+        m_sourceDisks.resize(extraDisks.size() + 1);
+        Q_EMIT infoMessage(this, i18n("The appliance contains more disks than can be attached; only the first %1 are imported.", m_sourceDisks.size()));
+    }
+
     return true;
+}
+
+QString OvaImportJob::targetPathFor(qsizetype index) const
+{
+    const QString fileName = index == 0 ? QString(KEMUConst::VMDiskFileName) : m_importedConfig.extraDisks().at(index - 1).fileName;
+    return m_targetDir + u"/"_s + fileName;
 }
 
 void OvaImportJob::convertDisk()
@@ -365,18 +400,21 @@ void OvaImportJob::convertDisk()
     Q_EMIT description(this,
                        i18n("Importing OVA"),
                        QPair<QString, QString>(i18n("VM"), m_vmName),
-                       QPair<QString, QString>(i18n("Step"), i18n("Converting disk format...")));
+                       QPair<QString, QString>(i18n("Step"),
+                                               m_sourceDisks.size() > 1 ? i18n("Converting disk %1 of %2...", m_convertIndex + 1, m_sourceDisks.size())
+                                                                        : i18n("Converting disk format...")));
 
-    const QString targetQcow2 = m_targetDir + u"/"_s + KEMUConst::VMDiskFileName;
-
+    if (m_converter)
+        m_converter->deleteLater();
     m_converter = new QemuImgProcess(this);
 
     connect(m_converter, &QemuImgProcess::progress, this, [this](double percent) {
-        emitPercent(kExtractBand + qRound(percent * ((1000 - kExtractBand) / 100.0)), 1000);
+        const double perDisk = (1000 - kExtractBand) / double(m_sourceDisks.size());
+        emitPercent(kExtractBand + qRound(m_convertIndex * perDisk + percent * perDisk / 100.0), 1000);
     });
     connect(m_converter, &QemuImgProcess::finished, this, &OvaImportJob::onConvertFinished);
 
-    if (!m_converter->start({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, m_diskPath, targetQcow2})) {
+    if (!m_converter->start({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, m_sourceDisks.at(m_convertIndex), targetPathFor(m_convertIndex)})) {
         QDir(m_targetDir).removeRecursively();
         setError(ToolError);
         setErrorText(m_converter->errorText());
@@ -394,7 +432,12 @@ void OvaImportJob::onConvertFinished(bool ok)
         return;
     }
 
-    const QString targetQcow2 = m_targetDir + u"/"_s + KEMUConst::VMDiskFileName;
+    if (++m_convertIndex < m_sourceDisks.size()) {
+        convertDisk();
+        return;
+    }
+
+    const QString targetQcow2 = targetPathFor(0);
     m_importedConfig.setDiskPath(targetQcow2);
 
     // The OVF capacity is a hint; the converted image is the truth.

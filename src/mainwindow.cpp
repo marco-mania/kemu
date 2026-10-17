@@ -15,6 +15,7 @@
 #include "dialogs/settingsdialog.h"
 #include "dialogs/snapshotdialog.h"
 #include "jobs/clonejob.h"
+#include "jobs/diskimportjob.h"
 #include "jobs/downloadjob.h"
 #include "jobs/exportjob.h"
 #include "jobs/importjob.h"
@@ -34,6 +35,8 @@
 #include "utils/vmconfig.h"
 
 #include "kemu_debug.h"
+
+#include <KIO/FileCopyJob>
 
 #include <csignal>
 
@@ -1132,56 +1135,60 @@ void MainWindow::updateDetails()
         perfMonitor->setActive(vmLive);
     }
 
-    const QemuImgProcess::ImageInfo dInfo = diskInfoFor(currentConfig.diskPath());
-    QString diskVal;
-    if (dInfo.isValid) {
-        const QString diskInterfaceStr = VMConfig::toUIString(currentConfig.diskInterface());
+    const auto diskValueFor = [&](const QString &diskPath, VMSpecs::DiskInterface diskInterface) -> QString {
+        const QemuImgProcess::ImageInfo dInfo = diskInfoFor(diskPath);
+        QString diskVal;
+        if (dInfo.isValid) {
+            const QString diskInterfaceStr = VMConfig::toUIString(diskInterface);
 
-        double usagePercent = 0.0;
-        if (dInfo.virtualSizeBytes > 0.0)
-            usagePercent = (static_cast<double>(dInfo.actualSizeBytes) / static_cast<double>(dInfo.virtualSizeBytes)) * 100.0;
-        usagePercent = qBound(0.0, usagePercent, 100.0);
-        const int filledPct = qRound(usagePercent);
+            double usagePercent = 0.0;
+            if (dInfo.virtualSizeBytes > 0.0)
+                usagePercent = (static_cast<double>(dInfo.actualSizeBytes) / static_cast<double>(dInfo.virtualSizeBytes)) * 100.0;
+            usagePercent = qBound(0.0, usagePercent, 100.0);
+            const int filledPct = qRound(usagePercent);
 
-        QString barColor;
-        if (usagePercent < 80.0)
-            barColor = colPositive;
-        else if (usagePercent < 90.0)
-            barColor = colNeutral;
-        else
-            barColor = colNegative;
+            QString barColor;
+            if (usagePercent < 80.0)
+                barColor = colPositive;
+            else if (usagePercent < 90.0)
+                barColor = colNeutral;
+            else
+                barColor = colNegative;
 
-        const QString bgColor = colTrack;
+            const QString bgColor = colTrack;
 
-        const int barWidthPx = 140;
-        const int barHeightPx = 6;
-        const int filledPx = qBound(0, (barWidthPx * filledPct) / 100, barWidthPx);
+            const int barWidthPx = 140;
+            const int barHeightPx = 6;
+            const int filledPx = qBound(0, (barWidthPx * filledPct) / 100, barWidthPx);
 
-        const QString svg =
-            u"<svg xmlns='http://www.w3.org/2000/svg' width='%1' height='%2' "
-            "shape-rendering='crispEdges'>"
-            "<rect width='%1' height='%2' fill='%3'/>"
-            "<rect width='%4' height='%2' fill='%5'/>"
-            "</svg>"_s.arg(barWidthPx)
-                .arg(barHeightPx)
-                .arg(bgColor)
-                .arg(filledPx)
-                .arg(barColor);
+            const QString svg =
+                u"<svg xmlns='http://www.w3.org/2000/svg' width='%1' height='%2' "
+                "shape-rendering='crispEdges'>"
+                "<rect width='%1' height='%2' fill='%3'/>"
+                "<rect width='%4' height='%2' fill='%5'/>"
+                "</svg>"_s.arg(barWidthPx)
+                    .arg(barHeightPx)
+                    .arg(bgColor)
+                    .arg(filledPx)
+                    .arg(barColor);
 
-        const QByteArray svgB64 = svg.toUtf8().toBase64();
-        const QString barHtml =
-            u"<img src='data:image/svg+xml;base64,%1' width='%2' height='%3' "
-            "style='vertical-align:middle;'/>"_s.arg(QString::fromLatin1(svgB64))
-                .arg(barWidthPx)
-                .arg(barHeightPx);
+            const QByteArray svgB64 = svg.toUtf8().toBase64();
+            const QString barHtml =
+                u"<img src='data:image/svg+xml;base64,%1' width='%2' height='%3' "
+                "style='vertical-align:middle;'/>"_s.arg(QString::fromLatin1(svgB64))
+                    .arg(barWidthPx)
+                    .arg(barHeightPx);
 
-        diskVal = u"<span style='white-space:nowrap;'>%1&nbsp;&nbsp;%2&nbsp;&nbsp;%3</span>"_s
-                      .arg(i18n("%1 GB, %2", QString::number(dInfo.virtualSizeGb(), 'f', 1), diskInterfaceStr))
-                      .arg(barHtml)
-                      .arg(i18n("%1 GB used (%2%)", QString::number(dInfo.actualSizeGb(), 'f', 1), QString::number(usagePercent, 'f', 0)));
-    } else {
-        diskVal = i18n("Not available");
-    }
+            diskVal = u"<span style='white-space:nowrap;'>%1&nbsp;&nbsp;%2&nbsp;&nbsp;%3</span>"_s
+                          .arg(i18n("%1 GB, %2", QString::number(dInfo.virtualSizeGb(), 'f', 1), diskInterfaceStr))
+                          .arg(barHtml)
+                          .arg(i18n("%1 GB used (%2%)", QString::number(dInfo.actualSizeGb(), 'f', 1), QString::number(usagePercent, 'f', 0)));
+        } else {
+            diskVal = i18n("Not available");
+        }
+        return diskVal;
+    };
+    const QString diskVal = diskValueFor(currentConfig.diskPath(), currentConfig.diskInterface());
 
     QString gpuVal = VMConfig::toUIString(currentConfig.gpuType());
     if (currentConfig.gpu3dAcceleration())
@@ -1414,6 +1421,18 @@ void MainWindow::updateDetails()
                          {u"audio-card"_s, i18n("Sound Card"), audioVal, true, currentConfig.audioDevice() == VMSpecs::AudioDevice::None},
                          {u"network-wired"_s, i18n("Network Adapter"), netVal, true, currentConfig.networkCard() == VMSpecs::NetworkCard::None}};
 
+    const auto systemDiskRow = std::find_if(rows.cbegin(), rows.cend(), [](const HwRow &row) {
+        return row.iconName == u"drive-harddisk"_s;
+    });
+    qsizetype diskRow = std::distance(rows.cbegin(), systemDiskRow) + 1;
+    const QList<DiskConfig> extraDisks = currentConfig.extraDisks();
+    for (qsizetype i = 0; i < extraDisks.size(); ++i) {
+        const DiskConfig &disk = extraDisks.at(i);
+        const QString label = disk.label.isEmpty() ? i18n("Hard Disk %1", i + 2) : disk.label;
+        const QString value = diskValueFor(getVmDir(currentConfig.name()).absoluteFilePath(disk.fileName), disk.diskInterface);
+        rows.insert(diskRow++, {u"drive-harddisk"_s, label, value, false, false});
+    }
+
     if (!portFwdVal.isEmpty())
         rows.append({u"network-connect"_s, i18n("Port Forwarding"), portFwdVal, false, false});
 
@@ -1613,6 +1632,13 @@ QString MainWindow::saveStateBlockReason(const VmEntry *entry) const
 
     if (!entry->attachedUsb.isEmpty())
         return i18n("a USB device is passed through");
+
+    // QEMU's NVMe controller cannot be migrated.
+    const QList<DiskConfig> extraDisks = entry->config.extraDisks();
+    if (entry->config.diskInterface() == VMSpecs::DiskInterface::Nvme || std::any_of(extraDisks.cbegin(), extraDisks.cend(), [](const DiskConfig &disk) {
+            return disk.diskInterface == VMSpecs::DiskInterface::Nvme;
+        }))
+        return i18n("an NVMe disk is attached");
 
     return {};
 }
@@ -1859,12 +1885,21 @@ void MainWindow::shrinkDisk()
     if (veModel->isBusy(currentConfig.name()))
         return;
 
-    const QemuImgProcess::ImageInfo dInfo = diskInfoFor(currentConfig.diskPath());
+    const QStringList diskPaths = currentConfig.diskPaths(getVmDir(currentConfig.name()));
+
+    double virtualGb = 0.0;
+    double actualGb = 0.0;
+    bool sizesKnown = true;
+    for (const QString &path : diskPaths) {
+        const QemuImgProcess::ImageInfo dInfo = diskInfoFor(path);
+        sizesKnown = sizesKnown && dInfo.isValid;
+        virtualGb += dInfo.virtualSizeGb();
+        actualGb += dInfo.actualSizeGb();
+    }
+
     QString sizeInfo;
-    if (dInfo.isValid) {
-        sizeInfo = i18n("\n\nCurrent size: %1 GB (virtual), %2 GB (actual on disk)",
-                        QString::number(dInfo.virtualSizeGb(), 'f', 1),
-                        QString::number(dInfo.actualSizeGb(), 'f', 1));
+    if (sizesKnown) {
+        sizeInfo = i18n("\n\nCurrent size: %1 GB (virtual), %2 GB (actual on disk)", QString::number(virtualGb, 'f', 1), QString::number(actualGb, 'f', 1));
     }
 
     auto answer = KMessageBox::questionTwoActions(this,
@@ -1880,7 +1915,7 @@ void MainWindow::shrinkDisk()
     if (answer != KMessageBox::PrimaryAction)
         return;
 
-    auto *job = new ShrinkJob(currentConfig.name(), currentConfig.diskPath(), this);
+    auto *job = new ShrinkJob(currentConfig.name(), diskPaths, this);
 
     if (jobTracker) {
         jobTracker->registerJob(job);
@@ -1900,11 +1935,18 @@ void MainWindow::shrinkDisk()
             statusBar()->showMessage(i18n("Disk compaction of VM '%1' failed: %2", vmName, shrinkJob->errorText()));
         } else {
             const VMConfig config = loadVmConfig(getVmDir(vmName).absolutePath());
-            const QemuImgProcess::ImageInfo dInfo = diskInfoFor(config.diskPath());
+
+            double actualGb = 0.0;
+            bool sizesKnown = true;
+            for (const QString &path : config.diskPaths(getVmDir(vmName))) {
+                const QemuImgProcess::ImageInfo dInfo = diskInfoFor(path);
+                sizesKnown = sizesKnown && dInfo.isValid;
+                actualGb += dInfo.actualSizeGb();
+            }
 
             QString newSizeMsg = u"."_s;
-            if (dInfo.isValid) {
-                newSizeMsg = i18n(" (now %1 GB).", QString::number(dInfo.actualSizeGb(), 'f', 1));
+            if (sizesKnown) {
+                newSizeMsg = i18n(" (now %1 GB).", QString::number(actualGb, 'f', 1));
             }
 
             statusBar()->showMessage(i18n("Disk of VM '%1' compacted successfully%2", vmName, newSizeMsg));
@@ -2786,14 +2828,13 @@ void MainWindow::importOVA(const QString &filePath)
 
 void MainWindow::exportOVA(const QString &filePath)
 {
-    const QemuImgProcess::ImageInfo dInfo = diskInfoFor(currentConfig.diskPath());
+    QList<OvaExportJob::DiskImage> disks;
+    for (const QString &path : currentConfig.diskPaths(getVmDir(currentConfig.name()))) {
+        const QemuImgProcess::ImageInfo dInfo = diskInfoFor(path);
+        disks.append({path, dInfo.isValid ? dInfo.virtualSizeBytes : 0});
+    }
 
-    const int diskGb = dInfo.isValid ? qRound(dInfo.virtualSizeGb()) : currentConfig.diskSizeGb();
-
-    VMConfig exportConfig = currentConfig;
-    exportConfig.setDiskSizeGb(diskGb);
-
-    auto *job = new OvaExportJob(currentConfig.name(), currentConfig, currentConfig.diskPath(), dInfo.isValid ? dInfo.virtualSizeBytes : 0, filePath, this);
+    auto *job = new OvaExportJob(currentConfig.name(), currentConfig, disks, filePath, this);
 
     if (jobTracker) {
         jobTracker->registerJob(job);
@@ -3210,7 +3251,11 @@ void MainWindow::manageSnapshotsForVm(const QString &vmName)
 
     // No exec(): dialogParentFor() may return the viewer window, which
     // stopDbusViewer() deletes when the VM exits - taking its children with it.
-    auto *dlg = new SnapshotDialog(vmName, cfg.diskPath(), entry ? entry->qmpClient.data() : nullptr, imageInUse, dialogParentFor(vmName));
+    auto *dlg = new SnapshotDialog(vmName,
+                                   cfg.diskPaths(getVmBaseDir().filePath(vmName)),
+                                   entry ? entry->qmpClient.data() : nullptr,
+                                   imageInUse,
+                                   dialogParentFor(vmName));
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setModal(true);
     dlg->show();
@@ -3393,6 +3438,8 @@ void MainWindow::editVM()
     dialog.setNetworkManager(m_networkManager);
     dialog.setMacUsageInfo(veModel->macUsageInfo());
 
+    const QDir vmDirBefore = getVmDir(currentConfig.name());
+    dialog.setVmDirectory(vmDirBefore.absolutePath(), CloudImageDeployer::hasNoCloudIso(vmDirBefore));
     dialog.setConfig(currentConfig);
 
     if (readOnly) {
@@ -3458,13 +3505,121 @@ void MainWindow::editVM()
         if (newConfig.useUefi() && !QFile::exists(vmPath + u"/OVMF_VARS.fd"_s))
             KMessageBox::information(this, i18n("UEFI enabled. A VARS file will be required on next start."));
 
+        // --- Additional disks ---
+        const QDir vmDir(vmPath);
+        QStringList diskErrors;
+
+        for (const EditVmDialog::RemovedDisk &removed : dialog.removedDisks()) {
+            const QString imagePath = vmDir.filePath(removed.fileName);
+            if (removed.keepPath.isEmpty()) {
+                if (!QFile::remove(imagePath))
+                    diskErrors << i18n("Could not delete %1.", removed.fileName);
+                continue;
+            }
+
+            auto *moveJob = KIO::file_move(QUrl::fromLocalFile(imagePath), QUrl::fromLocalFile(removed.keepPath), -1, KIO::Overwrite);
+            connect(moveJob, &KJob::result, this, [this, removed](KJob *job) {
+                if (job->error()) {
+                    KMessageBox::error(this,
+                                       i18n("Could not move %1 to %2:\n%3\n\nThe image is still in the folder of the virtual machine.",
+                                            removed.fileName,
+                                            removed.keepPath,
+                                            job->errorString()),
+                                       i18n("Remove Disk"));
+                }
+            });
+        }
+
+        QList<DiskImportJob::Item> diskImports;
+        QList<DiskConfig> extraDisks = newConfig.extraDisks();
+
+        for (const EditVmDialog::NewDisk &disk : dialog.newDisks()) {
+            if (!disk.sourcePath.isEmpty()) {
+                diskImports.append({disk.sourcePath, disk.disk});
+                continue;
+            }
+
+            KProcess imgProcess;
+            imgProcess.setOutputChannelMode(KProcess::SeparateChannels);
+            imgProcess.setProgram(ExternalTools::instance().path(ExternalTools::QemuImg));
+            imgProcess.setArguments({u"create"_s, u"-f"_s, u"qcow2"_s, vmDir.filePath(disk.disk.fileName), u"%1G"_s.arg(disk.sizeGb)});
+            imgProcess.start();
+            imgProcess.waitForFinished(10000);
+
+            if (imgProcess.exitStatus() != KProcess::NormalExit || imgProcess.exitCode() != 0) {
+                QFile::remove(vmDir.filePath(disk.disk.fileName));
+                diskErrors << i18n("Could not create the disk image %1.", disk.disk.fileName);
+                extraDisks.removeIf([&disk](const DiskConfig &d) {
+                    return d.fileName == disk.disk.fileName;
+                });
+            }
+        }
+        newConfig.setExtraDisks(extraDisks);
+
         saveVmConfig(vmPath, newConfig);
         currentConfig = newConfig;
         loadVmList();
         selectVmByName(newConfig.name());
         updateDetails();
         statusBar()->showMessage(i18n("VM '%1' updated.", newConfig.name()));
+
+        if (!diskImports.isEmpty())
+            importDisks(newConfig.name(), diskImports);
+
+        if (!diskErrors.isEmpty())
+            KMessageBox::error(this, diskErrors.join(u'\n'), i18n("Disks"));
     }
+}
+
+void MainWindow::importDisks(const QString &vmName, const QList<DiskImportJob::Item> &items)
+{
+    if (!requireTool(ExternalTools::QemuImg))
+        return;
+
+    auto *job = new DiskImportJob(vmName, getVmDir(vmName), items, this);
+
+    if (jobTracker)
+        jobTracker->registerJob(job);
+
+    veModel->setVmState(vmName, VmEntry::State::Creating);
+
+    connect(job, &KJob::finished, this, [this](KJob *kjob) {
+        auto *importJob = qobject_cast<DiskImportJob *>(kjob);
+        if (!importJob)
+            return;
+
+        const QString name = importJob->vmName();
+        veModel->setVmState(name, VmEntry::State::Stopped);
+
+        const QList<DiskConfig> imported = importJob->importedDisks();
+        if (!imported.isEmpty()) {
+            const QString vmPath = getVmDir(name).absolutePath();
+            VMConfig config = loadVmConfig(vmPath);
+            for (const DiskConfig &disk : imported)
+                config.addExtraDisk(disk);
+            saveVmConfig(vmPath, config);
+            veModel->updateConfig(name, config);
+            if (currentConfig.name() == name)
+                currentConfig = config;
+        }
+
+        if (importJob->error() == KJob::KilledJobError) {
+            statusBar()->showMessage(i18n("Operation cancelled."));
+        } else if (importJob->error()) {
+            statusBar()->showMessage(i18n("Disk import for VM '%1' failed.", name));
+            KMessageBox::error(this, importJob->errorText(), i18n("Disk Import Failed"));
+        } else {
+            statusBar()->showMessage(i18np("Disk imported into VM '%2'.", "%1 disks imported into VM '%2'.", imported.size(), name));
+        }
+
+        if (currentConfig.name() == name)
+            updateDetails();
+        updateActionStates();
+    });
+
+    job->start();
+    statusBar()->showMessage(i18n("Importing disk image into VM '%1'...", vmName));
+    updateActionStates();
 }
 
 void MainWindow::deleteVM()
@@ -3544,7 +3699,7 @@ void MainWindow::cloneVM()
     const QString srcPath = baseDir.filePath(srcName);
     const QString dstPath = baseDir.filePath(cloneName);
 
-    auto *job = new CloneJob(srcName, srcPath, dstPath, this);
+    auto *job = new CloneJob(srcName, srcPath, dstPath, loadVmConfig(srcPath).diskFileNames(), this);
 
     if (jobTracker)
         jobTracker->registerJob(job);

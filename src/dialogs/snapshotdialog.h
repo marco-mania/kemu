@@ -30,7 +30,7 @@ class SnapshotDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit SnapshotDialog(const QString &vmName, const QString &diskPath, QMPClient *qmp, bool imageInUse, QWidget *parent = nullptr);
+    explicit SnapshotDialog(const QString &vmName, const QStringList &diskPaths, QMPClient *qmp, bool imageInUse, QWidget *parent = nullptr);
 
 public Q_SLOTS:
     void reject() override;
@@ -61,7 +61,7 @@ private:
     KFormat m_format;
 
     QString m_vmName;
-    QString m_diskPath;
+    QStringList m_diskPaths; // system disk first
 
     QTreeWidget *m_tree = nullptr;
     QTextBrowser *m_detailsBrowser = nullptr;

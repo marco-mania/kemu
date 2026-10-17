@@ -45,17 +45,11 @@ void writeRasd(QXmlStreamWriter &xml, const QString &element, const QString &tex
 
 }
 
-OvaExportJob::OvaExportJob(const QString &vmName,
-                           const VMConfig &config,
-                           const QString &diskPath,
-                           qint64 diskCapacityBytes,
-                           const QString &outputFilePath,
-                           QObject *parent)
+OvaExportJob::OvaExportJob(const QString &vmName, const VMConfig &config, const QList<DiskImage> &disks, const QString &outputFilePath, QObject *parent)
     : ArchiveStreamJob(parent)
     , m_vmName(vmName)
     , m_config(config)
-    , m_diskPath(diskPath)
-    , m_diskCapacityBytes(diskCapacityBytes)
+    , m_disks(disks)
     , m_outputFilePath(outputFilePath)
 {
 }
@@ -74,12 +68,23 @@ void OvaExportJob::start()
         return;
     }
 
-    const qint64 sourceSize = QFileInfo(m_diskPath).size();
-    if (sourceSize <= 0) {
+    if (m_disks.isEmpty()) {
         setError(SourceError);
         setErrorText(i18n("The disk image of VM '%1' is missing or empty.", m_vmName));
         emitResult();
         return;
+    }
+
+    qint64 sourceSize = 0;
+    for (const DiskImage &disk : std::as_const(m_disks)) {
+        const qint64 size = QFileInfo(disk.path).size();
+        if (size <= 0) {
+            setError(SourceError);
+            setErrorText(i18n("The disk image %1 of VM '%2' is missing or empty.", QFileInfo(disk.path).fileName(), m_vmName));
+            emitResult();
+            return;
+        }
+        sourceSize += size;
     }
 
     // Staging copy plus the finished OVA both live on this filesystem.
@@ -91,24 +96,35 @@ void OvaExportJob::start()
         return;
     }
 
-    m_vmdkFileName = m_vmName + u"-disk1.vmdk"_s;
+    for (qsizetype i = 0; i < m_disks.size(); ++i)
+        m_vmdkFileNames << m_vmName + u"-disk%1.vmdk"_s.arg(i + 1);
     m_ovfFileName = m_vmName + u".ovf"_s;
     m_mfFileName = m_vmName + u".mf"_s;
 
+    convertNextDisk();
+}
+
+void OvaExportJob::convertNextDisk()
+{
     Q_EMIT description(this,
                        i18n("Exporting as OVA"),
                        QPair<QString, QString>(i18n("VM"), m_vmName),
-                       QPair<QString, QString>(i18n("Step"), i18n("Converting disk image...")));
+                       QPair<QString, QString>(i18n("Step"),
+                                               m_disks.size() > 1 ? i18n("Converting disk image %1 of %2...", m_convertIndex + 1, m_disks.size())
+                                                                  : i18n("Converting disk image...")));
 
+    if (m_converter)
+        m_converter->deleteLater();
     m_converter = new QemuImgProcess(this);
 
     connect(m_converter, &QemuImgProcess::progress, this, [this](double percent) {
-        emitPercent(qRound(percent * (kConvertBand / 100.0)), 1000);
+        const double perDisk = kConvertBand / double(m_disks.size());
+        emitPercent(qRound(m_convertIndex * perDisk + percent * perDisk / 100.0), 1000);
     });
     connect(m_converter, &QemuImgProcess::finished, this, &OvaExportJob::onConvertFinished);
 
-    const QString vmdkPath = m_stagingDir->filePath(m_vmdkFileName);
-    const QStringList args = {u"convert"_s, u"-p"_s, u"-O"_s, u"vmdk"_s, u"-o"_s, u"subformat=streamOptimized"_s, m_diskPath, vmdkPath};
+    const QString vmdkPath = m_stagingDir->filePath(m_vmdkFileNames.at(m_convertIndex));
+    const QStringList args = {u"convert"_s, u"-p"_s, u"-O"_s, u"vmdk"_s, u"-o"_s, u"subformat=streamOptimized"_s, m_disks.at(m_convertIndex).path, vmdkPath};
 
     if (!m_converter->start(args)) {
         setError(ToolError);
@@ -123,6 +139,11 @@ void OvaExportJob::onConvertFinished(bool ok)
         setError(ToolError);
         setErrorText(m_converter->errorText());
         emitResult();
+        return;
+    }
+
+    if (++m_convertIndex < m_disks.size()) {
+        convertNextDisk();
         return;
     }
 
@@ -181,8 +202,6 @@ bool OvaExportJob::createOvfDescriptor()
     if (!file.open(QIODevice::WriteOnly))
         return false;
 
-    const qint64 vmdkSize = QFileInfo(m_stagingDir->filePath(m_vmdkFileName)).size();
-
     QXmlStreamWriter xml(&file);
     xml.setAutoFormatting(true);
     xml.writeStartDocument();
@@ -196,23 +215,27 @@ bool OvaExportJob::createOvfDescriptor()
 
     // References
     xml.writeStartElement(u"References"_s);
-    xml.writeStartElement(u"File"_s);
-    xml.writeAttribute(u"ovf:href"_s, m_vmdkFileName);
-    xml.writeAttribute(u"ovf:id"_s, u"file1"_s);
-    xml.writeAttribute(u"ovf:size"_s, QString::number(vmdkSize));
-    xml.writeEndElement();
+    for (qsizetype i = 0; i < m_vmdkFileNames.size(); ++i) {
+        xml.writeStartElement(u"File"_s);
+        xml.writeAttribute(u"ovf:href"_s, m_vmdkFileNames.at(i));
+        xml.writeAttribute(u"ovf:id"_s, u"file%1"_s.arg(i + 1));
+        xml.writeAttribute(u"ovf:size"_s, QString::number(QFileInfo(m_stagingDir->filePath(m_vmdkFileNames.at(i))).size()));
+        xml.writeEndElement();
+    }
     xml.writeEndElement();
 
     // DiskSection
     xml.writeStartElement(u"DiskSection"_s);
     xml.writeTextElement(u"Info"_s, u"Virtual disk information"_s);
-    xml.writeStartElement(u"Disk"_s);
-    // ovf:capacity defaults to bytes; use the exact virtual size.
-    xml.writeAttribute(u"ovf:capacity"_s, QString::number(m_diskCapacityBytes));
-    xml.writeAttribute(u"ovf:diskId"_s, u"vmdisk1"_s);
-    xml.writeAttribute(u"ovf:fileRef"_s, u"file1"_s);
-    xml.writeAttribute(u"ovf:format"_s, u"http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"_s);
-    xml.writeEndElement();
+    for (qsizetype i = 0; i < m_disks.size(); ++i) {
+        xml.writeStartElement(u"Disk"_s);
+        // ovf:capacity defaults to bytes; use the exact virtual size.
+        xml.writeAttribute(u"ovf:capacity"_s, QString::number(m_disks.at(i).capacityBytes));
+        xml.writeAttribute(u"ovf:diskId"_s, u"vmdisk%1"_s.arg(i + 1));
+        xml.writeAttribute(u"ovf:fileRef"_s, u"file%1"_s.arg(i + 1));
+        xml.writeAttribute(u"ovf:format"_s, u"http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"_s);
+        xml.writeEndElement();
+    }
     xml.writeEndElement();
 
     // NetworkSection
@@ -276,16 +299,19 @@ bool OvaExportJob::createOvfDescriptor()
     writeRasd(xml, u"ResourceType"_s, u"20"_s);
     xml.writeEndElement();
 
-    // Hard disk
-    xml.writeStartElement(u"Item"_s);
-    writeRasd(xml, u"AddressOnParent"_s, u"0"_s);
-    writeRasd(xml, u"Description"_s, u"Hard disk image"_s);
-    writeRasd(xml, u"ElementName"_s, u"disk1"_s);
-    writeRasd(xml, u"HostResource"_s, u"ovf:/disk/vmdisk1"_s);
-    writeRasd(xml, u"InstanceID"_s, u"4"_s);
-    writeRasd(xml, u"Parent"_s, u"3"_s);
-    writeRasd(xml, u"ResourceType"_s, u"17"_s);
-    xml.writeEndElement();
+    // Hard disks
+    int instanceId = 4;
+    for (qsizetype i = 0; i < m_disks.size(); ++i) {
+        xml.writeStartElement(u"Item"_s);
+        writeRasd(xml, u"AddressOnParent"_s, QString::number(i));
+        writeRasd(xml, u"Description"_s, u"Hard disk image"_s);
+        writeRasd(xml, u"ElementName"_s, u"disk%1"_s.arg(i + 1));
+        writeRasd(xml, u"HostResource"_s, u"ovf:/disk/vmdisk%1"_s.arg(i + 1));
+        writeRasd(xml, u"InstanceID"_s, QString::number(instanceId++));
+        writeRasd(xml, u"Parent"_s, u"3"_s);
+        writeRasd(xml, u"ResourceType"_s, u"17"_s);
+        xml.writeEndElement();
+    }
 
     // Network adapter
     if (m_config.networkCard() != VMSpecs::NetworkCard::None) {
@@ -300,7 +326,7 @@ bool OvaExportJob::createOvfDescriptor()
         writeRasd(xml, u"AutomaticAllocation"_s, u"true"_s);
         writeRasd(xml, u"Connection"_s, u"NAT"_s);
         writeRasd(xml, u"ElementName"_s, u"Network Adapter 1"_s);
-        writeRasd(xml, u"InstanceID"_s, u"5"_s);
+        writeRasd(xml, u"InstanceID"_s, QString::number(instanceId++));
         writeRasd(xml, u"ResourceType"_s, u"10"_s);
         xml.writeEndElement();
     }
@@ -316,7 +342,7 @@ bool OvaExportJob::createOvfDescriptor()
 
 bool OvaExportJob::createManifest()
 {
-    const QStringList files = {m_ovfFileName, m_vmdkFileName};
+    const QStringList files = QStringList{m_ovfFileName} + m_vmdkFileNames;
 
     qint64 totalBytes = 0;
     for (const QString &fileName : files)
@@ -393,7 +419,7 @@ bool OvaExportJob::packageOva()
     }
 
     // OVA requires the descriptor first, then the manifest, then the disks.
-    const QStringList filesToPack = {m_ovfFileName, m_mfFileName, m_vmdkFileName};
+    const QStringList filesToPack = QStringList{m_ovfFileName, m_mfFileName} + m_vmdkFileNames;
 
     qint64 totalBytes = 0;
     for (const QString &fileName : filesToPack)

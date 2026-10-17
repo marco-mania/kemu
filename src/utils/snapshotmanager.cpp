@@ -8,6 +8,10 @@
 
 #include "utils/externaltools.h"
 
+#include <QFileInfo>
+
+#include <algorithm>
+
 #include "kemu_debug.h"
 
 namespace
@@ -56,19 +60,110 @@ QList<SnapshotInfo> SnapshotManager::listSnapshots(const QString &diskPath, QStr
     return list;
 }
 
-void SnapshotManager::createOfflineSnapshot(const QString &diskPath, const QString &name, std::function<void(bool, QString)> callback)
+QStringList SnapshotManager::disksWithoutSnapshot(const QStringList &diskPaths, const QString &name) const
 {
-    runQemuImgAsync({u"snapshot"_s, u"-c"_s, name, diskPath}, std::move(callback));
+    QStringList missing;
+    for (const QString &path : diskPaths) {
+        if (!hasSnapshot(path, name))
+            missing << path;
+    }
+    return missing;
 }
 
-void SnapshotManager::revertOfflineSnapshot(const QString &diskPath, const QString &name, std::function<void(bool, QString)> callback)
+bool SnapshotManager::hasSnapshot(const QString &diskPath, const QString &name) const
 {
-    runQemuImgAsync({u"snapshot"_s, u"-a"_s, name, diskPath}, std::move(callback));
+    const auto res = runQemuImg({u"info"_s, u"--force-share"_s, u"--output=json"_s, diskPath});
+    if (res.exitCode != 0)
+        return false;
+
+    const QList<SnapshotInfo> list = parseSnapshotListJson(res.out);
+    return std::any_of(list.cbegin(), list.cend(), [&name](const SnapshotInfo &snap) {
+        return snap.name == name;
+    });
 }
 
-void SnapshotManager::deleteOfflineSnapshot(const QString &diskPath, const QString &name, std::function<void(bool, QString)> callback)
+void SnapshotManager::createOfflineSnapshot(const QStringList &diskPaths, const QString &name, std::function<void(bool, QString)> callback)
 {
-    runQemuImgAsync({u"snapshot"_s, u"-d"_s, name, diskPath}, std::move(callback));
+    QList<QStringList> steps;
+    for (const QString &path : diskPaths)
+        steps << QStringList{u"snapshot"_s, u"-c"_s, name, path};
+
+    runQemuImgSequence(steps, [this, diskPaths, name, callback](int failedStep, QString err) {
+        if (failedStep < 0) {
+            callback(true, {});
+            return;
+        }
+
+        // All or nothing: a snapshot that misses a disk could not be reverted
+        // consistently.
+        QList<QStringList> rollback;
+        for (int i = 0; i < failedStep; ++i)
+            rollback << QStringList{u"snapshot"_s, u"-d"_s, name, diskPaths.at(i)};
+
+        const QString message = diskPaths.size() > 1 ? i18n("%1: %2", QFileInfo(diskPaths.at(failedStep)).fileName(), err) : err;
+        runQemuImgSequence(rollback, [callback, message](int, QString) {
+            callback(false, message);
+        });
+    });
+}
+
+void SnapshotManager::revertOfflineSnapshot(const QStringList &diskPaths, const QString &name, std::function<void(bool, QString)> callback)
+{
+    if (diskPaths.isEmpty() || !hasSnapshot(diskPaths.first(), name)) {
+        callback(false, i18n("The system disk has no snapshot named \"%1\".", name));
+        return;
+    }
+
+    const QStringList missing = disksWithoutSnapshot(diskPaths, name);
+
+    QStringList targets;
+    QList<QStringList> steps;
+    for (const QString &path : diskPaths) {
+        if (missing.contains(path))
+            continue;
+        targets << path;
+        steps << QStringList{u"snapshot"_s, u"-a"_s, name, path};
+    }
+
+    runQemuImgSequence(steps, [targets, callback](int failedStep, QString err) {
+        if (failedStep < 0)
+            callback(true, {});
+        else
+            callback(false, targets.size() > 1 ? i18n("%1: %2", QFileInfo(targets.at(failedStep)).fileName(), err) : err);
+    });
+}
+
+void SnapshotManager::deleteOfflineSnapshot(const QStringList &diskPaths, const QString &name, std::function<void(bool, QString)> callback)
+{
+    const QStringList missing = disksWithoutSnapshot(diskPaths, name);
+
+    // System disk last: if anything fails, the snapshot stays listed and the
+    // deletion can be retried.
+    QStringList targets;
+    QList<QStringList> steps;
+    for (qsizetype i = diskPaths.size() - 1; i >= 0; --i) {
+        if (missing.contains(diskPaths.at(i)))
+            continue;
+        targets << diskPaths.at(i);
+        steps << QStringList{u"snapshot"_s, u"-d"_s, name, diskPaths.at(i)};
+    }
+
+    runQemuImgSequence(steps, [targets, callback](int failedStep, QString err) {
+        if (failedStep < 0)
+            callback(true, {});
+        else
+            callback(false, targets.size() > 1 ? i18n("%1: %2", QFileInfo(targets.at(failedStep)).fileName(), err) : err);
+    });
+}
+
+namespace
+{
+// The RAM state goes to the system disk, which every snapshot covers.
+QString vmstateNode(const QStringList &devices, const QStringList &nodes)
+{
+    const qsizetype i = devices.indexOf(u"sysdisk"_s);
+    return i >= 0 ? nodes.at(i) : nodes.value(0);
+}
 }
 
 void SnapshotManager::createLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback)
@@ -78,23 +173,29 @@ void SnapshotManager::createLiveSnapshot(QMPClient *qmp, const QString &name, st
     const QPointer<SnapshotManager> self(this);
     const QPointer<QMPClient> client(qmp);
 
-    queryWritableQcow2Nodes(qmp, [this, self, client, name, callback](QStringList nodes, QString err) {
+    queryQcow2Nodes(qmp, name, [this, self, client, name, callback](QList<BlockNode> blockNodes, QString err) {
         if (!self || !client)
             return;
         if (!err.isEmpty()) {
             callback(false, err);
             return;
         }
-        if (nodes.isEmpty()) {
+        if (blockNodes.isEmpty()) {
             callback(false, i18n("No writable qcow2 device found (snapshots require qcow2)"));
             return;
+        }
+
+        QStringList devices, nodes;
+        for (const BlockNode &n : std::as_const(blockNodes)) {
+            devices << n.device;
+            nodes << n.node;
         }
 
         const QString jobId = nextJobId(u"kemu-snapsave"_s);
         QJsonObject args{
             {u"job-id"_s, jobId},
             {u"tag"_s, name},
-            {u"vmstate"_s, nodes.first()}, // RAM state target
+            {u"vmstate"_s, vmstateNode(devices, nodes)},
             {u"devices"_s, QJsonArray::fromStringList(nodes)},
         };
         startSnapshotJob(client, u"snapshot-save"_s, args, jobId, name, callback);
@@ -106,15 +207,24 @@ void SnapshotManager::revertLiveSnapshot(QMPClient *qmp, const QString &name, st
     const QPointer<SnapshotManager> self(this);
     const QPointer<QMPClient> client(qmp);
 
-    queryWritableQcow2Nodes(qmp, [this, self, client, name, callback](QStringList nodes, QString err) {
+    queryQcow2Nodes(qmp, name, [this, self, client, name, callback](QList<BlockNode> blockNodes, QString err) {
         if (!self || !client)
             return;
         if (!err.isEmpty()) {
             callback(false, err);
             return;
         }
+
+        // Disks added after the snapshot was taken keep their current content.
+        QStringList devices, nodes;
+        for (const BlockNode &n : std::as_const(blockNodes)) {
+            if (!n.hasTag)
+                continue;
+            devices << n.device;
+            nodes << n.node;
+        }
         if (nodes.isEmpty()) {
-            callback(false, i18n("No writable qcow2 device found (snapshots require qcow2)"));
+            callback(false, i18n("No disk carries the snapshot \"%1\".", name));
             return;
         }
 
@@ -122,7 +232,7 @@ void SnapshotManager::revertLiveSnapshot(QMPClient *qmp, const QString &name, st
         QJsonObject args{
             {u"job-id"_s, jobId},
             {u"tag"_s, name},
-            {u"vmstate"_s, nodes.first()},
+            {u"vmstate"_s, vmstateNode(devices, nodes)},
             {u"devices"_s, QJsonArray::fromStringList(nodes)},
         };
         startSnapshotJob(client, u"snapshot-load"_s, args, jobId, name, callback);
@@ -134,15 +244,21 @@ void SnapshotManager::deleteLiveSnapshot(QMPClient *qmp, const QString &name, st
     const QPointer<SnapshotManager> self(this);
     const QPointer<QMPClient> client(qmp);
 
-    queryWritableQcow2Nodes(qmp, [this, self, client, name, callback](QStringList nodes, QString err) {
+    queryQcow2Nodes(qmp, name, [this, self, client, name, callback](QList<BlockNode> blockNodes, QString err) {
         if (!self || !client)
             return;
         if (!err.isEmpty()) {
             callback(false, err);
             return;
         }
+
+        QStringList nodes;
+        for (const BlockNode &n : std::as_const(blockNodes)) {
+            if (n.hasTag)
+                nodes << n.node;
+        }
         if (nodes.isEmpty()) {
-            callback(false, i18n("No writable qcow2 device found (snapshots require qcow2)"));
+            callback(false, i18n("No disk carries the snapshot \"%1\".", name));
             return;
         }
 
@@ -158,7 +274,11 @@ void SnapshotManager::deleteLiveSnapshot(QMPClient *qmp, const QString &name, st
 
 // Combined (auto-detect)
 
-void SnapshotManager::createSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback)
+void SnapshotManager::createSnapshot(const QStringList &diskPaths,
+                                     const QString &name,
+                                     QMPClient *qmp,
+                                     bool imageInUse,
+                                     std::function<void(bool, QString)> callback)
 {
     if (qmp && qmp->isConnected()) {
         createLiveSnapshot(qmp, name, std::move(callback));
@@ -168,10 +288,14 @@ void SnapshotManager::createSnapshot(const QString &diskPath, const QString &nam
         callback(false, imageBusyError());
         return;
     }
-    createOfflineSnapshot(diskPath, name, std::move(callback));
+    createOfflineSnapshot(diskPaths, name, std::move(callback));
 }
 
-void SnapshotManager::revertSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback)
+void SnapshotManager::revertSnapshot(const QStringList &diskPaths,
+                                     const QString &name,
+                                     QMPClient *qmp,
+                                     bool imageInUse,
+                                     std::function<void(bool, QString)> callback)
 {
     if (qmp && qmp->isConnected()) {
         revertLiveSnapshot(qmp, name, callback);
@@ -181,10 +305,14 @@ void SnapshotManager::revertSnapshot(const QString &diskPath, const QString &nam
         callback(false, imageBusyError());
         return;
     }
-    revertOfflineSnapshot(diskPath, name, std::move(callback));
+    revertOfflineSnapshot(diskPaths, name, std::move(callback));
 }
 
-void SnapshotManager::deleteSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback)
+void SnapshotManager::deleteSnapshot(const QStringList &diskPaths,
+                                     const QString &name,
+                                     QMPClient *qmp,
+                                     bool imageInUse,
+                                     std::function<void(bool, QString)> callback)
 {
     if (qmp && qmp->isConnected()) {
         deleteLiveSnapshot(qmp, name, callback);
@@ -194,7 +322,7 @@ void SnapshotManager::deleteSnapshot(const QString &diskPath, const QString &nam
         callback(false, imageBusyError());
         return;
     }
-    deleteOfflineSnapshot(diskPath, name, std::move(callback));
+    deleteOfflineSnapshot(diskPaths, name, std::move(callback));
 }
 
 // Descriptions (Sidecar JSON)
@@ -340,23 +468,31 @@ QString SnapshotManager::nextJobId(const QString &prefix)
     return u"%1-%2-%3"_s.arg(prefix).arg(QDateTime::currentMSecsSinceEpoch()).arg(++m_jobCounter);
 }
 
-void SnapshotManager::queryWritableQcow2Nodes(QMPClient *qmp, std::function<void(QStringList, QString)> cb)
+void SnapshotManager::queryQcow2Nodes(QMPClient *qmp, const QString &tag, std::function<void(QList<BlockNode>, QString)> cb)
 {
-    qmp->sendCommand(u"query-named-block-nodes"_s, {}, [cb](QMPResult r) {
+    qmp->sendCommand(u"query-block"_s, {}, [cb, tag](QMPResult r) {
         if (!r.success) {
             cb({}, r.errorMessage);
             return;
         }
-        QStringList nodes;
+        QList<BlockNode> nodes;
         for (const QJsonValue &v : r.dataArray) {
             const QJsonObject o = v.toObject();
-            if (o.value(u"drv"_s).toString() != u"qcow2"_s)
+            const QJsonObject inserted = o.value(u"inserted"_s).toObject();
+            if (inserted.value(u"drv"_s).toString() != u"qcow2"_s || inserted.value(u"ro"_s).toBool())
                 continue;
-            if (o.value(u"ro"_s).toBool())
+
+            BlockNode node;
+            node.device = o.value(u"device"_s).toString();
+            node.node = inserted.value(u"node-name"_s).toString();
+            if (node.node.isEmpty())
                 continue;
-            const QString name = o.value(u"node-name"_s).toString();
-            if (!name.isEmpty())
-                nodes.append(name);
+
+            const QJsonArray snapshots = inserted.value(u"image"_s).toObject().value(u"snapshots"_s).toArray();
+            node.hasTag = std::any_of(snapshots.cbegin(), snapshots.cend(), [&tag](const QJsonValue &snap) {
+                return snap.toObject().value(u"name"_s).toString() == tag;
+            });
+            nodes.append(node);
         }
         cb(nodes, {});
     });
@@ -465,6 +601,23 @@ void SnapshotManager::runQemuImgAsync(const QStringList &args, std::function<voi
 
     proc->start();
     limit->start();
+}
+
+void SnapshotManager::runQemuImgSequence(QList<QStringList> steps, std::function<void(int, QString)> callback, int index)
+{
+    if (index >= steps.size()) {
+        callback(-1, {});
+        return;
+    }
+
+    const QStringList args = steps.at(index);
+    runQemuImgAsync(args, [this, steps = std::move(steps), callback, index](bool ok, QString err) mutable {
+        if (!ok) {
+            callback(index, err);
+            return;
+        }
+        runQemuImgSequence(std::move(steps), std::move(callback), index + 1);
+    });
 }
 
 QList<SnapshotInfo> SnapshotManager::parseSnapshotListJson(const QString &output) const

@@ -7,12 +7,17 @@
 #include "editvmdialog.h"
 
 #include "const.h"
+#include "dialogs/diskdialog.h"
 #include "dialogs/settingsdialog.h"
+#include "utils/qemuimgprocess.h"
 #include "utils/sandboxcapabilities.h"
+#include "utils/snapshotmanager.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
 
 #include <KMessageBox>
+
+#include <QScopeGuard>
 
 namespace
 {
@@ -156,7 +161,8 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     diskSpin->setRange(KEMUConst::DefaultMinDiskSizeGB, 32000);
     diskSpin->setValue(40);
     diskSpin->setSuffix(i18n(" GB"));
-    genLayout->addRow(i18n("Disk:"), diskSpin);
+    diskSpin->setToolTip(i18n("This is the size of the system disk. You can add additional disks under Hardware."));
+    genLayout->addRow(i18n("System Disk:"), diskSpin);
     diskLabel = qobject_cast<QLabel *>(genLayout->labelForField(diskSpin));
 
     isoPathRequester = new KUrlRequester();
@@ -344,11 +350,55 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     diskInterfaceCombo->addItem(VMConfig::toUIString(VMSpecs::DiskInterface::Virtio), static_cast<int>(VMSpecs::DiskInterface::Virtio));
     diskInterfaceCombo->addItem(VMConfig::toUIString(VMSpecs::DiskInterface::Nvme), static_cast<int>(VMSpecs::DiskInterface::Nvme));
     diskInterfaceCombo->addItem(VMConfig::toUIString(VMSpecs::DiskInterface::SataIde), static_cast<int>(VMSpecs::DiskInterface::SataIde));
+    diskInterfaceCombo->setToolTip(i18n("This is the disc controller of the system disk."));
     hwLayout->addRow(i18n("Disk Controller:"), diskInterfaceCombo);
 
     diskHintLabel = new QLabel();
     diskHintLabel->setStyleSheet(infoStyle(KColorScheme::NeutralText));
     hwLayout->addRow({}, diskHintLabel);
+
+    diskHintLabel->setVisible(false);
+
+    auto *extraDisksWidget = new QWidget();
+    auto *extraDisksLayout = new QVBoxLayout(extraDisksWidget);
+    extraDisksLayout->setContentsMargins(0, 0, 0, 0);
+
+    diskTree = new QTreeWidget();
+    diskTree->setHeaderLabels({i18n("Name"), i18n("Size"), i18n("Controller")});
+    diskTree->setRootIsDecorated(false);
+    diskTree->setUniformRowHeights(true);
+    diskTree->setSelectionMode(QAbstractItemView::SingleSelection);
+    diskTree->setMaximumHeight(diskTree->fontMetrics().height() * 8);
+    diskTree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    diskTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    diskTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    extraDisksLayout->addWidget(diskTree);
+
+    auto *diskButtonsLayout = new QHBoxLayout();
+    addDiskButton = new QPushButton(QIcon::fromTheme(u"list-add"_s), i18n("Add Disk…"));
+    editDiskButton = new QPushButton(QIcon::fromTheme(u"document-properties"_s), i18n("Properties…"));
+    removeDiskButton = new QPushButton(QIcon::fromTheme(u"list-remove"_s), i18n("Remove"));
+    diskButtonsLayout->addWidget(addDiskButton);
+    diskButtonsLayout->addWidget(editDiskButton);
+    diskButtonsLayout->addWidget(removeDiskButton);
+    diskButtonsLayout->addStretch();
+    extraDisksLayout->addLayout(diskButtonsLayout);
+
+    storageWarningLabel = new QLabel();
+    storageWarningLabel->setStyleSheet(infoStyle(KColorScheme::NegativeText));
+    storageWarningLabel->setWordWrap(true);
+    storageWarningLabel->setVisible(false);
+    extraDisksLayout->addWidget(storageWarningLabel);
+
+    hwLayout->addRow(i18n("Additional Disks:"), extraDisksWidget);
+    // A VM that does not exist yet has no folder to put further disks into.
+    hwLayout->setRowVisible(extraDisksWidget, m_mode == Mode::Edit);
+
+    connect(addDiskButton, &QPushButton::clicked, this, &EditVmDialog::addDisk);
+    connect(editDiskButton, &QPushButton::clicked, this, &EditVmDialog::editSelectedDisk);
+    connect(removeDiskButton, &QPushButton::clicked, this, &EditVmDialog::removeSelectedDisk);
+    connect(diskTree, &QTreeWidget::itemSelectionChanged, this, &EditVmDialog::updateDiskButtons);
+    connect(diskTree, &QTreeWidget::itemDoubleClicked, this, &EditVmDialog::editSelectedDisk);
 
     usbCombo = new QComboBox();
     usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Xhci), static_cast<int>(VMSpecs::UsbController::Xhci));
@@ -682,6 +732,8 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 
     connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::updateDiskInterfaceHint);
     connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::onMachineTypeChanged);
+    connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::validateForm);
+    connect(diskInterfaceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::validateForm);
 
     connect(usbCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
         updateInputDeviceAvailability();
@@ -793,6 +845,11 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 void EditVmDialog::setConfig(const VMConfig &config)
 {
     m_original = config;
+
+    m_disks.clear();
+    m_removedDisks.clear();
+    for (const DiskConfig &disk : config.extraDisks())
+        m_disks.append({disk, true, 0, {}});
 
     if (m_mode == Mode::Edit)
         setWindowTitle(i18n("Edit VM: %1", config.name()));
@@ -912,6 +969,7 @@ void EditVmDialog::setConfig(const VMConfig &config)
         resolutionCombo->setCurrentIndex(0);
 
     applyModeConstraints();
+    refreshDiskList();
 }
 
 void EditVmDialog::setReadOnly(bool readOnly)
@@ -1259,6 +1317,15 @@ VMConfig EditVmDialog::getResult() const
     }
     c.setPortForwards(rules);
     c.setDiskInterface(static_cast<VMSpecs::DiskInterface>(diskInterfaceCombo->currentData().toInt()));
+
+    // Imported images join the configuration once their conversion is done.
+    QList<DiskConfig> extraDisks;
+    for (const DiskEntry &entry : m_disks) {
+        if (entry.sourcePath.isEmpty())
+            extraDisks << entry.disk;
+    }
+    c.setExtraDisks(extraDisks);
+
     c.setUsbController(static_cast<VMSpecs::UsbController>(usbCombo->currentData().toInt()));
     c.setPointerDevice(static_cast<VMSpecs::PointerDevice>(mouseCombo->currentData().toInt()));
     c.setKeyboardDevice(static_cast<VMSpecs::KeyboardDevice>(keyboardCombo->currentData().toInt()));
@@ -1268,6 +1335,10 @@ VMConfig EditVmDialog::getResult() const
 
 void EditVmDialog::updateDiskInterfaceHint()
 {
+    const auto updateVisibility = qScopeGuard([this] {
+        diskHintLabel->setVisible(!diskHintLabel->text().isEmpty());
+    });
+
     const auto disk = static_cast<VMSpecs::DiskInterface>(diskInterfaceCombo->currentData().toInt());
     const auto machine = static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt());
     const auto os = static_cast<VMSpecs::OsType>(osTypeCombo->currentData().toInt());
@@ -1626,8 +1697,210 @@ void EditVmDialog::validateForm()
         hostnameWarningLabel->clear();
     }
 
+    if (storageWarningLabel) {
+        const QString storageError = storageLayoutError();
+        storageWarningLabel->setText(storageError);
+        storageWarningLabel->setVisible(!storageError.isEmpty());
+        if (!storageError.isEmpty())
+            valid = false;
+    }
+
     if (auto *ok = buttonBox ? buttonBox->button(QDialogButtonBox::Ok) : nullptr)
         ok->setEnabled(valid);
+}
+
+void EditVmDialog::setVmDirectory(const QString &path, bool seedIsoPresent)
+{
+    m_vmDir = path;
+    m_seedIsoPresent = seedIsoPresent;
+    refreshDiskList();
+}
+
+QList<EditVmDialog::NewDisk> EditVmDialog::newDisks() const
+{
+    QList<NewDisk> result;
+    for (const DiskEntry &entry : m_disks) {
+        if (!entry.exists)
+            result.append({entry.disk, entry.sizeGb, entry.sourcePath});
+    }
+    return result;
+}
+
+QList<EditVmDialog::RemovedDisk> EditVmDialog::removedDisks() const
+{
+    return m_removedDisks;
+}
+
+QString EditVmDialog::storageLayoutError() const
+{
+    VMConfig layout;
+    layout.setMachineType(static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt()));
+    layout.setDiskInterface(static_cast<VMSpecs::DiskInterface>(diskInterfaceCombo->currentData().toInt()));
+
+    QList<DiskConfig> disks;
+    for (const DiskEntry &entry : m_disks)
+        disks << entry.disk;
+    layout.setExtraDisks(disks);
+
+    return layout.storageLayoutError(m_seedIsoPresent);
+}
+
+QString EditVmDialog::nextFreeDiskFileName() const
+{
+    // Names of removed disks stay taken until the dialog is gone: their images
+    // are only deleted or moved away after OK.
+    QStringList taken;
+    for (const DiskEntry &entry : m_disks)
+        taken << entry.disk.fileName;
+    for (const RemovedDisk &removed : m_removedDisks)
+        taken << removed.fileName;
+    if (!m_vmDir.isEmpty())
+        taken << QDir(m_vmDir).entryList({u"disk-*"_s}, QDir::Files | QDir::Hidden);
+
+    return VMConfig::nextExtraDiskFileName(taken);
+}
+
+void EditVmDialog::refreshDiskList()
+{
+    if (!diskTree)
+        return;
+
+    diskTree->clear();
+
+    for (const DiskEntry &entry : std::as_const(m_disks)) {
+        QString size;
+        if (entry.exists && !m_vmDir.isEmpty()) {
+            const QemuImgProcess::ImageInfo info = QemuImgProcess::inspect(QDir(m_vmDir).filePath(entry.disk.fileName));
+            size = info.isValid ? i18n("%1 GB", QString::number(info.virtualSizeGb(), 'f', 1)) : i18n("Missing");
+        } else if (!entry.sourcePath.isEmpty()) {
+            const QemuImgProcess::ImageInfo info = QemuImgProcess::inspect(entry.sourcePath);
+            size = info.isValid ? i18n("%1 GB, to be imported", QString::number(info.virtualSizeGb(), 'f', 1)) : i18n("To be imported");
+        } else if (!entry.exists) {
+            size = i18n("%1 GB, new", entry.sizeGb);
+        }
+
+        auto *item = new QTreeWidgetItem(diskTree);
+        item->setIcon(0, QIcon::fromTheme(u"drive-harddisk"_s));
+        item->setText(0, entry.disk.label.isEmpty() ? entry.disk.fileName : entry.disk.label);
+        item->setToolTip(0, entry.disk.fileName);
+        item->setText(1, size);
+        item->setText(2, VMConfig::toUIString(entry.disk.diskInterface));
+    }
+
+    diskTree->setVisible(!m_disks.isEmpty());
+    updateDiskButtons();
+    validateForm();
+}
+
+void EditVmDialog::updateDiskButtons()
+{
+    if (!diskTree)
+        return;
+
+    const bool hasDisks = !m_disks.isEmpty();
+    const bool hasSelection = diskTree->currentItem() && diskTree->currentItem()->isSelected();
+
+    editDiskButton->setVisible(hasDisks);
+    removeDiskButton->setVisible(hasDisks);
+
+    addDiskButton->setEnabled(!m_readOnly && m_disks.size() < KEMUConst::MaxExtraDisks);
+    editDiskButton->setEnabled(!m_readOnly && hasSelection);
+    removeDiskButton->setEnabled(!m_readOnly && hasSelection);
+}
+
+void EditVmDialog::addDisk()
+{
+    if (m_readOnly || m_disks.size() >= KEMUConst::MaxExtraDisks)
+        return;
+
+    DiskDialog dlg(DiskDialog::Mode::Add, static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt()), this);
+    dlg.setDiskInterface(static_cast<VMSpecs::DiskInterface>(diskInterfaceCombo->currentData().toInt()));
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    DiskEntry entry;
+    entry.exists = false;
+    entry.sizeGb = dlg.sizeGb();
+    entry.sourcePath = dlg.sourcePath();
+    entry.disk.fileName = nextFreeDiskFileName();
+    entry.disk.label = dlg.label();
+    entry.disk.diskInterface = dlg.diskInterface();
+    entry.disk.serial = VMConfig::defaultDiskSerial(entry.disk.fileName);
+
+    if (entry.disk.fileName.isEmpty())
+        return;
+
+    m_disks.append(entry);
+    refreshDiskList();
+}
+
+void EditVmDialog::editSelectedDisk()
+{
+    const int row = diskTree->indexOfTopLevelItem(diskTree->currentItem());
+    if (m_readOnly || row < 0 || row >= m_disks.size())
+        return;
+
+    DiskEntry &entry = m_disks[row];
+
+    DiskDialog dlg(DiskDialog::Mode::Edit, static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt()), this);
+    dlg.setLabel(entry.disk.label);
+    dlg.setDiskInterface(entry.disk.diskInterface);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    entry.disk.label = dlg.label();
+    entry.disk.diskInterface = dlg.diskInterface();
+    refreshDiskList();
+}
+
+void EditVmDialog::removeSelectedDisk()
+{
+    const int row = diskTree->indexOfTopLevelItem(diskTree->currentItem());
+    if (m_readOnly || row < 0 || row >= m_disks.size())
+        return;
+
+    const DiskEntry entry = m_disks.at(row);
+
+    if (entry.exists) {
+        const QString name = entry.disk.label.isEmpty() ? entry.disk.fileName : entry.disk.label;
+
+        QString snapshotNote;
+        if (!m_original.diskPath().isEmpty()) {
+            const QList<SnapshotInfo> snapshots = SnapshotManager().listSnapshots(m_original.diskPath());
+            if (std::any_of(snapshots.cbegin(), snapshots.cend(), [](const SnapshotInfo &snap) {
+                    return snap.vmStateSizeBytes > 0;
+                }))
+                snapshotNote = u"<br/><br/>"_s + i18n("Snapshots with a saved running state can afterwards only be restored while the VM is shut down.");
+        }
+
+        const auto answer = KMessageBox::questionTwoActionsCancel(this,
+                                                                  i18n("Remove the disk <b>%1</b> from this virtual machine?<br/><br/>"
+                                                                       "Its image can be deleted or kept as a separate file. "
+                                                                       "The change takes effect when you confirm the settings.",
+                                                                       name.toHtmlEscaped())
+                                                                      + snapshotNote,
+                                                                  i18n("Remove Disk"),
+                                                                  KGuiItem(i18n("Delete Image"), u"edit-delete"_s),
+                                                                  KGuiItem(i18n("Keep Image File…"), u"document-save-as"_s));
+        if (answer == KMessageBox::Cancel)
+            return;
+
+        RemovedDisk removed{entry.disk.fileName, {}};
+        if (answer == KMessageBox::SecondaryAction) {
+            const QString suggestion = QDir::home().filePath(u"%1-%2"_s.arg(m_original.name(), entry.disk.fileName));
+            removed.keepPath = QFileDialog::getSaveFileName(this, i18n("Keep Disk Image As"), suggestion, i18n("QEMU Disk Images (*.qcow2)"));
+            if (removed.keepPath.isEmpty())
+                return;
+            if (!m_vmDir.isEmpty() && QFileInfo(removed.keepPath).absoluteDir() == QDir(m_vmDir)) {
+                KMessageBox::error(this, i18n("Please choose a location outside the folder of this virtual machine."), i18n("Remove Disk"));
+                return;
+            }
+        }
+        m_removedDisks.append(removed);
+    }
+
+    m_disks.removeAt(row);
+    refreshDiskList();
 }
 
 void EditVmDialog::updateNetworkCardDependencies()
@@ -1660,7 +1933,7 @@ void EditVmDialog::applyModeConstraints()
 
     if (diskLabel)
         diskLabel->setEnabled(false);
-    diskSpin->setToolTip(i18n("Use the disk actions in the main window to resize this disk."));
+    // diskSpin->setToolTip(i18n("Use the disk actions in the main window to resize this disk."));
 
     // Changing these on an installed guest usually makes it unbootable.
     const QString warning = i18n("Changing this on an installed guest can make it unbootable.");

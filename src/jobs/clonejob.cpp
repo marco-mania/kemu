@@ -6,12 +6,16 @@
 
 #include "clonejob.h"
 #include "const.h"
+#include "utils/qemuimgprocess.h"
 
-CloneJob::CloneJob(const QString &vmName, const QString &srcPath, const QString &dstPath, QObject *parent)
+#include <utility>
+
+CloneJob::CloneJob(const QString &vmName, const QString &srcPath, const QString &dstPath, const QStringList &diskFileNames, QObject *parent)
     : KJob(parent)
     , m_vmName(vmName)
     , m_srcPath(srcPath)
     , m_dstPath(dstPath)
+    , m_diskFileNames(diskFileNames)
 {
     m_cloneName = QDir(dstPath).dirName();
     setCapabilities(Killable);
@@ -44,32 +48,35 @@ void CloneJob::start()
         return;
     }
 
-    const QString srcDisk = m_srcPath + u"/disk.qcow2"_s;
-    const QString dstDisk = m_dstPath + u"/disk.qcow2"_s;
-
-    if (!QFile::exists(srcDisk)) {
-        QDir(m_dstPath).removeRecursively();
-        setError(3);
-        setErrorText(i18n("Source disk image not found."));
-        emitResult();
-        return;
+    for (const QString &fileName : std::as_const(m_diskFileNames)) {
+        if (!QFile::exists(m_srcPath + u"/"_s + fileName)) {
+            QDir(m_dstPath).removeRecursively();
+            setError(3);
+            setErrorText(i18n("Source disk image not found: %1", fileName));
+            emitResult();
+            return;
+        }
     }
 
-    m_process = new KProcess(this);
-    m_process->setOutputChannelMode(KProcess::SeparateChannels);
-    m_process->setProgram(tools.path(ExternalTools::QemuImg));
-    m_process->setArguments({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, srcDisk, dstDisk});
+    startNextDisk();
+}
 
-    connect(m_process, &KProcess::readyReadStandardOutput, this, &CloneJob::onReadyReadStdout);
-    connect(m_process, QOverload<int, KProcess::ExitStatus>::of(&KProcess::finished), this, &CloneJob::onProcessFinished);
+void CloneJob::startNextDisk()
+{
+    const QString fileName = m_diskFileNames.at(m_index);
 
-    m_process->start();
+    m_process = new QemuImgProcess(this);
 
-    if (!m_process->waitForStarted(5000)) {
-        disconnect(m_process, nullptr, this, nullptr);
+    connect(m_process, &QemuImgProcess::progress, this, [this](double percent) {
+        const int perDisk = 1000 / m_diskFileNames.size();
+        emitPercent(m_index * perDisk + qRound(percent * perDisk / 100.0), 1000);
+    });
+    connect(m_process, &QemuImgProcess::finished, this, &CloneJob::onConvertFinished);
+
+    if (!m_process->start({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, m_srcPath + u"/"_s + fileName, m_dstPath + u"/"_s + fileName})) {
         QDir(m_dstPath).removeRecursively();
         setError(4);
-        setErrorText(i18n("Failed to start qemu-img: %1", m_process->errorString()));
+        setErrorText(m_process->errorText());
         emitResult();
     }
 }
@@ -80,7 +87,7 @@ bool CloneJob::copyMetadataFiles()
     const QStringList entries = srcDir.entryList(QDir::Files);
 
     for (const QString &file : entries) {
-        if (file == u"disk.qcow2"_s)
+        if (m_diskFileNames.contains(file))
             continue;
         if (file.endsWith(u".sock"_s) || file.endsWith(u".pid"_s) || file == KEMUConst::DeploySerialLogFileName)
             continue;
@@ -91,65 +98,24 @@ bool CloneJob::copyMetadataFiles()
     return true;
 }
 
-void CloneJob::onReadyReadStdout()
+void CloneJob::onConvertFinished(bool ok)
 {
-    m_outputBuffer.append(m_process->readAllStandardOutput());
+    QemuImgProcess *process = std::exchange(m_process, nullptr);
+    process->deleteLater();
 
-    int lastBreakIndex = -1;
-    for (int i = m_outputBuffer.size() - 1; i >= 0; --i) {
-        const char c = m_outputBuffer.at(i);
-        if (c == '\r' || c == '\n') {
-            lastBreakIndex = i;
-            break;
-        }
-    }
-
-    if (lastBreakIndex == -1) {
-        if (m_outputBuffer.size() > 4096)
-            m_outputBuffer.clear();
-        return;
-    }
-
-    const QByteArray completeData = m_outputBuffer.left(lastBreakIndex);
-    m_outputBuffer.remove(0, lastBreakIndex + 1);
-
-    const QString output = QString::fromLocal8Bit(completeData);
-    const QStringView view(output);
-
-    const QStringView suffix(u"/100%)");
-    const QChar prefix(u'(');
-
-    double lastPercent = -1.0;
-    int endIndex = view.lastIndexOf(suffix);
-
-    while (endIndex != -1) {
-        const int startIndex = view.lastIndexOf(prefix, endIndex);
-        if (startIndex != -1) {
-            const QStringView numberView = view.mid(startIndex + 1, endIndex - startIndex - 1);
-            bool ok;
-            const double percent = numberView.toDouble(&ok);
-            if (ok) {
-                lastPercent = percent;
-                break;
-            }
-        }
-        endIndex = view.lastIndexOf(suffix, startIndex > 0 ? startIndex - 1 : -1);
-    }
-
-    if (lastPercent >= 0.0)
-        emitPercent(qRound(lastPercent * 10), 1000);
-}
-
-void CloneJob::onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus)
-{
     if (m_killed)
         return;
 
-    if (exitStatus != KProcess::NormalExit || exitCode != 0) {
+    if (!ok) {
         QDir(m_dstPath).removeRecursively();
         setError(5);
-        setErrorText(i18n("qemu-img convert failed (exit code %1)", exitCode));
+        setErrorText(process->errorText());
         emitResult();
+        return;
+    }
+
+    if (++m_index < m_diskFileNames.size()) {
+        startNextDisk();
         return;
     }
 
@@ -161,11 +127,8 @@ bool CloneJob::doKill()
 {
     m_killed = true;
 
-    if (m_process && m_process->state() != KProcess::NotRunning) {
-        m_process->terminate();
-        if (!m_process->waitForFinished(3000))
-            m_process->kill();
-    }
+    if (m_process)
+        m_process->abort();
 
     QDir(m_dstPath).removeRecursively();
     return true;

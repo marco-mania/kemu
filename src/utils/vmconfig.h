@@ -220,6 +220,17 @@ struct PortForwardRule {
     }
 };
 
+/// An additional qcow2 image inside the VM directory. The system disk is not
+/// part of this list.
+struct DiskConfig {
+    QString fileName; // "disk-<n>.qcow2", relative to the VM directory
+    QString label;
+    VMSpecs::DiskInterface diskInterface = VMSpecs::DiskInterface::Virtio;
+    QString serial;
+
+    bool operator==(const DiskConfig &other) const = default;
+};
+
 struct Sb16Config {
     int irq = 5;
     int dma = 1;
@@ -360,6 +371,14 @@ public:
     {
         return m_diskPath;
     }
+    [[nodiscard]] QList<DiskConfig> extraDisks() const
+    {
+        return m_extraDisks;
+    }
+    /// System disk first, then the extra disks, as absolute paths.
+    [[nodiscard]] QStringList diskPaths(const QDir &vmDir) const;
+    /// Relative file names of all disks, system disk first.
+    [[nodiscard]] QStringList diskFileNames() const;
 
     [[nodiscard]] VMSpecs::DisplayType displayType() const
     {
@@ -597,6 +616,14 @@ public:
     {
         m_diskPath = path;
     }
+    void setExtraDisks(const QList<DiskConfig> &disks)
+    {
+        m_extraDisks = disks;
+    }
+    void addExtraDisk(const DiskConfig &disk)
+    {
+        m_extraDisks.append(disk);
+    }
 
     void setDisplayType(const VMSpecs::DisplayType type)
     {
@@ -772,6 +799,18 @@ public:
     // Single rule set for names that become directories in the VM store.
     [[nodiscard]] static bool isValidVmName(const QString &name, QString *error = nullptr);
 
+    // --- Extra disks ---
+    [[nodiscard]] static bool isValidExtraDiskFileName(const QString &fileName);
+    /// Lowest free "disk-<n>.qcow2" not listed in @p taken.
+    [[nodiscard]] static QString nextExtraDiskFileName(const QStringList &taken);
+    [[nodiscard]] static QString extraDiskDriveId(const QString &fileName);
+    [[nodiscard]] static QString defaultDiskSerial(const QString &fileName);
+    [[nodiscard]] static int ideSlotCapacity(VMSpecs::MachineType type);
+    /// Empty if the disk layout fits the machine, otherwise a user-facing
+    /// reason. The seed ISO of a pending cloud-init deployment takes an IDE
+    /// slot of its own.
+    [[nodiscard]] QString storageLayoutError(bool seedIsoPresent = false) const;
+
     [[nodiscard]] static QString toQemuSystemBinary(VMSpecs::Architecture arch);
 
     /// True if this build can actually provide the given display type.
@@ -881,6 +920,7 @@ private:
     bool m_bootFromFloppy = false;
     QString m_extraArgs;
     QString m_diskPath;
+    QList<DiskConfig> m_extraDisks;
 
     VMSpecs::DisplayType m_displayType = GlobalDefaults.displayType;
     VMSpecs::GpuType m_gpuType = GlobalDefaults.gpuType;

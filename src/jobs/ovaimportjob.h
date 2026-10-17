@@ -9,6 +9,7 @@
 #include <memory>
 
 #include <QString>
+#include <QStringList>
 #include <QTemporaryDir>
 
 #include "jobs/archivestreamjob.h"
@@ -44,6 +45,7 @@ private:
     bool parseOvf();
     void convertDisk();
     void onConvertFinished(bool ok);
+    [[nodiscard]] QString targetPathFor(qsizetype index) const;
 
     // Converts an OVF quantity plus AllocationUnits to bytes. Handles the
     // programmatic form ("byte * 2^20") and textual units ("MegaBytes").
@@ -55,7 +57,8 @@ private:
 
     std::unique_ptr<QTemporaryDir> m_stagingDir;
     QString m_ovfPath;
-    QString m_diskPath;
+    QStringList m_sourceDisks; // staged images, system disk first
+    qsizetype m_convertIndex = 0;
 
     QString m_vmName;
     QString m_targetDir;

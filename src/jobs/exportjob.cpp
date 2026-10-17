@@ -83,6 +83,17 @@ void ExportJob::start()
         }
     }
 
+    for (const DiskConfig &disk : VMConfig::fromJson(QJsonDocument::fromJson(m_configData).object()).extraDisks()) {
+        if (!vmDir.exists(disk.fileName)) {
+            setError(SourceError);
+            setErrorText(i18n("The disk image %1 of VM '%2' is missing.", disk.fileName, m_vmName));
+            emitResult();
+            return;
+        }
+        m_filesToPack << disk.fileName;
+        m_totalBytesToPack += QFileInfo(vmDir, disk.fileName).size();
+    }
+
     if (!m_customIconFileName.isEmpty()) {
         m_filesToPack << m_customIconFileName;
         m_totalBytesToPack += QFileInfo(vmDir, m_customIconFileName).size();

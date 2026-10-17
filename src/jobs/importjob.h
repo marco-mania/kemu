@@ -8,6 +8,7 @@
 
 #include <QByteArray>
 #include <QString>
+#include <QStringList>
 
 #include "jobs/archivestreamjob.h"
 
@@ -35,10 +36,11 @@ private:
     bool readConfigFromArchive(QByteArray *out);
     bool parseConfig(const QByteArray &data);
 
-    static bool isExpectedEntry(const QString &name);
+    [[nodiscard]] bool isExpectedEntry(const QString &name) const;
 
     QString m_archivePath;
     QString m_vmBaseDir;
     QString m_vmName;
     QString m_targetDir;
+    QStringList m_extraDiskFileNames;
 };

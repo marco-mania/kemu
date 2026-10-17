@@ -143,17 +143,21 @@ bool ImportJob::parseConfig(const QByteArray &data)
         return false;
 
     m_vmName = ArchivePaths::sanitizeVmName(obj.value(u"name"_s).toString());
+
+    for (const DiskConfig &disk : VMConfig::fromJson(obj).extraDisks())
+        m_extraDiskFileNames << disk.fileName;
+
     return !m_vmName.isEmpty();
 }
 
-bool ImportJob::isExpectedEntry(const QString &name)
+bool ImportJob::isExpectedEntry(const QString &name) const
 {
     static const QSet<QString> allowed = {KEMUConst::VMConfigFileName,
                                           KEMUConst::VMDiskFileName,
                                           u"OVMF_VARS.fd"_s,
                                           u"tpm2-00.permall"_s,
                                           VMConfig::customIconFileName()};
-    return allowed.contains(name);
+    return allowed.contains(name) || m_extraDiskFileNames.contains(name);
 }
 
 bool ImportJob::runWorker()

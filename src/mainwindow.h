@@ -52,6 +52,7 @@
 #include "dialogs/settingsdialog.h"
 #include "jobs/clouddeployjob.h"
 #include "jobs/createvmjob.h"
+#include "jobs/diskimportjob.h"
 #include "models/virtualenvironmentmodel.h"
 #include "runtime/vmruntimemanager.h"
 #include "utils/externaltools.h"
@@ -132,6 +133,7 @@ private Q_SLOTS:
 
     void importOVA(const QString &filePath);
     void exportOVA(const QString &filePath);
+    void importDisks(const QString &vmName, const QList<DiskImportJob::Item> &items);
 
     void onAboutToSleep();
     void onWokeUp();

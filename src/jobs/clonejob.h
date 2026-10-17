@@ -20,12 +20,14 @@
 
 using namespace Qt::StringLiterals;
 
+class QemuImgProcess;
+
 class CloneJob : public KJob
 {
     Q_OBJECT
 
 public:
-    explicit CloneJob(const QString &vmName, const QString &srcPath, const QString &dstPath, QObject *parent = nullptr);
+    explicit CloneJob(const QString &vmName, const QString &srcPath, const QString &dstPath, const QStringList &diskFileNames, QObject *parent = nullptr);
 
     void start() override;
 
@@ -41,19 +43,19 @@ public:
 protected:
     bool doKill() override;
 
-private Q_SLOTS:
-    void onReadyReadStdout();
-    void onProcessFinished(int exitCode, KProcess::ExitStatus exitStatus);
-
 private:
     bool copyMetadataFiles();
+    void startNextDisk();
+    void onConvertFinished(bool ok);
 
     QString m_vmName;
     QString m_cloneName;
     QString m_srcPath;
     QString m_dstPath;
 
-    KProcess *m_process = nullptr;
-    QByteArray m_outputBuffer;
+    QStringList m_diskFileNames;
+    qsizetype m_index = 0;
+
+    QemuImgProcess *m_process = nullptr;
     bool m_killed = false;
 };

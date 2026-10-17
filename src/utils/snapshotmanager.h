@@ -54,13 +54,18 @@ public:
 
     // Synchronous Operations (Offline / qemu-img)
 
+    // The system disk carries the authoritative list and the descriptions.
     QList<SnapshotInfo> listSnapshots(const QString &diskPath, QString *errorOut = nullptr) const;
 
-    // Offline operations run qemu-img asynchronously. Never call these while
-    // QEMU or a helper has the image open.
-    void createOfflineSnapshot(const QString &diskPath, const QString &name, std::function<void(bool, QString)> callback);
-    void revertOfflineSnapshot(const QString &diskPath, const QString &name, std::function<void(bool, QString)> callback);
-    void deleteOfflineSnapshot(const QString &diskPath, const QString &name, std::function<void(bool, QString)> callback);
+    // Disks added after snapshot @p name was taken; a revert leaves them alone.
+    QStringList disksWithoutSnapshot(const QStringList &diskPaths, const QString &name) const;
+
+    // Offline operations run qemu-img asynchronously, one disk after the
+    // other, system disk first. Never call these while QEMU or a helper has an
+    // image open.
+    void createOfflineSnapshot(const QStringList &diskPaths, const QString &name, std::function<void(bool, QString)> callback);
+    void revertOfflineSnapshot(const QStringList &diskPaths, const QString &name, std::function<void(bool, QString)> callback);
+    void deleteOfflineSnapshot(const QStringList &diskPaths, const QString &name, std::function<void(bool, QString)> callback);
 
     // Asynchronous Operations (Online / QMP)
     void createLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback);
@@ -70,9 +75,9 @@ public:
     // imageInUse: QEMU or a helper currently owns the image. Without a usable
     // QMP connection there is then no safe way to touch it, and the call fails
     // instead of falling back to qemu-img.
-    void createSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback);
-    void revertSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback);
-    void deleteSnapshot(const QString &diskPath, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback);
+    void createSnapshot(const QStringList &diskPaths, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback);
+    void revertSnapshot(const QStringList &diskPaths, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback);
+    void deleteSnapshot(const QStringList &diskPaths, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback);
 
     // Sidecar JSON next to .qcow2
     void saveDescription(const QString &diskPath, const QString &snapshotName, const QString &description) const;
@@ -93,7 +98,13 @@ private:
 
     // Job orchestration
     QString nextJobId(const QString &prefix);
-    void queryWritableQcow2Nodes(QMPClient *qmp, std::function<void(QStringList nodes, QString error)> cb);
+    struct BlockNode {
+        QString device;
+        QString node;
+        bool hasTag = false;
+    };
+    // Writable qcow2 images attached to the VM; hasTag refers to @p tag.
+    void queryQcow2Nodes(QMPClient *qmp, const QString &tag, std::function<void(QList<BlockNode> nodes, QString error)> cb);
     void startSnapshotJob(QMPClient *qmp,
                           const QString &qmpCommand,
                           const QJsonObject &args,
@@ -109,6 +120,10 @@ private:
     };
     ProcResult runQemuImg(const QStringList &args) const;
     void runQemuImgAsync(const QStringList &args, std::function<void(bool, QString)> callback);
+    // Runs the steps in order and stops at the first failure; reports its
+    // index, or -1 if all succeeded.
+    void runQemuImgSequence(QList<QStringList> steps, std::function<void(int failedStep, QString error)> callback, int index = 0);
+    bool hasSnapshot(const QString &diskPath, const QString &name) const;
 
     static constexpr int kOfflineOpTimeoutMs = 120000;
 

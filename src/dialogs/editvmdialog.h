@@ -31,6 +31,7 @@
 #include <QStandardItemModel>
 #include <QTabWidget>
 #include <QTableWidget>
+#include <QTreeWidget>
 #include <QVBoxLayout>
 
 #include <KColorScheme>
@@ -77,6 +78,21 @@ public:
 
     [[nodiscard]] bool iconManuallySet() const;
 
+    struct NewDisk {
+        DiskConfig disk;
+        int sizeGb = 0;
+        QString sourcePath; // empty: blank image
+    };
+    struct RemovedDisk {
+        QString fileName;
+        QString keepPath; // empty: delete the image
+    };
+
+    // Edit mode only; call before setConfig().
+    void setVmDirectory(const QString &path, bool seedIsoPresent);
+    [[nodiscard]] QList<NewDisk> newDisks() const;
+    [[nodiscard]] QList<RemovedDisk> removedDisks() const;
+
 private Q_SLOTS:
     void browseSharedDir();
     void onMachineTypeChanged(int index);
@@ -99,6 +115,14 @@ private:
     void updateNetworkCardDependencies();
 
     void validateForm();
+
+    void addDisk();
+    void editSelectedDisk();
+    void removeSelectedDisk();
+    void refreshDiskList();
+    void updateDiskButtons();
+    [[nodiscard]] QString nextFreeDiskFileName() const;
+    [[nodiscard]] QString storageLayoutError() const;
 
     QStringList existingVmNames;
 
@@ -139,6 +163,11 @@ private:
     QPushButton *sb16ConfigButton = nullptr;
     QComboBox *diskInterfaceCombo = nullptr;
     QLabel *diskHintLabel = nullptr;
+    QTreeWidget *diskTree = nullptr;
+    QPushButton *addDiskButton = nullptr;
+    QPushButton *editDiskButton = nullptr;
+    QPushButton *removeDiskButton = nullptr;
+    QLabel *storageWarningLabel = nullptr;
     QLabel *usbControllerLabel = nullptr;
     QComboBox *usbCombo = nullptr;
     QComboBox *mouseCombo = nullptr;
@@ -187,4 +216,15 @@ private:
     void resetToFactoryDefaults();
 
     Sb16Config m_sb16Config;
+
+    struct DiskEntry {
+        DiskConfig disk;
+        bool exists = true;
+        int sizeGb = 0;
+        QString sourcePath;
+    };
+    QList<DiskEntry> m_disks;
+    QList<RemovedDisk> m_removedDisks;
+    QString m_vmDir;
+    bool m_seedIsoPresent = false;
 };

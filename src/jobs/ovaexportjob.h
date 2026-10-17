@@ -21,10 +21,15 @@ class OvaExportJob : public ArchiveStreamJob
     Q_OBJECT
 
 public:
+    struct DiskImage {
+        QString path;
+        qint64 capacityBytes = 0;
+    };
+
+    /// @p disks: system disk first.
     explicit OvaExportJob(const QString &vmName,
                           const VMConfig &config,
-                          const QString &diskPath,
-                          qint64 diskCapacityBytes,
+                          const QList<DiskImage> &disks,
                           const QString &outputFilePath,
                           QObject *parent = nullptr);
 
@@ -42,6 +47,7 @@ protected:
     void abortExternalTools() override;
 
 private:
+    void convertNextDisk();
     void onConvertFinished(bool ok);
 
     bool createOvfDescriptor();
@@ -50,12 +56,12 @@ private:
 
     QString m_vmName;
     VMConfig m_config;
-    QString m_diskPath;
-    qint64 m_diskCapacityBytes = 0;
+    QList<DiskImage> m_disks;
+    qsizetype m_convertIndex = 0;
     QString m_outputFilePath;
 
     std::unique_ptr<QTemporaryDir> m_stagingDir;
-    QString m_vmdkFileName;
+    QStringList m_vmdkFileNames;
     QString m_ovfFileName;
     QString m_mfFileName;
 
