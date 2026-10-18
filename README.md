@@ -42,9 +42,8 @@ Widgets and KDE Frameworks 6 for deep desktop integration.
 
 ## Gallery
 
-![image](screenshots/fullview.png) ![image](screenshots/mainwindow.png)
-![image](screenshots/newvm.png) ![image](screenshots/vmsettings.png)
-![image](screenshots/vmsettings2.png) ![image](screenshots/snapshotdialog.png)
+![image](screenshots/fullview.png) ![image](screenshots/newvm.png)
+![image](screenshots/vmsettings.png) ![image](screenshots/snapshotdialog.png)
 
 ## Dependencies
 
