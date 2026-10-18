@@ -33,13 +33,16 @@ constexpr int kConvertBand = 800;
 constexpr int kManifestBand = 900;
 constexpr qsizetype kHashChunk = 1 << 20;
 
-const QString kVmwNs = u"http://www.vmware.com/schema/ovf"_s;
-const QString kVboxNs = u"http://www.virtualbox.org/ovf/machine"_s;
+// Two widespread vendor extensions. The URIs, the prefixes they are bound to
+// and the values written into them are format identifiers that other tools
+// match literally.
+const QString kConfigExtNs = u"http://www.vmware.com/schema/ovf"_s;
+const QString kMachineExtNs = u"http://www.virtualbox.org/ovf/machine"_s;
 
 struct GuestOs {
     int cimId = 1; // CIM_OperatingSystem OSType, 1: Other
-    QString vbox; // VirtualBox OS type
-    QString vmware; // VMware guestId
+    QString machineOsType; // OS type of the machine section extension
+    QString configOsType; // guest id of the configuration extension
     QString description;
 };
 
@@ -56,9 +59,9 @@ GuestOs guestOsFor(const VMConfig &config)
         struct Windows {
             QString distro;
             int cimId;
-            QString vbox;
-            QString vmware32;
-            QString vmware64;
+            QString machineId;
+            QString configId32;
+            QString configId64;
             QString description;
         };
         static const QList<Windows> versions = {
@@ -71,9 +74,9 @@ GuestOs guestOsFor(const VMConfig &config)
         };
         for (const Windows &w : versions) {
             if (w.distro == distro) {
-                // VirtualBox has no 64-bit variants of the oldest versions.
-                const bool vbox64 = is64 && w.cimId != 58 && w.cimId != 18;
-                return {w.cimId, w.vbox + (vbox64 ? u"_64"_s : QString()), is64 ? w.vmware64 : w.vmware32, w.description};
+                // The machine section has no 64-bit ids for the oldest versions.
+                const bool machine64 = is64 && w.cimId != 58 && w.cimId != 18;
+                return {w.cimId, w.machineId + (machine64 ? u"_64"_s : QString()), is64 ? w.configId64 : w.configId32, w.description};
             }
         }
         return {1, u"Windows10"_s + suffix, is64 ? u"windows9_64Guest"_s : u"windows9Guest"_s, u"Windows"_s};
@@ -94,12 +97,12 @@ GuestOs guestOsFor(const VMConfig &config)
             {u"centos"_s, {u"RedHat"_s, u"CentOS"_s}},
             {u"gentoo"_s, {u"Gentoo"_s, u"Gentoo"_s}},
         };
-        const auto [vbox, name] = distros.value(distro, {u"Linux"_s, u"Linux"_s});
-        const bool ubuntuFamily = vbox == u"Ubuntu"_s;
-        const QString vmware = ubuntuFamily ? (is64 ? u"ubuntu64Guest"_s : u"ubuntuGuest"_s) : (is64 ? u"otherLinux64Guest"_s : u"otherLinuxGuest"_s);
-        // VirtualBox calls 32-bit generic Linux "Linux26".
-        const QString vboxId = vbox == u"Linux"_s && !is64 ? u"Linux26"_s : vbox + suffix;
-        return {36, vboxId, vmware, name};
+        const auto [family, name] = distros.value(distro, {u"Linux"_s, u"Linux"_s});
+        const bool ubuntuFamily = family == u"Ubuntu"_s;
+        const QString configId = ubuntuFamily ? (is64 ? u"ubuntu64Guest"_s : u"ubuntuGuest"_s) : (is64 ? u"otherLinux64Guest"_s : u"otherLinuxGuest"_s);
+        // The machine section calls 32-bit generic Linux "Linux26".
+        const QString machineId = family == u"Linux"_s && !is64 ? u"Linux26"_s : family + suffix;
+        return {36, machineId, configId, name};
     }
 
     case VMSpecs::OsType::BSD:
@@ -115,13 +118,14 @@ GuestOs guestOsFor(const VMConfig &config)
     }
 }
 
-// rasd:ResourceSubType as VirtualBox and VMware write it. Models they lack
-// are exported as E1000, which every guest has a driver for.
+// rasd:ResourceSubType as common hypervisors write it. Models they lack are
+// exported as E1000, which every guest has a driver for. virtio has no
+// standard name; "VirtioNet" is the spelling that is recognised.
 QString networkSubTypeFor(VMSpecs::NetworkCard card)
 {
     switch (card) {
     case VMSpecs::NetworkCard::Virtio:
-        return u"virtio"_s;
+        return u"VirtioNet"_s;
     case VMSpecs::NetworkCard::Pcnet:
         return u"PCNet32"_s;
     default:
@@ -335,8 +339,8 @@ bool OvaExportJob::createOvfDescriptor()
     xml.writeAttribute(u"xmlns:ovf"_s, u"http://schemas.dmtf.org/ovf/envelope/1"_s);
     xml.writeAttribute(u"xmlns:rasd"_s, u"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData"_s);
     xml.writeAttribute(u"xmlns:vssd"_s, u"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData"_s);
-    xml.writeAttribute(u"xmlns:vmw"_s, kVmwNs);
-    xml.writeAttribute(u"xmlns:vbox"_s, kVboxNs);
+    xml.writeAttribute(u"xmlns:vmw"_s, kConfigExtNs);
+    xml.writeAttribute(u"xmlns:vbox"_s, kMachineExtNs);
 
     // References
     xml.writeStartElement(u"References"_s);
@@ -389,12 +393,12 @@ bool OvaExportJob::createOvfDescriptor()
 
     xml.writeStartElement(u"OperatingSystemSection"_s);
     xml.writeAttribute(u"ovf:id"_s, QString::number(os.cimId));
-    xml.writeAttribute(u"vmw:osType"_s, os.vmware);
+    xml.writeAttribute(u"vmw:osType"_s, os.configOsType);
     xml.writeTextElement(u"Info"_s, u"Guest operating system"_s);
     xml.writeTextElement(u"Description"_s, os.description);
     xml.writeStartElement(u"vbox:OSType"_s);
     xml.writeAttribute(u"ovf:required"_s, u"false"_s);
-    xml.writeCharacters(os.vbox);
+    xml.writeCharacters(os.machineOsType);
     xml.writeEndElement();
     xml.writeEndElement();
 
@@ -512,18 +516,18 @@ bool OvaExportJob::createOvfDescriptor()
         xml.writeEndElement();
     }
 
-    // Firmware: OVF 1.x has no field for it, VMware's extension is the one
-    // other tools know.
-    const auto writeVmwConfig = [&xml](const QString &key, const QString &value) {
+    // Firmware: OVF 1.x has no field for it, the configuration extension is
+    // the one other tools know.
+    const auto writeConfigEntry = [&xml](const QString &key, const QString &value) {
         xml.writeStartElement(u"vmw:Config"_s);
         xml.writeAttribute(u"ovf:required"_s, u"false"_s);
         xml.writeAttribute(u"vmw:key"_s, key);
         xml.writeAttribute(u"vmw:value"_s, value);
         xml.writeEndElement();
     };
-    writeVmwConfig(u"firmware"_s, m_config.useUefi() ? u"efi"_s : u"bios"_s);
+    writeConfigEntry(u"firmware"_s, m_config.useUefi() ? u"efi"_s : u"bios"_s);
     if (m_config.useUefi())
-        writeVmwConfig(u"bootOptions.efiSecureBootEnabled"_s, m_config.useSecureBoot() ? u"true"_s : u"false"_s);
+        writeConfigEntry(u"bootOptions.efiSecureBootEnabled"_s, m_config.useSecureBoot() ? u"true"_s : u"false"_s);
 
     xml.writeEndElement(); // VirtualHardwareSection
     xml.writeEndElement(); // VirtualSystem

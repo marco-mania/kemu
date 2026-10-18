@@ -10,6 +10,7 @@
 #include "dbusdisplay/dbusdisplayconst.h"
 #include "dialogs/deploymentabortdialog.h"
 #include "dialogs/editvmdialog.h"
+#include "dialogs/licenseagreementdialog.h"
 #include "dialogs/missingtoolsdialog.h"
 #include "dialogs/newvmdialog.h"
 #include "dialogs/settingsdialog.h"
@@ -2828,6 +2829,16 @@ void MainWindow::onUsbActionTriggered()
 
 void MainWindow::importOVA(const QString &filePath)
 {
+    // OVF requires the license terms of an appliance to be accepted before it
+    // is deployed.
+    if (const auto ovf = OvaImportJob::readDescriptor(filePath); ovf && !ovf->licenses.isEmpty()) {
+        const QString name = ovf->name.isEmpty() ? QFileInfo(filePath).completeBaseName() : ovf->name;
+        if (!LicenseAgreementDialog::ask(name, ovf->licenses, this)) {
+            statusBar()->showMessage(i18n("OVA import cancelled: the license terms were not accepted."));
+            return;
+        }
+    }
+
     auto *job = new OvaImportJob(filePath, getVmBaseDir().absolutePath(), 0, this);
 
     if (jobTracker) {

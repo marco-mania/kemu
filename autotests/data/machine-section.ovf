@@ -78,16 +78,16 @@
       </Item>
     </VirtualHardwareSection>
     <vbox:Machine ovf:required="false" version="1.19-linux" uuid="{6a1d4f3e-0c8b-4b7e-9d55-2f3a1b2c3d4e}" name="Debian 12" OSType="Debian_64">
-      <ovf:Info>Complete VirtualBox machine configuration in VirtualBox format</ovf:Info>
+      <ovf:Info>Complete machine configuration</ovf:Info>
       <Hardware>
         <CPU count="2"/>
         <Memory RAMSize="3072"/>
         <Firmware type="EFI"/>
         <Network>
-          <Adapter slot="0" enabled="true" MACAddress="080027AABBCC" type="82540EM">
+          <Adapter slot="0" enabled="true" MACAddress="020001AABBCC" type="82540EM">
             <NAT/>
           </Adapter>
-          <Adapter slot="1" enabled="false" MACAddress="080027000001" type="82540EM"/>
+          <Adapter slot="1" enabled="false" MACAddress="020001000001" type="82540EM"/>
         </Network>
       </Hardware>
     </vbox:Machine>

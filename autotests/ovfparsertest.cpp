@@ -34,9 +34,9 @@ private:
     }
 
 private Q_SLOTS:
-    void virtualBox()
+    void machineSection()
     {
-        const OvfDescriptor ovf = parse("virtualbox.ovf");
+        const OvfDescriptor ovf = parse("machine-section.ovf");
         QCOMPARE(ovf.name, u"Debian 12"_s);
         QCOMPARE(ovf.virtualSystemCount, 1);
         QCOMPARE(ovf.cpuCount, 2);
@@ -48,10 +48,10 @@ private Q_SLOTS:
         QCOMPARE(ovf.disks.at(1).capacityBytes, 10LL << 30);
         QCOMPARE(ovf.disks.at(0).bus, OvfStorageBus::Sata);
 
-        // From the VirtualBox section: the standard part has no MAC.
+        // From the machine section: the standard part has no MAC.
         QCOMPARE(ovf.networkAdapters.size(), 1);
         QCOMPARE(ovf.networkAdapters.at(0).model, u"E1000"_s);
-        QCOMPARE(ovf.firstMacAddress(), u"08:00:27:aa:bb:cc"_s);
+        QCOMPARE(ovf.firstMacAddress(), u"02:00:01:aa:bb:cc"_s);
         QCOMPARE(ovf.firmware, OvfFirmware::Efi);
         QVERIFY(!ovf.secureBoot);
         QCOMPARE(ovf.osId, 96);
@@ -59,28 +59,45 @@ private Q_SLOTS:
         QCOMPARE(ovf.osDescription, u"Debian_64"_s);
     }
 
-    void vmware()
+    // Export of a UEFI machine: NVRAM file and item, NVMe controller, an
+    // adapter without a subtype.
+    void uefiNvram()
     {
-        const OvfDescriptor ovf = parse("vmware.ovf");
-        QCOMPARE(ovf.name, u"Photon Appliance"_s);
+        const OvfDescriptor ovf = parse("uefi-nvram.ovf");
+        QCOMPARE(ovf.name, u"Win11"_s);
         QCOMPARE(ovf.cpuCount, 4);
         QCOMPARE(ovf.memoryBytes, 8192LL << 20);
-        QCOMPARE(ovf.firstMacAddress(), u"00:50:56:aa:bb:cc"_s);
+        QCOMPARE(hrefs(ovf), QStringList({u"Win11-disk001.vmdk"_s}));
+        QCOMPARE(ovf.disks.at(0).bus, OvfStorageBus::Nvme);
+        QCOMPARE(ovf.firmware, OvfFirmware::Efi);
+        QCOMPARE(ovf.networkAdapters.size(), 1);
+        QVERIFY(ovf.networkAdapters.at(0).model.isEmpty());
+        QCOMPARE(ovf.firstMacAddress(), u"02:00:01:1a:2b:3c"_s);
+        QCOMPARE(ovf.osType, u"Windows11_64"_s);
+    }
+
+    void configExtension()
+    {
+        const OvfDescriptor ovf = parse("config-extension.ovf");
+        QCOMPARE(ovf.name, u"Example Appliance"_s);
+        QCOMPARE(ovf.cpuCount, 4);
+        QCOMPARE(ovf.memoryBytes, 8192LL << 20);
+        QCOMPARE(ovf.firstMacAddress(), u"02:00:00:aa:bb:cc"_s);
         QCOMPARE(hrefs(ovf), QStringList({u"appliance-disk1.vmdk"_s}));
         QCOMPARE(ovf.disks.at(0).capacityBytes, 16LL << 30);
         QCOMPARE(ovf.disks.at(0).bus, OvfStorageBus::Nvme);
-        QCOMPARE(ovf.networkAdapters.at(0).model, u"VmxNet3"_s);
+        QCOMPARE(ovf.networkAdapters.at(0).model, u"E1000e"_s);
         QCOMPARE(ovf.firmware, OvfFirmware::Efi);
         QVERIFY(ovf.secureBoot);
         QCOMPARE(ovf.osId, 36);
         QCOMPARE(ovf.osType, u"other3xLinux64Guest"_s);
         QCOMPARE(ovf.osDescription, u"Other 3.x or later Linux (64-bit)"_s);
-        QCOMPARE(ovf.annotation, u"Photon OS appliance"_s);
+        QCOMPARE(ovf.annotation, u"Example appliance"_s);
     }
 
-    void vmwareExtraConfig()
+    void extraConfig()
     {
-        const OvfDescriptor ovf = parse("vmware-extraconfig.ovf");
+        const OvfDescriptor ovf = parse("extra-config.ovf");
         QCOMPARE(ovf.firmware, OvfFirmware::Efi);
         QVERIFY(ovf.secureBoot);
     }
@@ -98,7 +115,7 @@ private Q_SLOTS:
         QCOMPARE(ovf.osId, 36);
         QCOMPARE(ovf.osType, u"Debian_64"_s);
         QCOMPARE(ovf.networkAdapters.size(), 1);
-        QCOMPARE(ovf.networkAdapters.at(0).model, u"virtio"_s);
+        QCOMPARE(ovf.networkAdapters.at(0).model, u"VirtioNet"_s);
         QCOMPARE(ovf.firstMacAddress(), u"52:54:00:ab:cd:ef"_s);
         QCOMPARE(hrefs(ovf), QStringList({u"q35-uefi-sb-nvme-disk1.vmdk"_s, u"q35-uefi-sb-nvme-disk2.vmdk"_s}));
         QCOMPARE(ovf.disks.at(0).bus, OvfStorageBus::Nvme);
@@ -111,7 +128,7 @@ private Q_SLOTS:
         const OvfDescriptor ovf = parse("no-disk-items.ovf");
         QCOMPARE(hrefs(ovf), QStringList({u"Debian-disk001.vmdk"_s, u"Debian-disk002.vmdk"_s}));
         QCOMPARE(ovf.disks.at(0).bus, OvfStorageBus::Unknown);
-        QCOMPARE(ovf.firstMacAddress(), u"08:00:27:aa:bb:cc"_s);
+        QCOMPARE(ovf.firstMacAddress(), u"02:00:01:aa:bb:cc"_s);
         QCOMPARE(ovf.firmware, OvfFirmware::Unknown);
     }
 
@@ -161,8 +178,45 @@ private Q_SLOTS:
         const OvfDescriptor ovf = parse("ovf2.ovf");
         QCOMPARE(ovf.name, u"ovf2vm"_s);
         QCOMPARE(ovf.cpuCount, 2);
-        QCOMPARE(ovf.firstMacAddress(), u"00:50:56:01:02:03"_s);
+        QCOMPARE(ovf.firstMacAddress(), u"02:00:00:01:02:03"_s);
         QCOMPARE(hrefs(ovf), QStringList({u"v2.vmdk"_s}));
+    }
+
+    // Typed Section/Content elements and "InstanceId", as exporters wrote them
+    // in the 0.9 days.
+    void ovf09()
+    {
+        const OvfDescriptor ovf = parse("ovf09.ovf");
+        QCOMPARE(ovf.name, u"Old Appliance"_s);
+        QCOMPARE(ovf.cpuCount, 2);
+        QCOMPARE(ovf.memoryBytes, 512LL << 20);
+        QCOMPARE(hrefs(ovf), QStringList({u"old-disk1.vmdk"_s}));
+        QCOMPARE(ovf.disks.at(0).capacityBytes, 2LL << 30);
+        QCOMPARE(ovf.disks.at(0).bus, OvfStorageBus::Sata);
+        QCOMPARE(ovf.networkAdapters.at(0).model, u"E1000"_s);
+        QCOMPARE(ovf.osId, 36);
+        QCOMPARE(ovf.licenses, QStringList({u"Old terms."_s}));
+    }
+
+    // The licenses of the imported system and of the collection around it,
+    // not those of the other systems.
+    void licenses()
+    {
+        const OvfDescriptor ovf = parse("eula.ovf");
+        QCOMPARE(ovf.name, u"web"_s);
+        QCOMPARE(ovf.licenses, QStringList({u"Suite terms.\nSecond paragraph."_s, u"Web server terms."_s}));
+        QVERIFY(parse("machine-section.ovf").licenses.isEmpty());
+    }
+
+    void nvramIsNoDisk()
+    {
+        const OvfDescriptor ovf = parse("nvram-disk.ovf");
+        QCOMPARE(hrefs(ovf), QStringList({u"vm-disk1.vmdk"_s}));
+    }
+
+    void noVirtualSystem()
+    {
+        QVERIFY(!OvfParser::parseFile(QFINDTESTDATA(u"data/no-system.ovf"_s)));
     }
 
     void overflow()
@@ -223,7 +277,7 @@ private Q_SLOTS:
         QTest::addColumn<QString>("file");
         QTest::newRow("short digest") << u"short-digest.mf"_s;
         QTest::newRow("unknown algorithm") << u"unknown-algorithm.mf"_s;
-        QTest::newRow("not a manifest") << u"vmware.ovf"_s;
+        QTest::newRow("not a manifest") << u"config-extension.ovf"_s;
     }
 
     void invalidManifests()

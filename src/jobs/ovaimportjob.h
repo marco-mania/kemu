@@ -7,6 +7,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include <QHash>
 #include <QSet>
@@ -28,6 +29,9 @@ public:
     explicit OvaImportJob(const QString &ovaPath, const QString &vmBaseDir, int diskSizeGb, QObject *parent = nullptr);
 
     void start() override;
+
+    /// Reads only the descriptor of an OVA, without extracting the disks.
+    [[nodiscard]] static std::optional<OvfDescriptor> readDescriptor(const QString &ovaPath);
 
     [[nodiscard]] QString vmName() const
     {

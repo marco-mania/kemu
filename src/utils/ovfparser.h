@@ -10,6 +10,7 @@
 #include <QCryptographicHash>
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 #include <optional>
 
@@ -43,7 +44,7 @@ struct OvfDisk {
 };
 
 struct OvfNetworkAdapter {
-    QString model; // rasd:ResourceSubType as written, e.g. "E1000", "VmxNet3"
+    QString model; // rasd:ResourceSubType as written, e.g. "E1000", "PCNet32"
     QString macAddress; // "aa:bb:cc:dd:ee:ff", empty if unknown
 };
 
@@ -52,13 +53,14 @@ struct OvfNetworkAdapter {
 struct OvfDescriptor {
     QString name;
     QString annotation; // AnnotationSection, the VM's description
+    QStringList licenses; // EulaSection texts; OVF requires accepting them before deployment
     int virtualSystemCount = 0; // > 1 for a VirtualSystemCollection
     int cpuCount = 0;
     qint64 memoryBytes = 0;
     QList<OvfNetworkAdapter> networkAdapters;
     QList<OvfDisk> disks; // attachment order, boot disk first
 
-    // VMware and VirtualBox extensions; OVF itself has no firmware setting.
+    // Vendor extensions; OVF itself has no firmware setting.
     OvfFirmware firmware = OvfFirmware::Unknown;
     bool secureBoot = false;
 
@@ -82,7 +84,7 @@ struct OvfManifestEntry {
     QByteArray digest; // lower-case hex
 };
 
-/// Reader for OVF 1.x/2.x descriptors as written by VirtualBox and VMware.
+/// Reader for OVF 0.9, 1.x and 2.x descriptors as common hypervisors write them.
 class OvfParser
 {
 public:

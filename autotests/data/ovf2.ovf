@@ -4,6 +4,6 @@
  <DiskSection><Disk ovf:diskId="d1" ovf:fileRef="f1" ovf:capacity="8" ovf:capacityAllocationUnits="byte * 2^30"/></DiskSection>
  <VirtualSystem ovf:id="ovf2vm"><VirtualHardwareSection>
   <Item><rasd:ResourceType>3</rasd:ResourceType><rasd:VirtualQuantity>2</rasd:VirtualQuantity></Item>
-  <EthernetPortItem><epasd:Address>00:50:56:01:02:03</epasd:Address><epasd:ResourceType>10</epasd:ResourceType></EthernetPortItem>
+  <EthernetPortItem><epasd:Address>02:00:00:01:02:03</epasd:Address><epasd:ResourceType>10</epasd:ResourceType></EthernetPortItem>
  </VirtualHardwareSection></VirtualSystem>
 </Envelope>

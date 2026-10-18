@@ -91,7 +91,7 @@ with two lines</Annotation>
                 <rasd:Connection>NAT</rasd:Connection>
                 <rasd:ElementName>Network Adapter 1</rasd:ElementName>
                 <rasd:InstanceID>7</rasd:InstanceID>
-                <rasd:ResourceSubType>virtio</rasd:ResourceSubType>
+                <rasd:ResourceSubType>VirtioNet</rasd:ResourceSubType>
                 <rasd:ResourceType>10</rasd:ResourceType>
             </Item>
             <vmw:Config ovf:required="false" vmw:key="firmware" vmw:value="efi"/>

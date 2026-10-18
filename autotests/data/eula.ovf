@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1" xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">
+  <References>
+    <File ovf:id="file1" ovf:href="web.vmdk"/>
+    <File ovf:id="file2" ovf:href="db.vmdk"/>
+  </References>
+  <DiskSection>
+    <Info>disks</Info>
+    <Disk ovf:capacity="1073741824" ovf:diskId="web" ovf:fileRef="file1" ovf:format="x"/>
+    <Disk ovf:capacity="1073741824" ovf:diskId="db" ovf:fileRef="file2" ovf:format="x"/>
+  </DiskSection>
+  <VirtualSystemCollection ovf:id="suite">
+    <Info>A suite</Info>
+    <EulaSection>
+      <Info>License agreement for the suite</Info>
+      <License>Suite terms.
+Second paragraph.</License>
+    </EulaSection>
+    <VirtualSystem ovf:id="web">
+      <Info>web</Info>
+      <EulaSection>
+        <Info>License agreement for the web server</Info>
+        <License>Web server terms.</License>
+      </EulaSection>
+      <EulaSection>
+        <Info>Repeated</Info>
+        <License>Suite terms.
+Second paragraph.</License>
+      </EulaSection>
+    </VirtualSystem>
+    <VirtualSystem ovf:id="db">
+      <Info>db</Info>
+      <EulaSection>
+        <Info>License agreement for the database</Info>
+        <License>Database terms.</License>
+      </EulaSection>
+    </VirtualSystem>
+  </VirtualSystemCollection>
+</Envelope>

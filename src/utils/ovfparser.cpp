@@ -25,8 +25,11 @@ constexpr qint64 kMaxBytes = std::numeric_limits<qint64>::max();
 
 const QString kOvf1Ns = u"http://schemas.dmtf.org/ovf/envelope/1"_s;
 const QString kOvf2Ns = u"http://schemas.dmtf.org/ovf/envelope/2"_s;
-const QString kVmwNs = u"http://www.vmware.com/schema/ovf"_s;
-const QString kVboxNs = u"http://www.virtualbox.org/ovf/machine"_s;
+const QString kXsiNs = u"http://www.w3.org/2001/XMLSchema-instance"_s;
+// Two widespread vendor extensions: key/value configuration entries and a
+// complete machine section. The URIs are format identifiers.
+const QString kConfigExtNs = u"http://www.vmware.com/schema/ovf"_s;
+const QString kMachineExtNs = u"http://www.virtualbox.org/ovf/machine"_s;
 
 // Namespace-aware lookup with fallbacks for descriptors that bind the OVF
 // namespace to the "ovf" prefix only loosely or not at all.
@@ -54,8 +57,13 @@ QHash<QString, QString> readItem(QXmlStreamReader &xml)
         xml.readNext();
         if (xml.isEndElement() && xml.name() == element)
             break;
-        if (xml.isStartElement())
-            fields.insert(xml.name().toString(), xml.readElementText().trimmed());
+        if (xml.isStartElement()) {
+            // OVF 0.9 and a few exporters spell it "InstanceId".
+            QString key = xml.name().toString();
+            if (key == u"InstanceId"_s)
+                key = u"InstanceID"_s;
+            fields.insert(key, xml.readElementText().trimmed());
+        }
     }
 
     return fields;
@@ -105,7 +113,7 @@ qint64 unitBytes(const QString &units, qint64 defaultUnitBytes)
         return base > 0 && exponent <= 64 ? checkedPower(base, exponent) : 0;
     }
 
-    // Textual units are binary in practice: VirtualBox writes "MegaBytes" for
+    // Textual units are binary in practice: exports write "MegaBytes" for
     // MiB, and "GB" in hand-written descriptors means GiB.
     const QString lower = u.toLower();
     if (lower == u"bytes"_s)
@@ -183,13 +191,14 @@ std::optional<OvfDescriptor> OvfParser::parse(QIODevice *device)
     QList<DiskRef> diskSection;
     QList<Controller> controllers; // document order
     QList<Attachment> attachments;
-    QStringList vboxMacs; // enabled adapters of the VirtualBox section
+    QStringList machineSectionMacs; // enabled adapters of the machine section
 
     // Only the first VirtualSystem counts; a VirtualSystemCollection would
     // otherwise mix the hardware of all its machines.
     QStringList stack;
     qsizetype systemDepth = -1;
-    qsizetype vboxMachineDepth = -1;
+    qsizetype otherSystemDepth = -1; // inside a VirtualSystem other than the first
+    qsizetype machineSectionDepth = -1;
 
     while (!xml.atEnd()) {
         xml.readNext();
@@ -197,19 +206,30 @@ std::optional<OvfDescriptor> OvfParser::parse(QIODevice *device)
         if (xml.isEndElement()) {
             if (stack.size() == systemDepth + 1)
                 systemDepth = -2; // first system done
-            if (stack.size() == vboxMachineDepth + 1)
-                vboxMachineDepth = -1;
+            if (stack.size() == otherSystemDepth + 1)
+                otherSystemDepth = -1;
+            if (stack.size() == machineSectionDepth + 1)
+                machineSectionDepth = -1;
             stack.removeLast();
             continue;
         }
         if (!xml.isStartElement())
             continue;
 
-        const QString element = xml.name().toString();
         const QStringView ns = xml.namespaceUri();
         const QXmlStreamAttributes attrs = xml.attributes();
+        QString element = xml.name().toString();
+        // OVF 0.9 writes <Section xsi:type="ovf:DiskSection_Type"> and
+        // <Content xsi:type="ovf:VirtualSystem_Type"> where later versions
+        // have DiskSection and VirtualSystem.
+        if (element == u"Section"_s || element == u"Content"_s) {
+            const QString type = attrs.value(kXsiNs, u"type"_s).toString();
+            const QString name = type.mid(type.indexOf(u':') + 1);
+            if (name.endsWith(u"_Type"_s))
+                element = name.chopped(5);
+        }
         const bool inSystem = systemDepth >= 0 && stack.size() > systemDepth;
-        const bool inVboxMachine = vboxMachineDepth >= 0 && stack.size() > vboxMachineDepth;
+        const bool inMachineSection = machineSectionDepth >= 0 && stack.size() > machineSectionDepth;
         const QString parent = stack.isEmpty() ? QString() : stack.last();
 
         if (element == u"VirtualSystem") {
@@ -217,6 +237,8 @@ std::optional<OvfDescriptor> OvfParser::parse(QIODevice *device)
             if (systemDepth == -1) {
                 systemDepth = stack.size();
                 systemId = ovfAttr(xml, u"id"_s);
+            } else if (otherSystemDepth == -1) {
+                otherSystemDepth = stack.size();
             }
 
         } else if (element == u"Name" && inSystem && stack.size() == systemDepth + 1) {
@@ -240,9 +262,9 @@ std::optional<OvfDescriptor> OvfParser::parse(QIODevice *device)
 
         } else if (inSystem && element == u"OperatingSystemSection") {
             result.osId = ovfAttr(xml, u"id"_s).toInt();
-            result.osType = attrs.value(kVmwNs, u"osType"_s).toString();
+            result.osType = attrs.value(kConfigExtNs, u"osType"_s).toString();
 
-        } else if (inSystem && parent == u"OperatingSystemSection" && (element == u"Description" || (element == u"OSType" && ns == kVboxNs))) {
+        } else if (inSystem && parent == u"OperatingSystemSection" && (element == u"Description" || (element == u"OSType" && ns == kMachineExtNs))) {
             const QString text = xml.readElementText().simplified();
             if (element == u"Description")
                 result.osDescription = text;
@@ -250,32 +272,40 @@ std::optional<OvfDescriptor> OvfParser::parse(QIODevice *device)
                 result.osType = text;
             continue;
 
+        } else if (parent == u"EulaSection" && element == u"License" && otherSystemDepth == -1) {
+            // Those of the first system and of the envelope or collection
+            // around it.
+            const QString text = xml.readElementText().trimmed();
+            if (!text.isEmpty() && !result.licenses.contains(text))
+                result.licenses << text;
+            continue;
+
         } else if (inSystem && parent == u"AnnotationSection" && element == u"Annotation") {
             result.annotation = xml.readElementText().trimmed();
             continue;
 
-        } else if (inSystem && (element == u"Config" || element == u"ExtraConfig") && ns == kVmwNs) {
-            // vmw:Config carries vSphere API properties, vmw:ExtraConfig raw
-            // .vmx keys; exports use either.
-            const QString key = attrs.value(kVmwNs, u"key"_s).toString();
-            const QString value = attrs.value(kVmwNs, u"value"_s).toString().toLower();
+        } else if (inSystem && (element == u"Config" || element == u"ExtraConfig") && ns == kConfigExtNs) {
+            // Config carries API properties, ExtraConfig raw configuration
+            // keys; exports use either.
+            const QString key = attrs.value(kConfigExtNs, u"key"_s).toString();
+            const QString value = attrs.value(kConfigExtNs, u"value"_s).toString().toLower();
             if (key == u"firmware"_s)
                 result.firmware = value == u"efi"_s ? OvfFirmware::Efi : OvfFirmware::Bios;
             else if (key == u"bootOptions.efiSecureBootEnabled"_s || key == u"uefi.secureBoot.enabled"_s)
                 result.secureBoot = value == u"true"_s;
 
-        } else if (inSystem && element == u"Machine" && ns == kVboxNs) {
-            vboxMachineDepth = stack.size();
+        } else if (inSystem && element == u"Machine" && ns == kMachineExtNs) {
+            machineSectionDepth = stack.size();
             if (result.osType.isEmpty())
                 result.osType = attrs.value(u"OSType"_s).toString();
 
-        } else if (inVboxMachine && element == u"Firmware") {
+        } else if (inMachineSection && element == u"Firmware") {
             // BIOS, EFI, EFI32, EFI64, EFIDUAL
             result.firmware = attrs.value(u"type"_s).startsWith(u"EFI"_s, Qt::CaseInsensitive) ? OvfFirmware::Efi : OvfFirmware::Bios;
 
-        } else if (inVboxMachine && element == u"Adapter") {
+        } else if (inMachineSection && element == u"Adapter") {
             if (attrs.value(u"enabled"_s) == u"true"_s)
-                vboxMacs << normalizeMac(attrs.value(u"MACAddress"_s).toString());
+                machineSectionMacs << normalizeMac(attrs.value(u"MACAddress"_s).toString());
 
         } else if (inSystem && (element == u"Item" || element == u"StorageItem" || element == u"EthernetPortItem")) {
             const QHash<QString, QString> item = readItem(xml);
@@ -324,23 +354,24 @@ std::optional<OvfDescriptor> OvfParser::parse(QIODevice *device)
         stack << element;
     }
 
-    if (xml.hasError())
+    if (xml.hasError() || result.virtualSystemCount == 0)
         return std::nullopt;
 
     if (result.name.isEmpty())
         result.name = systemId.simplified();
 
-    // VirtualBox keeps the MAC addresses in its own section only.
-    for (qsizetype i = 0; i < result.networkAdapters.size() && i < vboxMacs.size(); ++i) {
+    // Some exporters keep the MAC addresses in their machine section only.
+    for (qsizetype i = 0; i < result.networkAdapters.size() && i < machineSectionMacs.size(); ++i) {
         if (result.networkAdapters[i].macAddress.isEmpty())
-            result.networkAdapters[i].macAddress = vboxMacs.at(i);
+            result.networkAdapters[i].macAddress = machineSectionMacs.at(i);
     }
 
     const auto diskFor = [&files](const DiskRef &ref, OvfStorageBus bus) -> std::optional<OvfDisk> {
         if (ref.fileRef.isEmpty())
             return OvfDisk{{}, ref.capacityBytes, {}, 0, bus};
         const auto it = files.constFind(ref.fileRef);
-        if (it == files.constEnd())
+        // Some exporters list the NVRAM file of a UEFI machine like a disk.
+        if (it == files.constEnd() || it->href.endsWith(u".nvram"_s, Qt::CaseInsensitive))
             return std::nullopt;
         return OvfDisk{it->href, ref.capacityBytes, it->compression, it->chunkSize, bus};
     };
@@ -359,7 +390,8 @@ std::optional<OvfDescriptor> OvfParser::parse(QIODevice *device)
         return std::pair(controllerIndex(a.parent), a.address) < std::pair(controllerIndex(b.parent), b.address);
     });
 
-    static const QRegularExpression hostResourceRx(u"^(?:ovf:)?/(disk|file)/(.+)$"_s);
+    // "ovf:/disk/id", "/disk/id" and the "ovf://disk/id" of the 0.9 days.
+    static const QRegularExpression hostResourceRx(u"^(?:ovf:/?)?/(disk|file)/(.+)$"_s);
     QStringList attached;
     for (const Attachment &a : std::as_const(attachments)) {
         const QRegularExpressionMatch m = hostResourceRx.match(a.hostResource);

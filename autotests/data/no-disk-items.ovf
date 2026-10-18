@@ -26,7 +26,7 @@
         <rasd:VirtualQuantity>3072</rasd:VirtualQuantity>
       </Item>
       <Item>
-        <rasd:Address>080027AABBCC</rasd:Address>
+        <rasd:Address>020001AABBCC</rasd:Address>
         <rasd:ResourceType>10</rasd:ResourceType>
       </Item>
     </VirtualHardwareSection>

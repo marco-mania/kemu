@@ -640,27 +640,33 @@ a password.
 ## OVA Import/Export Limitations
 
 - The import keeps the guest's firmware (BIOS/UEFI, Secure Boot) and boot
-  controller where the descriptor states them (VMware and VirtualBox
-  extensions), so the guest finds the hardware it was installed on: UEFI or a
-  SATA controller selects Q35, NVMe disks stay on NVMe. IDE, SCSI and unknown
-  controllers become SATA/IDE. Network adapters without a QEMU counterpart
-  (VmxNet3, E1000e) become E1000. The operating system is taken over as well.
+  controller where the descriptor states them (common vendor extensions), so
+  the guest finds the hardware it was installed on: UEFI or a SATA controller
+  selects Q35, NVMe disks stay on NVMe. IDE, SCSI and unknown controllers
+  become SATA/IDE. Network adapters without a QEMU counterpart (vendor
+  specific models, E1000e) become E1000. The operating system is taken over as well.
+  Descriptors in the old OVF 0.9 layout are read too.
 - If the PC chipset runs out of disk slots, the import switches to Q35.
+- License terms an appliance ships with (`EulaSection`) are shown before the
+  import starts and have to be accepted.
 - A manifest (`.mf`) in the archive is verified; a checksum mismatch stops the
   import. Signatures (`.cert`) are not checked.
 - Compressed (`ovf:compression`) or chunked disk files are not supported.
-- The export describes the hardware the way VirtualBox and VMware read it:
-  firmware and Secure Boot (VMware extension), controller per disk (AHCI on
-  Q35, IDE on the PC chipsets, NVMe), the network adapter model, the operating
-  system and the VM's comment. VirtIO disks have no OVF equivalent and are
-  exported on AHCI; whether a tool evaluates the firmware setting differs.
+- The export describes the hardware the way common tools read it: firmware
+  and Secure Boot (vendor extension), controller per disk (AHCI on Q35, IDE on
+  the PC chipsets, NVMe), the network adapter model, the operating system and
+  the VM's comment. VirtIO disks have no OVF equivalent and are
+  exported on AHCI.
+- Some tools read the firmware (UEFI), Secure Boot and MAC address only from
+  their own machine section, never from a plain OVF. A UEFI machine imported
+  there may start with BIOS; enable EFI in its settings afterwards.
 - TPM state, the UEFI variable store, the system UUID and the SMBIOS system
   information are not exported. For a faithful copy between KEMU
   installations, use the native export.
 - Snapshots are not preserved during OVA export (as VMDK does not support them).
 - The shared folder path and ISO path are stripped from native exports because
   they are system-specific.
-- OVF parsing covers common VirtualBox/VMware OVAs, but it may fail to handle
+- OVF parsing covers OVAs of common hypervisors, but it may fail to handle
   highly customized or exotic configurations.
 - Host shutdown feature requires `--talk-name=org.kde.Shutdown` (Plasma) or
   `--system-talk-name=org.freedesktop.login1`. Without the option is disabled.

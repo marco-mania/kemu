@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1">
+  <References>
+    <File ovf:id="f1" ovf:href="vm.nvram"/>
+    <File ovf:id="f2" ovf:href="vm-disk1.vmdk"/>
+  </References>
+  <DiskSection>
+    <Info>disks</Info>
+    <Disk ovf:capacity="1048576" ovf:diskId="d1" ovf:fileRef="f1" ovf:format="x"/>
+    <Disk ovf:capacity="1048576" ovf:diskId="d2" ovf:fileRef="f2" ovf:format="x"/>
+  </DiskSection>
+  <VirtualSystem ovf:id="vm">
+    <Info>vm</Info>
+  </VirtualSystem>
+</Envelope>

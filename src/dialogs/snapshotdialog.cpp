@@ -137,8 +137,7 @@ void SnapshotDialog::loadSnapshots()
         lastItem = item;
     }
 
-    // "Current State" entry (VMware style): always as a child of the last
-    // snapshot
+    // "Current State" entry: always as a child of the last snapshot
     auto *currentItem = new QTreeWidgetItem;
     currentItem->setText(0, i18n("Current State"));
     currentItem->setText(1, Utils::formatTimestamp(QDateTime::currentDateTime()));

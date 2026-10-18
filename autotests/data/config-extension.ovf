@@ -3,10 +3,10 @@
   <References><File ovf:href="appliance-disk1.vmdk" ovf:id="file1" ovf:size="123"/></References>
   <DiskSection><Disk ovf:capacity="16" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="vmdisk1" ovf:fileRef="file1"/></DiskSection>
   <VirtualSystem ovf:id="vm">
-    <Name>Photon Appliance</Name>
+    <Name>Example Appliance</Name>
     <AnnotationSection>
       <Info>A human-readable annotation</Info>
-      <Annotation>Photon OS appliance</Annotation>
+      <Annotation>Example appliance</Annotation>
     </AnnotationSection>
     <OperatingSystemSection ovf:id="36" vmw:osType="other3xLinux64Guest">
       <Info>The kind of installed guest operating system</Info>
@@ -17,9 +17,9 @@
       <Item><rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits><rasd:ResourceType>4</rasd:ResourceType><rasd:VirtualQuantity>8192</rasd:VirtualQuantity></Item>
       <Item><rasd:InstanceID>3</rasd:InstanceID><rasd:ResourceSubType>vmware.nvme.controller</rasd:ResourceSubType><rasd:ResourceType>20</rasd:ResourceType></Item>
       <Item><rasd:AddressOnParent>0</rasd:AddressOnParent><rasd:HostResource>ovf:/disk/vmdisk1</rasd:HostResource><rasd:InstanceID>4</rasd:InstanceID><rasd:Parent>3</rasd:Parent><rasd:ResourceType>17</rasd:ResourceType></Item>
-      <Item><rasd:Address>00-50-56-AA-BB-CC</rasd:Address><rasd:ResourceSubType>VmxNet3</rasd:ResourceSubType><rasd:ResourceType>10</rasd:ResourceType></Item>
-      <vmw:ExtraConfig ovf:required="false" vmw:key="firmware" vmw:value="efi"/>
-      <vmw:ExtraConfig ovf:required="false" vmw:key="uefi.secureBoot.enabled" vmw:value="TRUE"/>
+      <Item><rasd:Address>02-00-00-AA-BB-CC</rasd:Address><rasd:ResourceSubType>E1000e</rasd:ResourceSubType><rasd:ResourceType>10</rasd:ResourceType></Item>
+      <vmw:Config ovf:required="false" vmw:key="firmware" vmw:value="efi"/>
+      <vmw:Config ovf:required="false" vmw:key="bootOptions.efiSecureBootEnabled" vmw:value="true"/>
     </VirtualHardwareSection>
   </VirtualSystem>
 </Envelope>

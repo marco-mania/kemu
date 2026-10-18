@@ -202,6 +202,8 @@ target_sources(
           dialogs/hostshutdowndialog.h
           dialogs/diskdialog.cpp
           dialogs/diskdialog.h
+          dialogs/licenseagreementdialog.cpp
+          dialogs/licenseagreementdialog.h
           widgets/virtualenvironmentitemdelegate.cpp
           widgets/virtualenvironmentitemdelegate.h
           widgets/virtualenvironmenttreeview.h

@@ -11,6 +11,7 @@ extern "C" {
 #include <archive_entry.h>
 }
 
+#include <QBuffer>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -33,6 +34,7 @@ namespace
 {
 
 constexpr int kExtractBand = 150;
+constexpr qsizetype kMaxDescriptorSize = 16 << 20;
 
 // KEMU has no SCSI controller; SATA/IDE is what every guest has a driver for.
 VMSpecs::DiskInterface diskInterfaceFor(OvfStorageBus bus)
@@ -40,7 +42,7 @@ VMSpecs::DiskInterface diskInterfaceFor(OvfStorageBus bus)
     return bus == OvfStorageBus::Nvme ? VMSpecs::DiskInterface::Nvme : VMSpecs::DiskInterface::SataIde;
 }
 
-// Models without a QEMU counterpart (VmxNet3, E1000e, ...) fall back to E1000.
+// Models without a QEMU counterpart (E1000e, vendor specific ones) fall back to E1000.
 VMSpecs::NetworkCard networkCardFor(const QString &model)
 {
     const QString lower = model.toLower();
@@ -102,6 +104,40 @@ void OvaImportJob::start()
 
     beginPhase(0, kExtractBand, archiveSize);
     startWorker();
+}
+
+std::optional<OvfDescriptor> OvaImportJob::readDescriptor(const QString &ovaPath)
+{
+    archive *a = archive_read_new();
+    archive_read_support_filter_all(a);
+    archive_read_support_format_all(a);
+
+    std::optional<OvfDescriptor> result;
+    if (archive_read_open_filename(a, QFile::encodeName(ovaPath).constData(), 10240) == ARCHIVE_OK) {
+        archive_entry *entry = nullptr;
+        // The descriptor comes first; libarchive skips the data of anything
+        // before it. Same choice as runWorker(): the first .ovf entry.
+        while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
+            const QString name = QString::fromUtf8(archive_entry_pathname(entry));
+            if (archive_entry_filetype(entry) != AE_IFREG || !name.endsWith(u".ovf"_s, Qt::CaseInsensitive))
+                continue;
+
+            QByteArray data;
+            char buffer[65536];
+            la_ssize_t n;
+            while ((n = archive_read_data(a, buffer, sizeof(buffer))) > 0 && data.size() <= kMaxDescriptorSize)
+                data.append(buffer, n);
+            if (n == 0) {
+                QBuffer device(&data);
+                device.open(QIODevice::ReadOnly);
+                result = OvfParser::parse(&device);
+            }
+            break;
+        }
+    }
+
+    archive_read_free(a);
+    return result;
 }
 
 bool OvaImportJob::runWorker()
