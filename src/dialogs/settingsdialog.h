@@ -63,6 +63,7 @@ public:
     void setPage(Page page);
 
     static QString getVmBasePath();
+    static QString defaultVmBasePath();
     static QString getOvmfPath();
     static bool isPerformanceMonitorEnabled();
     static QSize getDefaultResolution();

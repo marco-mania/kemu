@@ -54,6 +54,17 @@ void SettingsDialog::setupGeneralPage()
     pathEdit->setText(getVmBasePath());
     auto *btn = new QPushButton(QIcon::fromTheme(u"document-open"_s), {});
     connect(btn, &QPushButton::clicked, this, &SettingsDialog::browseVmDir);
+    // Shown inside the field, like a clear button, while another folder is set.
+    QAction *resetAction = pathEdit->addAction(QIcon::fromTheme(u"edit-undo"_s), QLineEdit::TrailingPosition);
+    resetAction->setToolTip(i18n("Reset to the default location (%1)", defaultVmBasePath()));
+    connect(resetAction, &QAction::triggered, this, [this]() {
+        pathEdit->setText(defaultVmBasePath());
+    });
+    const auto updateResetAction = [this, resetAction]() {
+        resetAction->setVisible(QDir::cleanPath(pathEdit->text().trimmed()) != defaultVmBasePath());
+    };
+    connect(pathEdit, &QLineEdit::textChanged, this, updateResetAction);
+    updateResetAction();
     row->addWidget(pathEdit);
     row->addWidget(btn);
     layout->addLayout(row);
@@ -514,7 +525,11 @@ void SettingsDialog::saveSettings()
 {
     KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
     KConfigGroup general = config->group(u"General"_s);
-    general.writeEntry("VmBasePath", pathEdit->text());
+    // The default is not stored, so it follows XDG_DATA_HOME.
+    if (QDir::cleanPath(pathEdit->text().trimmed()) == defaultVmBasePath())
+        general.deleteEntry("VmBasePath");
+    else
+        general.writeEntry("VmBasePath", pathEdit->text());
     general.writeEntry("OvmfPath", ovmfEdit->text());
     // Never persist sandbox paths as user overrides; an empty entry means
     // auto-detection stays in charge.
@@ -567,8 +582,12 @@ QString SettingsDialog::getVmBasePath()
 {
     const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
     const KConfigGroup general = config->group(u"General"_s);
-    const QString defaultPath = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + u"/kemu/vms"_s;
-    return general.readEntry("VmBasePath", defaultPath);
+    return general.readEntry("VmBasePath", defaultVmBasePath());
+}
+
+QString SettingsDialog::defaultVmBasePath()
+{
+    return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + u"/kemu/vms"_s;
 }
 
 QString SettingsDialog::getOvmfPath()
