@@ -7,25 +7,19 @@
 #pragma once
 
 #include <QFile>
-#include <QStandardPaths>
 #include <QString>
 
-#include "const.h"
+#include "utils/templatestore.h"
 
 using namespace Qt::StringLiterals;
 
 namespace CloudInitTemplates
 {
 
-inline QString templateDir()
-{
-    return KEMUConst::CloudInitTemplateDirPath;
-}
-
+// User templates first, then downloaded, then shipped ones; see TemplateStore.
 inline QString locateTemplate(const QString &templateId)
 {
-    const QString fileName = templateId + u".yaml.tpl"_s;
-    return QStandardPaths::locate(QStandardPaths::GenericDataLocation, templateDir() + u"/"_s + fileName);
+    return TemplateStore().locateCloudInit(templateId);
 }
 
 inline QString loadTemplate(const QString &templateId)

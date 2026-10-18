@@ -55,22 +55,11 @@ ImageDatabase::ImageDatabase() = default;
 
 bool ImageDatabase::load()
 {
-    // A copy of templates.json in the user's data dir would pin the defaults
-    // across updates, so it is only used when no system-wide file exists.
-    const QString userDataDir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + u'/';
-    const QStringList candidates = QStandardPaths::locateAll(QStandardPaths::GenericDataLocation, KEMUConst::TemplateDbFilePath);
-    const auto systemFile = std::find_if(candidates.cbegin(), candidates.cend(), [&userDataDir](const QString &path) {
-        return !path.startsWith(userDataDir);
-    });
-    const QString defaultsPath = systemFile != candidates.cend() ? *systemFile : candidates.value(0);
-
-    const QStringList templateDirs =
-        QStandardPaths::locateAll(QStandardPaths::GenericDataLocation, KEMUConst::TemplateDropInDirPath, QStandardPaths::LocateDirectory);
-
-    return load(defaultsPath, templateDirs);
+    const TemplateStore store;
+    return load(store.globalDefaultsPath(), store.templateDirs(), store.hiddenTemplateIds());
 }
 
-bool ImageDatabase::load(const QString &defaultsPath, const QStringList &templateDirs)
+bool ImageDatabase::load(const QString &defaultsPath, const QList<TemplateSearchDir> &templateDirs, const QStringList &hiddenIds)
 {
     m_templates.clear();
     m_globalDefaults = {};
@@ -84,15 +73,19 @@ bool ImageDatabase::load(const QString &defaultsPath, const QStringList &templat
     struct DropIn {
         qsizetype priority; // index into templateDirs, lower wins
         QString path;
+        TemplateOrigin origin;
     };
 
     QMap<QString, DropIn> dropIns;
     for (qsizetype i = 0; i < templateDirs.size(); ++i) {
+        const TemplateSearchDir &dir = templateDirs.at(i);
         // QDir::System lets a symlink to /dev/null mask a file.
-        const QFileInfoList entries = QDir(templateDirs.at(i)).entryInfoList({u"*.json"_s}, QDir::Files | QDir::System, QDir::Name);
+        const QFileInfoList entries = QDir(dir.path).entryInfoList({u"*.json"_s}, QDir::Files | QDir::System, QDir::Name);
         for (const QFileInfo &entry : entries) {
-            if (!dropIns.contains(entry.fileName()))
-                dropIns.insert(entry.fileName(), DropIn{i, entry.absoluteFilePath()});
+            // Packages name their files alike; they must not mask each other.
+            const QString key = dir.package ? entry.absoluteFilePath() : entry.fileName();
+            if (!dropIns.contains(key))
+                dropIns.insert(key, DropIn{i, entry.absoluteFilePath(), dir.origin});
         }
     }
 
@@ -117,9 +110,13 @@ bool ImageDatabase::load(const QString &defaultsPath, const QStringList &templat
                 qCWarning(KEMU) << "Skipping template without id in" << dropIn.path;
                 continue;
             }
+            tpl.origin = dropIn.origin;
+            tpl.sourcePath = dropIn.path;
+            tpl.hidden = hiddenIds.contains(tpl.id);
 
             if (const auto it = indexById.constFind(tpl.id); it != indexById.cend()) {
                 qCInfo(KEMU) << "Template" << tpl.id << "from" << dropIn.path << "replaces an earlier definition.";
+                tpl.replaces = m_templates.at(it.value()).origin;
                 m_templates[it.value()] = std::move(tpl);
             } else {
                 indexById.insert(tpl.id, m_templates.size());
@@ -135,7 +132,10 @@ bool ImageDatabase::load(const QString &defaultsPath, const QStringList &templat
     });
 
     if (m_templates.isEmpty()) {
-        qCWarning(KEMU) << "No OS templates found in" << templateDirs;
+        QStringList paths;
+        for (const TemplateSearchDir &dir : templateDirs)
+            paths << dir.path;
+        qCWarning(KEMU) << "No OS templates found in" << paths;
         return false;
     }
 
@@ -144,6 +144,16 @@ bool ImageDatabase::load(const QString &defaultsPath, const QStringList &templat
 
 QList<TemplateInfo> ImageDatabase::templates() const
 {
+    QList<TemplateInfo> result;
+    for (const auto &d : m_templates) {
+        if (!d.hidden)
+            result.append(d);
+    }
+    return result;
+}
+
+QList<TemplateInfo> ImageDatabase::allTemplates() const
+{
     return m_templates;
 }
 
@@ -151,7 +161,7 @@ QList<TemplateInfo> ImageDatabase::templatesForType(VMSpecs::OsType type) const
 {
     QList<TemplateInfo> result;
     for (const auto &d : m_templates) {
-        if (d.osType == type)
+        if (d.osType == type && !d.hidden)
             result.append(d);
     }
     return result;

@@ -44,6 +44,9 @@
 
 using namespace Qt::StringLiterals;
 
+class ImageDatabase;
+class TemplatesSettingsPage;
+
 class SettingsDialog : public KPageDialog
 {
     Q_OBJECT
@@ -58,7 +61,8 @@ public:
         Monitoring,
         Display,
         AutomatedDeploy,
-        VirtualNetworks
+        VirtualNetworks,
+        Templates
     };
     void setPage(Page page);
 
@@ -85,6 +89,7 @@ public:
     [[nodiscard]] static CloudDeployConfig deploymentDefaults();
 
     void setNetworkManager(VirtualNetworkManager *mgr);
+    void setImageDatabase(ImageDatabase *db);
 
 private Q_SLOTS:
     void browseVmDir();
@@ -106,9 +111,11 @@ private:
     void setupAutomatedDeployPage();
 
     void setupVirtualNetworksPage();
+    void setupTemplatesPage();
     void refreshNetworkTable();
 
     QMap<Page, KPageWidgetItem *> m_pages;
+    TemplatesSettingsPage *m_templatesPage = nullptr;
 
     QLineEdit *pathEdit = nullptr;
     QLineEdit *ovmfEdit = nullptr;

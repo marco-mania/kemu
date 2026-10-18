@@ -1534,6 +1534,8 @@ void MainWindow::openSettingsPage(SettingsDialog::Page page)
 {
     SettingsDialog dlg(this);
     dlg.setNetworkManager(m_networkManager);
+    m_imageDatabase.load();
+    dlg.setImageDatabase(&m_imageDatabase);
     dlg.setPage(page);
     if (dlg.exec() == QDialog::Accepted) {
         currentConfig = VMConfig();
@@ -3321,6 +3323,8 @@ void MainWindow::createNewVM()
 {
     NewVmDialog dialog(this);
     dialog.setExistingVmNames(existingVmNames());
+    // Templates may have changed on disk since the last dialog.
+    m_imageDatabase.load();
     dialog.setImageDatabase(&m_imageDatabase);
     dialog.setNetworkManager(m_networkManager);
     dialog.setMacUsageInfo(veModel->macUsageInfo());
@@ -3472,6 +3476,8 @@ void MainWindow::editVM()
     EditVmDialog dialog(EditVmDialog::Mode::Edit, this);
 
     dialog.setExistingVmNames(existingVmNames());
+    // Templates may have changed on disk since the last dialog.
+    m_imageDatabase.load();
     dialog.setImageDatabase(&m_imageDatabase);
     dialog.setNetworkManager(m_networkManager);
     dialog.setMacUsageInfo(veModel->macUsageInfo());

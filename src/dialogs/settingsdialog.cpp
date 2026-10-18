@@ -9,6 +9,7 @@
 #include <algorithm>
 
 #include "const.h"
+#include "dialogs/templatessettingspage.h"
 #include "utils/guestlocales.h"
 #include "utils/qemucapabilities.h"
 #include "utils/sandboxcapabilities.h"
@@ -33,6 +34,7 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     setupMonitoringPage();
     setupDisplayPage();
     setupAutomatedDeployPage();
+    setupTemplatesPage();
     setupVirtualNetworksPage();
 }
 
@@ -505,6 +507,19 @@ void SettingsDialog::setupVirtualNetworksPage()
     auto *item = addPage(page, i18n("Virtual Networks"));
     item->setIcon(QIcon::fromTheme(u"network-workgroup"_s));
     m_pages[VirtualNetworks] = item;
+}
+
+void SettingsDialog::setupTemplatesPage()
+{
+    m_templatesPage = new TemplatesSettingsPage;
+    auto *item = addPage(m_templatesPage, i18n("OS Templates"));
+    item->setIcon(QIcon::fromTheme(u"document-new-from-template"_s));
+    m_pages[Templates] = item;
+}
+
+void SettingsDialog::setImageDatabase(ImageDatabase *db)
+{
+    m_templatesPage->setImageDatabase(db);
 }
 
 void SettingsDialog::browseVmDir()

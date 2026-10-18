@@ -16,7 +16,10 @@
 #include <QString>
 #include <QStringList>
 
+#include <optional>
+
 #include "const.h"
+#include "utils/templatestore.h"
 #include "utils/vmconfig.h"
 
 using namespace Qt::StringLiterals;
@@ -59,6 +62,12 @@ struct TemplateInfo {
     QString networkTemplate;
     QList<ReleaseInfo> releases;
     VMConfig defaults;
+
+    TemplateOrigin origin = TemplateOrigin::BuiltIn;
+    QString sourcePath;
+    // Origin of the definition this one replaces, e.g. a customized shipped one.
+    std::optional<TemplateOrigin> replaces;
+    bool hidden = false;
 };
 
 class ImageDatabase
@@ -66,14 +75,16 @@ class ImageDatabase
 public:
     ImageDatabase();
 
-    // Loads templates.json and all templates.d drop-ins from the XDG data dirs.
+    // Loads templates.json and the templates of all origins, see TemplateStore.
     bool load();
     // templateDirs in descending priority; a file name in an earlier directory
-    // shadows the same name in later ones, and a later loaded template id
-    // replaces an earlier one completely.
-    bool load(const QString &defaultsPath, const QStringList &templateDirs);
+    // shadows the same name in later ones (not across packages), and a later
+    // loaded template id replaces an earlier one completely.
+    bool load(const QString &defaultsPath, const QList<TemplateSearchDir> &templateDirs, const QStringList &hiddenIds = {});
 
+    // Without hidden templates, for choosing one.
     [[nodiscard]] QList<TemplateInfo> templates() const;
+    [[nodiscard]] QList<TemplateInfo> allTemplates() const;
     [[nodiscard]] QList<TemplateInfo> templatesForType(VMSpecs::OsType type) const;
     [[nodiscard]] const TemplateInfo *findById(const QString &id) const;
     [[nodiscard]] QString displayName(const QString &id) const;

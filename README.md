@@ -191,6 +191,7 @@ QT_LOGGING_RULES="org.kde.kemu*=true" kemu 2>&1 | tee kemu.log
 | VM data                     | `~/.local/share/kemu/vms/`                       |
 | User OS templates           | `~/.local/share/kemu/data/templates.d/`          |
 | User Cloud-Init templates   | `~/.local/share/kemu/data/cloud-init-templates/` |
+| Downloaded templates        | `~/.local/share/kemu/ghns/`                      |
 | Configuration               | `~/.config/kemurc`                               |
 
 Each VM is stored as a subdirectory containing `config.json`, `disk.qcow2`,
@@ -199,10 +200,16 @@ the system disk as `disk-2.qcow2`, `disk-3.qcow2`, and so on.
 
 ## OS Templates
 
+Templates are managed under *Settings → OS Templates*: create new ones, duplicate
+or customize existing ones (as JSON), reset customizations, hide templates you
+do not need, and share templates as packages (`.kemu-template.tar.gz` with
+`template.json` and the cloud-init templates it uses). Changes take effect immediately.
+
 OS presets and Quick Deploy sources come from the template database:
 `data/templates.json` holds the global QEMU defaults, `data/templates.d/` one
-JSON file per template. Templates in `~/.local/share/kemu/data/templates.d/`
-are added on top:
+JSON file per template. Downloaded templates (`~/.local/share/kemu/ghns/`,
+one package per subdirectory) come on top of the shipped ones, and the user's
+own templates in `~/.local/share/kemu/data/templates.d/` on top of both:
 
 - A file replaces the shipped file of the same name; an empty file (or a
   symlink to `/dev/null`) hides it.
@@ -210,7 +217,10 @@ are added on top:
 - `sort_order` sets the position within the OS group (shipped: 100–199,
   default: 500, "Other": 1000).
 - `cloud_init_template` and `network_template` name a `.yaml.tpl` file, looked
-  up in the user's `cloud-init-templates/` first.
+  up in the user's `cloud-init-templates/` first, then among the downloaded
+  ones (including the template packages), then among the shipped ones.
+- Templates listed in `~/.local/share/kemu/data/hidden-templates.json` are not
+  offered for new VMs.
 
 Minimal example (`mydistro.json`):
 

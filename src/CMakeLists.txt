@@ -113,6 +113,10 @@ target_sources(
           utils/cloudimagedeployer.cpp
           utils/cloudimagedeployer.h
           utils/cloudinittemplates.h
+          utils/templatepackage.cpp
+          utils/templatepackage.h
+          utils/templatestore.cpp
+          utils/templatestore.h
           utils/isoimagebuilder.cpp
           utils/isoimagebuilder.h
           utils/virtualnetwork.h
@@ -204,6 +208,10 @@ target_sources(
           dialogs/diskdialog.h
           dialogs/licenseagreementdialog.cpp
           dialogs/licenseagreementdialog.h
+          dialogs/templateeditdialog.cpp
+          dialogs/templateeditdialog.h
+          dialogs/templatessettingspage.cpp
+          dialogs/templatessettingspage.h
           widgets/virtualenvironmentitemdelegate.cpp
           widgets/virtualenvironmentitemdelegate.h
           widgets/virtualenvironmenttreeview.h
