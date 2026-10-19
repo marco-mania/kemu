@@ -12,6 +12,7 @@
 #include "utils/cloudimagedeployer.h"
 
 class KMessageWidget;
+class QComboBox;
 class QLineEdit;
 class QListWidget;
 class QPlainTextEdit;
@@ -46,6 +47,8 @@ public:
 private:
     void validate();
     void insertPlaceholder();
+    void setType(bool network);
+    [[nodiscard]] QString starterText(bool network) const;
 
     Mode m_mode;
     QString m_originalId;
@@ -54,6 +57,7 @@ private:
     CloudDeployConfig m_sampleConfig;
 
     QLineEdit *m_idEdit = nullptr;
+    QComboBox *m_typeCombo = nullptr;
     QTabWidget *m_tabs = nullptr;
     QPlainTextEdit *m_editor = nullptr;
     QPlainTextEdit *m_preview = nullptr;

@@ -61,7 +61,7 @@ CloudInitTemplatesTab::CloudInitTemplatesTab(QWidget *parent)
 
     m_tree = new QTreeWidget(this);
     m_tree->setColumnCount(4);
-    m_tree->setHeaderLabels({i18n("ID"), i18n("Kind"), i18n("Used By"), i18n("Status")});
+    m_tree->setHeaderLabels({i18n("ID"), i18n("Type"), i18n("Used By"), i18n("Status")});
     m_tree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_tree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     m_tree->header()->setSectionResizeMode(2, QHeaderView::Stretch);
@@ -154,8 +154,8 @@ void CloudInitTemplatesTab::refresh(const QString &selectId)
 
             auto *item = new QTreeWidgetItem(group,
                                              {entry.id,
-                                              TemplateStore::isNetworkTemplate(entry.id) ? i18nc("@item cloud-init template kind", "Network")
-                                                                                         : i18nc("@item cloud-init template kind", "User data"),
+                                              TemplateStore::isNetworkTemplate(entry.id) ? i18nc("@item cloud-init template type", "Network")
+                                                                                         : i18nc("@item cloud-init template type", "User data"),
                                               users,
                                               status});
             item->setData(0, IdRole, entry.id);

@@ -7,7 +7,9 @@
 #include "cloudiniteditdialog.h"
 
 #include <QClipboard>
+#include <QComboBox>
 #include <QDialogButtonBox>
+#include <QFile>
 #include <QFontDatabase>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -18,6 +20,7 @@
 #include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QSplitter>
 #include <QTabWidget>
 #include <QVBoxLayout>
@@ -33,6 +36,7 @@ namespace
 {
 
 constexpr int SnippetRole = Qt::UserRole;
+const QString kNetworkPrefix = u"network-"_s;
 
 struct Placeholder {
     QString name;
@@ -90,8 +94,20 @@ CloudInitEditDialog::CloudInitEditDialog(Mode mode,
     m_idEdit = new QLineEdit(id, this);
     m_idEdit->setReadOnly(mode == Mode::Customize);
     m_idEdit->setToolTip(i18n("Templates whose id starts with \"network-\" provide the network configuration, all others the user data."));
+
+    // The type is the "network-" prefix of the id; choosing it sets the prefix.
+    m_typeCombo = new QComboBox(this);
+    m_typeCombo->addItem(i18n("User data"), false);
+    m_typeCombo->addItem(i18n("Network configuration"), true);
+    m_typeCombo->setCurrentIndex(TemplateStore::isNetworkTemplate(id) ? 1 : 0);
+    m_typeCombo->setEnabled(mode != Mode::Customize);
+    m_typeCombo->setToolTip(
+        i18n("User data sets up the guest, a network configuration its network interfaces. "
+             "Network configurations have ids starting with \"network-\"."));
+
     auto *form = new QFormLayout;
     form->addRow(i18n("ID:"), m_idEdit);
+    form->addRow(i18n("Type:"), m_typeCombo);
 
     const QFont fixed = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     m_editor = new QPlainTextEdit(this);
@@ -159,6 +175,9 @@ CloudInitEditDialog::CloudInitEditDialog(Mode mode,
 
     connect(m_editor, &QPlainTextEdit::textChanged, this, &CloudInitEditDialog::validate);
     connect(m_idEdit, &QLineEdit::textChanged, this, &CloudInitEditDialog::validate);
+    connect(m_typeCombo, &QComboBox::currentIndexChanged, this, [this]() {
+        setType(m_typeCombo->currentData().toBool());
+    });
     connect(insertButton, &QPushButton::clicked, this, &CloudInitEditDialog::insertPlaceholder);
     connect(m_placeholders, &QListWidget::itemDoubleClicked, this, &CloudInitEditDialog::insertPlaceholder);
 
@@ -186,11 +205,39 @@ void CloudInitEditDialog::insertPlaceholder()
     m_editor->setFocus();
 }
 
+void CloudInitEditDialog::setType(bool network)
+{
+    QString newId = id();
+    if (network && !newId.startsWith(kNetworkPrefix))
+        newId.prepend(kNetworkPrefix);
+    else if (!network && newId.startsWith(kNetworkPrefix))
+        newId.remove(0, kNetworkPrefix.size());
+
+    // A new template the user has not typed into yet gets a starter of the new type.
+    if (m_mode == Mode::New && text() == starterText(!network))
+        m_editor->setPlainText(starterText(network));
+    m_idEdit->setText(newId);
+}
+
+QString CloudInitEditDialog::starterText(bool network) const
+{
+    if (network == TemplateStore::isNetworkTemplate(m_originalId))
+        return m_originalText;
+    QFile file(TemplateStore().locateCloudInit(network ? u"network-v2"_s : u"default"_s));
+    if (file.open(QIODevice::ReadOnly))
+        return QString::fromUtf8(file.readAll());
+    return network ? u"version: 2\nethernets:\n  id0:\n    match:\n      driver: virtio*\n    dhcp4: true\n"_s : u"#cloud-config\nhostname: {{ HOSTNAME }}\n"_s;
+}
+
 void CloudInitEditDialog::validate()
 {
     const QString newId = id();
     const bool network = TemplateStore::isNetworkTemplate(newId);
     m_placeholders->parentWidget()->setVisible(!network);
+    {
+        const QSignalBlocker blocker(m_typeCombo);
+        m_typeCombo->setCurrentIndex(network ? 1 : 0);
+    }
 
     QString error;
     if (!TemplateStore::isValidId(newId))
@@ -213,6 +260,7 @@ void CloudInitEditDialog::validate()
 
     m_error->setText(error);
     m_error->setVisible(!error.isEmpty());
-    const bool changed = newId != m_originalId || text() != m_originalText;
+    // A new template does not exist yet, so it can always be saved.
+    const bool changed = m_mode == Mode::New || newId != m_originalId || text() != m_originalText;
     m_saveButton->setEnabled(error.isEmpty() && changed);
 }

@@ -93,8 +93,9 @@ void TemplateEditDialog::validate()
     QJsonParseError parseError;
     const QByteArray text = m_editor->toPlainText().toUtf8();
     const QJsonDocument doc = QJsonDocument::fromJson(text, &parseError);
-    // Compared as JSON: reformatting alone is no change.
-    const bool changed = !doc.isObject() || doc.object() != m_original;
+    // A new template does not exist yet; otherwise compared as JSON, so
+    // reformatting alone is no change.
+    const bool changed = m_mode == Mode::New || !doc.isObject() || doc.object() != m_original;
 
     if (parseError.error != QJsonParseError::NoError) {
         const QByteArray before = text.left(parseError.offset);
