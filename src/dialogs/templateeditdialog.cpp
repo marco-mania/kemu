@@ -27,6 +27,7 @@ TemplateEditDialog::TemplateEditDialog(Mode mode, const QJsonObject &tpl, const 
     : QDialog(parent)
     , m_mode(mode)
     , m_originalId(tpl.value(u"id"_s).toString())
+    , m_original(tpl)
     , m_takenIds(takenIds)
 {
     switch (mode) {
@@ -92,6 +93,8 @@ void TemplateEditDialog::validate()
     QJsonParseError parseError;
     const QByteArray text = m_editor->toPlainText().toUtf8();
     const QJsonDocument doc = QJsonDocument::fromJson(text, &parseError);
+    // Compared as JSON: reformatting alone is no change.
+    const bool changed = !doc.isObject() || doc.object() != m_original;
 
     if (parseError.error != QJsonParseError::NoError) {
         const QByteArray before = text.left(parseError.offset);
@@ -114,5 +117,5 @@ void TemplateEditDialog::validate()
 
     m_message->setText(error);
     m_message->setVisible(!error.isEmpty());
-    m_saveButton->setEnabled(error.isEmpty());
+    m_saveButton->setEnabled(error.isEmpty() && changed);
 }

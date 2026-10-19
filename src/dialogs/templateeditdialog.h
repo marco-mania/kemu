@@ -38,6 +38,7 @@ private:
 
     Mode m_mode;
     QString m_originalId;
+    QJsonObject m_original;
     QStringList m_takenIds;
     QJsonObject m_result;
 

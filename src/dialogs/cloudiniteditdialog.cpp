@@ -71,6 +71,7 @@ CloudInitEditDialog::CloudInitEditDialog(Mode mode,
     : QDialog(parent)
     , m_mode(mode)
     , m_originalId(id)
+    , m_originalText(text)
     , m_takenIds(takenIds)
     , m_sampleConfig(sampleConfig)
 {
@@ -212,5 +213,6 @@ void CloudInitEditDialog::validate()
 
     m_error->setText(error);
     m_error->setVisible(!error.isEmpty());
-    m_saveButton->setEnabled(error.isEmpty());
+    const bool changed = newId != m_originalId || text() != m_originalText;
+    m_saveButton->setEnabled(error.isEmpty() && changed);
 }

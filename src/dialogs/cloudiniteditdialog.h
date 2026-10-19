@@ -49,6 +49,7 @@ private:
 
     Mode m_mode;
     QString m_originalId;
+    QString m_originalText;
     QStringList m_takenIds;
     CloudDeployConfig m_sampleConfig;
 
