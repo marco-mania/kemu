@@ -38,6 +38,9 @@ struct CloudDeployConfig {
     bool installDesktop = false;
     QString templateId;
     QString networkTemplateId;
+    // Chosen in the cloud configuration dialog; replaces the OS template's
+    // templateId. Empty: the distribution's own.
+    QString customTemplateId;
 };
 
 class CloudImageDeployer
@@ -56,6 +59,10 @@ public:
     using ProgressReport = std::function<void(int step, const QString &message)>;
 
     static Result deploy(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, const CloudDeployConfig &config, const ProgressReport &progress = {});
+
+    /// Renders a cloud-init template with the variables of @p config.
+    /// @p errorOut is set and an empty string returned on template errors.
+    static QString renderTemplate(const QString &templateText, const CloudDeployConfig &config, QString &errorOut);
 
     static void removeNoCloudIso(const QDir &vmDir);
     static bool hasNoCloudIso(const QDir &vmDir);

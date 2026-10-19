@@ -56,5 +56,6 @@ private:
     QPlainTextEdit *sshKeysEdit = nullptr;
     QCheckBox *installDesktopCheck = nullptr;
     QLineEdit *extraPackagesEdit = nullptr;
+    QComboBox *cloudInitCombo = nullptr;
     QDialogButtonBox *buttonBox = nullptr;
 };

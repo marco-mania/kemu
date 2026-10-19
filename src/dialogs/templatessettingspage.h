@@ -9,15 +9,17 @@
 #include <QJsonObject>
 #include <QWidget>
 
+#include "utils/cloudimagedeployer.h"
 #include "utils/templatestore.h"
 
+class CloudInitTemplatesTab;
 class ImageDatabase;
 struct TemplateInfo;
 class QPushButton;
 class QTreeWidget;
 
 /**
- * @brief Settings page for the OS templates: create, customize, hide, share.
+ * @brief Settings page for OS and cloud-init templates: create, customize, hide, share.
  *
  * Changes are written at once, like those to virtual networks.
  */
@@ -29,6 +31,8 @@ public:
     explicit TemplatesSettingsPage(QWidget *parent = nullptr);
 
     void setImageDatabase(ImageDatabase *db);
+    /// Values the cloud-init preview renders with.
+    void setPreviewConfig(const CloudDeployConfig &config);
 
 private:
     void refresh(const QString &selectId = {});
@@ -52,6 +56,7 @@ private:
     ImageDatabase *m_db = nullptr;
     TemplateStore m_store;
 
+    CloudInitTemplatesTab *m_cloudInitTab = nullptr;
     QTreeWidget *m_tree = nullptr;
     QPushButton *m_newButton = nullptr;
     QPushButton *m_duplicateButton = nullptr;

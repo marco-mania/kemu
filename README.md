@@ -200,10 +200,18 @@ the system disk as `disk-2.qcow2`, `disk-3.qcow2`, and so on.
 
 ## OS Templates
 
-Templates are managed under *Settings → OS Templates*: create new ones, duplicate
-or customize existing ones (as JSON), reset customizations, hide templates you
-do not need, and share templates as packages (`.kemu-template.tar.gz` with
-`template.json` and the cloud-init templates it uses). Changes take effect immediately.
+Templates are managed under *Settings → Templates*: create new ones, duplicate
+or customize existing ones (OS templates as JSON), reset customizations, hide
+OS templates you do not need, and share OS templates as packages
+(`.kemu-template.tar.gz` with `template.json` and the cloud-init templates it
+uses). Changes take effect immediately.
+
+The *Cloud-Init Templates* tab works the same way for the `.yaml.tpl` files,
+with a list of the available placeholders and a preview rendered from the
+deployment defaults. Templates named `network-*` provide the network
+configuration, all others the user data. A user-data template other than the
+one of the OS template can be chosen in the cloud image configuration of a new
+VM.
 
 OS presets and Quick Deploy sources come from the template database:
 `data/templates.json` holds the global QEMU defaults, `data/templates.d/` one

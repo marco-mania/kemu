@@ -7,6 +7,7 @@
 #include "dialogs/cloudconfigdialog.h"
 
 #include "utils/guestlocales.h"
+#include "utils/templatestore.h"
 #include "utils/utils.h"
 
 using namespace Qt::StringLiterals;
@@ -125,6 +126,16 @@ CloudConfigDialog::CloudConfigDialog(QWidget *parent)
     extraPackagesEdit->setPlaceholderText(i18n("e.g. htop, vim, git (comma-separated)"));
     form->addRow(i18n("Extra Packages:"), extraPackagesEdit);
 
+    // The first entry, the template of the OS, is labelled in setConfig().
+    cloudInitCombo = new QComboBox();
+    cloudInitCombo->addItem(i18n("Default of the operating system"), QString());
+    for (const CloudInitEntry &entry : TemplateStore().cloudInitTemplates()) {
+        if (!TemplateStore::isNetworkTemplate(entry.id))
+            cloudInitCombo->addItem(entry.id, entry.id);
+    }
+    cloudInitCombo->setToolTip(i18n("The cloud-init template that sets up the guest. Templates are managed in the settings under Templates."));
+    form->addRow(i18n("Cloud-Init Template:"), cloudInitCombo);
+
     layout->addLayout(form);
 
     buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -180,6 +191,11 @@ void CloudConfigDialog::setConfig(const CloudDeployConfig &cfg)
     if (!cfg.extraPackages.isEmpty())
         extraPackagesEdit->setText(cfg.extraPackages.join(u", "_s));
 
+    if (!cfg.templateId.isEmpty())
+        cloudInitCombo->setItemText(0, i18n("Default of the operating system (%1)", cfg.templateId));
+    const int templateIdx = cloudInitCombo->findData(cfg.customTemplateId);
+    cloudInitCombo->setCurrentIndex(templateIdx >= 0 ? templateIdx : 0);
+
     validate();
 }
 
@@ -218,6 +234,8 @@ CloudDeployConfig CloudConfigDialog::getResult() const
     const QString keysText = sshKeysEdit->toPlainText().trimmed();
     if (!keysText.isEmpty())
         cfg.sshKeys = keysText.split(u"\n"_s, Qt::SkipEmptyParts);
+
+    cfg.customTemplateId = cloudInitCombo->currentData().toString();
 
     return cfg;
 }

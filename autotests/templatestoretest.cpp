@@ -107,6 +107,36 @@ private Q_SLOTS:
         QCOMPARE(store().locateCloudInit(u"missing"_s), QString());
     }
 
+    void cloudInitTemplates()
+    {
+        write(m_system + u"/kemu/data/cloud-init-templates/debian.yaml.tpl"_s, "#cloud-config\n");
+        write(m_system + u"/kemu/data/cloud-init-templates/network-v2.yaml.tpl"_s, "network:\n");
+        write(m_system + u"/kemu/data/cloud-init-templates/fedora.yaml.tpl"_s, "#cloud-config\n");
+        write(m_system + u"/kemu/data/cloud-init-templates/notes.txt"_s, "ignored");
+        write(m_user + u"/kemu/ghns/templates/pkg/myos.yaml.tpl"_s, "#cloud-config\n");
+        write(m_user + u"/kemu/ghns/cloud-init/fedora.yaml.tpl"_s, "#cloud-config\n");
+        write(m_user + u"/kemu/data/cloud-init-templates/debian.yaml.tpl"_s, "#cloud-config\n");
+        write(m_user + u"/kemu/data/cloud-init-templates/.bad.yaml.tpl"_s, "#cloud-config\n");
+
+        const QList<CloudInitEntry> entries = store().cloudInitTemplates();
+        QStringList ids;
+        for (const CloudInitEntry &entry : entries)
+            ids << entry.id;
+        QCOMPARE(ids, QStringList({u"debian"_s, u"fedora"_s, u"myos"_s, u"network-v2"_s}));
+
+        QCOMPARE(entries.at(0).origin, TemplateOrigin::User);
+        QCOMPARE(entries.at(0).replaces, TemplateOrigin::BuiltIn);
+        QCOMPARE(entries.at(0).path, m_user + u"/kemu/data/cloud-init-templates/debian.yaml.tpl"_s);
+        QCOMPARE(entries.at(1).origin, TemplateOrigin::Downloaded);
+        QCOMPARE(entries.at(1).replaces, TemplateOrigin::BuiltIn);
+        QCOMPARE(entries.at(2).origin, TemplateOrigin::Downloaded);
+        QVERIFY(!entries.at(2).replaces);
+        QCOMPARE(entries.at(3).origin, TemplateOrigin::BuiltIn);
+
+        QVERIFY(TemplateStore::isNetworkTemplate(u"network-v2"_s));
+        QVERIFY(!TemplateStore::isNetworkTemplate(u"debian"_s));
+    }
+
     void invalidIds_data()
     {
         QTest::addColumn<QString>("id");

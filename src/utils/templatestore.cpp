@@ -13,6 +13,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QMap>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QStandardPaths>
@@ -171,6 +172,29 @@ QString TemplateStore::locateCloudInit(const QString &id) const
             return path;
     }
     return {};
+}
+
+QList<CloudInitEntry> TemplateStore::cloudInitTemplates() const
+{
+    QMap<QString, CloudInitEntry> entries;
+    for (const TemplateSearchDir &dir : cloudInitDirs()) {
+        for (const QFileInfo &file : QDir(dir.path).entryInfoList({u"*"_s + kCloudInitSuffix}, QDir::Files, QDir::Name)) {
+            const QString id = file.fileName().chopped(kCloudInitSuffix.size());
+            if (!isValidId(id))
+                continue;
+            auto it = entries.find(id);
+            if (it == entries.end())
+                entries.insert(id, {id, dir.origin, file.absoluteFilePath(), std::nullopt});
+            else if (!it->replaces)
+                it->replaces = dir.origin;
+        }
+    }
+    return entries.values();
+}
+
+bool TemplateStore::isNetworkTemplate(const QString &id)
+{
+    return id.startsWith(u"network-"_s);
 }
 
 QStringList TemplateStore::hiddenTemplateIds() const

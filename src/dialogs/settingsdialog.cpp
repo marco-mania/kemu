@@ -512,7 +512,10 @@ void SettingsDialog::setupVirtualNetworksPage()
 void SettingsDialog::setupTemplatesPage()
 {
     m_templatesPage = new TemplatesSettingsPage;
-    auto *item = addPage(m_templatesPage, i18n("OS Templates"));
+    CloudDeployConfig preview = deploymentDefaults();
+    preview.hostname = u"preview-vm"_s;
+    m_templatesPage->setPreviewConfig(preview);
+    auto *item = addPage(m_templatesPage, i18n("Templates"));
     item->setIcon(QIcon::fromTheme(u"document-new-from-template"_s));
     m_pages[Templates] = item;
 }

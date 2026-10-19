@@ -26,6 +26,14 @@ struct TemplateSearchDir {
     bool package = false;
 };
 
+struct CloudInitEntry {
+    QString id;
+    TemplateOrigin origin = TemplateOrigin::BuiltIn;
+    QString path;
+    // Origin of the file this one shadows, e.g. a customized shipped template.
+    std::optional<TemplateOrigin> replaces;
+};
+
 /**
  * @brief Where OS templates and cloud-init templates live, by origin.
  *
@@ -48,6 +56,10 @@ public:
 
     /// Empty if the id is invalid or no file exists.
     [[nodiscard]] QString locateCloudInit(const QString &id) const;
+    /// The file in effect for every cloud-init template id, sorted by id.
+    [[nodiscard]] QList<CloudInitEntry> cloudInitTemplates() const;
+    /// network-config templates are named "network-*", the rest is user-data.
+    [[nodiscard]] static bool isNetworkTemplate(const QString &id);
 
     [[nodiscard]] QString userTemplateDir() const;
     [[nodiscard]] QString userCloudInitDir() const;

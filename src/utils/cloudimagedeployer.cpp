@@ -217,16 +217,13 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage,
     return true;
 }
 
-QByteArray CloudImageDeployer::generateUserData(const CloudDeployConfig &config, QString &errorOut)
+namespace
 {
-    const QString templateId = config.templateId.isEmpty() ? u"default"_s : config.templateId;
-    const QString tpl = CloudInitTemplates::loadTemplate(templateId);
 
-    if (tpl.isEmpty()) {
-        errorOut = i18n("Cloud-Init template '%1' not found. Please check your installation.", templateId);
-        return {};
-    }
-
+// The variables user-data templates can use. Keep the list in the cloud-init
+// template editor in sync.
+QVariantHash userDataVariables(const CloudDeployConfig &config)
+{
     QVariantHash vars;
 
     vars[u"DESKTOP_ENVIRONMENT"_s] = config.installDesktop;
@@ -253,13 +250,53 @@ QByteArray CloudImageDeployer::generateUserData(const CloudDeployConfig &config,
     vars[u"SSH_KEYS"_s] = config.sshKeys;
 
     vars[u"PACKAGES"_s] = config.extraPackages;
+    return vars;
+}
 
+QString render(const QString &text, const QVariantHash &vars, const QString &name, QString &errorOut)
+{
     const KTextTemplate::Engine engine;
-    const KTextTemplate::Template t = engine.newTemplate(tpl, u"cloud-init"_s);
-
+    const KTextTemplate::Template t = engine.newTemplate(text, name);
+    // Parse errors are only reported until render() resets the error state.
+    if (t->error() != KTextTemplate::NoError) {
+        errorOut = t->errorString();
+        return {};
+    }
     KTextTemplate::Context context(vars);
+    const QString result = t->render(&context);
+    if (t->error() != KTextTemplate::NoError) {
+        errorOut = t->errorString();
+        return {};
+    }
+    return result;
+}
 
-    return t->render(&context).toUtf8();
+} // namespace
+
+QString CloudImageDeployer::renderTemplate(const QString &templateText, const CloudDeployConfig &config, QString &errorOut)
+{
+    return render(templateText, userDataVariables(config), u"cloud-init"_s, errorOut);
+}
+
+QByteArray CloudImageDeployer::generateUserData(const CloudDeployConfig &config, QString &errorOut)
+{
+    QString templateId = config.customTemplateId.isEmpty() ? config.templateId : config.customTemplateId;
+    if (templateId.isEmpty())
+        templateId = u"default"_s;
+    const QString tpl = CloudInitTemplates::loadTemplate(templateId);
+
+    if (tpl.isEmpty()) {
+        errorOut = i18n("Cloud-Init template '%1' not found. Please check your installation.", templateId);
+        return {};
+    }
+
+    QString renderError;
+    const QString userData = renderTemplate(tpl, config, renderError);
+    if (!renderError.isEmpty()) {
+        errorOut = i18n("Cloud-Init template '%1' is invalid: %2", templateId, renderError);
+        return {};
+    }
+    return userData.toUtf8();
 }
 
 QByteArray CloudImageDeployer::generateMetaData(const CloudDeployConfig &config)
@@ -284,14 +321,13 @@ QByteArray CloudImageDeployer::generateNetworkConfig(const CloudDeployConfig &co
         return {};
     }
 
-    const QVariantHash vars;
-
-    const KTextTemplate::Engine engine;
-    const KTextTemplate::Template t = engine.newTemplate(tpl, u"network-config"_s);
-
-    KTextTemplate::Context context(vars);
-
-    return t->render(&context).toUtf8();
+    QString renderError;
+    const QString networkConfig = render(tpl, {}, u"network-config"_s, renderError);
+    if (!renderError.isEmpty()) {
+        errorOut = i18n("Network template '%1' is invalid: %2", templateId, renderError);
+        return {};
+    }
+    return networkConfig.toUtf8();
 }
 
 bool CloudImageDeployer::createNoCloudIso(const QDir &vmDir,

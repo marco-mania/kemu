@@ -208,6 +208,10 @@ target_sources(
           dialogs/diskdialog.h
           dialogs/licenseagreementdialog.cpp
           dialogs/licenseagreementdialog.h
+          dialogs/cloudiniteditdialog.cpp
+          dialogs/cloudiniteditdialog.h
+          dialogs/cloudinittemplatestab.cpp
+          dialogs/cloudinittemplatestab.h
           dialogs/templateeditdialog.cpp
           dialogs/templateeditdialog.h
           dialogs/templatessettingspage.cpp

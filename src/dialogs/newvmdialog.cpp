@@ -675,7 +675,10 @@ void NewVmDialog::updateDeployInfo()
     else
         credentials = i18n("no way to log in");
 
-    deployInfoLabel->setText(u"<small>%1</small>"_s.arg(i18n("User \"%1\", host name \"%2\", %3.", config.username, config.hostname, credentials)));
+    QString info = i18n("User \"%1\", host name \"%2\", %3.", config.username, config.hostname, credentials);
+    if (!config.customTemplateId.isEmpty())
+        info += u' ' + i18n("Cloud-init template \"%1\".", config.customTemplateId);
+    deployInfoLabel->setText(u"<small>%1</small>"_s.arg(info.toHtmlEscaped()));
 }
 
 void NewVmDialog::clearCustomisation()

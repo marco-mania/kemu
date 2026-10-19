@@ -15,6 +15,7 @@
 #include <QJsonArray>
 #include <QLabel>
 #include <QPushButton>
+#include <QTabWidget>
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -24,6 +25,7 @@
 
 #include <algorithm>
 
+#include "dialogs/cloudinittemplatestab.h"
 #include "dialogs/templateeditdialog.h"
 #include "utils/imagedatabase.h"
 #include "utils/templatepackage.h"
@@ -97,9 +99,25 @@ TemplatesSettingsPage::TemplatesSettingsPage(QWidget *parent)
     row->addWidget(m_tree, 1);
     row->addLayout(buttons);
 
+    // The OS templates on the first tab, the cloud-init templates on the second.
+    auto *osTab = new QWidget(this);
+    auto *osLayout = new QVBoxLayout(osTab);
+    osLayout->addWidget(intro);
+    osLayout->addLayout(row, 1);
+
+    m_cloudInitTab = new CloudInitTemplatesTab(this);
+    auto *tabs = new QTabWidget(this);
+    tabs->addTab(osTab, i18n("OS Templates"));
+    tabs->addTab(m_cloudInitTab, i18n("Cloud-Init Templates"));
+    // OS template changes can bring cloud-init templates and change "Used By".
+    connect(tabs, &QTabWidget::currentChanged, this, [this, tabs](int index) {
+        if (tabs->widget(index) == m_cloudInitTab)
+            m_cloudInitTab->refresh();
+    });
+
     auto *layout = new QVBoxLayout(this);
-    layout->addWidget(intro);
-    layout->addLayout(row, 1);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(tabs);
 
     connect(m_tree, &QTreeWidget::itemSelectionChanged, this, &TemplatesSettingsPage::updateButtons);
     connect(m_tree, &QTreeWidget::itemDoubleClicked, this, [this]() {
@@ -113,7 +131,13 @@ TemplatesSettingsPage::TemplatesSettingsPage(QWidget *parent)
 void TemplatesSettingsPage::setImageDatabase(ImageDatabase *db)
 {
     m_db = db;
+    m_cloudInitTab->setImageDatabase(db);
     refresh();
+}
+
+void TemplatesSettingsPage::setPreviewConfig(const CloudDeployConfig &config)
+{
+    m_cloudInitTab->setPreviewConfig(config);
 }
 
 void TemplatesSettingsPage::refresh(const QString &selectId)
