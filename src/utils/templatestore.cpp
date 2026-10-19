@@ -14,7 +14,6 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QMap>
-#include <QRegularExpression>
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QUrl>
@@ -363,8 +362,32 @@ QStringList TemplateStore::cloudInitIds(const QJsonObject &tpl)
     return ids;
 }
 
-bool TemplateStore::isValidId(const QString &id)
+// Template IDs: ASCII letters, digits, '.', '_' and '-'
+static bool isIdChar(QChar c)
 {
-    static const QRegularExpression idRx(u"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"_s);
-    return idRx.match(id).hasMatch() && !id.contains(u".."_s);
+    const ushort u = c.unicode();
+    return (u >= u'a' && u <= u'z') || (u >= u'A' && u <= u'Z') || (u >= u'0' && u <= u'9') || u == u'.' || u == u'_' || u == u'-';
+}
+
+bool TemplateStore::isValidId(QStringView id)
+{
+    // 1 + up to 63 trailing characters
+    if (id.isEmpty() || id.size() > 64)
+        return false;
+
+    // The first character must be a letter or digit
+    const ushort first = id.front().unicode();
+    const bool firstIsAlnum = (first >= u'a' && first <= u'z') || (first >= u'A' && first <= u'Z') || (first >= u'0' && first <= u'9');
+    if (!firstIsAlnum)
+        return false;
+
+    // Single pass: validate characters and reject adjacent dots
+    for (qsizetype i = 1; i < id.size(); ++i) {
+        const QChar c = id.at(i);
+        if (!isIdChar(c))
+            return false;
+        if (c == u'.' && id.at(i - 1) == u'.')
+            return false; // ".." would allow directory traversal
+    }
+    return true;
 }

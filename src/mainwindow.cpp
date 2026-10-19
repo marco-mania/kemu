@@ -39,7 +39,8 @@
 
 #include <KIO/FileCopyJob>
 
-#include <csignal>
+#include <QBuffer>
+#include <QtSvg>
 
 extern "C" {
 #include <fcntl.h>

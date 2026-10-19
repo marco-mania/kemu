@@ -6,6 +6,18 @@
 
 #include "takesnapshotdialog.h"
 
+#include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPalette>
+#include <QPushButton>
+#include <QTextEdit>
+#include <QVBoxLayout>
+
+#include <KColorScheme>
+#include <KLocalizedString>
+
 TakeSnapshotDialog::TakeSnapshotDialog(const QString &vmName, const QStringList &existingNames, QWidget *parent)
     : QDialog(parent)
     , m_existingNames(existingNames)
@@ -54,12 +66,26 @@ TakeSnapshotDialog::TakeSnapshotDialog(const QString &vmName, const QStringList 
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 }
 
+// Snapshot names only allow ASCII letters, digits, '_' and '-'
+static bool isAllowedSnapshotChar(QChar c)
+{
+    const ushort u = c.unicode();
+    return (u >= u'a' && u <= u'z') || (u >= u'A' && u <= u'Z') || (u >= u'0' && u <= u'9') || u == u'_' || u == u'-';
+}
+
 QString TakeSnapshotDialog::snapshotName() const
 {
-    static const QRegularExpression invalidChars(u"[^A-Za-z0-9_-]"_s);
-    QString n = m_nameEdit->text().trimmed();
-    n.replace(u' ', u'_');
-    n.remove(invalidChars);
+    const QString text = m_nameEdit->text().trimmed();
+
+    QString n;
+    n.reserve(text.size());
+    for (const QChar c : text) {
+        if (c == u' ')
+            n.append(u'_');
+        else if (isAllowedSnapshotChar(c))
+            n.append(c);
+        // everything else is dropped
+    }
     return n;
 }
 

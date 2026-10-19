@@ -7,17 +7,14 @@
 #pragma once
 
 #include <QDialog>
-#include <QDialogButtonBox>
-#include <QFormLayout>
-#include <QLabel>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QRegularExpression>
-#include <QTextEdit>
-#include <QVBoxLayout>
+#include <QString>
+#include <QStringList>
+#include <qdialogbuttonbox.h>
 
-#include <KColorScheme>
-#include <KLocalizedString>
+class QLineEdit;
+class QTextEdit;
+class QLabel;
+class QDialogButtonBox;
 
 using namespace Qt::StringLiterals;
 

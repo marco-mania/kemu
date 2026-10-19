@@ -6,12 +6,9 @@
 
 #pragma once
 
-#include <QLocale>
-#include <QRegularExpression>
+#include "widgets/steppedspinbox.h"
 
 #include <KLocalizedString>
-
-#include "widgets/steppedspinbox.h"
 
 using namespace Qt::StringLiterals;
 
@@ -113,26 +110,35 @@ private:
         return i18nc("Memory size in gibibytes, keep the leading space", " GiB");
     }
 
-    static Parsed parse(const QString &text)
+    static Parsed parse(QStringView text)
     {
         Parsed out;
-        QString str = text.trimmed();
+        QStringView str = text.trimmed();
 
-        static const QRegularExpression unitRe(u"\\s*([a-zA-Z]+)\\s*$"_s);
-        const QRegularExpressionMatch match = unitRe.match(str);
-
-        if (match.hasMatch()) {
-            const QString unit = match.captured(1).toLower();
-
-            if (unit == unitGib().trimmed().toLower() || unit == u"g"_s || unit == u"gb"_s || unit == u"gib"_s)
-                out.gib = true;
-            else if (unit != unitMib().trimmed().toLower() && unit != u"m"_s && unit != u"mb"_s && unit != u"mib"_s)
-                out.unitKnown = false;
-
-            str = str.left(match.capturedStart()).trimmed();
+        // Scan backwards over the ASCII-letter suffix to find where the unit starts
+        qsizetype unitStart = str.size();
+        while (unitStart > 0) {
+            const ushort u = str.at(unitStart - 1).unicode();
+            const bool letter = (u >= u'a' && u <= u'z') || (u >= u'A' && u <= u'Z');
+            if (!letter)
+                break;
+            --unitStart;
         }
 
-        out.number = str;
+        out.number = str.left(unitStart).trimmed().toString();
+
+        if (unitStart < str.size()) {
+            const QStringView unit(str.constData() + unitStart, str.size() - unitStart);
+            const auto eq = [unit](auto s) {
+                return unit.compare(s, Qt::CaseInsensitive) == 0;
+            };
+
+            if (eq(u"g"_s) || eq(u"gb"_s) || eq(u"gib"_s) || eq(unitGib()))
+                out.gib = true;
+            else if (!eq(u"m"_s) && !eq(u"mb"_s) && !eq(u"mib"_s) && !eq(unitMib()))
+                out.unitKnown = false;
+        }
+
         return out;
     }
 };

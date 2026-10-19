@@ -8,13 +8,14 @@
 
 #include <QDir>
 #include <QString>
+#include <QStringView>
 
 namespace ArchivePaths
 {
 
 // Reduces a name taken from an archive to one safe path component.
 // Returns an empty string if nothing usable remains.
-QString sanitizeVmName(const QString &raw);
+QString sanitizeVmName(QStringView raw);
 
 // True for plain relative entry names without traversal or absolute prefixes.
 bool isSafeEntryName(const QString &name);

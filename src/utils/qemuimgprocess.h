@@ -7,8 +7,6 @@
 #pragma once
 
 #include <QByteArray>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QObject>
 #include <QStringList>
 

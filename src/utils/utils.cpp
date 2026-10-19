@@ -8,7 +8,14 @@
 
 #include "const.h"
 
+#include <KConfigGroup>
 #include <KLocalizedString>
+#include <KProcess>
+#include <KSharedConfig>
+
+#include <QFile>
+#include <QFileInfo>
+#include <QRandomGenerator>
 
 #include "kemu_debug.h"
 
@@ -216,10 +223,28 @@ QString generateRandomMac(const QStringList &excludes)
     return mac;
 }
 
-bool isValidMacAddress(const QString &mac)
+static bool isHex(QChar c)
 {
-    static const QRegularExpression re(u"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"_s);
-    return re.match(mac).hasMatch();
+    const ushort u = c.unicode();
+    return (u >= u'0' && u <= u'9') || (u >= u'A' && u <= u'F') || (u >= u'a' && u <= u'f');
+}
+
+bool isValidMacAddress(QStringView mac)
+{
+    if (mac.size() != 17)
+        return false;
+
+    for (int i = 0; i < 17; ++i) {
+        const QChar c = mac.at(i);
+        if (i % 3 == 2) { // Positionen 2, 5, 8, 11, 14
+            if (c != u':')
+                return false;
+        } else {
+            if (!isHex(c))
+                return false;
+        }
+    }
+    return true;
 }
 
 QByteArray macAddressToBytes(const QString &mac)
@@ -235,13 +260,34 @@ QByteArray macAddressToBytes(const QString &mac)
     return result;
 }
 
-bool isValidDnsHostname(const QString &hostname)
+static bool isAlphaNum(QChar c)
 {
-    static const QRegularExpression re(u"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"_s);
-    return re.match(hostname).hasMatch();
+    const ushort u = c.toLower().unicode();
+    return (u >= u'a' && u <= u'z') || (u >= u'0' && u <= u'9');
 }
 
-bool isValidNetworkName(const QString &name, QString *error)
+bool isValidDnsHostname(QStringView label)
+{
+    const qsizetype len = label.size();
+
+    if (len < 1 || len > 63)
+        return false;
+
+    for (qsizetype i = 0; i < len; ++i) {
+        const QChar c = label.at(i);
+        if (i == 0 || i == len - 1) {
+            // First and last character must not be a hyphen
+            if (!isAlphaNum(c))
+                return false;
+        } else {
+            if (!isAlphaNum(c) && c != u'-')
+                return false;
+        }
+    }
+    return true;
+}
+
+bool isValidNetworkName(QStringView name, QString *error)
 {
     const auto fail = [error](const QString &message) {
         if (error)
@@ -254,9 +300,12 @@ bool isValidNetworkName(const QString &name, QString *error)
     if (name.size() > 32)
         return fail(i18n("The name must not be longer than 32 characters."));
 
-    static const QRegularExpression allowed(u"^[a-zA-Z0-9_\\-. ]+$"_s);
-    if (!allowed.match(name).hasMatch())
-        return fail(i18n("Only letters, digits, spaces and the characters _ - . are allowed."));
+    for (const QChar c : name) {
+        const ushort u = c.unicode();
+        const bool ok = (u >= u'a' && u <= u'z') || (u >= u'A' && u <= u'Z') || (u >= u'0' && u <= u'9') || u == u'_' || u == u'-' || u == u'.' || u == u' ';
+        if (!ok)
+            return fail(i18n("Only letters, digits, spaces and the characters _ - . are allowed."));
+    }
 
     // The name becomes a directory: "." and ".." would escape the runtime
     // directory, a leading dot would hide it.
@@ -266,12 +315,13 @@ bool isValidNetworkName(const QString &name, QString *error)
     return true;
 }
 
-bool isValidDnsDomain(const QString &domain)
+bool isValidDnsDomain(QStringView domain)
 {
     if (domain.isEmpty() || domain.size() > 189)
         return false;
-    const QStringList labels = domain.split(u'.');
-    return std::all_of(labels.cbegin(), labels.cend(), [](const QString &label) {
+
+    const QList<QStringView> labels = domain.split(u'.');
+    return std::all_of(labels.cbegin(), labels.cend(), [](QStringView label) {
         return isValidDnsHostname(label);
     });
 }

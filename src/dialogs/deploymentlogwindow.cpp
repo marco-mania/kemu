@@ -6,6 +6,21 @@
 
 #include "deploymentlogwindow.h"
 
+#include <QClipboard>
+#include <QDialogButtonBox>
+#include <QFile>
+#include <QFontDatabase>
+#include <QGuiApplication>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QRegularExpression>
+#include <QScrollBar>
+#include <QStringConverter>
+#include <QTextCursor>
+#include <QVBoxLayout>
+
+#include <KLocalizedString>
+
 DeploymentLogWindow::DeploymentLogWindow(const QString &vmName, const QString &logPath, QWidget *parent)
     : QWidget(parent, Qt::Window)
     , m_logPath(logPath)

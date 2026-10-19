@@ -69,19 +69,38 @@ QHash<QString, QString> readItem(QXmlStreamReader &xml)
     return fields;
 }
 
-QString normalizeMac(QString mac)
+static bool isHexDigit(QChar c)
 {
-    static const QRegularExpression hexRx(u"^[0-9a-fA-F]{12}$"_s);
+    const ushort u = c.unicode();
+    return (u >= u'0' && u <= u'9') || (u >= u'a' && u <= u'f') || (u >= u'A' && u <= u'F');
+}
 
-    mac.remove(u':');
-    mac.remove(u'-');
-    if (!hexRx.match(mac).hasMatch())
+QString normalizeMac(QStringView mac)
+{
+    // First pass: collect hex digits, dropping ':' and '-';
+    // anything else makes the address invalid
+    QString hex;
+    hex.reserve(12);
+    for (const QChar c : mac) {
+        if (c == u':' || c == u'-')
+            continue;
+        if (!isHexDigit(c))
+            return {};
+        hex.append(c);
+    }
+
+    if (hex.size() != 12)
         return {};
 
-    QStringList parts;
-    for (int i = 0; i < 12; i += 2)
-        parts << mac.mid(i, 2);
-    return parts.join(u':').toLower();
+    // Second pass: re-insert colons every two characters
+    QString out;
+    out.reserve(17);
+    for (int i = 0; i < 12; ++i) {
+        if (i > 0 && i % 2 == 0)
+            out.append(u':');
+        out.append(hex.at(i).toLower());
+    }
+    return out;
 }
 
 // base^exponent, or 0 on overflow.

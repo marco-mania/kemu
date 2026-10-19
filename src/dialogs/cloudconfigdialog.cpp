@@ -10,6 +10,24 @@
 #include "utils/templatestore.h"
 #include "utils/utils.h"
 
+#include <QCheckBox>
+#include <QComboBox>
+#include <QCompleter>
+#include <QDialogButtonBox>
+#include <QFileDialog>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QRegularExpressionValidator>
+#include <QTimeZone>
+#include <QVBoxLayout>
+
+#include <KColorScheme>
+#include <KLocalizedString>
+
 using namespace Qt::StringLiterals;
 
 CloudConfigDialog::CloudConfigDialog(QWidget *parent)

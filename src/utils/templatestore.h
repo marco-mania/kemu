@@ -78,7 +78,7 @@ public:
     bool removeUserCloudInit(const QString &id, QString *error = nullptr);
 
     /// Ids end up in file names, so they are restricted to a safe set.
-    [[nodiscard]] static bool isValidId(const QString &id);
+    [[nodiscard]] static bool isValidId(QStringView id);
 
     /// The definition of template @p id in the file at @p path.
     [[nodiscard]] static std::optional<QJsonObject> readTemplate(const QString &path, const QString &id);

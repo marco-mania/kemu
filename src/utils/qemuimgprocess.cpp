@@ -6,9 +6,11 @@
 
 #include "qemuimgprocess.h"
 
-#include <QRegularExpression>
-
 #include <KLocalizedString>
+
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QRegularExpression>
 
 #include "externaltools.h"
 

@@ -6,28 +6,19 @@
 
 #pragma once
 
-#include <QCheckBox>
-#include <QComboBox>
-#include <QCompleter>
 #include <QDialog>
-#include <QDialogButtonBox>
-#include <QFileDialog>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QLabel>
-#include <QLineEdit>
-#include <QPlainTextEdit>
-#include <QPushButton>
-#include <QRegularExpressionValidator>
-#include <QTimeZone>
-#include <QVBoxLayout>
-
-#include <KColorScheme>
-#include <KLocalizedString>
+#include <QWidget>
 
 #include "utils/cloudimagedeployer.h"
 
 using namespace Qt::StringLiterals;
+
+class QLineEdit;
+class QLabel;
+class QCheckBox;
+class QComboBox;
+class QPlainTextEdit;
+class QDialogButtonBox;
 
 class CloudConfigDialog : public QDialog
 {

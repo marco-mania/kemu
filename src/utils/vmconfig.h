@@ -7,23 +7,14 @@
 #pragma once
 
 #include "const.h"
-#include <QBuffer>
-#include <QByteArray>
-#include <QCoreApplication>
+
 #include <QDir>
-#include <QFile>
 #include <QIcon>
-#include <QJsonArray>
-#include <QJsonDocument>
 #include <QJsonObject>
-#include <QPainter>
-#include <QPixmap>
+#include <QList>
 #include <QSize>
-#include <QStandardPaths>
 #include <QString>
-#include <QSysInfo>
 #include <QUuid>
-#include <QtSvg>
 
 #include <KLocalizedString>
 #include <qtmetamacros.h>
@@ -847,11 +838,11 @@ public:
     [[nodiscard]] static QString defaultIconForType(VMSpecs::OsType type);
     [[nodiscard]] static QString defaultIconFor(VMSpecs::OsType type, const QString &variant);
 
-    // Single rule set for names that become directories in the VM store.
-    [[nodiscard]] static bool isValidVmName(const QString &name, QString *error = nullptr);
+    [[nodiscard]] static bool isAllowedCharInVmName(const QChar c);
+    [[nodiscard]] static bool isValidVmName(QStringView name, QString *error = nullptr);
 
     // --- Extra disks ---
-    [[nodiscard]] static bool isValidExtraDiskFileName(const QString &fileName);
+    [[nodiscard]] static bool isValidExtraDiskFileName(QStringView fileName);
     /// Lowest free "disk-<n>.qcow2" not listed in @p taken.
     [[nodiscard]] static QString nextExtraDiskFileName(const QStringList &taken);
     [[nodiscard]] static QString extraDiskDriveId(const QString &fileName);

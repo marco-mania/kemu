@@ -6,25 +6,15 @@
 
 #pragma once
 
+#include <KProcess>
+
 #include <QApplication>
 #include <QByteArray>
 #include <QDir>
-#include <QEventLoop>
-#include <QFile>
-#include <QFileInfo>
-#include <QFileSystemWatcher>
-#include <QHash>
-#include <QMetaEnum>
+// #include <QMetaEnum>
 #include <QProcessEnvironment>
-#include <QRandomGenerator>
-#include <QRegularExpression>
 #include <QString>
 #include <QStringView>
-#include <QTimer>
-
-#include <KConfigGroup>
-#include <KProcess>
-#include <KSharedConfig>
 
 using namespace Qt::StringLiterals;
 
@@ -148,7 +138,7 @@ OvmfVarsResult ensureOvmfVars(const QDir &vmDir, bool secureBoot);
 QString detectHostKeyboardLayout();
 
 QString generateRandomMac(const QStringList &excludes = {});
-bool isValidMacAddress(const QString &mac);
+bool isValidMacAddress(QStringView mac);
 
 // Parses "52:54:00:12:34:56" into its 6 raw bytes. Returns an empty
 // array for invalid input.
@@ -156,16 +146,16 @@ QByteArray macAddressToBytes(const QString &mac);
 
 // Single-label RFC 1123 host name: [a-z0-9-], 1-63 chars, no leading or
 // trailing '-'. Used for the per-network DNS names of VMs.
-bool isValidDnsHostname(const QString &hostname);
+bool isValidDnsHostname(QStringView hostname);
 
 // Name of a virtual network. Same character set as a VM name (see
 // VMConfig::isValidVmName), but shorter: the name is a KConfig group key and
 // shows up in log output, where 32 characters are plenty.
-bool isValidNetworkName(const QString &name, QString *error = nullptr);
+bool isValidNetworkName(QStringView name, QString *error = nullptr);
 
 // Dot-separated list of valid host name labels, e.g. "lab.example.com".
 // Capped so that "<63-char host>.<domain>" stays a legal 253-byte name.
-bool isValidDnsDomain(const QString &domain);
+bool isValidDnsDomain(QStringView domain);
 
 QString quoteShellArg(const QString &arg);
 

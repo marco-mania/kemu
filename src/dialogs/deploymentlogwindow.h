@@ -6,23 +6,11 @@
 
 #pragma once
 
-#include <QClipboard>
-#include <QDialogButtonBox>
-#include <QFile>
-#include <QFontDatabase>
-#include <QGuiApplication>
-#include <QPlainTextEdit>
-#include <QPushButton>
-#include <QRegularExpression>
-#include <QScrollBar>
 #include <QString>
-#include <QStringConverter>
-#include <QTextCursor>
 #include <QTimer>
-#include <QVBoxLayout>
 #include <QWidget>
 
-#include <KLocalizedString>
+class QPlainTextEdit;
 
 using namespace Qt::StringLiterals;
 

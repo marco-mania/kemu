@@ -6,20 +6,26 @@
 
 #include "archivepaths.h"
 
-#include <QRegularExpression>
+#include "vmconfig.h"
 
 using namespace Qt::StringLiterals;
 
-QString ArchivePaths::sanitizeVmName(const QString &raw)
+QString ArchivePaths::sanitizeVmName(QStringView raw)
 {
-    static const QRegularExpression invalid(u"[^a-zA-Z0-9_\\-. ]"_s);
+    QString name;
+    name.reserve(raw.size());
 
-    QString name = raw;
-    name.replace(invalid, u"_"_s);
+    // Replace every character outside the allowed set with '_'
+    for (const QChar c : raw)
+        name.append(VMConfig::isAllowedCharInVmName(c) ? c : u'_');
+
     name = name.trimmed();
 
-    while (name.startsWith(u'.'))
-        name.remove(0, 1);
+    // Strip leading dots in one go instead of a remove(0, 1) loop
+    qsizetype i = 0;
+    while (i < name.size() && name.at(i) == u'.')
+        ++i;
+    name.remove(0, i);
 
     name.truncate(96);
     name = name.trimmed();

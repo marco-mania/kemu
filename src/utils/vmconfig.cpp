@@ -10,6 +10,15 @@
 #include "utils/qemucapabilities.h"
 #include "utils/utils.h"
 
+#include <QCoreApplication>
+#include <QFile>
+#include <QJsonArray>
+#include <QPainter>
+#include <QPixmap>
+#include <QStandardPaths>
+#include <QSysInfo>
+#include <QThread>
+
 #include <algorithm>
 
 using namespace Qt::StringLiterals;
@@ -511,7 +520,13 @@ QString VMConfig::defaultIconFor(VMSpecs::OsType type, const QString &variant)
     return QFile::exists(path) ? path : defaultIconForType(type);
 }
 
-bool VMConfig::isValidVmName(const QString &name, QString *error)
+bool VMConfig::isAllowedCharInVmName(const QChar c)
+{
+    const ushort u = c.unicode();
+    return (u >= u'a' && u <= u'z') || (u >= u'A' && u <= u'Z') || (u >= u'0' && u <= u'9') || u == u'_' || u == u'-' || u == u'.' || u == u' ';
+}
+
+bool VMConfig::isValidVmName(QStringView name, QString *error)
 {
     const auto fail = [error](const QString &message) {
         if (error)
@@ -519,17 +534,20 @@ bool VMConfig::isValidVmName(const QString &name, QString *error)
         return false;
     };
 
-    const QString trimmed = name.trimmed();
+    // QStringView::trimmed() returns a view into the same data - no copy
+    const QStringView trimmed = name.trimmed();
 
     if (trimmed.isEmpty())
         return fail(i18n("A name is required."));
 
-    if (trimmed.length() > 64)
+    if (trimmed.size() > 64)
         return fail(i18n("The name must not be longer than 64 characters."));
 
-    static const QRegularExpression allowed(u"^[a-zA-Z0-9_\\-. ]+$"_s);
-    if (!allowed.match(trimmed).hasMatch())
-        return fail(i18n("Only letters, digits, spaces and the characters _ - . are allowed."));
+    // Only ASCII letters, digits, spaces and _ - . are permitted
+    for (const QChar c : trimmed) {
+        if (!isAllowedCharInVmName(c))
+            return fail(i18n("Only letters, digits, spaces and the characters _ - . are allowed."));
+    }
 
     // The name becomes a directory below the VM store. A leading dot would
     // hide it; "." and ".." would escape the store entirely.
@@ -544,11 +562,6 @@ bool VMConfig::isValidVmName(const QString &name, QString *error)
 
 namespace
 {
-const QRegularExpression &extraDiskFileNameRx()
-{
-    static const QRegularExpression rx(u"^disk-([1-9][0-9]{0,2})\\.qcow2$"_s);
-    return rx;
-}
 
 // ATA, NVMe and virtio-blk all cap the serial at 20 characters.
 QString sanitizeDiskSerial(const QString &serial)
@@ -569,9 +582,26 @@ QString diskDisplayName(const DiskConfig &disk)
 }
 }
 
-bool VMConfig::isValidExtraDiskFileName(const QString &fileName)
+bool VMConfig::isValidExtraDiskFileName(QStringView fileName)
 {
-    return extraDiskFileNameRx().match(fileName).hasMatch();
+    // "disk-" + 1..3 digits + ".qcow2" => 12..14 characters total
+    if (fileName.size() < 12 || fileName.size() > 14)
+        return false;
+
+    if (!fileName.startsWith(u"disk-"_s) || !fileName.endsWith(u".qcow2"_s))
+        return false;
+
+    // The digits sit between the prefix and the extension
+    const QStringView digits = fileName.mid(5, fileName.size() - 11);
+    for (qsizetype i = 0; i < digits.size(); ++i) {
+        const QChar c = digits.at(i);
+        if (c < u'0' || c > u'9')
+            return false;
+        // The first digit must not be '0' (values 1..999, no leading zeros)
+        if (i == 0 && c == u'0')
+            return false;
+    }
+    return true;
 }
 
 QString VMConfig::nextExtraDiskFileName(const QStringList &taken)
