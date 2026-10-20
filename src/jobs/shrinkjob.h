@@ -26,6 +26,17 @@ class ShrinkJob : public KJob
 public:
     explicit ShrinkJob(const QString &vmName, const QStringList &diskPaths, QObject *parent = nullptr);
 
+    // Copies the data of the backing files into the images, which then
+    // stand alone. Otherwise backing files are kept.
+    void setFlatten(bool flatten)
+    {
+        m_flatten = flatten;
+    }
+    [[nodiscard]] bool isFlatten() const
+    {
+        return m_flatten;
+    }
+
     void start() override;
 
     [[nodiscard]] QString vmName() const
@@ -45,4 +56,5 @@ private:
     qsizetype m_index = 0;
     QString m_tmpPath;
     QemuImgProcess *m_process = nullptr;
+    bool m_flatten = false;
 };

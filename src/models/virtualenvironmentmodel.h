@@ -42,6 +42,7 @@ struct VmEntry {
         Running,
         ShuttingDown,
         Shrinking,
+        Flattening, // a linked clone copies in the shared disk data
         Exporting,
         Deploying,
         Cloning,
@@ -72,6 +73,16 @@ struct VmEntry {
     QDateTime startedAt; // wall-clock when the VM entered Running; null otherwise
     QDateTime savestateTime; // mtime of the savestate file; null when none
     QIcon styledIcon; // cached composed icon (visual state + headless emblem)
+
+    // Derived from the configs of all VMs on every reload, never stored.
+    QStringList linkedClones; // linked clones based on this VM
+    bool linkedSourceMissing = false; // this linked clone lost its source
+
+    // A source VM stays untouched while linked clones depend on it.
+    [[nodiscard]] bool isFrozen() const
+    {
+        return !linkedClones.isEmpty();
+    }
 
     // Everything that only exists while the VM is live. Kept in one place so a
     // reload cannot silently drop a field.
@@ -239,6 +250,7 @@ private:
     QTimer *m_uptimeTimer = nullptr;
 
     void recomputeIcon(VmEntry &e) const; // rebuild cached styled icon
+    void refreshLinks(); // derive linked clone relations from the configs
     void refreshSavestateTime(VmEntry &e) const; // (re)read savestate file mtime
     void updateUptimeTimer(); // start/stop based on running VMs
     void tickUptime(); // emit subtitle/tooltip for running VMs

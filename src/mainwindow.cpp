@@ -8,6 +8,7 @@
 
 #include "const.h"
 #include "dbusdisplay/dbusdisplayconst.h"
+#include "dialogs/clonevmdialog.h"
 #include "dialogs/deploymentabortdialog.h"
 #include "dialogs/editvmdialog.h"
 #include "dialogs/licenseagreementdialog.h"
@@ -26,10 +27,12 @@
 #include "runtime/vmruntimeinfo.h"
 #include "utils/asynchelperprocess.h"
 #include "utils/cloudimagedeployer.h"
+#include "utils/linkedclones.h"
 #include "utils/qemucapabilities.h"
 #include "utils/qemucommandbuilder.h"
 #include "utils/qemuimgprocess.h"
 #include "utils/sandboxcapabilities.h"
+#include "utils/snapshotmanager.h"
 #include "utils/startupchain.h"
 #include "utils/usbenumerator.h"
 #include "utils/utils.h"
@@ -207,7 +210,7 @@ bool MainWindow::queryClose()
         const VmEntry *e = veModel->entryByName(name);
         if (!e)
             continue;
-        if (e->state == VmEntry::State::Shrinking)
+        if (e->state == VmEntry::State::Shrinking || e->state == VmEntry::State::Flattening)
             hasShrinking = true;
         if (e->state == VmEntry::State::Running || e->state == VmEntry::State::Deploying)
             hasRunning = true;
@@ -911,8 +914,14 @@ void MainWindow::setupActions()
     auto *actionClone = ac->addAction(u"vm_clone"_s);
     actionClone->setIcon(QIcon::fromTheme(u"edit-copy"_s));
     actionClone->setText(i18n("Clone VM..."));
-    actionClone->setToolTip(i18n("Create a full copy of this virtual machine"));
+    actionClone->setToolTip(i18n("Create a full or linked copy of this virtual machine"));
     connect(actionClone, &QAction::triggered, this, &MainWindow::cloneVM);
+
+    auto *actionMakeIndependent = ac->addAction(u"vm_make_independent"_s);
+    actionMakeIndependent->setIcon(QIcon::fromTheme(u"remove-link"_s));
+    actionMakeIndependent->setText(i18n("Make Independent"));
+    actionMakeIndependent->setToolTip(i18n("Copy the shared disk data into this linked clone, so that it no longer depends on its source"));
+    connect(actionMakeIndependent, &QAction::triggered, this, &MainWindow::makeIndependent);
 
     auto *actionShrink = ac->addAction(u"vm_shrink"_s);
     actionShrink->setIcon(QIcon::fromTheme(u"edit-clear-history"_s));
@@ -994,19 +1003,35 @@ void MainWindow::updateActionStates()
     const bool isSaving = entry && entry->state == VmEntry::State::Saving;
     const bool isSavedOnly = entry && entry->state == VmEntry::State::Saved;
     const bool hasDisk = entry && !entry->config.diskPath().isEmpty();
-    const bool canChangeMedia = hasSelection && entry && (entry->state == VmEntry::State::Stopped || entry->state == VmEntry::State::Running);
+    // A frozen source must stay exactly as its linked clones saw it.
+    const bool isFrozen = entry && entry->isFrozen();
+    const bool isOrphan = entry && entry->linkedSourceMissing;
+    const bool isLinkedClone = entry && entry->config.isLinkedClone();
+    const QString linkBlocker = linkBlockReason(entry);
+    const bool canChangeMedia = hasSelection && entry && !isFrozen && (entry->state == VmEntry::State::Stopped || entry->state == VmEntry::State::Running);
 
     // --- Configure action states ---
     // Always available: read-only while the VM is busy.
     QAction *editAction = actionCollection()->action(u"vm_edit"_s);
     editAction->setEnabled(hasSelection);
-    editAction->setToolTip(isBusy ? i18n("Show the specification (read-only while the VM is busy)") : i18n("Edit the virtual machine's specification"));
-    actionCollection()->action(u"vm_delete"_s)->setEnabled(hasSelection && !isBusy);
-    actionCollection()->action(u"vm_clone"_s)->setEnabled(hasSelection && !isBusy);
+    if (isFrozen)
+        editAction->setToolTip(i18n("Show the specification (read-only while linked clones depend on this VM)"));
+    else
+        editAction->setToolTip(isBusy ? i18n("Show the specification (read-only while the VM is busy)") : i18n("Edit the virtual machine's specification"));
+    QAction *deleteAction = actionCollection()->action(u"vm_delete"_s);
+    deleteAction->setEnabled(hasSelection && !isBusy && !isFrozen);
+    deleteAction->setToolTip(isFrozen ? linkBlocker : QString());
+    actionCollection()->action(u"vm_clone"_s)->setEnabled(hasSelection && !isBusy && !isOrphan);
+
+    QAction *makeIndependentAction = actionCollection()->action(u"vm_make_independent"_s);
+    makeIndependentAction->setVisible(isLinkedClone);
+    makeIndependentAction->setEnabled(isLinkedClone && !isBusy && !isOrphan);
     actionCollection()->action(u"vm_show_cmd"_s)->setEnabled(hasSelection);
 
     // A VM can be started if it is not busy OR if it is currently in 'Saved' state (it will resume).
-    actionCollection()->action(u"vm_start"_s)->setEnabled(hasSelection && (!isBusy || isSavedOnly));
+    QAction *startAction = actionCollection()->action(u"vm_start"_s);
+    startAction->setEnabled(hasSelection && (!isBusy || isSavedOnly) && linkBlocker.isEmpty());
+    startAction->setToolTip(linkBlocker);
 
     // SDL opens a real display or none at all - fixed at QEMU's start,
     // with no way to attach one afterwards. Only the integrated viewer can
@@ -1014,8 +1039,8 @@ void MainWindow::updateActionStates()
     const bool supportsHeadless = entry && entry->config.displayType() == VMSpecs::DisplayType::Dbus;
 
     QAction *startHeadlessAction = actionCollection()->action(u"vm_start_headless"_s);
-    startHeadlessAction->setEnabled(hasSelection && supportsHeadless && (!isBusy || isSavedOnly));
-    startHeadlessAction->setToolTip(supportsHeadless ? QString()
+    startHeadlessAction->setEnabled(hasSelection && supportsHeadless && (!isBusy || isSavedOnly) && linkBlocker.isEmpty());
+    startHeadlessAction->setToolTip(supportsHeadless ? linkBlocker
                                                      : i18n("Not available for the SDL display: once started without a "
                                                             "window, none can be attached later. Switch to the integrated "
                                                             "viewer in the VM's settings to use this."));
@@ -1045,12 +1070,12 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_eject_iso"_s)->setEnabled(canChangeMedia && !currentConfig.isoPath().isEmpty());
     actionCollection()->action(u"vm_change_floppy"_s)->setEnabled(canChangeMedia);
     actionCollection()->action(u"vm_eject_floppy"_s)->setEnabled(canChangeMedia && !currentConfig.floppyPath().isEmpty());
-    actionCollection()->action(u"vm_shrink"_s)->setEnabled(hasSelection && !isBusy);
+    actionCollection()->action(u"vm_shrink"_s)->setEnabled(hasSelection && !isBusy && linkBlocker.isEmpty());
 
     // Snapshots must not be managed if the VM is in 'Saved' state.
-    actionCollection()->action(u"vm_manage_snapshots"_s)->setEnabled(hasSelection && hasDisk && !isDeploying && !isSavedOnly);
+    actionCollection()->action(u"vm_manage_snapshots"_s)->setEnabled(hasSelection && hasDisk && !isDeploying && !isSavedOnly && linkBlocker.isEmpty());
 
-    actionCollection()->action(u"vm_export"_s)->setEnabled(hasSelection && !isBusy);
+    actionCollection()->action(u"vm_export"_s)->setEnabled(hasSelection && !isBusy && !isOrphan);
     actionCollection()->action(u"vm_import"_s)->setEnabled(true);
     actionCollection()->action(u"vm_screenshot"_s)->setEnabled(hasSelection && isRunning && vmSupportsScreendump());
 
@@ -1158,6 +1183,7 @@ void MainWindow::updateDetails()
     const bool isRunning = entry && entry->state == VmEntry::State::Running;
     const bool isHeadless = entry && entry->isHeadless;
     const bool isShrinking = entry && entry->state == VmEntry::State::Shrinking;
+    const bool isFlattening = entry && entry->state == VmEntry::State::Flattening;
     const bool isExporting = entry && entry->state == VmEntry::State::Exporting;
     const bool isDeploying = entry && entry->state == VmEntry::State::Deploying;
     const bool isCloning = entry && entry->state == VmEntry::State::Cloning;
@@ -1306,6 +1332,10 @@ void MainWindow::updateDetails()
         statusDot = u"&#x25CF;"_s;
         statusText = i18n("Compacting Disk...");
         statusColor = colNeutral;
+    } else if (isFlattening) {
+        statusDot = u"&#x25CF;"_s;
+        statusText = i18n("Making Independent...");
+        statusColor = colNeutral;
     } else if (isExporting) {
         statusDot = u"&#x25CF;"_s;
         statusText = i18n("Exporting...");
@@ -1318,6 +1348,14 @@ void MainWindow::updateDetails()
         statusDot = u"&#x25CF;"_s;
         statusText = i18n("Cloning...");
         statusColor = colNeutral;
+    } else if (entry && entry->isFrozen()) {
+        statusDot = u"&#x25CF;"_s;
+        statusText = i18n("Frozen");
+        statusColor = colInactive;
+    } else if (entry && entry->linkedSourceMissing) {
+        statusDot = u"&#x25CF;"_s;
+        statusText = i18n("Source Missing");
+        statusColor = colNegative;
     } else {
         statusDot = u"&#x25CF;"_s;
         statusText = i18n("Powered Off");
@@ -1466,6 +1504,16 @@ void MainWindow::updateDetails()
         const QString label = disk.label.isEmpty() ? i18n("Hard Disk %1", i + 2) : disk.label;
         const QString value = diskValueFor(getVmDir(currentConfig.name()).absoluteFilePath(disk.fileName), disk.diskInterface);
         rows.insert(diskRow++, {u"drive-harddisk"_s, label, value, false, false});
+    }
+
+    if (entry && entry->isFrozen()) {
+        rows.insert(diskRow++,
+                    {u"object-locked"_s, i18n("Linked Clones"), i18n("Frozen, used by %1", entry->linkedClones.join(u", "_s).toHtmlEscaped()), false, false});
+    } else if (currentConfig.isLinkedClone()) {
+        const QString source = currentConfig.linkedSourceName().toHtmlEscaped();
+        const bool missing = entry && entry->linkedSourceMissing;
+        rows.insert(diskRow++,
+                    {u"insert-link"_s, i18n("Linked Clone"), missing ? i18n("Based on %1 (missing)", source) : i18n("Based on %1", source), false, missing});
     }
 
     if (!portFwdVal.isEmpty())
@@ -1680,6 +1728,49 @@ QString MainWindow::saveStateBlockReason(const VmEntry *entry) const
     return {};
 }
 
+QString MainWindow::linkBlockReason(const VmEntry *entry) const
+{
+    if (!entry)
+        return {};
+
+    if (entry->isFrozen()) {
+        return i18np("'%2' is frozen: the linked clone %3 is based on its disks. Delete it or make it independent first.",
+                     "'%2' is frozen: the linked clones %3 are based on its disks. Delete them or make them independent first.",
+                     entry->linkedClones.size(),
+                     entry->name,
+                     entry->linkedClones.join(u", "_s));
+    }
+
+    if (entry->linkedSourceMissing)
+        return i18n("'%1' is a linked clone of '%2', which is missing. It cannot run without the disks of its source.",
+                    entry->name,
+                    entry->config.linkedSourceName());
+
+    return {};
+}
+
+QString MainWindow::linkedCloneBlockReason(const VmEntry *entry) const
+{
+    if (!entry)
+        return {};
+
+    // One level only: a chain would freeze VMs that are clones themselves.
+    if (entry->config.isLinkedClone())
+        return i18n("'%1' is a linked clone itself and can only be cloned in full.", entry->name);
+
+    if (entry->hasSavestateFile)
+        return i18n("A linked clone needs a source that was shut down. Discard the saved state of '%1' or resume and shut it down first.", entry->name);
+
+    const VMConfig::DeployState deployState = entry->config.deployState();
+    if (deployState != VMConfig::DeployState::None && deployState != VMConfig::DeployState::Complete)
+        return i18n("'%1' has not finished its deployment yet.", entry->name);
+
+    if (entry->config.diskPath().isEmpty())
+        return i18n("'%1' has no disk to share.", entry->name);
+
+    return {};
+}
+
 void MainWindow::changeISO()
 {
     if (!currentConfig.name().isEmpty())
@@ -1707,7 +1798,7 @@ void MainWindow::ejectFloppy()
 void MainWindow::changeISOForVm(const QString &vmName)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
-    if (!entry)
+    if (!entry || entry->isFrozen())
         return;
 
     QWidget *parentW = dialogParentFor(vmName);
@@ -1753,7 +1844,7 @@ void MainWindow::changeISOForVm(const QString &vmName)
 void MainWindow::ejectISOForVm(const QString &vmName)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
-    if (!entry)
+    if (!entry || entry->isFrozen())
         return;
 
     QWidget *parentW = dialogParentFor(vmName);
@@ -1792,7 +1883,7 @@ void MainWindow::ejectISOForVm(const QString &vmName)
 void MainWindow::changeFloppyForVm(const QString &vmName)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
-    if (!entry)
+    if (!entry || entry->isFrozen())
         return;
 
     QWidget *parentW = dialogParentFor(vmName);
@@ -1840,7 +1931,7 @@ void MainWindow::changeFloppyForVm(const QString &vmName)
 void MainWindow::ejectFloppyForVm(const QString &vmName)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
-    if (!entry)
+    if (!entry || entry->isFrozen())
         return;
 
     QWidget *parentW = dialogParentFor(vmName);
@@ -1919,7 +2010,7 @@ void MainWindow::shrinkDisk()
     if (currentConfig.name().isEmpty())
         return;
 
-    if (veModel->isBusy(currentConfig.name()))
+    if (veModel->isBusy(currentConfig.name()) || !linkBlockReason(veModel->entryByName(currentConfig.name())).isEmpty())
         return;
 
     const QStringList diskPaths = currentConfig.diskPaths(getVmDir(currentConfig.name()));
@@ -2411,6 +2502,9 @@ void MainWindow::showContextMenu(const QPoint &pos)
             if (isShrinking) {
                 auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"view-refresh"_s), i18n("Compacting disk..."));
                 infoAction->setEnabled(false);
+            } else if (entry && entry->state == VmEntry::State::Flattening) {
+                auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"view-refresh"_s), i18n("Making independent..."));
+                infoAction->setEnabled(false);
             } else if (isDeploying) {
                 auto *logAction = contextMenu.addAction(QIcon::fromTheme(u"text-x-log"_s), i18n("Show Deployment Log"));
                 connect(logAction, &QAction::triggered, this, [this, vmName]() {
@@ -2429,6 +2523,8 @@ void MainWindow::showContextMenu(const QPoint &pos)
                 contextMenu.addAction(actionCollection()->action(u"vm_edit"_s));
                 contextMenu.addSeparator();
                 contextMenu.addAction(actionCollection()->action(u"vm_clone"_s));
+                if (entry && entry->config.isLinkedClone())
+                    contextMenu.addAction(actionCollection()->action(u"vm_make_independent"_s));
                 contextMenu.addSeparator();
                 contextMenu.addAction(actionCollection()->action(u"vm_shrink"_s));
                 contextMenu.addAction(actionCollection()->action(u"vm_export"_s));
@@ -2558,6 +2654,12 @@ void MainWindow::startVM(bool headless)
     const bool isResume = SaveStateManager::hasSavestate(vmDirPath, vmName);
     if (veModel->isBusy(vmName) && !isResume) {
         KMessageBox::error(this, i18n("The VM '%1' is currently busy.", vmName), i18n("Busy"));
+        return;
+    }
+
+    const QString linkBlocker = linkBlockReason(veModel->entryByName(vmName));
+    if (!linkBlocker.isEmpty()) {
+        KMessageBox::error(this, linkBlocker, i18nc("@title:window", "Cannot Start VM"));
         return;
     }
 
@@ -3304,6 +3406,11 @@ void MainWindow::manageSnapshotsForVm(const QString &vmName)
 
     const VmEntry *entry = veModel->entryByName(vmName);
 
+    if (const QString blocker = linkBlockReason(entry); !blocker.isEmpty()) {
+        KMessageBox::error(dialogParentFor(vmName), blocker, i18nc("@title:window", "Snapshots"));
+        return;
+    }
+
     // Anything but a cleanly stopped or saved VM means QEMU, a shrink job or an
     // export has the image open.
     const bool imageInUse = entry && entry->state != VmEntry::State::Stopped && entry->state != VmEntry::State::Saved;
@@ -3468,7 +3575,10 @@ void MainWindow::editVM()
 {
     // A busy VM cannot be reconfigured, but its specification is still worth
     // looking at, so open the dialog read-only instead of refusing.
-    const bool readOnly = veModel->isBusy(currentConfig.name());
+    // Renaming or changing a frozen source would break its linked clones.
+    const VmEntry *editEntry = veModel->entryByName(currentConfig.name());
+    const bool frozen = editEntry && editEntry->isFrozen();
+    const bool readOnly = frozen || veModel->isBusy(currentConfig.name());
 
     const QemuImgProcess::ImageInfo dInfo = diskInfoFor(currentConfig.diskPath());
     if (dInfo.isValid)
@@ -3489,7 +3599,7 @@ void MainWindow::editVM()
     dialog.setConfig(currentConfig);
 
     if (readOnly) {
-        dialog.setReadOnly(true);
+        dialog.setReadOnly(true, frozen);
         dialog.exec();
         return;
     }
@@ -3675,6 +3785,11 @@ void MainWindow::deleteVM()
     if (veModel->isBusy(currentConfig.name()))
         return;
 
+    if (const VmEntry *entry = veModel->entryByName(currentConfig.name()); entry && entry->isFrozen()) {
+        KMessageBox::error(this, linkBlockReason(entry), i18nc("@title:window", "Cannot Delete VM"));
+        return;
+    }
+
     const auto answer = KMessageBox::questionTwoActions(this,
                                                         i18n("Delete VM '%1' and all associated files?", currentConfig.name()),
                                                         i18n("Delete VM"),
@@ -3722,13 +3837,27 @@ void MainWindow::cloneVM()
     while (existingVmNames().contains(suggestion))
         suggestion = u"%1_clone%2"_s.arg(srcName).arg(++suffix);
 
-    bool ok = false;
-    QString cloneName = QInputDialog::getText(this, i18n("Clone VM"), i18n("Name for the cloned VM:"), QLineEdit::Normal, suggestion, &ok);
+    const VmEntry *srcEntry = veModel->entryByName(srcName);
 
-    if (!ok || cloneName.trimmed().isEmpty())
+    const QPointer<CloneVmDialog> dialog = new CloneVmDialog(srcName, suggestion, this);
+    dialog->setLinkedCloneBlocker(linkedCloneBlockReason(srcEntry));
+    const bool accepted = dialog->exec() == QDialog::Accepted;
+    if (!dialog)
+        return;
+    const QString cloneName = dialog->cloneName();
+    const bool linked = dialog->isLinkedClone();
+    delete dialog;
+
+    if (!accepted || cloneName.isEmpty())
         return;
 
-    cloneName = cloneName.trimmed();
+    // The source may have changed while the dialog was open.
+    srcEntry = veModel->entryByName(srcName);
+    if (!srcEntry || veModel->isBusy(srcName) || (linked && !linkedCloneBlockReason(srcEntry).isEmpty())) {
+        KMessageBox::error(this, i18n("The VM '%1' cannot be cloned right now.", srcName), i18n("Clone VM"));
+        return;
+    }
+    const QUuid srcUuid = srcEntry->config.uuid();
 
     QString nameError;
     if (!VMConfig::isValidVmName(cloneName, &nameError)) {
@@ -3746,13 +3875,14 @@ void MainWindow::cloneVM()
     const QString dstPath = baseDir.filePath(cloneName);
 
     auto *job = new CloneJob(srcName, srcPath, dstPath, loadVmConfig(srcPath).diskFileNames(), this);
+    job->setLinked(linked);
 
     if (jobTracker)
         jobTracker->registerJob(job);
 
     veModel->setVmState(srcName, VmEntry::State::Cloning);
 
-    connect(job, &CloneJob::finished, this, [this, srcName, cloneName, dstPath](KJob *kjob) {
+    connect(job, &CloneJob::finished, this, [this, srcName, srcUuid, cloneName, dstPath](KJob *kjob) {
         auto *cloneJob = qobject_cast<CloneJob *>(kjob);
         if (!cloneJob)
             return;
@@ -3770,6 +3900,11 @@ void MainWindow::cloneVM()
             cloneConfig.setName(cloneName);
             cloneConfig.setDiskPath(dstPath + u"/disk.qcow2"_s);
             cloneConfig.setDeployState(VMConfig::DeployState::Complete);
+            // A full clone of a linked clone has its own copy of every disk.
+            if (cloneJob->isLinked())
+                cloneConfig.setLinkedSource(srcName, srcUuid);
+            else
+                cloneConfig.clearLinkedSource();
 
             if (SettingsDialog::cloneRegenerateMac()) {
                 if (!cloneConfig.macAddress().isEmpty()) {
@@ -3812,7 +3947,8 @@ void MainWindow::cloneVM()
             saveVmConfig(dstPath, cloneConfig);
             loadVmList();
             selectVmByName(cloneName);
-            statusBar()->showMessage(i18n("VM '%1' cloned as '%2'.", srcName, cloneName));
+            statusBar()->showMessage(cloneJob->isLinked() ? i18n("Linked clone '%2' of VM '%1' created.", srcName, cloneName)
+                                                          : i18n("VM '%1' cloned as '%2'.", srcName, cloneName));
         }
 
         if (currentConfig.name() == srcName)
@@ -3825,6 +3961,102 @@ void MainWindow::cloneVM()
     job->start();
 
     statusBar()->showMessage(i18n("Cloning VM '%1'...", srcName));
+    updateActionStates();
+    updateDetails();
+}
+
+void MainWindow::makeIndependent()
+{
+    const QString vmName = currentConfig.name();
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry || !entry->config.isLinkedClone() || veModel->isBusy(vmName))
+        return;
+
+    if (entry->linkedSourceMissing) {
+        KMessageBox::error(this, linkBlockReason(entry), i18nc("@title:window", "Make Independent"));
+        return;
+    }
+
+    if (!requireTool(ExternalTools::QemuImg))
+        return;
+
+    const QDir vmDir = getVmDir(vmName);
+    const QString sourceName = entry->config.linkedSourceName();
+    const QStringList diskPaths = entry->config.diskPaths(vmDir);
+
+    qint64 sharedBytes = 0;
+    for (const QString &fileName : entry->config.diskFileNames())
+        sharedBytes += QFileInfo(vmDir, LinkedClones::backingReference(sourceName, fileName)).size();
+
+    QString question = i18n(
+        "Copy the disk data that '%1' shares with '%2' into its own disks?\n\n"
+        "This takes up to %3 of additional space. Afterwards '%1' no longer depends on '%2'.",
+        vmName,
+        sourceName,
+        QLocale::system().formattedDataSize(sharedBytes));
+    // qemu-img convert writes the current state only.
+    if (!SnapshotManager().listSnapshots(diskPaths.first()).isEmpty())
+        question += u"\n\n"_s + i18n("The snapshots of '%1' will be lost.", vmName);
+
+    const auto answer = KMessageBox::questionTwoActions(this,
+                                                        question,
+                                                        i18nc("@title:window", "Make Independent"),
+                                                        KGuiItem(i18n("Make Independent"), u"remove-link"_s),
+                                                        KStandardGuiItem::cancel());
+    if (answer != KMessageBox::PrimaryAction || veModel->isBusy(vmName))
+        return;
+
+    auto *job = new ShrinkJob(vmName, diskPaths, this);
+    job->setFlatten(true);
+
+    if (jobTracker)
+        jobTracker->registerJob(job);
+
+    veModel->setVmState(vmName, VmEntry::State::Flattening);
+
+    connect(job, &ShrinkJob::finished, this, [this](KJob *kjob) {
+        auto *flattenJob = qobject_cast<ShrinkJob *>(kjob);
+        if (!flattenJob)
+            return;
+
+        const QString name = flattenJob->vmName();
+        veModel->setVmState(name, VmEntry::State::Stopped);
+
+        if (flattenJob->error() == KJob::KilledJobError) {
+            statusBar()->showMessage(i18n("Operation cancelled."));
+        } else if (flattenJob->error()) {
+            // Disks done so far stand alone already; the link stays until all are.
+            statusBar()->showMessage(i18n("Making VM '%1' independent failed.", name));
+            KMessageBox::error(this,
+                               i18n("Failed to make VM '%1' independent:\n%2", name, flattenJob->errorText()),
+                               i18nc("@title:window", "Make Independent"));
+        } else {
+            const QString vmPath = getVmDir(name).absolutePath();
+            VMConfig config = loadVmConfig(vmPath);
+            const QString sourceName = config.linkedSourceName();
+            config.clearLinkedSource();
+            saveVmConfig(vmPath, config);
+            veModel->updateConfig(name, config);
+            if (currentConfig.name() == name)
+                currentConfig = config;
+
+            const VmEntry *source = veModel->entryByName(sourceName);
+            if (source && !source->isFrozen())
+                statusBar()->showMessage(i18n("VM '%1' is independent now; '%2' is no longer frozen.", name, sourceName));
+            else
+                statusBar()->showMessage(i18n("VM '%1' is independent now.", name));
+        }
+
+        if (currentConfig.name() == name)
+            updateDetails();
+        updateActionStates();
+
+        flattenJob->deleteLater();
+    });
+
+    job->start();
+
+    statusBar()->showMessage(i18n("Making VM '%1' independent...", vmName));
     updateActionStates();
     updateDetails();
 }

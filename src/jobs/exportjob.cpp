@@ -21,6 +21,8 @@ extern "C" {
 #include <KLocalizedString>
 
 #include "const.h"
+#include "utils/linkedclones.h"
+#include "utils/qemuimgprocess.h"
 #include "utils/vmconfig.h"
 
 using namespace Qt::StringLiterals;
@@ -35,7 +37,8 @@ QStringList payloadFileNames()
 }
 
 constexpr qint64 kSpaceHeadroom = 50LL << 20;
-
+// Share of the progress bar taken by merging the disks of a linked clone.
+constexpr int kFlattenBand = 500;
 }
 
 ExportJob::ExportJob(const QString &vmName, const QString &vmPath, const QString &outputFilePath, QObject *parent)
@@ -73,42 +76,131 @@ void ExportJob::start()
         return;
     }
 
-    m_filesToPack.clear();
-    m_totalBytesToPack = m_configData.size();
-
-    for (const QString &fileName : payloadFileNames()) {
-        if (vmDir.exists(fileName)) {
-            m_filesToPack << fileName;
-            m_totalBytesToPack += QFileInfo(vmDir, fileName).size();
-        }
-    }
-
-    for (const DiskConfig &disk : VMConfig::fromJson(QJsonDocument::fromJson(m_configData).object()).extraDisks()) {
+    const VMConfig config = VMConfig::fromJson(QJsonDocument::fromJson(m_configData).object());
+    for (const DiskConfig &disk : config.extraDisks()) {
         if (!vmDir.exists(disk.fileName)) {
             setError(SourceError);
             setErrorText(i18n("The disk image %1 of VM '%2' is missing.", disk.fileName, m_vmName));
             emitResult();
             return;
         }
-        m_filesToPack << disk.fileName;
-        m_totalBytesToPack += QFileInfo(vmDir, disk.fileName).size();
+    }
+    m_diskFileNames = config.diskFileNames();
+
+    if (m_linkedSourceName.isEmpty()) {
+        startPacking();
+        return;
     }
 
-    if (!m_customIconFileName.isEmpty()) {
-        m_filesToPack << m_customIconFileName;
-        m_totalBytesToPack += QFileInfo(vmDir, m_customIconFileName).size();
-    }
+    const QString outputDir = QFileInfo(m_tmpOutputPath).absolutePath();
+    qint64 flatBytes = 0;
+    for (const QString &fileName : std::as_const(m_diskFileNames))
+        flatBytes += QFileInfo(vmDir, fileName).size() + QFileInfo(vmDir, LinkedClones::backingReference(m_linkedSourceName, fileName)).size();
 
+    // Staging copy plus the archive both live on this filesystem.
     QString spaceMessage;
-    if (!hasFreeSpace(QFileInfo(m_tmpOutputPath).absolutePath(), m_totalBytesToPack + kSpaceHeadroom, &spaceMessage)) {
+    if (!hasFreeSpace(outputDir, 2 * flatBytes + kSpaceHeadroom, &spaceMessage)) {
         setError(DiskSpaceError);
         setErrorText(spaceMessage);
         emitResult();
         return;
     }
 
-    beginPhase(0, 1000, m_totalBytesToPack);
+    m_flattenDir = std::make_unique<QTemporaryDir>(outputDir + u"/.kemu-export-XXXXXX"_s);
+    if (!m_flattenDir->isValid()) {
+        m_flattenDir.reset();
+        setError(StagingError);
+        setErrorText(i18n("Failed to create a staging directory in %1.", outputDir));
+        emitResult();
+        return;
+    }
+
+    flattenNextDisk();
+}
+
+void ExportJob::flattenNextDisk()
+{
+    const qsizetype index = m_flattened.size();
+    const QString fileName = m_diskFileNames.at(index);
+
+    postInfoMessage(m_diskFileNames.size() > 1 ? i18n("Merging disk image %1 of %2...", index + 1, m_diskFileNames.size()) : i18n("Merging disk image..."));
+
+    if (m_converter)
+        m_converter->deleteLater();
+    m_converter = new QemuImgProcess(this);
+
+    connect(m_converter, &QemuImgProcess::progress, this, [this, index](double percent) {
+        const double perDisk = kFlattenBand / double(m_diskFileNames.size());
+        emitPercent(qRound(index * perDisk + percent * perDisk / 100.0), 1000);
+    });
+    connect(m_converter, &QemuImgProcess::finished, this, &ExportJob::onFlattenFinished);
+
+    if (!m_converter->start({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, m_vmPath + u"/"_s + fileName, m_flattenDir->filePath(fileName)})) {
+        onFlattenFinished(false);
+    }
+}
+
+void ExportJob::onFlattenFinished(bool ok)
+{
+    if (!ok) {
+        m_flattenDir.reset();
+        setError(ToolError);
+        setErrorText(m_converter->errorText());
+        emitResult();
+        return;
+    }
+
+    m_flattened << m_diskFileNames.at(m_flattened.size());
+    if (m_flattened.size() < m_diskFileNames.size()) {
+        flattenNextDisk();
+        return;
+    }
+
+    startPacking();
+}
+
+void ExportJob::startPacking()
+{
+    m_filesToPack.clear();
+    m_totalBytesToPack = m_configData.size();
+
+    for (const QString &fileName : payloadFileNames()) {
+        if (QFile::exists(sourcePathFor(fileName))) {
+            m_filesToPack << fileName;
+            m_totalBytesToPack += QFileInfo(sourcePathFor(fileName)).size();
+        }
+    }
+
+    for (const QString &fileName : std::as_const(m_diskFileNames)) {
+        if (fileName == KEMUConst::VMDiskFileName)
+            continue;
+        m_filesToPack << fileName;
+        m_totalBytesToPack += QFileInfo(sourcePathFor(fileName)).size();
+    }
+
+    if (!m_customIconFileName.isEmpty()) {
+        m_filesToPack << m_customIconFileName;
+        m_totalBytesToPack += QFileInfo(sourcePathFor(m_customIconFileName)).size();
+    }
+
+    QString spaceMessage;
+    if (!hasFreeSpace(QFileInfo(m_tmpOutputPath).absolutePath(), m_totalBytesToPack + kSpaceHeadroom, &spaceMessage)) {
+        m_flattenDir.reset();
+        setError(DiskSpaceError);
+        setErrorText(spaceMessage);
+        emitResult();
+        return;
+    }
+
+    beginPhase(m_flattenDir ? kFlattenBand : 0, 1000, m_totalBytesToPack);
     startWorker();
+}
+
+QString ExportJob::sourcePathFor(const QString &fileName) const
+{
+    if (m_flattenDir && m_flattened.contains(fileName))
+        return m_flattenDir->filePath(fileName);
+    return m_vmPath + u"/"_s + fileName;
 }
 
 QByteArray ExportJob::buildPortableConfig()
@@ -136,6 +228,10 @@ QByteArray ExportJob::buildPortableConfig()
     obj[u"network_mode"_s] = VMConfig::toString(VMSpecs::NetworkMode::UserMode);
     obj[u"deploy_state"_s] = VMConfig::toString(VMConfig::DeployState::Complete);
     obj.remove(u"port_forwards"_s);
+
+    // The disks are merged on export, so the archive stands on its own.
+    m_linkedSourceName = VMConfig::fromJson(obj).linkedSourceName();
+    obj.remove(u"linked_source"_s);
 
     if (obj.value(u"icon_source"_s).toString() == u"custom"_s) {
         QString iconId = obj.value(u"icon_identifier"_s).toString();
@@ -185,7 +281,7 @@ bool ExportJob::runWorker()
             ok = false;
             break;
         }
-        ok = writeFileEntry(a, m_vmPath + u"/"_s + fileName, fileName);
+        ok = writeFileEntry(a, sourcePathFor(fileName), fileName);
     }
 
     return closeWriteArchive(a, ok);
@@ -193,6 +289,8 @@ bool ExportJob::runWorker()
 
 void ExportJob::workerFinished(bool ok)
 {
+    m_flattenDir.reset();
+
     if (!ok) {
         QFile::remove(m_tmpOutputPath);
         setError(ArchiveError);
@@ -217,4 +315,11 @@ void ExportJob::workerFinished(bool ok)
 void ExportJob::discardPartialOutput()
 {
     QFile::remove(m_tmpOutputPath);
+    m_flattenDir.reset();
+}
+
+void ExportJob::abortExternalTools()
+{
+    if (m_converter)
+        m_converter->abort();
 }

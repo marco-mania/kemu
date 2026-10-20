@@ -518,6 +518,19 @@ public:
     {
         return m_uuid;
     }
+    /// Set on a linked clone: the VM whose disks back this one's overlays.
+    [[nodiscard]] QString linkedSourceName() const
+    {
+        return m_linkedSourceName;
+    }
+    [[nodiscard]] QUuid linkedSourceUuid() const
+    {
+        return m_linkedSourceUuid;
+    }
+    [[nodiscard]] bool isLinkedClone() const
+    {
+        return !m_linkedSourceName.isEmpty();
+    }
     [[nodiscard]] SmbiosSystemInfo smbiosSystemInfo() const
     {
         return m_smbiosSystemInfo;
@@ -771,6 +784,15 @@ public:
     }
     /// Assigns a random UUID not contained in @p usedUuids.
     void regenerateUuid(const QList<QUuid> &usedUuids);
+    void setLinkedSource(const QString &name, const QUuid &uuid)
+    {
+        m_linkedSourceName = name;
+        m_linkedSourceUuid = uuid;
+    }
+    void clearLinkedSource()
+    {
+        setLinkedSource({}, {});
+    }
     void setSmbiosSystemInfo(const SmbiosSystemInfo &info)
     {
         m_smbiosSystemInfo = info;
@@ -831,7 +853,8 @@ public:
     enum class VmVisualState {
         Stopped,
         Running,
-        Saved
+        Saved,
+        Frozen
     };
     [[nodiscard]] static QIcon styledVmIcon(const QIcon &baseIcon, VmVisualState state, bool isHeadless, int size = KEMUConst::ListViewIconSize);
     [[nodiscard]] static QString osIconDir();
@@ -999,6 +1022,9 @@ private:
 
     QUuid m_uuid;
     SmbiosSystemInfo m_smbiosSystemInfo;
+
+    QString m_linkedSourceName;
+    QUuid m_linkedSourceUuid;
 
     QList<PortForwardRule> m_portForwards;
 

@@ -64,7 +64,8 @@ public:
     void setConfig(const VMConfig &config);
 
     // Show the configuration without allowing changes. Call after setConfig().
-    void setReadOnly(bool readOnly);
+    // frozen: linked clones depend on the VM rather than it running.
+    void setReadOnly(bool readOnly, bool frozen = false);
     [[nodiscard]] bool isReadOnly() const
     {
         return m_readOnly;

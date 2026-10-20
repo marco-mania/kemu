@@ -406,6 +406,27 @@ QIcon VMConfig::styledVmIcon(const QIcon &baseIcon, VmVisualState state, bool is
         painter.drawRect(leftX, barY, barW, barH);
         painter.drawRect(rightX, barY, barW, barH);
 
+    } else if (state == VmVisualState::Frozen) {
+        // Stopped and locked: linked clones depend on its disks.
+        drawDesaturated(0.5);
+
+        drawEmblemRing();
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(96, 125, 139)); // Material Blue Grey 500
+        painter.drawEllipse(ex, ey, emblemSize, emblemSize);
+
+        // White padlock
+        const qreal bodyW = emblemSize * 0.5;
+        const qreal bodyH = emblemSize * 0.32;
+        const qreal bodyY = ey + emblemSize * 0.46;
+        painter.setBrush(Qt::white);
+        painter.drawRoundedRect(QRectF(ex + (emblemSize - bodyW) / 2.0, bodyY, bodyW, bodyH), 1.0, 1.0);
+
+        const qreal shackleW = bodyW * 0.64;
+        painter.setPen(QPen(Qt::white, qMax(1.5, emblemSize / 10.0)));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawArc(QRectF(ex + (emblemSize - shackleW) / 2.0, ey + emblemSize * 0.2, shackleW, emblemSize * 0.52), 0, 180 * 16);
+
     } else {
         // Stopped (and all other non-active states)
         drawDesaturated(0.5);
@@ -1785,6 +1806,14 @@ QJsonObject VMConfig::toJson() const
         j[u"smbios_system"_s] = smbios;
     }
 
+    if (!m_linkedSourceName.isEmpty()) {
+        QJsonObject source;
+        source[u"name"_s] = m_linkedSourceName;
+        if (!m_linkedSourceUuid.isNull())
+            source[u"uuid"_s] = m_linkedSourceUuid.toString(QUuid::WithoutBraces);
+        j[u"linked_source"_s] = source;
+    }
+
     if (!m_portForwards.isEmpty()) {
         QJsonArray portFwdArray;
         for (const auto &rule : m_portForwards) {
@@ -1908,6 +1937,13 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
             c.m_smbiosSystemInfo.*member = value;
     }
 
+    const QJsonObject linkedSource = j[u"linked_source"_s].toObject();
+    const QString linkedSourceName = linkedSource[u"name"_s].toString();
+    if (isValidVmName(linkedSourceName)) {
+        c.m_linkedSourceName = linkedSourceName;
+        c.m_linkedSourceUuid = QUuid::fromString(linkedSource[u"uuid"_s].toString());
+    }
+
     if (j.contains(u"port_forwards"_s)) {
         const QJsonArray arr = j[u"port_forwards"_s].toArray();
         for (const auto &val : arr) {
@@ -1984,6 +2020,12 @@ QStringList VMConfig::dropUntrustedSettings(const QDir &baseDir)
     if (!m_extraArgs.isEmpty()) {
         dropped << i18n("Additional QEMU arguments");
         m_extraArgs.clear();
+    }
+
+    // Archives always carry flattened disks.
+    if (isLinkedClone()) {
+        dropped << i18n("Link to the source VM");
+        clearLinkedSource();
     }
 
     // Disk and icon always live inside the VM directory.

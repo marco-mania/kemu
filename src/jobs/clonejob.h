@@ -29,6 +29,16 @@ class CloneJob : public KJob
 public:
     explicit CloneJob(const QString &vmName, const QString &srcPath, const QString &dstPath, const QStringList &diskFileNames, QObject *parent = nullptr);
 
+    // Overlays on top of the source disks instead of full copies.
+    void setLinked(bool linked)
+    {
+        m_linked = linked;
+    }
+    [[nodiscard]] bool isLinked() const
+    {
+        return m_linked;
+    }
+
     void start() override;
 
     [[nodiscard]] QString vmName() const
@@ -57,5 +67,6 @@ private:
     qsizetype m_index = 0;
 
     QemuImgProcess *m_process = nullptr;
+    bool m_linked = false;
     bool m_killed = false;
 };

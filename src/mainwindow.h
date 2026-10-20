@@ -93,6 +93,7 @@ private Q_SLOTS:
     void editVM();
     void deleteVM();
     void cloneVM();
+    void makeIndependent();
     void showCommand();
     void startVM(bool headless = false);
     void startVMHeadless();
@@ -183,6 +184,12 @@ private:
     // Empty when a save state is possible, otherwise the reason to show the
     // user. QEMU sets a migration blocker for these devices.
     [[nodiscard]] QString saveStateBlockReason(const VmEntry *entry) const;
+
+    // Empty when the VM may be started or changed. A frozen source of linked
+    // clones and a clone that lost its source may not.
+    [[nodiscard]] QString linkBlockReason(const VmEntry *entry) const;
+    // Empty when a linked clone of the VM can be made.
+    [[nodiscard]] QString linkedCloneBlockReason(const VmEntry *entry) const;
 
     QDir getVmBaseDir() const;
     QDir getVmDir(const QString &vmName) const;

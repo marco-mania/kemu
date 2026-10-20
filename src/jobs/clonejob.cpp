@@ -6,6 +6,7 @@
 
 #include "clonejob.h"
 #include "const.h"
+#include "utils/linkedclones.h"
 #include "utils/qemuimgprocess.h"
 
 #include <utility>
@@ -34,7 +35,7 @@ void CloneJob::start()
     }
 
     Q_EMIT description(this,
-                       i18n("Cloning virtual machine"),
+                       m_linked ? i18n("Creating linked clone") : i18n("Cloning virtual machine"),
                        QPair<QString, QString>(i18n("Source"), m_vmName),
                        QPair<QString, QString>(i18n("Clone"), m_cloneName));
 
@@ -73,7 +74,16 @@ void CloneJob::startNextDisk()
     });
     connect(m_process, &QemuImgProcess::finished, this, &CloneJob::onConvertFinished);
 
-    if (!m_process->start({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, m_srcPath + u"/"_s + fileName, m_dstPath + u"/"_s + fileName})) {
+    const QString target = m_dstPath + u"/"_s + fileName;
+    QStringList args;
+    if (m_linked) {
+        const QString backing = LinkedClones::backingReference(QDir(m_srcPath).dirName(), fileName);
+        args = {u"create"_s, u"-q"_s, u"-f"_s, u"qcow2"_s, u"-b"_s, backing, u"-F"_s, u"qcow2"_s, target};
+    } else {
+        args = {u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, m_srcPath + u"/"_s + fileName, target};
+    }
+
+    if (!m_process->start(args)) {
         QDir(m_dstPath).removeRecursively();
         setError(4);
         setErrorText(m_process->errorText());
@@ -90,6 +100,9 @@ bool CloneJob::copyMetadataFiles()
         if (m_diskFileNames.contains(file))
             continue;
         if (file.endsWith(u".sock"_s) || file.endsWith(u".pid"_s) || file == KEMUConst::DeploySerialLogFileName)
+            continue;
+        // Fresh overlays carry no snapshots, so their descriptions stay behind.
+        if (m_linked && file.endsWith(u".snapshots.json"_s))
             continue;
 
         if (!QFile::copy(m_srcPath + u"/"_s + file, m_dstPath + u"/"_s + file))

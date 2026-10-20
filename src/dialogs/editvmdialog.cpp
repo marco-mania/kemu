@@ -1042,7 +1042,7 @@ void EditVmDialog::setConfig(const VMConfig &config)
     refreshDiskList();
 }
 
-void EditVmDialog::setReadOnly(bool readOnly)
+void EditVmDialog::setReadOnly(bool readOnly, bool frozen)
 {
     m_readOnly = readOnly;
     if (!readOnly)
@@ -1057,8 +1057,9 @@ void EditVmDialog::setReadOnly(bool readOnly)
     buttonBox->setStandardButtons(QDialogButtonBox::Close);
     buttonBox->setEnabled(true);
 
-    if (!m_original.name().isEmpty())
-        setWindowTitle(i18n("Specification of VM: %1 (running)", m_original.name()));
+    if (!m_original.name().isEmpty()) {
+        setWindowTitle(frozen ? i18n("Specification of VM: %1 (frozen)", m_original.name()) : i18n("Specification of VM: %1 (running)", m_original.name()));
+    }
 }
 
 void EditVmDialog::onMachineTypeChanged(int /*index*/)
@@ -1973,6 +1974,25 @@ void EditVmDialog::removeSelectedDisk()
                     return snap.vmStateSizeBytes > 0;
                 }))
                 snapshotNote = u"<br/><br/>"_s + i18n("Snapshots with a saved running state can afterwards only be restored while the VM is shut down.");
+        }
+
+        // An overlay is useless without the source next to it.
+        if (m_original.isLinkedClone()) {
+            const auto answer = KMessageBox::warningTwoActions(this,
+                                                               i18n("Remove the disk <b>%1</b> from this virtual machine?<br/><br/>"
+                                                                    "This linked clone only stores its own changes in the image, so it cannot be kept "
+                                                                    "as a separate file and is deleted. The change takes effect when you confirm the settings.",
+                                                                    name.toHtmlEscaped())
+                                                                   + snapshotNote,
+                                                               i18n("Remove Disk"),
+                                                               KGuiItem(i18n("Delete Image"), u"edit-delete"_s),
+                                                               KStandardGuiItem::cancel());
+            if (answer != KMessageBox::PrimaryAction)
+                return;
+            m_removedDisks.append({entry.disk.fileName, {}});
+            m_disks.removeAt(row);
+            refreshDiskList();
+            return;
         }
 
         const auto answer = KMessageBox::questionTwoActionsCancel(this,

@@ -44,7 +44,7 @@ void ShrinkJob::startNext()
     QFile::remove(m_tmpPath);
 
     Q_EMIT description(this,
-                       i18n("Compacting disk image"),
+                       m_flatten ? i18n("Making disk image independent") : i18n("Compacting disk image"),
                        QPair<QString, QString>(i18n("VM"), m_vmName),
                        QPair<QString, QString>(i18n("Disk"), QFileInfo(diskPath).fileName()));
 
@@ -56,7 +56,22 @@ void ShrinkJob::startNext()
     });
     connect(m_process, &QemuImgProcess::finished, this, &ShrinkJob::onConvertFinished);
 
-    if (!m_process->start({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, diskPath, m_tmpPath})) {
+    QStringList args = {u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s};
+    if (!m_flatten) {
+        // An overlay stays an overlay; -B is resolved relative to the output.
+        const QemuImgProcess::ImageInfo info = QemuImgProcess::inspect(diskPath);
+        if (!info.isValid) {
+            setError(1);
+            setErrorText(i18n("Could not read the disk image %1.", QFileInfo(diskPath).fileName()));
+            emitResult();
+            return;
+        }
+        if (!info.backingFile.isEmpty())
+            args << u"-B"_s << info.backingFile << u"-F"_s << (info.backingFormat.isEmpty() ? u"qcow2"_s : info.backingFormat);
+    }
+    args << diskPath << m_tmpPath;
+
+    if (!m_process->start(args)) {
         setError(1);
         setErrorText(m_process->errorText());
         emitResult();

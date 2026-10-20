@@ -9,6 +9,7 @@
 #include <QFileInfo>
 
 #include "const.h"
+#include "utils/linkedclones.h"
 #include "utils/savestatemanager.h"
 
 #include "kemu_debug.h"
@@ -176,12 +177,20 @@ QVariant VirtualEnvironmentModel::data(const QModelIndex &index, int role) const
                 return i18n("Creating...");
             case VmEntry::State::Shrinking:
                 return i18n("Shrinking disk...");
+            case VmEntry::State::Flattening:
+                return i18n("Making independent...");
             case VmEntry::State::Exporting:
                 return i18n("Exporting...");
             case VmEntry::State::ShuttingDown:
                 return i18n("Shutting down...");
             case VmEntry::State::Stopped:
-                return {}; // intentionally empty
+                if (vm.isFrozen())
+                    return i18ncp("VM subtitle", "Frozen \u00B7 used by %1 linked clone", "Frozen \u00B7 used by %1 linked clones", vm.linkedClones.size());
+                if (vm.linkedSourceMissing)
+                    return i18nc("VM subtitle", "Source VM '%1' is missing", vm.config.linkedSourceName());
+                if (vm.config.isLinkedClone())
+                    return i18nc("VM subtitle", "Linked to %1", vm.config.linkedSourceName());
+                return {};
             }
             return {};
         }
@@ -201,6 +210,13 @@ QVariant VirtualEnvironmentModel::data(const QModelIndex &index, int role) const
             } else if (vm.state == VmEntry::State::Saved && vm.savestateTime.isValid()) {
                 lines << i18n("Saved: %1", QLocale::system().toString(vm.savestateTime, QLocale::ShortFormat));
             }
+
+            if (vm.isFrozen())
+                lines << i18n("Frozen, used by the linked clones: %1", vm.linkedClones.join(u", "_s));
+            else if (vm.linkedSourceMissing)
+                lines << i18n("Linked clone of '%1', which is missing", vm.config.linkedSourceName());
+            else if (vm.config.isLinkedClone())
+                lines << i18n("Linked clone of '%1'", vm.config.linkedSourceName());
 
             return lines.join(u'\n');
         }
@@ -371,6 +387,7 @@ void VirtualEnvironmentModel::reload(const QDir &baseDir,
         m_vms.append(std::move(entry));
     }
 
+    refreshLinks();
     rebuildTree(folderNames, folderAssignments);
     endResetModel();
     updateUptimeTimer();
@@ -444,6 +461,11 @@ void VirtualEnvironmentModel::updateConfig(const QString &name, const VMConfig &
     e->config = config;
     recomputeIcon(*e);
     emitVmChanged(name);
+
+    // The change may have frozen or released another VM.
+    refreshLinks();
+    for (const VmEntry &vm : std::as_const(m_vms))
+        emitVmChanged(vm.name);
 }
 
 void VirtualEnvironmentModel::appendPerfSample(const QString &name, int channel, double value)
@@ -868,8 +890,29 @@ void VirtualEnvironmentModel::recomputeIcon(VmEntry &e) const
         vs = VMConfig::VmVisualState::Running;
     else if (e.state == VmEntry::State::Saving || e.state == VmEntry::State::Saved)
         vs = VMConfig::VmVisualState::Saved;
+    else if (e.state == VmEntry::State::Stopped && e.isFrozen())
+        vs = VMConfig::VmVisualState::Frozen;
 
     e.styledIcon = VMConfig::styledVmIcon(e.config.icon(KEMUConst::ListViewIconSize), vs, e.isHeadless, KEMUConst::ListViewIconSize);
+}
+
+void VirtualEnvironmentModel::refreshLinks()
+{
+    QList<LinkedClones::Member> members;
+    members.reserve(m_vms.size());
+    for (const VmEntry &vm : std::as_const(m_vms))
+        members.append({vm.name, vm.config.uuid(), vm.config.linkedSourceName(), vm.config.linkedSourceUuid()});
+
+    const LinkedClones::Index index(members);
+    for (VmEntry &vm : m_vms) {
+        const QStringList clones = index.clonesOf(vm.name);
+        const bool missing = index.isOrphan(vm.name);
+        if (clones == vm.linkedClones && missing == vm.linkedSourceMissing)
+            continue;
+        vm.linkedClones = clones;
+        vm.linkedSourceMissing = missing;
+        recomputeIcon(vm);
+    }
 }
 
 void VirtualEnvironmentModel::refreshSavestateTime(VmEntry &e) const

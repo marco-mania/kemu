@@ -17,8 +17,7 @@ Widgets and KDE Frameworks 6 for deep desktop integration.
 - Integrated D-Bus viewer with audio and clipboard sharing
 - Automated deployment utilizing Cloud-Init
 - Snapshot support (QCOW2)
-- Optional additional disks per VM, each with its own controller
-- Persistent machine identity: system UUID and SMBIOS system information
+- Linked clones
 - Hot-swapping of ISO and floppy images
 - Networking: User-mode networking or in-process virtual networks
   (in-memory L2 switch with built-in DHCP and optional libslirp NAT)
@@ -452,6 +451,27 @@ internet access, so configure static addresses (manually or via Cloud-Init).
 **Debugging:** Virtual network activity (switch frames, DHCP exchanges, NAT
 traffic) is logged under the `org.kde.kemu` logging category; see
 [Debug Logging](#debug-logging).
+
+## Linked Clones
+
+A linked clone is created in seconds and takes almost no space: Instead of
+copying the disks it stores only its own changes on top of the disks of the
+source VM (qcow2 overlays). This suits e.g. throwaway test machines. Select
+"Create linked clone" in the Clone VM dialog.
+
+- The source VM is frozen while linked clones depend on it: It cannot be
+  started, edited, renamed, deleted, compacted or reverted to a snapshot. It
+  can still be exported and further clones of it can be made. It is released
+  as soon as its last linked clone is deleted or made independent.
+- The source must be shut down.
+- A linked clone cannot be the source of another linked clone; it can be cloned
+  in full, though.
+- "Make Independent" copies the shared data into the clone, which then needs
+  as much space as a full clone. Snapshots of the clone are lost in the process.
+- Export, OVA export and full clones of a linked clone always contain complete
+  disks.
+- Each overlay refers to its source by a relative path (`../<source>/disk.qcow2`),
+  so the VM storage location can be moved as a whole.
 
 ## Sandbox Mode
 

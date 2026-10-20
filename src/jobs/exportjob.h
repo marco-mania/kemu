@@ -13,10 +13,16 @@
 #include <QString>
 #include <QStringList>
 
+#include <memory>
+
+#include <QTemporaryDir>
+
 #include <KJob>
 #include <KLocalizedString>
 
 #include "jobs/archivestreamjob.h"
+
+class QemuImgProcess;
 
 class ExportJob : public ArchiveStreamJob
 {
@@ -36,8 +42,16 @@ protected:
     bool runWorker() override;
     void workerFinished(bool ok) override;
     void discardPartialOutput() override;
+    void abortExternalTools() override;
 
 private:
+    // A linked clone leaves as a standalone VM: its overlays are merged with
+    // their backing files into a staging directory first.
+    void flattenNextDisk();
+    void onFlattenFinished(bool ok);
+    void startPacking();
+    [[nodiscard]] QString sourcePathFor(const QString &fileName) const;
+
     // Strips host-specific values; the original config.json is never touched.
     QByteArray buildPortableConfig();
 
@@ -50,4 +64,10 @@ private:
     QStringList m_filesToPack;
     qint64 m_totalBytesToPack = 0;
     QString m_customIconFileName;
+
+    QString m_linkedSourceName;
+    QStringList m_diskFileNames;
+    std::unique_ptr<QTemporaryDir> m_flattenDir;
+    QStringList m_flattened;
+    QemuImgProcess *m_converter = nullptr;
 };

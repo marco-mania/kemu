@@ -110,6 +110,8 @@ target_sources(
           utils/snapshotmanager.h
           utils/imagedatabase.cpp
           utils/imagedatabase.h
+          utils/linkedclones.cpp
+          utils/linkedclones.h
           utils/cloudimagedeployer.cpp
           utils/cloudimagedeployer.h
           utils/cloudinittemplates.h
@@ -206,6 +208,8 @@ target_sources(
           dialogs/hostshutdowndialog.h
           dialogs/diskdialog.cpp
           dialogs/diskdialog.h
+          dialogs/clonevmdialog.cpp
+          dialogs/clonevmdialog.h
           dialogs/licenseagreementdialog.cpp
           dialogs/licenseagreementdialog.h
           dialogs/cloudiniteditdialog.cpp

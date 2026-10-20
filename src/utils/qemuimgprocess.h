@@ -34,6 +34,9 @@ public:
     struct ImageInfo {
         qint64 virtualSizeBytes = 0;
         qint64 actualSizeBytes = 0;
+        // As stored in the image, e.g. relative to its directory.
+        QString backingFile;
+        QString backingFormat;
         bool isValid = false;
 
         [[nodiscard]] double virtualSizeGb() const

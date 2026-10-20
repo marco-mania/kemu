@@ -138,6 +138,8 @@ QemuImgProcess::ImageInfo QemuImgProcess::inspect(const QString &imagePath, int 
     const QJsonObject obj = QJsonDocument::fromJson(process.readAllStandardOutput()).object();
     info.virtualSizeBytes = static_cast<qint64>(obj.value(u"virtual-size"_s).toDouble());
     info.actualSizeBytes = static_cast<qint64>(obj.value(u"actual-size"_s).toDouble());
+    info.backingFile = obj.value(u"backing-filename"_s).toString();
+    info.backingFormat = obj.value(u"backing-filename-format"_s).toString();
     info.isValid = info.virtualSizeBytes > 0;
 
     return info;
