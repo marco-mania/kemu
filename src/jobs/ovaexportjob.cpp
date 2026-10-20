@@ -248,7 +248,8 @@ void OvaExportJob::convertNextDisk()
     connect(m_converter, &QemuImgProcess::finished, this, &OvaExportJob::onConvertFinished);
 
     const QString vmdkPath = m_stagingDir->filePath(m_vmdkFileNames.at(m_convertIndex));
-    const QStringList args = {u"convert"_s, u"-p"_s, u"-O"_s, u"vmdk"_s, u"-o"_s, u"subformat=streamOptimized"_s, m_disks.at(m_convertIndex).path, vmdkPath};
+    const QStringList args =
+        {u"convert"_s, u"-p"_s, u"-f"_s, u"qcow2"_s, u"-O"_s, u"vmdk"_s, u"-o"_s, u"subformat=streamOptimized"_s, m_disks.at(m_convertIndex).path, vmdkPath};
 
     if (!m_converter->start(args)) {
         setError(ToolError);

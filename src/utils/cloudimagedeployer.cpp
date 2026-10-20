@@ -7,6 +7,7 @@
 #include "cloudimagedeployer.h"
 
 #include "utils/cloudinittemplates.h"
+#include "utils/diskimagecheck.h"
 #include "utils/externaltools.h"
 #include "utils/isoimagebuilder.h"
 #include "utils/utils.h"
@@ -166,21 +167,14 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage,
     KProcess proc;
     proc.setOutputChannelMode(KProcess::SeparateChannels);
 
-    // Detect source format
-    proc.setProgram(qemuImg, {u"info"_s, u"--output=json"_s, sourcePath});
-    if (proc.execute(10000) < 0) {
-        errorOut = i18n("qemu-img info timed out or failed to start.");
+    // A downloaded image must not refer to any other file: QEMU would read
+    // it into the guest.
+    const DiskImageCheck::Inspection inspection = DiskImageCheck::inspect(qemuImg, sourcePath, QString(), false);
+    if (!inspection.problem.isEmpty()) {
+        errorOut = i18n("The cloud image cannot be used: %1", inspection.problem);
         return false;
     }
-    if (proc.exitStatus() != KProcess::NormalExit || proc.exitCode() != 0) {
-        errorOut = i18n("Could not read the source image: %1", QString::fromUtf8(proc.readAllStandardError()).trimmed());
-        return false;
-    }
-
-    const QJsonDocument info = QJsonDocument::fromJson(proc.readAllStandardOutput());
-    QString srcFormat = info.object()[u"format"_s].toString();
-    if (srcFormat.isEmpty())
-        srcFormat = u"qcow2"_s;
+    const QString srcFormat = inspection.format;
 
     if (QFile::exists(diskPathOut) && !QFile::remove(diskPathOut)) {
         errorOut = i18n("Could not remove the existing disk image at %1.", diskPathOut);
@@ -208,7 +202,7 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage,
         progress(1, i18n("Resizing the disk image..."));
 
     // Resize to target size
-    proc.setProgram(qemuImg, {u"resize"_s, diskPathOut, u"%1G"_s.arg(diskSizeGb)});
+    proc.setProgram(qemuImg, {u"resize"_s, u"-f"_s, u"qcow2"_s, diskPathOut, u"%1G"_s.arg(diskSizeGb)});
     if (proc.execute(30000) != 0) {
         errorOut = i18n("qemu-img resize failed: %1", QString::fromUtf8(proc.readAllStandardError()).trimmed());
         return false;

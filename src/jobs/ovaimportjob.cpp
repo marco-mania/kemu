@@ -25,6 +25,8 @@ extern "C" {
 #include <optional>
 
 #include "utils/archivepaths.h"
+#include "utils/diskimagecheck.h"
+#include "utils/externaltools.h"
 #include "utils/ovfparser.h"
 #include "utils/qemuimgprocess.h"
 
@@ -295,13 +297,26 @@ void OvaImportJob::workerFinished(bool ok)
         return;
     }
 
-    for (const SourceDisk &disk : std::as_const(m_sourceDisks)) {
-        if (!disk.path.isEmpty() && !QFile::exists(disk.path)) {
+    for (SourceDisk &disk : m_sourceDisks) {
+        if (disk.path.isEmpty())
+            continue;
+        if (!QFile::exists(disk.path)) {
             setError(ContentError);
             setErrorText(i18n("The disk image %1 is missing from the OVA archive.", QFileInfo(disk.path).fileName()));
             emitResult();
             return;
         }
+
+        // Only files from the archive itself may end up in the VM.
+        const DiskImageCheck::Inspection inspection =
+            DiskImageCheck::inspect(ExternalTools::instance().path(ExternalTools::QemuImg), disk.path, m_stagingDir->path(), false);
+        if (!inspection.problem.isEmpty()) {
+            setError(ContentError);
+            setErrorText(i18n("The OVA archive cannot be imported: %1", inspection.problem));
+            emitResult();
+            return;
+        }
+        disk.format = inspection.format;
     }
 
     QDir().mkpath(m_targetDir);
@@ -462,7 +477,7 @@ void OvaImportJob::convertDisk()
     const SourceDisk &disk = m_sourceDisks.at(m_convertIndex);
     const QString target = targetPathFor(m_convertIndex);
     const QStringList args = disk.path.isEmpty() ? QStringList{u"create"_s, u"-q"_s, u"-f"_s, u"qcow2"_s, target, QString::number(disk.blankBytes)}
-                                                 : QStringList{u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, disk.path, target};
+                                                 : QStringList{u"convert"_s, u"-p"_s, u"-f"_s, disk.format, u"-O"_s, u"qcow2"_s, disk.path, target};
     if (!m_converter->start(args)) {
         QDir(m_targetDir).removeRecursively();
         setError(ToolError);

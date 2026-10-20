@@ -13,6 +13,7 @@
 #include <KFormat>
 #include <KLocalizedString>
 
+#include "utils/diskimagecheck.h"
 #include "utils/externaltools.h"
 #include "utils/qemuimgprocess.h"
 
@@ -44,6 +45,22 @@ void DiskImportJob::start()
         setErrorText(i18n("qemu-img not found. Please check Settings."));
         emitResult();
         return;
+    }
+
+    // The image may come from anywhere. Files it refers to (backing files,
+    // VMDK extents) must sit next to it, or a crafted image could copy
+    // arbitrary host files into the VM.
+    m_formats.clear();
+    for (const Item &item : std::as_const(m_items)) {
+        const DiskImageCheck::Inspection inspection =
+            DiskImageCheck::inspect(ExternalTools::instance().path(ExternalTools::QemuImg), item.sourcePath, QFileInfo(item.sourcePath).absolutePath(), true);
+        if (!inspection.problem.isEmpty()) {
+            setError(UserDefinedError);
+            setErrorText(i18n("The disk image cannot be imported: %1", inspection.problem));
+            emitResult();
+            return;
+        }
+        m_formats << inspection.format;
     }
 
     qint64 required = 0;
@@ -100,7 +117,7 @@ void DiskImportJob::startNext()
     });
     connect(m_process, &QemuImgProcess::finished, this, &DiskImportJob::onConvertFinished);
 
-    if (!m_process->start({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, item.sourcePath, targetPath()})) {
+    if (!m_process->start({u"convert"_s, u"-p"_s, u"-f"_s, m_formats.at(m_index), u"-O"_s, u"qcow2"_s, item.sourcePath, targetPath()})) {
         setError(UserDefinedError);
         setErrorText(m_process->errorText());
         emitResult();

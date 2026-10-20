@@ -108,6 +108,8 @@ target_sources(
           utils/qemucommandbuilder.h
           utils/snapshotmanager.cpp
           utils/snapshotmanager.h
+          utils/diskimagecheck.cpp
+          utils/diskimagecheck.h
           utils/imagedatabase.cpp
           utils/imagedatabase.h
           utils/linkedclones.cpp

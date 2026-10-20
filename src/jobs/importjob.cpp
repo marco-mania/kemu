@@ -25,6 +25,7 @@ extern "C" {
 #include "const.h"
 #include "kemu_debug.h"
 #include "utils/archivepaths.h"
+#include "utils/diskimagecheck.h"
 #include "utils/vmconfig.h"
 
 using namespace Qt::StringLiterals;
@@ -217,6 +218,22 @@ bool ImportJob::runWorker()
     if (ok && !QFile::exists(targetDir.filePath(KEMUConst::VMDiskFileName))) {
         recordError(i18n("The archive does not contain a disk image."));
         ok = false;
+    }
+
+    // KEMU exports self-contained qcow2 images only. Anything else could make
+    // QEMU read host files into the guest.
+    if (ok) {
+        const QStringList diskFileNames = QStringList{KEMUConst::VMDiskFileName} + m_extraDiskFileNames;
+        for (const QString &fileName : diskFileNames) {
+            if (!targetDir.exists(fileName))
+                continue;
+            const QString problem = DiskImageCheck::qcow2Problem(targetDir.filePath(fileName));
+            if (!problem.isEmpty()) {
+                recordError(i18n("The archive cannot be imported: %1", problem));
+                ok = false;
+                break;
+            }
+        }
     }
 
     return ok;

@@ -53,6 +53,7 @@ private:
     QString m_vmName;
     QDir m_vmDir;
     QList<Item> m_items;
+    QStringList m_formats; // detected per item, passed to qemu-img
     qsizetype m_index = 0;
     QList<DiskConfig> m_imported;
     QemuImgProcess *m_process = nullptr;

@@ -135,7 +135,8 @@ void ExportJob::flattenNextDisk()
     });
     connect(m_converter, &QemuImgProcess::finished, this, &ExportJob::onFlattenFinished);
 
-    if (!m_converter->start({u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, m_vmPath + u"/"_s + fileName, m_flattenDir->filePath(fileName)})) {
+    if (!m_converter->start(
+            {u"convert"_s, u"-p"_s, u"-f"_s, u"qcow2"_s, u"-O"_s, u"qcow2"_s, m_vmPath + u"/"_s + fileName, m_flattenDir->filePath(fileName)})) {
         onFlattenFinished(false);
     }
 }

@@ -80,7 +80,7 @@ void CloneJob::startNextDisk()
         const QString backing = LinkedClones::backingReference(QDir(m_srcPath).dirName(), fileName);
         args = {u"create"_s, u"-q"_s, u"-f"_s, u"qcow2"_s, u"-b"_s, backing, u"-F"_s, u"qcow2"_s, target};
     } else {
-        args = {u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s, m_srcPath + u"/"_s + fileName, target};
+        args = {u"convert"_s, u"-p"_s, u"-f"_s, u"qcow2"_s, u"-O"_s, u"qcow2"_s, m_srcPath + u"/"_s + fileName, target};
     }
 
     if (!m_process->start(args)) {

@@ -56,7 +56,7 @@ void ShrinkJob::startNext()
     });
     connect(m_process, &QemuImgProcess::finished, this, &ShrinkJob::onConvertFinished);
 
-    QStringList args = {u"convert"_s, u"-p"_s, u"-O"_s, u"qcow2"_s};
+    QStringList args = {u"convert"_s, u"-p"_s, u"-f"_s, u"qcow2"_s, u"-O"_s, u"qcow2"_s};
     if (!m_flatten) {
         // An overlay stays an overlay; -B is resolved relative to the output.
         const QemuImgProcess::ImageInfo info = QemuImgProcess::inspect(diskPath);
