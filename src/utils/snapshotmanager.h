@@ -57,6 +57,9 @@ public:
     // The system disk carries the authoritative list and the descriptions.
     QList<SnapshotInfo> listSnapshots(const QString &diskPath, QString *errorOut = nullptr) const;
 
+    // Names of the snapshots found on any of the disks, system disk first.
+    QStringList snapshotNames(const QStringList &diskPaths) const;
+
     // Disks added after snapshot @p name was taken; a revert leaves them alone.
     QStringList disksWithoutSnapshot(const QStringList &diskPaths, const QString &name) const;
 
@@ -80,6 +83,10 @@ public:
     void deleteSnapshot(const QStringList &diskPaths, const QString &name, QMPClient *qmp, bool imageInUse, std::function<void(bool, QString)> callback);
 
     // Sidecar JSON next to .qcow2
+    static QString descriptionFilePath(const QString &diskPath)
+    {
+        return diskPath + u".snapshots.json"_s;
+    }
     void saveDescription(const QString &diskPath, const QString &snapshotName, const QString &description) const;
     void removeDescription(const QString &diskPath, const QString &snapshotName) const;
     QString loadDescription(const QString &diskPath, const QString &snapshotName) const;

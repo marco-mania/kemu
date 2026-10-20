@@ -8,6 +8,7 @@
 
 #include "utils/externaltools.h"
 #include "utils/qemuimgprocess.h"
+#include "utils/snapshotmanager.h"
 
 #include <utility>
 
@@ -113,6 +114,8 @@ void ShrinkJob::onConvertFinished(bool ok)
 
     QFile::remove(backupPath);
     m_tmpPath.clear();
+    // The rewritten image has no snapshots left to describe.
+    QFile::remove(SnapshotManager::descriptionFilePath(diskPath));
 
     if (++m_index < m_diskPaths.size()) {
         startNext();

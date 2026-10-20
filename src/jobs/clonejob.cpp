@@ -101,8 +101,9 @@ bool CloneJob::copyMetadataFiles()
             continue;
         if (file.endsWith(u".sock"_s) || file.endsWith(u".pid"_s) || file == KEMUConst::DeploySerialLogFileName)
             continue;
-        // Fresh overlays carry no snapshots, so their descriptions stay behind.
-        if (m_linked && file.endsWith(u".snapshots.json"_s))
+        // Neither convert nor fresh overlays carry snapshots, so their
+        // descriptions stay behind.
+        if (file.endsWith(u".snapshots.json"_s))
             continue;
 
         if (!QFile::copy(m_srcPath + u"/"_s + file, m_dstPath + u"/"_s + file))

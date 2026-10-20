@@ -60,6 +60,18 @@ QList<SnapshotInfo> SnapshotManager::listSnapshots(const QString &diskPath, QStr
     return list;
 }
 
+QStringList SnapshotManager::snapshotNames(const QStringList &diskPaths) const
+{
+    QStringList names;
+    for (const QString &path : diskPaths) {
+        for (const SnapshotInfo &snap : listSnapshots(path)) {
+            if (!names.contains(snap.name))
+                names << snap.name;
+        }
+    }
+    return names;
+}
+
 QStringList SnapshotManager::disksWithoutSnapshot(const QStringList &diskPaths, const QString &name) const
 {
     QStringList missing;
@@ -329,7 +341,7 @@ void SnapshotManager::deleteSnapshot(const QStringList &diskPaths,
 
 QString SnapshotManager::sidecarPath(const QString &diskPath) const
 {
-    return diskPath + u".snapshots.json"_s;
+    return descriptionFilePath(diskPath);
 }
 
 QJsonObject SnapshotManager::readSidecar(const QString &diskPath, bool *corruptOut) const

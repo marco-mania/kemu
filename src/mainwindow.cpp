@@ -2030,17 +2030,38 @@ void MainWindow::shrinkDisk()
         sizeInfo = i18n("\n\nCurrent size: %1 GB (virtual), %2 GB (actual on disk)", QString::number(virtualGb, 'f', 1), QString::number(actualGb, 'f', 1));
     }
 
-    auto answer = KMessageBox::questionTwoActions(this,
-                                                  i18n("Compact the disk image of VM '%1'?\n\n"
-                                                       "This will rewrite the disk image to reclaim unused space. "
-                                                       "The VM must remain stopped during the operation.%2",
-                                                       currentConfig.name(),
-                                                       sizeInfo),
-                                                  i18nc("@title:window", "Compact Disk Image"),
-                                                  KGuiItem(i18n("Compact"), u"edit-clear-history"_s),
-                                                  KStandardGuiItem::cancel());
+    const QString question = i18n(
+        "Compact the disk image of VM '%1'?\n\n"
+        "This will rewrite the disk image to reclaim unused space. "
+        "The VM must remain stopped during the operation.%2",
+        currentConfig.name(),
+        sizeInfo);
 
-    if (answer != KMessageBox::PrimaryAction)
+    // qemu-img convert writes the current state only.
+    const QStringList snapshots = SnapshotManager().snapshotNames(diskPaths);
+
+    KMessageBox::ButtonCode answer;
+    if (snapshots.isEmpty()) {
+        answer = KMessageBox::questionTwoActions(this,
+                                                 question,
+                                                 i18nc("@title:window", "Compact Disk Image"),
+                                                 KGuiItem(i18n("Compact"), u"edit-clear-history"_s),
+                                                 KStandardGuiItem::cancel());
+    } else {
+        const QString warning = i18np("The VM has a snapshot (%2). Compacting deletes it, and the VM can no longer be reverted to it.",
+                                      "The VM has %1 snapshots (%2). Compacting deletes all of them, and the VM can no longer be reverted to any of them.",
+                                      snapshots.size(),
+                                      snapshots.join(u", "_s));
+        // Dangerous by default: Cancel is the default button.
+        answer =
+            KMessageBox::warningTwoActions(this,
+                                           question + u"\n\n"_s + warning,
+                                           i18nc("@title:window", "Compact Disk Image"),
+                                           KGuiItem(i18np("Compact and Delete Snapshot", "Compact and Delete Snapshots", snapshots.size()), u"edit-delete"_s),
+                                           KStandardGuiItem::cancel());
+    }
+
+    if (answer != KMessageBox::PrimaryAction || veModel->isBusy(currentConfig.name()))
         return;
 
     auto *job = new ShrinkJob(currentConfig.name(), diskPaths, this);
@@ -3995,14 +4016,17 @@ void MainWindow::makeIndependent()
         sourceName,
         QLocale::system().formattedDataSize(sharedBytes));
     // qemu-img convert writes the current state only.
-    if (!SnapshotManager().listSnapshots(diskPaths.first()).isEmpty())
-        question += u"\n\n"_s + i18n("The snapshots of '%1' will be lost.", vmName);
+    const QStringList snapshots = SnapshotManager().snapshotNames(diskPaths);
+    const KGuiItem makeIndependentItem(i18n("Make Independent"), u"remove-link"_s);
 
-    const auto answer = KMessageBox::questionTwoActions(this,
-                                                        question,
-                                                        i18nc("@title:window", "Make Independent"),
-                                                        KGuiItem(i18n("Make Independent"), u"remove-link"_s),
-                                                        KStandardGuiItem::cancel());
+    KMessageBox::ButtonCode answer;
+    if (snapshots.isEmpty()) {
+        answer = KMessageBox::questionTwoActions(this, question, i18nc("@title:window", "Make Independent"), makeIndependentItem, KStandardGuiItem::cancel());
+    } else {
+        question +=
+            u"\n\n"_s + i18np("Its snapshot (%2) will be deleted.", "Its %1 snapshots (%2) will be deleted.", snapshots.size(), snapshots.join(u", "_s));
+        answer = KMessageBox::warningTwoActions(this, question, i18nc("@title:window", "Make Independent"), makeIndependentItem, KStandardGuiItem::cancel());
+    }
     if (answer != KMessageBox::PrimaryAction || veModel->isBusy(vmName))
         return;
 
