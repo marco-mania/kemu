@@ -70,7 +70,7 @@ private:
     struct SourceDisk {
         QString path; // staged image; empty: create a blank disk
         qint64 blankBytes = 0;
-        QString format; // detected and checked before the conversion
+        QString format = {}; // detected and checked before the conversion
     };
     QList<SourceDisk> m_sourceDisks; // system disk first
     qsizetype m_convertIndex = 0;

@@ -476,8 +476,12 @@ void OvaImportJob::convertDisk()
 
     const SourceDisk &disk = m_sourceDisks.at(m_convertIndex);
     const QString target = targetPathFor(m_convertIndex);
-    const QStringList args = disk.path.isEmpty() ? QStringList{u"create"_s, u"-q"_s, u"-f"_s, u"qcow2"_s, target, QString::number(disk.blankBytes)}
-                                                 : QStringList{u"convert"_s, u"-p"_s, u"-f"_s, disk.format, u"-O"_s, u"qcow2"_s, disk.path, target};
+    QStringList args;
+    if (disk.path.isEmpty()) {
+        args = {u"create"_s, u"-q"_s, u"-f"_s, u"qcow2"_s, target, QString::number(disk.blankBytes)};
+    } else {
+        args = {u"convert"_s, u"-p"_s, u"-f"_s, disk.format, u"-O"_s, u"qcow2"_s, disk.path, target};
+    }
     if (!m_converter->start(args)) {
         QDir(m_targetDir).removeRecursively();
         setError(ToolError);
