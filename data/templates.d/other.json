@@ -4,7 +4,7 @@
     {
       "id": "other-linux",
       "display_name": "Other Linux",
-      "os_type": "linux",
+      "os_family": "linux",
       "sort_order": 1000,
       "icon_hint": "computer",
       "releases": [
@@ -18,7 +18,7 @@
     {
       "id": "other-bsd",
       "display_name": "Other BSD",
-      "os_type": "bsd",
+      "os_family": "bsd",
       "sort_order": 1000,
       "icon_hint": "computer",
       "releases": [
@@ -35,7 +35,7 @@
     {
       "id": "other-windows",
       "display_name": "Other Windows",
-      "os_type": "windows",
+      "os_family": "windows",
       "sort_order": 1000,
       "icon_hint": "computer",
       "releases": [
@@ -54,7 +54,7 @@
     {
       "id": "other-dos",
       "display_name": "Other DOS",
-      "os_type": "dos",
+      "os_family": "dos",
       "sort_order": 1000,
       "icon_hint": "computer",
       "releases": [
@@ -89,7 +89,7 @@
     {
       "id": "other",
       "display_name": "Other operating system",
-      "os_type": "other",
+      "os_family": "other",
       "sort_order": 1000,
       "icon_hint": "computer",
       "releases": [

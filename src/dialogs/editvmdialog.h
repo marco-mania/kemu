@@ -99,7 +99,7 @@ private Q_SLOTS:
     void browseSharedDir();
     void onMachineTypeChanged(int index);
     void onRamSpinChanged(int mb);
-    void onOsTypeChanged(int index);
+    void onOsFamilyChanged(int index);
     void onOsNameChanged(int index);
     void onGpuDisplayChanged();
 
@@ -109,7 +109,7 @@ private Q_SLOTS:
     void removePortForwardRow();
 
 private:
-    void filterOsVariants(VMSpecs::OsType osType); // e.g. Distributions for Linux
+    void filterOsVariants(VMSpecs::OsFamily osFamily); // e.g. Distributions for Linux
     void updateIconForOs();
     void updateDiskInterfaceHint();
     void updateDeviceAvailability();
@@ -132,7 +132,7 @@ private:
 
     QLineEdit *nameEdit = nullptr;
     QPlainTextEdit *commentEdit = nullptr;
-    QComboBox *osTypeCombo = nullptr;
+    QComboBox *osFamilyCombo = nullptr;
     QComboBox *osNameCombo = nullptr;
     QLabel *osNameLabel = nullptr;
 

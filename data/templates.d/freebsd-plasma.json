@@ -6,7 +6,7 @@
       "display_name": "FreeBSD (KDE Plasma)",
       "cloud_init_template": "freebsd-plasma",
       "network_template": "network-freebsd",
-      "os_type": "bsd",
+      "os_family": "bsd",
       "sort_order": 110,
       "homepage": "https://www.freebsd.org",
       "icon_hint": "freebsd",

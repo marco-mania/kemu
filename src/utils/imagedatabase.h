@@ -54,7 +54,7 @@ struct ReleaseInfo {
 struct TemplateInfo {
     QString id;
     QString displayName;
-    VMSpecs::OsType osType = VMSpecs::OsType::Linux;
+    VMSpecs::OsFamily osFamily = VMSpecs::OsFamily::Linux;
     int sortOrder = KEMUConst::DefaultTemplateSortOrder;
     QString homepage;
     QString iconHint;
@@ -85,7 +85,7 @@ public:
     // Without hidden templates, for choosing one.
     [[nodiscard]] QList<TemplateInfo> templates() const;
     [[nodiscard]] QList<TemplateInfo> allTemplates() const;
-    [[nodiscard]] QList<TemplateInfo> templatesForType(VMSpecs::OsType type) const;
+    [[nodiscard]] QList<TemplateInfo> templatesForFamily(VMSpecs::OsFamily family) const;
     [[nodiscard]] const TemplateInfo *findById(const QString &id) const;
     [[nodiscard]] QString displayName(const QString &id) const;
 

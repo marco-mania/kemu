@@ -86,9 +86,9 @@ void VmIconSelector::applyTo(VMConfig &config) const
     }
 }
 
-void VmIconSelector::followOs(VMSpecs::OsType osType, const QString &distroId, const QString &themeFallback)
+void VmIconSelector::followOs(VMSpecs::OsFamily osFamily, const QString &distroId, const QString &themeFallback)
 {
-    m_osType = osType;
+    m_osFamily = osFamily;
     m_distroId = distroId;
     m_themeFallback = themeFallback;
 
@@ -193,7 +193,7 @@ void VmIconSelector::applyOsDefault()
     m_iconSetFilename.clear();
     m_customIcon = {};
 
-    const QString path = VMConfig::defaultIconFor(m_osType, m_distroId);
+    const QString path = VMConfig::defaultIconFor(m_osFamily, m_distroId);
     if (!path.isEmpty() && QFile::exists(path)) {
         const QDir baseDir(VMConfig::osIconDir());
         m_iconSetFilename = baseDir.relativeFilePath(path);

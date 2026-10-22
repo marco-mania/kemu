@@ -157,11 +157,11 @@ QList<TemplateInfo> ImageDatabase::allTemplates() const
     return m_templates;
 }
 
-QList<TemplateInfo> ImageDatabase::templatesForType(VMSpecs::OsType type) const
+QList<TemplateInfo> ImageDatabase::templatesForFamily(VMSpecs::OsFamily family) const
 {
     QList<TemplateInfo> result;
     for (const auto &d : m_templates) {
-        if (d.osType == type && !d.hidden)
+        if (d.osFamily == family && !d.hidden)
             result.append(d);
     }
     return result;
@@ -288,8 +288,8 @@ TemplateInfo ImageDatabase::parseTemplate(const QJsonObject &obj, const VMConfig
     d.cloudInitTemplate = obj[u"cloud_init_template"_s].toString(d.id);
     d.networkTemplate = obj[u"network_template"_s].toString(d.id);
 
-    const QString osTypeStr = obj[u"os_type"_s].toString();
-    d.osType = VMConfig::parseOsType(osTypeStr);
+    const QString osFamilyStr = obj[u"os_family"_s].toString();
+    d.osFamily = VMConfig::parseOsFamily(osFamilyStr);
     d.sortOrder = obj[u"sort_order"_s].toInt(KEMUConst::DefaultTemplateSortOrder);
 
     for (const auto &val : obj[u"releases"_s].toArray())

@@ -238,7 +238,7 @@ Minimal example (`mydistro.json`):
     {
       "id": "mydistro",
       "display_name": "My Distro",
-      "os_type": "linux",
+      "os_family": "linux",
       "cloud_init_template": "debian",
       "network_template": "network-v2",
       "releases": [
@@ -254,7 +254,7 @@ Minimal example (`mydistro.json`):
 }
 ```
 
-Valid `os_type` values are `linux`, `windows`, `bsd`, `dos` and `other`.
+Valid `os_family` values are `linux`, `windows`, `bsd`, `dos` and `other`.
 Templates are read at startup; malformed files are skipped with a warning (see
 [Debug Logging](#debug-logging)).
 

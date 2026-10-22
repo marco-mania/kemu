@@ -60,7 +60,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     if (config.machineType() == VMSpecs::MachineType::Q35) {
         QString machineTypeParam = u"type=q35,accel=%1,vmport=off"_s.arg(accel);
         machineTypeParam += config.useSecureBoot() ? u",smm=on"_s : u",smm=off"_s;
-        if (config.osType() == VMSpecs::OsType::Windows)
+        if (config.osFamily() == VMSpecs::OsFamily::Windows)
             machineTypeParam += u",hpet=off"_s;
         if (!config.useAcpi())
             machineTypeParam += u",acpi=off"_s;
@@ -91,7 +91,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     // --- CPU ---
     QString cpuArg = VMConfig::toQemuString(config.cpuModel());
     if (config.useKvm() && config.cpuModel() == VMSpecs::CpuModel::Host) {
-        if (config.osType() == VMSpecs::OsType::Windows) {
+        if (config.osFamily() == VMSpecs::OsFamily::Windows) {
             cpuArg += u",l3-cache=on,+hypervisor,+invtsc,migratable=no,hv_passthrough"_s;
         } else {
             cpuArg += u",l3-cache=on"_s;
@@ -125,7 +125,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     if (config.useKvm())
         args << u"-global"_s << u"kvm-pit.lost_tick_policy=discard"_s;
 
-    if (config.osType() == VMSpecs::OsType::Windows && config.machineType() == VMSpecs::MachineType::Q35) {
+    if (config.osFamily() == VMSpecs::OsFamily::Windows && config.machineType() == VMSpecs::MachineType::Q35) {
         args << u"-global"_s << u"ICH9-LPC.disable_s3=1"_s;
         args << u"-global"_s << u"ICH9-LPC.disable_s4=1"_s;
     }
@@ -139,13 +139,13 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     // virtio-fs (Windows shared folder) requires an explicit memory-backend
     // object; in that case prealloc is set on the object itself below,
     // not via the legacy -mem-prealloc flag.
-    const bool usesVirtiofs = !config.sharedPath().isEmpty() && config.osType() == VMSpecs::OsType::Windows;
+    const bool usesVirtiofs = !config.sharedPath().isEmpty() && config.osFamily() == VMSpecs::OsFamily::Windows;
     if (config.preallocMemory() && !usesVirtiofs)
         args << u"-mem-prealloc"_s;
 
     // --- RTC ---
     QString rtcParam = config.useLocalTime() ? u"base=localtime,clock=host"_s : u"base=utc,clock=host"_s;
-    if (config.osType() == VMSpecs::OsType::Windows)
+    if (config.osFamily() == VMSpecs::OsFamily::Windows)
         rtcParam += u",driftfix=slew"_s;
     args << u"-rtc"_s << rtcParam;
 
@@ -279,7 +279,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     if (!config.sharedPath().isEmpty()) {
         const QString mountTag = config.sharedName().isEmpty() ? u"share"_s : config.sharedName();
 
-        if (config.osType() == VMSpecs::OsType::Windows) {
+        if (config.osFamily() == VMSpecs::OsFamily::Windows) {
             // -- virtio-fs (for Windows guests) --
             // virtiofsd must be started BEFORE QEMU (see MainWindow::startVirtiofsd).
             // QEMU connects via a vhost-user socket.
@@ -571,7 +571,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     }
 
     // --- virtiofsd (Windows shared folders) ---
-    if (!config.sharedPath().isEmpty() && config.osType() == VMSpecs::OsType::Windows) {
+    if (!config.sharedPath().isEmpty() && config.osFamily() == VMSpecs::OsFamily::Windows) {
         const QString virtiofsdPath = relativePaths ? u"virtiofsd"_s : ExternalTools::instance().path(ExternalTools::Virtiofsd);
         const QString sockArg = relativePaths ? KEMUConst::VirtiofsdSocketFileName : vmDir.absoluteFilePath(KEMUConst::VirtiofsdSocketFileName);
 

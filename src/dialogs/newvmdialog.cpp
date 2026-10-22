@@ -327,12 +327,12 @@ void NewVmDialog::populateOsCombo()
 
     auto *model = qobject_cast<QStandardItemModel *>(osCombo->model());
 
-    for (const auto type : {VMSpecs::OsType::Linux, VMSpecs::OsType::Windows, VMSpecs::OsType::BSD, VMSpecs::OsType::DOS, VMSpecs::OsType::Other}) {
-        const QList<TemplateInfo> templates = m_imageDatabase->templatesForType(type);
+    for (const auto family : {VMSpecs::OsFamily::Linux, VMSpecs::OsFamily::Windows, VMSpecs::OsFamily::BSD, VMSpecs::OsFamily::DOS, VMSpecs::OsFamily::Other}) {
+        const QList<TemplateInfo> templates = m_imageDatabase->templatesForFamily(family);
         if (templates.isEmpty())
             continue;
 
-        osCombo->addItem(VMConfig::toUIString(type));
+        osCombo->addItem(VMConfig::toUIString(family));
         if (model) {
             // Group header: visible, but not selectable.
             model->item(osCombo->count() - 1)->setEnabled(false);
@@ -660,7 +660,7 @@ void NewVmDialog::updateIcon()
     if (!tpl)
         return;
 
-    iconSelector->followOs(tpl->osType, tpl->id, tpl->iconHint);
+    iconSelector->followOs(tpl->osFamily, tpl->id, tpl->iconHint);
 }
 
 void NewVmDialog::updateDeployInfo()
@@ -757,7 +757,7 @@ VMConfig NewVmDialog::getResult() const
     config.setName(nameEdit->text().trimmed());
     config.setDistroId(selectedTemplateId());
     if (tpl)
-        config.setOsType(tpl->osType);
+        config.setOsFamily(tpl->osFamily);
 
     config.setRamMb(ramSpin->value());
     config.setCpuCoreCount(cpuSpin->value());

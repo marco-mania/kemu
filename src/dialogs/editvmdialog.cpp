@@ -123,20 +123,20 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     auto *genLayout = new QFormLayout();
     genLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
-    osTypeCombo = new QComboBox();
-    osTypeCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-    osTypeCombo->addItem(i18n("GNU/Linux"), static_cast<int>(VMSpecs::OsType::Linux));
-    osTypeCombo->addItem(i18n("Microsoft Windows"), static_cast<int>(VMSpecs::OsType::Windows));
-    osTypeCombo->addItem(i18n("BSD"), static_cast<int>(VMSpecs::OsType::BSD));
-    osTypeCombo->addItem(i18n("DOS"), static_cast<int>(VMSpecs::OsType::DOS));
-    osTypeCombo->addItem(i18n("Other"), static_cast<int>(VMSpecs::OsType::Other));
-    osTypeCombo->insertItem(0, i18n("-- Please select --"), -1);
-    osTypeCombo->setCurrentIndex(0);
-    genLayout->addRow(i18n("OS Type:"), osTypeCombo);
+    osFamilyCombo = new QComboBox();
+    osFamilyCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    osFamilyCombo->addItem(i18n("GNU/Linux"), static_cast<int>(VMSpecs::OsFamily::Linux));
+    osFamilyCombo->addItem(i18n("Microsoft Windows"), static_cast<int>(VMSpecs::OsFamily::Windows));
+    osFamilyCombo->addItem(i18n("BSD"), static_cast<int>(VMSpecs::OsFamily::BSD));
+    osFamilyCombo->addItem(i18n("DOS"), static_cast<int>(VMSpecs::OsFamily::DOS));
+    osFamilyCombo->addItem(i18n("Other"), static_cast<int>(VMSpecs::OsFamily::Other));
+    osFamilyCombo->insertItem(0, i18n("-- Please select --"), -1);
+    osFamilyCombo->setCurrentIndex(0);
+    genLayout->addRow(i18n("OS Family:"), osFamilyCombo);
 
-    auto *osTypeModel = qobject_cast<QStandardItemModel *>(osTypeCombo->model());
-    if (osTypeModel) {
-        QStandardItem *item = osTypeModel->item(0);
+    auto *osFamilyModel = qobject_cast<QStandardItemModel *>(osFamilyCombo->model());
+    if (osFamilyModel) {
+        QStandardItem *item = osFamilyModel->item(0);
         item->setEnabled(false); // Disabled and non-reselectable once selected
     }
 
@@ -676,7 +676,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     mainLayout->addWidget(tabs);
 
     connect(nameEdit, &QLineEdit::textChanged, this, &EditVmDialog::onNameChanged);
-    connect(osTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::onOsTypeChanged);
+    connect(osFamilyCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::onOsFamilyChanged);
     connect(osNameCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::onOsNameChanged);
     connect(osNameCombo, &QComboBox::editTextChanged, this, [this]() {
         updateIconForOs();
@@ -920,14 +920,14 @@ void EditVmDialog::setConfig(const VMConfig &config)
 
     commentEdit->setPlainText(config.comment());
 
-    setCombo(osTypeCombo, config.osType());
+    setCombo(osFamilyCombo, config.osFamily());
     const int variantIdx = osNameCombo->findData(config.distroId());
     if (variantIdx >= 0)
         osNameCombo->setCurrentIndex(variantIdx);
     else if (!config.distroId().isEmpty())
         osNameCombo->setEditText(config.distroId());
 
-    if (config.osType() != VMSpecs::OsType::Other) {
+    if (config.osFamily() != VMSpecs::OsFamily::Other) {
         osNameCombo->setEnabled(true);
         if (osNameLabel)
             osNameLabel->setEnabled(true);
@@ -1080,11 +1080,11 @@ void EditVmDialog::browseSharedDir()
         sharedPathEdit->setText(dir);
 }
 
-void EditVmDialog::onOsTypeChanged(int /*index*/)
+void EditVmDialog::onOsFamilyChanged(int /*index*/)
 {
-    const int typeVal = osTypeCombo->currentData().toInt();
+    const int familyVal = osFamilyCombo->currentData().toInt();
 
-    if (typeVal == -1) {
+    if (familyVal == -1) {
         // Placeholder
         osNameCombo->clear();
         osNameCombo->addItem(i18n("-- Please select --"), {});
@@ -1092,7 +1092,7 @@ void EditVmDialog::onOsTypeChanged(int /*index*/)
         osNameCombo->setEnabled(false);
         osNameLabel->setEnabled(false);
 
-    } else if (static_cast<VMSpecs::OsType>(typeVal) == VMSpecs::OsType::Other) {
+    } else if (static_cast<VMSpecs::OsFamily>(familyVal) == VMSpecs::OsFamily::Other) {
         // special case "Other"
         osNameCombo->clear();
         osNameCombo->addItem(i18n("Other"), u"other"_s);
@@ -1103,8 +1103,8 @@ void EditVmDialog::onOsTypeChanged(int /*index*/)
     } else {
         osNameCombo->setEnabled(true);
         osNameLabel->setEnabled(true);
-        auto osType = static_cast<VMSpecs::OsType>(typeVal);
-        filterOsVariants(osType);
+        auto osFamily = static_cast<VMSpecs::OsFamily>(familyVal);
+        filterOsVariants(osFamily);
     }
 
     updateIconForOs();
@@ -1124,10 +1124,10 @@ void EditVmDialog::onOsNameChanged(int /*index*/)
 void EditVmDialog::onGpuDisplayChanged()
 {
     const auto gpu = static_cast<VMSpecs::GpuType>(gpuCombo->currentData().toInt());
-    const auto osType = static_cast<VMSpecs::OsType>(osTypeCombo->currentData().toInt());
+    const auto osFamily = static_cast<VMSpecs::OsFamily>(osFamilyCombo->currentData().toInt());
 
     const bool isVirtio = (gpu == VMSpecs::GpuType::Virtio);
-    const bool isWindows = (osType == VMSpecs::OsType::Windows);
+    const bool isWindows = (osFamily == VMSpecs::OsFamily::Windows);
 
     gpuMemSpin->setRange(VMConfig::vgaMemMbLowerLimit(gpu), VMConfig::vgaMemMbUpperLimit(gpu));
     if (gpu == VMSpecs::GpuType::CirrusGD5430 || gpu == VMSpecs::GpuType::CirrusGD5446) {
@@ -1165,11 +1165,11 @@ void EditVmDialog::onNameChanged(const QString &text)
 {
     // OS guessing
     bool found;
-    auto [type, variantId] = VMConfig::guessOSFromText(text, &found);
+    auto [family, variantId] = VMConfig::guessOSFromText(text, &found);
     if (found) {
-        const int typeIndex = osTypeCombo->findData(static_cast<int>(type));
-        if (typeIndex >= 0 && osTypeCombo->currentIndex() != typeIndex)
-            osTypeCombo->setCurrentIndex(typeIndex);
+        const int familyIndex = osFamilyCombo->findData(static_cast<int>(family));
+        if (familyIndex >= 0 && osFamilyCombo->currentIndex() != familyIndex)
+            osFamilyCombo->setCurrentIndex(familyIndex);
         const int variantIndex = osNameCombo->findData(variantId);
         if (variantIndex >= 0 && osNameCombo->currentIndex() != variantIndex)
             osNameCombo->setCurrentIndex(variantIndex);
@@ -1220,7 +1220,7 @@ void EditVmDialog::removePortForwardRow()
     removePortFwdButton->setEnabled(portForwardTable->rowCount() > 0);
 }
 
-void EditVmDialog::filterOsVariants(VMSpecs::OsType osType)
+void EditVmDialog::filterOsVariants(VMSpecs::OsFamily osFamily)
 {
     osNameCombo->clear();
     osNameCombo->setCurrentIndex(-1);
@@ -1234,7 +1234,7 @@ void EditVmDialog::filterOsVariants(VMSpecs::OsType osType)
     }
 
     if (m_imageDatabase) {
-        for (const auto &d : m_imageDatabase->templatesForType(osType))
+        for (const auto &d : m_imageDatabase->templatesForFamily(osFamily))
             osNameCombo->addItem(d.displayName, d.id);
     }
 
@@ -1254,7 +1254,7 @@ void EditVmDialog::updateIconForOs()
     if (distroId.isEmpty())
         distroId = osNameCombo->currentText().trimmed();
 
-    iconSelector->followOs(static_cast<VMSpecs::OsType>(osTypeCombo->currentData().toInt()), distroId);
+    iconSelector->followOs(static_cast<VMSpecs::OsFamily>(osFamilyCombo->currentData().toInt()), distroId);
 }
 
 void EditVmDialog::setExistingVmNames(const QStringList &names)
@@ -1277,9 +1277,9 @@ void EditVmDialog::setImageDatabase(ImageDatabase *db)
 {
     m_imageDatabase = db;
 
-    const int typeVal = osTypeCombo->currentData().toInt();
-    if (typeVal >= 0 && static_cast<VMSpecs::OsType>(typeVal) != VMSpecs::OsType::Other)
-        filterOsVariants(static_cast<VMSpecs::OsType>(typeVal));
+    const int familyVal = osFamilyCombo->currentData().toInt();
+    if (familyVal >= 0 && static_cast<VMSpecs::OsFamily>(familyVal) != VMSpecs::OsFamily::Other)
+        filterOsVariants(static_cast<VMSpecs::OsFamily>(familyVal));
 }
 
 void EditVmDialog::setNetworkManager(VirtualNetworkManager *mgr)
@@ -1324,7 +1324,7 @@ VMConfig EditVmDialog::getResult() const
     VMConfig c;
     c.setName(nameEdit->text().trimmed());
     c.setComment(commentEdit->toPlainText());
-    c.setOsType(static_cast<VMSpecs::OsType>(osTypeCombo->currentData().toInt()));
+    c.setOsFamily(static_cast<VMSpecs::OsFamily>(osFamilyCombo->currentData().toInt()));
     QString distroId = osNameCombo->currentData().toString();
     if (distroId.isEmpty())
         distroId = osNameCombo->currentText().trimmed();
@@ -1424,7 +1424,7 @@ void EditVmDialog::updateDiskInterfaceHint()
 
     const auto disk = static_cast<VMSpecs::DiskInterface>(diskInterfaceCombo->currentData().toInt());
     const auto machine = static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt());
-    const auto os = static_cast<VMSpecs::OsType>(osTypeCombo->currentData().toInt());
+    const auto os = static_cast<VMSpecs::OsFamily>(osFamilyCombo->currentData().toInt());
     if (disk == VMSpecs::DiskInterface::SataIde) {
         if (machine == VMSpecs::MachineType::Q35) {
             diskHintLabel->setText(u"<i>"_s + i18n("Q35 chipset: disk attached via AHCI (SATA).") + u"</i>"_s);
@@ -1436,7 +1436,7 @@ void EditVmDialog::updateDiskInterfaceHint()
         }
         return;
     }
-    if (disk == VMSpecs::DiskInterface::Virtio && os == VMSpecs::OsType::Windows) {
+    if (disk == VMSpecs::DiskInterface::Virtio && os == VMSpecs::OsFamily::Windows) {
         diskHintLabel->setText(u"<i>"_s
                                + i18n("Note: Windows requires the VirtIO driver ISO "
                                       "during installation.")
@@ -1689,8 +1689,8 @@ void EditVmDialog::validateForm()
         valid = false;
     }
 
-    // OS Type Placeholder?
-    if (osTypeCombo->currentData().toInt() == -1)
+    // OS family placeholder?
+    if (osFamilyCombo->currentData().toInt() == -1)
         valid = false;
 
     // OS variant: accept combo selection OR free text (min. 2 chars)

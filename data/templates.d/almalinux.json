@@ -6,7 +6,7 @@
       "display_name": "AlmaLinux",
       "cloud_init_template": "rhel",
       "network_template": "network-v1",
-      "os_type": "linux",
+      "os_family": "linux",
       "sort_order": 170,
       "homepage": "https://almalinux.org",
       "icon_hint": "almalinux",

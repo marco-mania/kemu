@@ -120,7 +120,7 @@ enum class KeyboardDevice {
     Usb // requires a USB controller
 };
 
-enum class OsType {
+enum class OsFamily {
     Linux,
     Windows,
     DOS,
@@ -157,7 +157,7 @@ Q_ENUM_NS(NetworkCard)
 Q_ENUM_NS(NetworkMode)
 Q_ENUM_NS(PointerDevice)
 Q_ENUM_NS(KeyboardDevice)
-Q_ENUM_NS(OsType)
+Q_ENUM_NS(OsFamily)
 Q_ENUM_NS(Architecture)
 Q_ENUM_NS(ExitAction)
 Q_ENUM_NS(GuestShutdownAction)
@@ -187,7 +187,7 @@ struct Defaults {
     bool useSecureBoot = false;
     bool useLocalTime = false;
     bool useAcpi = true;
-    OsType osType = OsType::Linux;
+    OsFamily osFamily = OsFamily::Linux;
     Architecture architecture = Architecture::X86_64;
     NetworkMode networkMode = NetworkMode::UserMode;
     QString macAddress = u"52:54:00:12:34:56"_s;
@@ -320,9 +320,9 @@ public:
     {
         return m_comment;
     }
-    [[nodiscard]] VMSpecs::OsType osType() const
+    [[nodiscard]] VMSpecs::OsFamily osFamily() const
     {
-        return m_osType;
+        return m_osFamily;
     }
     [[nodiscard]] VMSpecs::Architecture architecture() const
     {
@@ -573,9 +573,9 @@ public:
     {
         m_comment = comment;
     }
-    void setOsType(const VMSpecs::OsType type)
+    void setOsFamily(const VMSpecs::OsFamily family)
     {
-        m_osType = type;
+        m_osFamily = family;
     }
     void setArchitecture(const VMSpecs::Architecture arch)
     {
@@ -858,8 +858,8 @@ public:
     };
     [[nodiscard]] static QIcon styledVmIcon(const QIcon &baseIcon, VmVisualState state, bool isHeadless, int size = KEMUConst::ListViewIconSize);
     [[nodiscard]] static QString osIconDir();
-    [[nodiscard]] static QString defaultIconForType(VMSpecs::OsType type);
-    [[nodiscard]] static QString defaultIconFor(VMSpecs::OsType type, const QString &variant);
+    [[nodiscard]] static QString defaultIconForFamily(VMSpecs::OsFamily family);
+    [[nodiscard]] static QString defaultIconFor(VMSpecs::OsFamily family, const QString &variant);
 
     [[nodiscard]] static bool isAllowedCharInVmName(const QChar c);
     [[nodiscard]] static bool isValidVmName(QStringView name, QString *error = nullptr);
@@ -905,7 +905,7 @@ public:
     [[nodiscard]] static QString toUIString(VMSpecs::PointerDevice dev);
     [[nodiscard]] static QString toUIString(VMSpecs::KeyboardDevice dev);
     [[nodiscard]] static QString toUIString(VMSpecs::MachineType type);
-    [[nodiscard]] static QString toUIString(VMSpecs::OsType type);
+    [[nodiscard]] static QString toUIString(VMSpecs::OsFamily family);
     [[nodiscard]] static QString toUIString(VMSpecs::Architecture arch);
     [[nodiscard]] static QString toUIString(VMSpecs::NetworkMode mode);
     [[nodiscard]] static QString toUIString(VMSpecs::ExitAction action);
@@ -924,7 +924,7 @@ public:
     [[nodiscard]] static QString toString(VMSpecs::PointerDevice dev);
     [[nodiscard]] static QString toString(VMSpecs::KeyboardDevice dev);
     [[nodiscard]] static QString toString(PortForwardRule::Protocol proto);
-    [[nodiscard]] static QString toString(VMSpecs::OsType type);
+    [[nodiscard]] static QString toString(VMSpecs::OsFamily family);
     [[nodiscard]] static QString toString(VMSpecs::Architecture arch);
     [[nodiscard]] static QString toString(VMSpecs::NetworkMode mode);
     [[nodiscard]] static QString toString(VMSpecs::ExitAction action);
@@ -945,7 +945,7 @@ public:
     [[nodiscard]] static VMSpecs::PointerDevice parsePointerDevice(const QString &str);
     [[nodiscard]] static VMSpecs::KeyboardDevice parseKeyboardDevice(const QString &str);
     [[nodiscard]] static PortForwardRule::Protocol parseProtocol(const QString &str);
-    [[nodiscard]] static VMSpecs::OsType parseOsType(const QString &str);
+    [[nodiscard]] static VMSpecs::OsFamily parseOsFamily(const QString &str);
     [[nodiscard]] static VMSpecs::Architecture parseArchitecture(const QString &str);
     [[nodiscard]] static VMSpecs::NetworkMode parseNetworkMode(const QString &str);
     [[nodiscard]] static VMSpecs::ExitAction parseExitAction(const QString &str);
@@ -954,7 +954,7 @@ public:
     [[nodiscard]] static DeployState parseDeployState(const QString &str);
     [[nodiscard]] static IconSource parseIconSource(const QString &str);
 
-    static QPair<VMSpecs::OsType, QString> guessOSFromText(const QString &string, bool *found = nullptr);
+    static QPair<VMSpecs::OsFamily, QString> guessOSFromText(const QString &string, bool *found = nullptr);
 
     // --- JSON Serialization ---
     [[nodiscard]] QJsonObject toJson() const;
@@ -969,7 +969,7 @@ public:
 private:
     QString m_name;
     QString m_comment;
-    VMSpecs::OsType m_osType = GlobalDefaults.osType;
+    VMSpecs::OsFamily m_osFamily = GlobalDefaults.osFamily;
     VMSpecs::Architecture m_architecture = GlobalDefaults.architecture;
     QString m_distroId;
 

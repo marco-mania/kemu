@@ -6,7 +6,7 @@
       "display_name": "Rocky Linux",
       "cloud_init_template": "rhel",
       "network_template": "network-v1",
-      "os_type": "linux",
+      "os_family": "linux",
       "sort_order": 180,
       "homepage": "https://rockylinux.org",
       "icon_hint": "rockylinux",

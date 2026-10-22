@@ -4,7 +4,7 @@
     {
       "id": "kdeneon",
       "display_name": "KDE neon",
-      "os_type": "linux",
+      "os_family": "linux",
       "sort_order": 120,
       "homepage": "https://neon.kde.org",
       "icon_hint": "neon",

@@ -4,7 +4,7 @@
     {
       "id": "windowsxp",
       "display_name": "Windows XP",
-      "os_type": "windows",
+      "os_family": "windows",
       "sort_order": 130,
       "homepage": "https://en.wikipedia.org/wiki/Windows_XP",
       "icon_hint": "windows",

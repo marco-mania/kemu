@@ -6,7 +6,7 @@
       "display_name": "openSUSE Leap",
       "cloud_init_template": "opensuse-leap",
       "network_template": "network-v1",
-      "os_type": "linux",
+      "os_family": "linux",
       "sort_order": 150,
       "homepage": "https://www.opensuse.org",
       "icon_hint": "opensuse",

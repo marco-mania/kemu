@@ -6,7 +6,7 @@
       "display_name": "Fedora",
       "cloud_init_template": "fedora",
       "network_template": "network-v2",
-      "os_type": "linux",
+      "os_family": "linux",
       "sort_order": 140,
       "homepage": "https://fedoraproject.org",
       "icon_hint": "fedora",

@@ -6,7 +6,7 @@
       "display_name": "Kubuntu",
       "cloud_init_template": "kubuntu",
       "network_template": "network-v2",
-      "os_type": "linux",
+      "os_family": "linux",
       "sort_order": 110,
       "homepage": "https://kubuntu.org",
       "icon_hint": "kubuntu",

@@ -254,7 +254,7 @@ void TemplatesSettingsPage::newTemplate()
     const QJsonObject skeleton{
         {u"id"_s, uniqueId(u"my-os"_s, allIds())},
         {u"display_name"_s, i18n("My Operating System")},
-        {u"os_type"_s, u"linux"_s},
+        {u"os_family"_s, u"linux"_s},
         {u"sort_order"_s, 500},
         {u"homepage"_s, QString()},
         {u"releases"_s, QJsonArray()},

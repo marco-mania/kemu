@@ -54,8 +54,8 @@ GuestOs guestOsFor(const VMConfig &config)
     const QString suffix = is64 ? u"_64"_s : QString();
     const QString distro = config.distroId();
 
-    switch (config.osType()) {
-    case VMSpecs::OsType::Windows: {
+    switch (config.osFamily()) {
+    case VMSpecs::OsFamily::Windows: {
         struct Windows {
             QString distro;
             int cimId;
@@ -82,7 +82,7 @@ GuestOs guestOsFor(const VMConfig &config)
         return {1, u"Windows10"_s + suffix, is64 ? u"windows9_64Guest"_s : u"windows9Guest"_s, u"Windows"_s};
     }
 
-    case VMSpecs::OsType::Linux: {
+    case VMSpecs::OsFamily::Linux: {
         static const QHash<QString, std::pair<QString, QString>> distros = {
             {u"debian"_s, {u"Debian"_s, u"Debian"_s}},
             {u"ubuntu"_s, {u"Ubuntu"_s, u"Ubuntu"_s}},
@@ -105,12 +105,12 @@ GuestOs guestOsFor(const VMConfig &config)
         return {36, machineId, configId, name};
     }
 
-    case VMSpecs::OsType::BSD:
+    case VMSpecs::OsFamily::BSD:
         if (distro == u"openbsd"_s)
             return {1, u"OpenBSD"_s + suffix, is64 ? u"other64Guest"_s : u"otherGuest"_s, u"OpenBSD"_s};
         return {42, u"FreeBSD"_s + suffix, is64 ? u"freebsd64Guest"_s : u"freebsdGuest"_s, u"FreeBSD"_s};
 
-    case VMSpecs::OsType::DOS:
+    case VMSpecs::OsFamily::DOS:
         return {14, u"DOS"_s, u"dosGuest"_s, u"DOS"_s};
 
     default:

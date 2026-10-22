@@ -6,7 +6,7 @@
       "display_name": "FreeBSD",
       "cloud_init_template": "freebsd",
       "network_template": "network-freebsd",
-      "os_type": "bsd",
+      "os_family": "bsd",
       "sort_order": 100,
       "homepage": "https://www.freebsd.org",
       "icon_hint": "freebsd",

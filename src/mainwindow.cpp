@@ -1287,7 +1287,7 @@ void MainWindow::updateDetails()
     QString firmwareVal = VMConfig::firmwareToUIString(currentConfig.useUefi(), currentConfig.useSecureBoot());
     QString chipsetVal = VMConfig::toUIString(currentConfig.machineType());
 
-    QString osVal = VMConfig::toUIString(currentConfig.osType());
+    QString osVal = VMConfig::toUIString(currentConfig.osFamily());
     if (!currentConfig.distroId().isEmpty() && currentConfig.distroId() != u"other"_s) {
         osVal += u" / "_s + m_imageDatabase.displayName(currentConfig.distroId());
     }
@@ -1314,7 +1314,7 @@ void MainWindow::updateDetails()
     if (currentConfig.sharedPath().isEmpty()) {
         sharedVal = i18n("Disabled");
     } else {
-        const QString protocol = (currentConfig.osType() == VMSpecs::OsType::Windows) ? i18n("virtio-fs") : i18n("9p (VirtFS)");
+        const QString protocol = (currentConfig.osFamily() == VMSpecs::OsFamily::Windows) ? i18n("virtio-fs") : i18n("9p (VirtFS)");
         const QString tag = currentConfig.sharedName().isEmpty() ? u"share"_s : currentConfig.sharedName();
         sharedVal = i18n("%1  [%2, Tag: %3]", currentConfig.sharedPath(), protocol, tag);
     }
@@ -2707,7 +2707,7 @@ void MainWindow::startVM(bool headless)
     // Pre-flight: a missing tool must not leave half-started helpers behind.
     if (currentConfig.useTpm() && !requireTool(ExternalTools::Swtpm))
         return;
-    if (!currentConfig.sharedPath().isEmpty() && currentConfig.osType() == VMSpecs::OsType::Windows && !requireTool(ExternalTools::Virtiofsd))
+    if (!currentConfig.sharedPath().isEmpty() && currentConfig.osFamily() == VMSpecs::OsFamily::Windows && !requireTool(ExternalTools::Virtiofsd))
         return;
     if (currentConfig.useUefi() && !requireUefiFirmware(vmDirPath, currentConfig, dialogParentFor(vmName)))
         return;
@@ -2719,7 +2719,7 @@ void MainWindow::startVM(bool headless)
             m_runtimeManager->startSwtpmAsync(vmName, reportingDone(vmName, std::move(done)));
         });
     }
-    if (!currentConfig.sharedPath().isEmpty() && currentConfig.osType() == VMSpecs::OsType::Windows) {
+    if (!currentConfig.sharedPath().isEmpty() && currentConfig.osFamily() == VMSpecs::OsFamily::Windows) {
         chain->then([this, vmName](auto done) {
             m_runtimeManager->startVirtiofsdAsync(vmName, reportingDone(vmName, std::move(done)));
         });
@@ -4381,7 +4381,7 @@ void MainWindow::startDeployment(const QString &vmName)
             m_runtimeManager->startSwtpmAsync(vmName, reportingDone(vmName, std::move(done)));
         });
     }
-    if (!config.sharedPath().isEmpty() && config.osType() == VMSpecs::OsType::Windows) {
+    if (!config.sharedPath().isEmpty() && config.osFamily() == VMSpecs::OsFamily::Windows) {
         chain->then([this, vmName](auto done) {
             m_runtimeManager->startVirtiofsdAsync(vmName, reportingDone(vmName, std::move(done)));
         });

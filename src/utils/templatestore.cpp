@@ -309,9 +309,9 @@ QString TemplateStore::validationError(const QJsonObject &tpl)
     if (tpl.value(u"display_name"_s).toString().trimmed().isEmpty())
         return i18n("'display_name' is missing.");
 
-    static const QStringList osTypes = {u"linux"_s, u"windows"_s, u"bsd"_s, u"dos"_s, u"other"_s};
-    if (tpl.contains(u"os_type"_s) && !osTypes.contains(tpl.value(u"os_type"_s).toString()))
-        return i18n("'os_type' must be one of %1.", osTypes.join(u", "_s));
+    static const QStringList osFamilies = {u"linux"_s, u"windows"_s, u"bsd"_s, u"dos"_s, u"other"_s};
+    if (tpl.contains(u"os_family"_s) && !osFamilies.contains(tpl.value(u"os_family"_s).toString()))
+        return i18n("'os_family' must be one of %1.", osFamilies.join(u", "_s));
     if (tpl.contains(u"sort_order"_s) && !tpl.value(u"sort_order"_s).isDouble())
         return i18n("'sort_order' must be a number.");
     if (tpl.contains(u"qemu_defaults"_s) && !tpl.value(u"qemu_defaults"_s).isObject())

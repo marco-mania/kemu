@@ -6,7 +6,7 @@
       "display_name": "Debian",
       "cloud_init_template": "debian",
       "network_template": "network-v2",
-      "os_type": "linux",
+      "os_family": "linux",
       "sort_order": 130,
       "homepage": "https://www.debian.org",
       "icon_hint": "debian",

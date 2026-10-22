@@ -4,7 +4,7 @@
     {
       "id": "windows2000",
       "display_name": "Windows 2000",
-      "os_type": "windows",
+      "os_family": "windows",
       "sort_order": 140,
       "homepage": "https://en.wikipedia.org/wiki/Windows_2000",
       "icon_hint": "windows",

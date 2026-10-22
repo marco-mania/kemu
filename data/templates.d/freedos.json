@@ -4,7 +4,7 @@
     {
       "id": "freedos",
       "display_name": "FreeDOS",
-      "os_type": "dos",
+      "os_family": "dos",
       "sort_order": 110,
       "homepage": "https://www.freedos.org",
       "icon_hint": "freedos",

@@ -391,13 +391,13 @@ bool OvaImportJob::parseOvf(QString *error)
 
     const QString osText = ovf->osType + u' ' + ovf->osDescription;
     bool osFound = false;
-    auto [osType, distroId] = VMConfig::guessOSFromText(osText, &osFound);
+    auto [osFamily, distroId] = VMConfig::guessOSFromText(osText, &osFound);
     if (!osFound && osText.contains(u"linux"_s, Qt::CaseInsensitive))
-        osType = VMSpecs::OsType::Linux;
-    m_importedConfig.setOsType(osType);
+        osFamily = VMSpecs::OsFamily::Linux;
+    m_importedConfig.setOsFamily(osFamily);
     m_importedConfig.setDistroId(distroId);
     // Windows keeps the hardware clock in local time.
-    m_importedConfig.setUseLocalTime(osType == VMSpecs::OsType::Windows);
+    m_importedConfig.setUseLocalTime(osFamily == VMSpecs::OsFamily::Windows);
 
     // Keep what the guest was installed with where KEMU has it: a changed
     // firmware or boot controller leaves most guests unbootable. Everything

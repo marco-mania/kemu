@@ -450,23 +450,23 @@ QString VMConfig::osIconDir()
     return QStandardPaths::locate(QStandardPaths::GenericDataLocation, KEMUConst::OsIconDirPath, QStandardPaths::LocateDirectory);
 }
 
-QString VMConfig::defaultIconForType(VMSpecs::OsType type)
+QString VMConfig::defaultIconForFamily(VMSpecs::OsFamily family)
 {
     QString filename;
-    switch (type) {
-    case VMSpecs::OsType::Linux:
+    switch (family) {
+    case VMSpecs::OsFamily::Linux:
         filename = u"papirus-icons/tux.svg"_s;
         break;
-    case VMSpecs::OsType::Windows:
+    case VMSpecs::OsFamily::Windows:
         filename = u"papirus-icons/distributor-logo-windows.svg"_s;
         break;
-    case VMSpecs::OsType::DOS:
+    case VMSpecs::OsFamily::DOS:
         filename = u"kemu-icons/dos.svg"_s;
         break;
-    case VMSpecs::OsType::BSD:
+    case VMSpecs::OsFamily::BSD:
         filename = u"misc-icons/beastie.svg"_s;
         break;
-    case VMSpecs::OsType::Other:
+    case VMSpecs::OsFamily::Other:
         filename = u"misc-icons/generic-vm.svg"_s;
         break;
     }
@@ -478,7 +478,7 @@ QString VMConfig::defaultIconForType(VMSpecs::OsType type)
     return dir + u"/"_s + filename;
 }
 
-QString VMConfig::defaultIconFor(VMSpecs::OsType type, const QString &variant)
+QString VMConfig::defaultIconFor(VMSpecs::OsFamily family, const QString &variant)
 {
     const QString lv = variant.toLower().remove(u' ');
     QString filename;
@@ -531,14 +531,14 @@ QString VMConfig::defaultIconFor(VMSpecs::OsType type, const QString &variant)
         filename = u"papirus-icons/distributor-logo-midnightbsd.svg"_s;
 
     if (filename.isEmpty())
-        return defaultIconForType(type);
+        return defaultIconForFamily(family);
 
     const QString dir = osIconDir();
     if (dir.isEmpty())
-        return defaultIconForType(type);
+        return defaultIconForFamily(family);
 
     const QString path = dir + u"/"_s + filename;
-    return QFile::exists(path) ? path : defaultIconForType(type);
+    return QFile::exists(path) ? path : defaultIconForFamily(family);
 }
 
 bool VMConfig::isAllowedCharInVmName(const QChar c)
@@ -1023,18 +1023,18 @@ QString VMConfig::toUIString(VMSpecs::MachineType type)
     return {};
 }
 
-QString VMConfig::toUIString(VMSpecs::OsType type)
+QString VMConfig::toUIString(VMSpecs::OsFamily family)
 {
-    switch (type) {
-    case VMSpecs::OsType::Linux:
+    switch (family) {
+    case VMSpecs::OsFamily::Linux:
         return i18n("GNU/Linux");
-    case VMSpecs::OsType::Windows:
+    case VMSpecs::OsFamily::Windows:
         return i18n("Microsoft Windows");
-    case VMSpecs::OsType::DOS:
+    case VMSpecs::OsFamily::DOS:
         return i18n("DOS");
-    case VMSpecs::OsType::BSD:
+    case VMSpecs::OsFamily::BSD:
         return i18n("BSD");
-    case VMSpecs::OsType::Other:
+    case VMSpecs::OsFamily::Other:
         return i18n("Other");
     }
     return {};
@@ -1263,17 +1263,17 @@ QString VMConfig::toString(PortForwardRule::Protocol proto)
     return (proto == PortForwardRule::Protocol::Udp) ? u"udp"_s : u"tcp"_s;
 }
 
-QString VMConfig::toString(VMSpecs::OsType type)
+QString VMConfig::toString(VMSpecs::OsFamily family)
 {
-    if (type == VMSpecs::OsType::Linux)
+    if (family == VMSpecs::OsFamily::Linux)
         return u"linux"_s;
-    if (type == VMSpecs::OsType::Windows)
+    if (family == VMSpecs::OsFamily::Windows)
         return u"windows"_s;
-    if (type == VMSpecs::OsType::DOS)
+    if (family == VMSpecs::OsFamily::DOS)
         return u"dos"_s;
-    if (type == VMSpecs::OsType::BSD)
+    if (family == VMSpecs::OsFamily::BSD)
         return u"bsd"_s;
-    if (type == VMSpecs::OsType::Other)
+    if (family == VMSpecs::OsFamily::Other)
         return u"other"_s;
     return u"linux"_s;
 }
@@ -1543,18 +1543,18 @@ PortForwardRule::Protocol VMConfig::parseProtocol(const QString &str)
     return (str.toLower().trimmed() == u"udp"_s) ? PortForwardRule::Protocol::Udp : PortForwardRule::Protocol::Tcp;
 }
 
-VMSpecs::OsType VMConfig::parseOsType(const QString &str)
+VMSpecs::OsFamily VMConfig::parseOsFamily(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
     if (str_l_t == u"windows"_s)
-        return VMSpecs::OsType::Windows;
+        return VMSpecs::OsFamily::Windows;
     if (str_l_t == u"dos"_s)
-        return VMSpecs::OsType::DOS;
+        return VMSpecs::OsFamily::DOS;
     if (str_l_t == u"bsd"_s)
-        return VMSpecs::OsType::BSD;
+        return VMSpecs::OsFamily::BSD;
     if (str_l_t == u"other"_s)
-        return VMSpecs::OsType::Other;
-    return VMSpecs::OsType::Linux;
+        return VMSpecs::OsFamily::Other;
+    return VMSpecs::OsFamily::Linux;
 }
 
 VMSpecs::Architecture VMConfig::parseArchitecture(const QString &str)
@@ -1630,7 +1630,7 @@ VMConfig::IconSource VMConfig::parseIconSource(const QString &str)
     return IconSource::None;
 }
 
-QPair<VMSpecs::OsType, QString> VMConfig::guessOSFromText(const QString &string, bool *found)
+QPair<VMSpecs::OsFamily, QString> VMConfig::guessOSFromText(const QString &string, bool *found)
 {
     const QString lowerz = string.toLower().remove(u' ');
 
@@ -1638,31 +1638,31 @@ QPair<VMSpecs::OsType, QString> VMConfig::guessOSFromText(const QString &string,
     if (lowerz.contains(u"windows11"_s) || lowerz.contains(u"win11"_s)) {
         if (found)
             *found = true;
-        return {VMSpecs::OsType::Windows, u"windows11"_s};
+        return {VMSpecs::OsFamily::Windows, u"windows11"_s};
     } else if (lowerz.contains(u"windows10"_s) || lowerz.contains(u"win10"_s)) {
         if (found)
             *found = true;
-        return {VMSpecs::OsType::Windows, u"windows10"_s};
+        return {VMSpecs::OsFamily::Windows, u"windows10"_s};
     } else if (lowerz.contains(u"windows7"_s) || lowerz.contains(u"win7"_s)) {
         if (found)
             *found = true;
-        return {VMSpecs::OsType::Windows, u"windows7"_s};
+        return {VMSpecs::OsFamily::Windows, u"windows7"_s};
     } else if (lowerz.contains(u"windowsxp"_s) || lowerz.contains(u"winxp"_s)) {
         if (found)
             *found = true;
-        return {VMSpecs::OsType::Windows, u"windowsxp"_s};
+        return {VMSpecs::OsFamily::Windows, u"windowsxp"_s};
     } else if (lowerz.contains(u"windows2000"_s) || lowerz.contains(u"win2000"_s) || lowerz.contains(u"windows2k"_s) || lowerz.contains(u"win2k"_s)) {
         if (found)
             *found = true;
-        return {VMSpecs::OsType::Windows, u"windows2000"_s};
+        return {VMSpecs::OsFamily::Windows, u"windows2000"_s};
     } else if (lowerz.contains(u"windowsnt4"_s) || lowerz.contains(u"winnt4"_s)) {
         if (found)
             *found = true;
-        return {VMSpecs::OsType::Windows, u"windowsnt4"_s};
+        return {VMSpecs::OsFamily::Windows, u"windowsnt4"_s};
     } else if (lowerz.contains(u"windows"_s)) {
         if (found)
             *found = true;
-        return {VMSpecs::OsType::Windows, {}};
+        return {VMSpecs::OsFamily::Windows, {}};
     }
 
     // Linux-Distros
@@ -1693,7 +1693,7 @@ QPair<VMSpecs::OsType, QString> VMConfig::guessOSFromText(const QString &string,
         if (lowerz.contains(hint.keyword)) {
             if (found)
                 *found = true;
-            return {VMSpecs::OsType::Linux, hint.variantId};
+            return {VMSpecs::OsFamily::Linux, hint.variantId};
         }
     }
 
@@ -1701,24 +1701,24 @@ QPair<VMSpecs::OsType, QString> VMConfig::guessOSFromText(const QString &string,
     if (lowerz.contains(u"freebsd"_s)) {
         if (found)
             *found = true;
-        return {VMSpecs::OsType::BSD, u"freebsd"_s};
+        return {VMSpecs::OsFamily::BSD, u"freebsd"_s};
     }
     if (lowerz.contains(u"openbsd"_s)) {
         if (found)
             *found = true;
-        return {VMSpecs::OsType::BSD, u"openbsd"_s};
+        return {VMSpecs::OsFamily::BSD, u"openbsd"_s};
     }
 
     // DOS
     if (lowerz.contains(u"dos"_s) || lowerz.contains(u"freedos"_s)) {
         if (found)
             *found = true;
-        return {VMSpecs::OsType::DOS, lowerz.contains(u"freedos"_s) ? u"freedos"_s : u"msdos"_s};
+        return {VMSpecs::OsFamily::DOS, lowerz.contains(u"freedos"_s) ? u"freedos"_s : u"msdos"_s};
     }
 
     if (found)
         *found = false;
-    return {VMSpecs::OsType::Other, {}};
+    return {VMSpecs::OsFamily::Other, {}};
 }
 
 QJsonObject VMConfig::toJson() const
@@ -1728,7 +1728,7 @@ QJsonObject VMConfig::toJson() const
     j[u"application_version"_s] = QCoreApplication::applicationVersion();
     j[u"name"_s] = m_name;
     j[u"comment"_s] = m_comment;
-    j[u"os_type"_s] = toString(m_osType);
+    j[u"os_family"_s] = toString(m_osFamily);
     j[u"architecture"_s] = toString(m_architecture);
     j[u"distro_id"_s] = m_distroId;
     j[u"image_type"_s] = toString(m_imageType);
@@ -1845,7 +1845,7 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
 
     c.m_name = j[u"name"_s].toString();
     c.m_comment = j[u"comment"_s].toString();
-    c.m_osType = parseOsType(j[u"os_type"_s].toString());
+    c.m_osFamily = parseOsFamily(j[u"os_family"_s].toString());
     c.m_cpuModel = parseCpuModel(j[u"cpu_model"_s].toString());
     // Architecture: explicit from file; if key is missing (legacy configs),
     // derive from CPU model -- Host or ambiguous models -> host arch.

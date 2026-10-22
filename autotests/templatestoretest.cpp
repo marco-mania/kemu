@@ -222,7 +222,7 @@ private Q_SLOTS:
         QTest::addColumn<QByteArray>("json");
         QTest::newRow("bad id") << QByteArray(R"j({"id":"a b","display_name":"x"})j");
         QTest::newRow("no name") << QByteArray(R"j({"id":"x"})j");
-        QTest::newRow("os type") << QByteArray(R"j({"id":"x","display_name":"x","os_type":"amiga"})j");
+        QTest::newRow("os family") << QByteArray(R"j({"id":"x","display_name":"x","os_family":"amiga"})j");
         QTest::newRow("sort order") << QByteArray(R"j({"id":"x","display_name":"x","sort_order":"first"})j");
         QTest::newRow("defaults") << QByteArray(R"j({"id":"x","display_name":"x","qemu_defaults":[]})j");
         QTest::newRow("cloud-init ref") << QByteArray(R"j({"id":"x","display_name":"x","cloud_init_template":"../y"})j");

@@ -44,7 +44,7 @@ public:
      * manually, derives the icon from it. @p themeFallback is used when the
      * icon set has nothing for this OS.
      */
-    void followOs(VMSpecs::OsType osType, const QString &distroId, const QString &themeFallback = {});
+    void followOs(VMSpecs::OsFamily osFamily, const QString &distroId, const QString &themeFallback = {});
 
     [[nodiscard]] bool isManuallySet() const;
 
@@ -67,7 +67,7 @@ private:
     QIcon m_customIcon;
     bool m_manuallySet = false;
 
-    VMSpecs::OsType m_osType = VMSpecs::OsType::Linux;
+    VMSpecs::OsFamily m_osFamily = VMSpecs::OsFamily::Linux;
     QString m_distroId;
     QString m_themeFallback;
 };

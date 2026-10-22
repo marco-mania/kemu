@@ -4,7 +4,7 @@
     {
       "id": "windows11",
       "display_name": "Windows 11",
-      "os_type": "windows",
+      "os_family": "windows",
       "sort_order": 100,
       "homepage": "https://www.microsoft.com/windows",
       "icon_hint": "windows",

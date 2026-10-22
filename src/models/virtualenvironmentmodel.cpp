@@ -198,7 +198,7 @@ QVariant VirtualEnvironmentModel::data(const QModelIndex &index, int role) const
             QStringList lines;
             lines << vm.name;
 
-            QString os = VMConfig::toUIString(vm.config.osType());
+            QString os = VMConfig::toUIString(vm.config.osFamily());
             if (!vm.config.distroId().isEmpty() && vm.config.distroId() != u"other"_s)
                 os += u" \u2014 "_s + m_imageDatabase->displayName(vm.config.distroId());
             lines << os;
