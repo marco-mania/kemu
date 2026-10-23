@@ -124,6 +124,8 @@ private Q_SLOTS:
 
 private:
     void applyEncryptionConstraints();
+    // Marks settings whose helper program is missing.
+    void updateToolWarnings();
     void filterOsVariants(VMSpecs::OsFamily osFamily); // e.g. Distributions for Linux
     void updateIconForOs();
     void updateDiskInterfaceHint();
@@ -193,6 +195,8 @@ private:
     QCheckBox *uefiCheck = nullptr;
     QCheckBox *localTimeCheck = nullptr;
     QCheckBox *tpmCheck = nullptr;
+    QLabel *tpmToolWarning = nullptr;
+    QLabel *shareToolWarning = nullptr;
     QCheckBox *secureBootCheck = nullptr;
     QCheckBox *acpiCheck = nullptr;
     QComboBox *exitActionCombo = nullptr;

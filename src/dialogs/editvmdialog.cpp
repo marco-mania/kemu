@@ -10,9 +10,11 @@
 #include "dialogs/diskdialog.h"
 #include "dialogs/settingsdialog.h"
 #include "utils/diskkeystore.h"
+#include "utils/externaltools.h"
 #include "utils/qemuimgprocess.h"
 #include "utils/sandboxcapabilities.h"
 #include "utils/snapshotmanager.h"
+#include "utils/tpmstate.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
 
@@ -237,6 +239,9 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     sharedPathEdit->setClearButtonEnabled(true);
     shareLayout->addWidget(sharedPathEdit);
     shareLayout->addWidget(btnBrowseShare);
+    shareToolWarning = new QLabel();
+    shareToolWarning->hide();
+    shareLayout->addWidget(shareToolWarning);
     genLayout->addRow(i18n("Shared Folder (VirtFS):"), shareLayout);
 
     sharedNameEdit = new QLineEdit();
@@ -300,7 +305,13 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 
     tpmCheck = new QCheckBox(i18n("Emulate TPM 2.0 (swtpm)"));
     tpmCheck->setToolTip(i18n("Required for Windows 11. Uses swtpm as software TPM emulator."));
-    sysLayout->addRow({}, tpmCheck);
+    tpmToolWarning = new QLabel();
+    tpmToolWarning->hide();
+    auto *tpmLayout = new QHBoxLayout();
+    tpmLayout->addWidget(tpmCheck);
+    tpmLayout->addWidget(tpmToolWarning);
+    tpmLayout->addStretch();
+    sysLayout->addRow({}, tpmLayout);
 
     // Secure Boot
     secureBootCheck = new QCheckBox(i18n("Enable Secure Boot"));
@@ -716,6 +727,9 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 
     connect(nameEdit, &QLineEdit::textChanged, this, &EditVmDialog::onNameChanged);
     connect(osFamilyCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::onOsFamilyChanged);
+    connect(osFamilyCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::updateToolWarnings);
+    connect(tpmCheck, &QCheckBox::toggled, this, &EditVmDialog::updateToolWarnings);
+    connect(sharedPathEdit, &QLineEdit::textChanged, this, &EditVmDialog::updateToolWarnings);
     connect(osNameCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::onOsNameChanged);
     connect(osNameCombo, &QComboBox::editTextChanged, this, [this]() {
         updateIconForOs();
@@ -1060,6 +1074,7 @@ void EditVmDialog::setConfig(const VMConfig &config)
     setCombo(exitActionCombo, config.exitAction());
     applyEncryptionConstraints();
     refreshEncryptionState();
+    updateToolWarnings();
     setCombo(guestShutdownActionCombo, config.guestShutdownAction());
 
     uefiCheck->setChecked(config.useUefi());
@@ -2150,9 +2165,18 @@ void EditVmDialog::refreshEncryptionState()
     changePasswordButton->setVisible(encrypted);
     walletButton->setVisible(encrypted);
 
-    encryptButton->setEnabled(!m_readOnly);
-    decryptButton->setEnabled(!m_readOnly);
-    changePasswordButton->setEnabled(!m_readOnly);
+    // These act at once and move an existing TPM state to the new password.
+    const bool tpmToolsMissing = !m_vmDir.isEmpty() && TpmState::encryptionOf(QDir(m_vmDir)) != TpmState::Encryption::NoState
+        && !ExternalTools::instance().isAvailable({ExternalTools::Swtpm, ExternalTools::SwtpmIoctl});
+    const QString toolsMissing = i18n(
+        "Not available: The TPM state is moved to the new password with swtpm and swtpm_ioctl, which were not found. Install or set their paths under Settings "
+        "> Executables.");
+    encryptButton->setEnabled(!m_readOnly && !tpmToolsMissing);
+    decryptButton->setEnabled(!m_readOnly && !tpmToolsMissing);
+    changePasswordButton->setEnabled(!m_readOnly && !tpmToolsMissing);
+    encryptButton->setToolTip(tpmToolsMissing ? toolsMissing : i18n("Encrypt the system disk..."));
+    decryptButton->setToolTip(tpmToolsMissing ? toolsMissing : i18n("Decrypt the system disk..."));
+    changePasswordButton->setToolTip(tpmToolsMissing ? toolsMissing : i18n("Change the password..."));
 
     // KWallet's icon with a plus or minus.
     const QString walletText = !walletAvailable ? i18n("KWallet is not available")
@@ -2164,6 +2188,33 @@ void EditVmDialog::refreshEncryptionState()
     walletButton->setToolTip(walletText);
     walletButton->setAccessibleName(walletText);
     walletButton->setEnabled(!m_readOnly && walletAvailable);
+}
+
+void EditVmDialog::updateToolWarnings()
+{
+    // Settings stay usable, since the tool may be installed later; the VM
+    // just does not start without it.
+    const auto show = [this](QLabel *label, bool missing, const QString &text) {
+        if (!label)
+            return;
+        if (missing) {
+            const int size = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
+            label->setPixmap(QIcon::fromTheme(u"dialog-warning"_s).pixmap(size));
+            label->setToolTip(text);
+            label->setAccessibleName(text);
+        }
+        label->setVisible(missing);
+    };
+
+    const ExternalTools &tools = ExternalTools::instance();
+    show(tpmToolWarning,
+         tpmCheck->isChecked() && !tools.isAvailable(ExternalTools::Swtpm),
+         i18n("swtpm was not found. The virtual machine does not start until it is available."));
+
+    const bool windows = static_cast<VMSpecs::OsFamily>(osFamilyCombo->currentData().toInt()) == VMSpecs::OsFamily::Windows;
+    show(shareToolWarning,
+         windows && !sharedPathEdit->text().trimmed().isEmpty() && !tools.isAvailable(ExternalTools::Virtiofsd),
+         i18n("virtiofsd was not found. Windows guests need it for shared folders. The virtual machine does not start until it is available."));
 }
 
 void EditVmDialog::applyModeConstraints()
