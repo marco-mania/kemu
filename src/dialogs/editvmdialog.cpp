@@ -1394,6 +1394,9 @@ VMConfig EditVmDialog::getResult() const
     c.setPortForwards(rules);
 
     c.setUuid(QUuid::fromString(uuidEdit->text().trimmed()));
+    // Not editable here, but the dialog must not drop it: a linked clone
+    // would lose track of its source and unfreeze it.
+    c.setLinkedSource(m_original.linkedSourceName(), m_original.linkedSourceUuid());
     SmbiosSystemInfo smbios;
     for (const auto &[member, edit] : m_smbiosEdits)
         smbios.*member = edit->text().trimmed();
