@@ -69,6 +69,9 @@ public:
         // ISO install, where an interactive installer could move its UI to the
         // serial console once one is present.
         bool unattendedDeployment = false;
+
+        // Encrypted disks: the password, handed to QEMU through a pipe.
+        QByteArray diskKey;
     };
     void launch(const LaunchRequest &request);
 
@@ -97,7 +100,8 @@ public:
     // Helper daemons report asynchronously; the error text travels with the
     // result because there is no caller frame left to fill an out-parameter.
     using HelperResult = std::function<void(bool ok, const QString &error)>;
-    void startSwtpmAsync(const QString &vmName, HelperResult done);
+    // @p diskKey: encrypted system disk; the TPM state uses the same password.
+    void startSwtpmAsync(const QString &vmName, const QByteArray &diskKey, HelperResult done);
     void startVirtiofsdAsync(const QString &vmName, HelperResult done);
     // Starts the in-process user-mode network for the VM if it is not
     // running yet. Returns true on success; `reason` is filled on failure and

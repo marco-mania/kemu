@@ -31,6 +31,7 @@
 #include <QStandardItemModel>
 #include <QTabWidget>
 #include <QTableWidget>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -95,6 +96,19 @@ public:
     [[nodiscard]] QList<NewDisk> newDisks() const;
     [[nodiscard]] QList<RemovedDisk> removedDisks() const;
 
+    // Rereads whether the wallet holds the disk password.
+    void refreshEncryptionState();
+    // After the system disk was en- or decrypted while the dialog is open.
+    void setDiskKeyId(const QString &keyId);
+
+Q_SIGNALS:
+    // The disks change at once, independent of OK/Cancel.
+    void encryptSystemDiskRequested();
+    void decryptSystemDiskRequested();
+    void changeDiskPasswordRequested();
+    void storeDiskPasswordRequested();
+    void forgetDiskPasswordRequested();
+
 private Q_SLOTS:
     void browseSharedDir();
     void onMachineTypeChanged(int index);
@@ -109,6 +123,7 @@ private Q_SLOTS:
     void removePortForwardRow();
 
 private:
+    void applyEncryptionConstraints();
     void filterOsVariants(VMSpecs::OsFamily osFamily); // e.g. Distributions for Linux
     void updateIconForOs();
     void updateDiskInterfaceHint();
@@ -181,6 +196,13 @@ private:
     QCheckBox *secureBootCheck = nullptr;
     QCheckBox *acpiCheck = nullptr;
     QComboBox *exitActionCombo = nullptr;
+
+    // Next to the system disk size; edit mode only.
+    QLabel *encryptionStateIcon = nullptr;
+    QToolButton *encryptButton = nullptr;
+    QToolButton *decryptButton = nullptr;
+    QToolButton *changePasswordButton = nullptr;
+    QToolButton *walletButton = nullptr;
     QComboBox *guestShutdownActionCombo = nullptr;
     QLineEdit *sharedPathEdit = nullptr;
     QLineEdit *sharedNameEdit = nullptr;

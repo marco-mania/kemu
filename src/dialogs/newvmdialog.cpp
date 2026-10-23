@@ -6,14 +6,17 @@
 
 #include "dialogs/newvmdialog.h"
 
+#include <QCheckBox>
 #include <QCompleter>
 #include <QDir>
 #include <QFileInfo>
 #include <QFont>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QPointer>
 #include <QSignalBlocker>
 #include <QStandardItemModel>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <KColorScheme>
@@ -22,6 +25,7 @@
 #include "const.h"
 #include "dialogs/cloudconfigdialog.h"
 #include "dialogs/editvmdialog.h"
+#include "dialogs/newdiskpassworddialog.h"
 #include "dialogs/settingsdialog.h"
 #include "utils/utils.h"
 
@@ -221,6 +225,25 @@ void NewVmDialog::buildUi()
 
     mainLayout->addLayout(resourceLayout);
 
+    // --- Security ---
+
+    mainLayout->addSpacing(8);
+    mainLayout->addWidget(sectionLabel(i18n("Security")));
+
+    auto *encryptLayout = new QHBoxLayout();
+    encryptCheck = new QCheckBox(i18n("Encrypt system disk"));
+    encryptCheck->setToolTip(i18n("Stores the system disk LUKS encrypted. Additional disks can be encrypted inside the guest."));
+    passwordButton = new QToolButton();
+    passwordButton->setIcon(QIcon::fromTheme(u"lock"_s));
+    passwordButton->setToolTip(i18n("Set the password..."));
+    passwordButton->setEnabled(false);
+    passwordStatusLabel = new QLabel();
+    passwordStatusLabel->setEnabled(false);
+    encryptLayout->addWidget(encryptCheck);
+    encryptLayout->addWidget(passwordButton);
+    encryptLayout->addWidget(passwordStatusLabel, 1);
+    mainLayout->addLayout(encryptLayout);
+
     // --- Buttons ---
 
     buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -275,6 +298,13 @@ void NewVmDialog::buildUi()
     connect(diskSpin, &QAbstractSpinBox::editingFinished, diskSpin, &SteppedSpinBox::snapToStep);
 
     connect(cloudInitButton, &QPushButton::clicked, this, &NewVmDialog::openCloudConfigDialog);
+
+    connect(encryptCheck, &QCheckBox::toggled, this, [this](bool on) {
+        passwordButton->setEnabled(on);
+        passwordStatusLabel->setText(on ? (m_diskPassword.isEmpty() ? i18n("No password set") : i18n("Password set")) : QString());
+        validateForm();
+    });
+    connect(passwordButton, &QToolButton::clicked, this, &NewVmDialog::openDiskPasswordDialog);
 
     connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -559,9 +589,41 @@ void NewVmDialog::validateForm()
         }
     }
 
+    if (valid && encryptCheck->isChecked() && m_diskPassword.isEmpty()) {
+        error = i18n("Set a password for the system disk.");
+        valid = false;
+    }
+
     warningLabel->setText(error);
     buttonBox->button(QDialogButtonBox::Ok)->setEnabled(valid);
     customiseButton->setEnabled(valid);
+}
+
+QString NewVmDialog::diskPassword() const
+{
+    return encryptCheck->isChecked() ? m_diskPassword : QString();
+}
+
+bool NewVmDialog::storeDiskPasswordInWallet() const
+{
+    return encryptCheck->isChecked() && m_storeDiskPassword;
+}
+
+void NewVmDialog::openDiskPasswordDialog()
+{
+    const QPointer<NewDiskPasswordDialog> dialog = new NewDiskPasswordDialog(this);
+    dialog->setStoreInWallet(m_storeDiskPassword);
+    const bool accepted = dialog->exec() == QDialog::Accepted;
+    if (!dialog)
+        return;
+    if (accepted) {
+        m_diskPassword = dialog->password();
+        m_storeDiskPassword = dialog->storeInWallet();
+        passwordStatusLabel->setText(i18n("Password set"));
+        passwordButton->setToolTip(i18n("Change the password..."));
+    }
+    delete dialog;
+    validateForm();
 }
 
 // --- Helpers ---

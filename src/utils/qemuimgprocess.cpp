@@ -12,6 +12,7 @@
 #include <QJsonObject>
 #include <QRegularExpression>
 
+#include "diskencryption.h"
 #include "externaltools.h"
 
 using namespace Qt::StringLiterals;
@@ -41,7 +42,7 @@ double QemuImgProcess::parseProgress(QStringView chunk)
     return last;
 }
 
-bool QemuImgProcess::start(const QStringList &arguments)
+bool QemuImgProcess::start(const QStringList &arguments, const QList<int> &inheritFds)
 {
     const auto &tools = ExternalTools::instance();
     if (!tools.isAvailable(ExternalTools::QemuImg)) {
@@ -53,6 +54,8 @@ bool QemuImgProcess::start(const QStringList &arguments)
     m_process->setOutputChannelMode(KProcess::SeparateChannels);
     m_process->setProgram(tools.path(ExternalTools::QemuImg));
     m_process->setArguments(arguments);
+    if (!inheritFds.isEmpty())
+        DiskEncryption::inheritFds(m_process, inheritFds);
 
     connect(m_process, &KProcess::readyReadStandardOutput, this, &QemuImgProcess::handleStdout);
 

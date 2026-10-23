@@ -34,6 +34,12 @@ public:
                    QObject *parent = nullptr);
     ~CloudDeployJob() override;
 
+    // Encrypts the disk with this password.
+    void setDiskKey(const QByteArray &key)
+    {
+        m_diskKey = key;
+    }
+
     void start() override;
 
     [[nodiscard]] QString vmName() const
@@ -56,6 +62,7 @@ private:
     QDir m_vmDir;
     int m_diskSizeGb = 0;
     CloudDeployConfig m_config;
+    QByteArray m_diskKey;
 
     CloudImageDeployer::Result m_result;
     QThread *m_thread = nullptr;

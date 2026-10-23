@@ -108,8 +108,14 @@ target_sources(
           utils/qemucommandbuilder.h
           utils/snapshotmanager.cpp
           utils/snapshotmanager.h
+          utils/diskencryption.cpp
+          utils/diskencryption.h
           utils/diskimagecheck.cpp
           utils/diskimagecheck.h
+          utils/diskkeystore.cpp
+          utils/diskkeystore.h
+          utils/tpmstate.cpp
+          utils/tpmstate.h
           utils/imagedatabase.cpp
           utils/imagedatabase.h
           utils/linkedclones.cpp
@@ -186,6 +192,10 @@ target_sources(
           jobs/archivestreamjob.cpp
           jobs/diskimportjob.cpp
           jobs/diskimportjob.h
+          jobs/diskpasswordjob.cpp
+          jobs/diskpasswordjob.h
+          jobs/encryptdiskjob.cpp
+          jobs/encryptdiskjob.h
           dialogs/editvmdialog.cpp
           dialogs/editvmdialog.h
           dialogs/newvmdialog.cpp
@@ -210,6 +220,10 @@ target_sources(
           dialogs/hostshutdowndialog.h
           dialogs/diskdialog.cpp
           dialogs/diskdialog.h
+          dialogs/diskpassworddialog.cpp
+          dialogs/diskpassworddialog.h
+          dialogs/newdiskpassworddialog.cpp
+          dialogs/newdiskpassworddialog.h
           dialogs/clonevmdialog.cpp
           dialogs/clonevmdialog.h
           dialogs/licenseagreementdialog.cpp
@@ -295,7 +309,8 @@ target_link_libraries(
   KF6::KIOWidgets
   KF6::TextTemplate
   KF6::DBusAddons
-  KF6::Crash)
+  KF6::Crash
+  KF6::Wallet)
 
 if(TARGET Qt6::GuiPrivate)
   target_link_libraries(${PROJECT_NAME} Qt6::GuiPrivate)

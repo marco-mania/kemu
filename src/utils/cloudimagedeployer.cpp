@@ -7,6 +7,7 @@
 #include "cloudimagedeployer.h"
 
 #include "utils/cloudinittemplates.h"
+#include "utils/diskencryption.h"
 #include "utils/diskimagecheck.h"
 #include "utils/externaltools.h"
 #include "utils/isoimagebuilder.h"
@@ -14,6 +15,8 @@
 
 #include <archive.h>
 #include <archive_entry.h>
+
+#include <unistd.h>
 
 #include <QFile>
 #include <QScopeGuard>
@@ -82,15 +85,19 @@ UnpackResult unpackImage(const QString &sourcePath, const QString &targetPath, Q
 
 } // namespace
 
-CloudImageDeployer::Result
-CloudImageDeployer::deploy(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, const CloudDeployConfig &config, const ProgressReport &progress)
+CloudImageDeployer::Result CloudImageDeployer::deploy(const QString &sourceImage,
+                                                      const QDir &vmDir,
+                                                      int diskSizeGb,
+                                                      const CloudDeployConfig &config,
+                                                      const ProgressReport &progress,
+                                                      const QByteArray &diskKey)
 {
     Result result;
 
     if (progress)
         progress(0, i18n("Preparing the disk image..."));
 
-    if (!prepareImage(sourceImage, vmDir, diskSizeGb, result.diskPath, result.errorMessage, progress)) {
+    if (!prepareImage(sourceImage, vmDir, diskSizeGb, result.diskPath, result.errorMessage, progress, diskKey)) {
         return result;
     }
 
@@ -138,7 +145,8 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage,
                                       int diskSizeGb,
                                       QString &diskPathOut,
                                       QString &errorOut,
-                                      const ProgressReport &progress)
+                                      const ProgressReport &progress,
+                                      const QByteArray &diskKey)
 {
     diskPathOut = vmDir.absoluteFilePath(u"disk.qcow2"_s);
 
@@ -181,7 +189,33 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage,
         return false;
     }
 
-    if (srcFormat == u"qcow2"_s) {
+    // Runs qemu-img with a fresh copy of the password, if any: each pipe
+    // can be read once.
+    const auto runQemuImg = [&proc, &qemuImg, &diskKey](QStringList args, int timeoutMs) {
+        int keyFd = -1;
+        if (!diskKey.isEmpty()) {
+            keyFd = DiskEncryption::secretFd(diskKey);
+            if (keyFd < 0)
+                return false;
+            // After the subcommand, which comes first.
+            args.insert(1, u"--object"_s);
+            args.insert(2, DiskEncryption::secretObject(keyFd));
+            DiskEncryption::inheritFds(&proc, {keyFd});
+        }
+        proc.setProgram(qemuImg, args);
+        const int exitCode = proc.execute(timeoutMs);
+        if (keyFd >= 0)
+            ::close(keyFd);
+        return exitCode == 0;
+    };
+
+    if (!diskKey.isEmpty()) {
+        // An encrypted disk is always written anew.
+        if (!runQemuImg({u"convert"_s, u"-f"_s, srcFormat, u"-O"_s, u"qcow2"_s, u"-o"_s, DiskEncryption::createOptions(), sourcePath, diskPathOut}, 600000)) {
+            errorOut = i18n("qemu-img convert failed: %1", QString::fromUtf8(proc.readAllStandardError()).trimmed());
+            return false;
+        }
+    } else if (srcFormat == u"qcow2"_s) {
         const bool placed = sourcePath == unpackedPath ? QFile::rename(unpackedPath, diskPathOut) : QFile::copy(sourceImage, diskPathOut);
         if (!placed) {
             errorOut = i18n("Failed to copy cloud image.");
@@ -202,8 +236,10 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage,
         progress(1, i18n("Resizing the disk image..."));
 
     // Resize to target size
-    proc.setProgram(qemuImg, {u"resize"_s, u"-f"_s, u"qcow2"_s, diskPathOut, u"%1G"_s.arg(diskSizeGb)});
-    if (proc.execute(30000) != 0) {
+    const QStringList resizeArgs = diskKey.isEmpty()
+        ? QStringList{u"resize"_s, u"-f"_s, u"qcow2"_s, diskPathOut, u"%1G"_s.arg(diskSizeGb)}
+        : QStringList{u"resize"_s, u"--image-opts"_s, DiskEncryption::imageOptions(diskPathOut), u"%1G"_s.arg(diskSizeGb)};
+    if (!runQemuImg(resizeArgs, 30000)) {
         errorOut = i18n("qemu-img resize failed: %1", QString::fromUtf8(proc.readAllStandardError()).trimmed());
         return false;
     }

@@ -70,6 +70,9 @@ struct VmRuntimeInfo {
         QString imageUrl;
         QString imageLocalPath;
         CloudDeployConfig cloudConfig;
+        // Password chosen for encrypted disks, kept for the deployment only:
+        // not every user stores it in the wallet.
+        QByteArray diskKey;
     };
 
     // Outlives a single QEMU run: a deployment spans start, install and

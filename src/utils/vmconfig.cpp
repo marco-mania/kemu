@@ -321,7 +321,7 @@ bool VMConfig::removeCustomIcon(const QDir &dir)
 
 // --- Static Icon Helper ---
 
-QIcon VMConfig::styledVmIcon(const QIcon &baseIcon, VmVisualState state, bool isHeadless, int size)
+QIcon VMConfig::styledVmIcon(const QIcon &baseIcon, VmVisualState state, bool isHeadless, bool isEncrypted, int size)
 {
     const qreal dpr = qApp->devicePixelRatio();
     const int margin = 4;
@@ -439,6 +439,39 @@ QIcon VMConfig::styledVmIcon(const QIcon &baseIcon, VmVisualState state, bool is
         painter.setBrush(Qt::white);
         const int sm = emblemSize / 3;
         painter.drawRect(ex + sm, ey + sm, emblemSize - 2 * sm, emblemSize - 2 * sm);
+    }
+
+    if (isEncrypted) {
+        // Gold padlock without a disc, so it does not read as a state like
+        // the grey one of a frozen VM.
+        const qreal lockH = emblemSize;
+        const qreal bodyW = lockH * 0.72;
+        const qreal bodyH = lockH * 0.52;
+        const qreal lx = 1.0 + (emblemSize - bodyW) / 2.0;
+        const qreal bodyY = totalSize - 1.0 - bodyH;
+        const qreal outline = qMax(1.0, lockH / 14.0);
+        const QColor dark(93, 64, 0);
+
+        const qreal shackleW = bodyW * 0.62;
+        const qreal shackleH = lockH * 0.6;
+        const QRectF shackle(lx + (bodyW - shackleW) / 2.0, bodyY - shackleH / 2.0, shackleW, shackleH);
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(dark, lockH / 5.0 + 2 * outline, Qt::SolidLine, Qt::FlatCap));
+        painter.drawArc(shackle, 0, 180 * 16);
+        painter.setPen(QPen(QColor(255, 193, 7), lockH / 5.0, Qt::SolidLine, Qt::FlatCap)); // Material Amber 500
+        painter.drawArc(shackle, 0, 180 * 16);
+
+        painter.setPen(QPen(dark, outline));
+        painter.setBrush(QColor(255, 202, 40)); // Material Amber 400
+        painter.drawRoundedRect(QRectF(lx, bodyY, bodyW, bodyH), outline * 1.5, outline * 1.5);
+
+        // Keyhole
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(dark);
+        const qreal hole = bodyH * 0.32;
+        const qreal hx = lx + bodyW / 2.0;
+        painter.drawEllipse(QPointF(hx, bodyY + bodyH * 0.42), hole / 2.0, hole / 2.0);
+        painter.drawRect(QRectF(hx - hole / 5.0, bodyY + bodyH * 0.42, hole / 2.5, bodyH * 0.32));
     }
 
     painter.end();
@@ -1814,6 +1847,9 @@ QJsonObject VMConfig::toJson() const
         j[u"linked_source"_s] = source;
     }
 
+    if (!m_diskKeyId.isEmpty())
+        j[u"disk_encryption"_s] = QJsonObject{{u"format"_s, u"luks"_s}, {u"key_id"_s, m_diskKeyId}};
+
     if (!m_portForwards.isEmpty()) {
         QJsonArray portFwdArray;
         for (const auto &rule : m_portForwards) {
@@ -1943,6 +1979,11 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
         c.m_linkedSourceName = linkedSourceName;
         c.m_linkedSourceUuid = QUuid::fromString(linkedSource[u"uuid"_s].toString());
     }
+
+    const QJsonObject encryption = j[u"disk_encryption"_s].toObject();
+    const QUuid keyId = QUuid::fromString(encryption[u"key_id"_s].toString());
+    if (encryption[u"format"_s].toString() == u"luks"_s && !keyId.isNull())
+        c.m_diskKeyId = keyId.toString(QUuid::WithoutBraces);
 
     if (j.contains(u"port_forwards"_s)) {
         const QJsonArray arr = j[u"port_forwards"_s].toArray();

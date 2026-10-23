@@ -21,6 +21,9 @@
 #include <KLineEdit>
 #include <KUrlRequester>
 
+class QCheckBox;
+class QToolButton;
+
 #include "utils/cloudimagedeployer.h"
 #include "utils/imagedatabase.h"
 #include "utils/virtualnetworkmanager.h"
@@ -76,12 +79,17 @@ public:
     /// Only meaningful for Source::InstallerIso.
     [[nodiscard]] QString installerIsoPath() const;
 
+    /// Password for encrypted disks; empty if they stay unencrypted.
+    [[nodiscard]] QString diskPassword() const;
+    [[nodiscard]] bool storeDiskPasswordInWallet() const;
+
 private Q_SLOTS:
     void openCustomiseDialog();
     void onOsChanged();
     void onSourceChanged();
     void onNameEdited();
     void openCloudConfigDialog();
+    void openDiskPasswordDialog();
     void validateForm();
 
 private:
@@ -124,6 +132,12 @@ private:
     QSpinBox *cpuSpin = nullptr;
     QSlider *diskSlider = nullptr;
     SteppedSpinBox *diskSpin = nullptr;
+
+    QCheckBox *encryptCheck = nullptr;
+    QToolButton *passwordButton = nullptr;
+    QLabel *passwordStatusLabel = nullptr;
+    QString m_diskPassword;
+    bool m_storeDiskPassword = true;
 
     QLabel *deployInfoLabel = nullptr;
     QDialogButtonBox *buttonBox = nullptr;

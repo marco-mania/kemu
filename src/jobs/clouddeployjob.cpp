@@ -6,6 +6,8 @@
 
 #include "clouddeployjob.h"
 
+#include "utils/diskencryption.h"
+
 #include <KLocalizedString>
 
 CloudDeployJob::CloudDeployJob(const QString &vmName,
@@ -29,6 +31,7 @@ CloudDeployJob::~CloudDeployJob()
     // to let it finish - QThread would abort on a running thread.
     if (m_thread && m_thread->isRunning())
         m_thread->wait();
+    DiskEncryption::wipe(m_diskKey);
 }
 
 void CloudDeployJob::start()
@@ -54,7 +57,7 @@ void CloudDeployJob::run()
     };
 
     m_thread = QThread::create([this, progress] {
-        m_result = CloudImageDeployer::deploy(m_sourceImage, m_vmDir, m_diskSizeGb, m_config, progress);
+        m_result = CloudImageDeployer::deploy(m_sourceImage, m_vmDir, m_diskSizeGb, m_config, progress, m_diskKey);
     });
     m_thread->setParent(this);
 

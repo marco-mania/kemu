@@ -18,6 +18,7 @@ Widgets and KDE Frameworks 6 for deep desktop integration.
 - Automated deployment utilizing Cloud-Init
 - Snapshot support (QCOW2)
 - Linked clones
+- Encrypted system disk and TPM state (LUKS)
 - Hot-swapping of ISO and floppy images
 - Networking: User-mode networking or in-process virtual networks
   (in-memory L2 switch with built-in DHCP and optional libslirp NAT)
@@ -583,6 +584,34 @@ Start-Service VirtioFsSvc
 # Set it to start automatically on boot:
 sc.exe config VirtioFsSvc start=auto
 ```
+
+## Encrypted Disks
+
+A new virtual machine can store its disks encrypted: select "Encrypt the
+disks" in the New Virtual Machine dialog and choose a password. The disks are
+qcow2 images with built-in LUKS encryption. Warning: Without the password the
+content cannot be recovered.
+
+- The password can be stored in KWallet (folder "KEMU"). Otherwise KEMU asks
+  for it. Within the VM settings you can set or remove encryption later.
+  Changing the password only replaces the LUKS key slots and does not rewrite
+  the disk(s).
+- The TPM state is encrypted with the same password (`swtpm --key`). Moving an
+  existing state over needs `swtpm_ioctl`, which comes with swtpm (Debian and
+  Ubuntu: package `swtpm-tools`).
+- Encrypting an existing VM copies the system disk, so it needs free space of
+  about its current size. Its snapshots are deleted also on the additional
+  disks. The unencrypted original is deleted.
+- Linked clones and VMs with a saved state cannot be encrypted.
+- Additional disks stay unencrypted; encrypt them inside the guest if needed.
+  KEMU hands the password to QEMU and qemu-img through a pipe - never on the
+  command line. The exported `qemu.sh` asks for it or reads it from the
+  `KEMU_DISK_PASSWORD` environment variable.
+- Save State is not available
+- Not encrypted are the UEFI variable store and the cloud-init seed image,
+  which holds the user data of a deployment.
+- Not yet available for encrypted VMs: snapshots, compacting, cloning and
+  export.
 
 ## Additional Disks
 

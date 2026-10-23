@@ -23,7 +23,8 @@ public:
     // chunk and returns the last complete percentage, or -1 if there is none.
     static double parseProgress(QStringView chunk);
 
-    bool start(const QStringList &arguments);
+    // @p inheritFds: descriptors the child keeps, e.g. for secrets.
+    bool start(const QStringList &arguments, const QList<int> &inheritFds = {});
     void abort();
 
     [[nodiscard]] QString errorText() const

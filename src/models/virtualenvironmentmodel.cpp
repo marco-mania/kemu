@@ -177,6 +177,10 @@ QVariant VirtualEnvironmentModel::data(const QModelIndex &index, int role) const
                 return i18n("Creating...");
             case VmEntry::State::Shrinking:
                 return i18n("Shrinking disk...");
+            case VmEntry::State::Encrypting:
+                return i18n("Encrypting...");
+            case VmEntry::State::Decrypting:
+                return i18n("Decrypting...");
             case VmEntry::State::Flattening:
                 return i18n("Making independent...");
             case VmEntry::State::Exporting:
@@ -893,7 +897,7 @@ void VirtualEnvironmentModel::recomputeIcon(VmEntry &e) const
     else if (e.state == VmEntry::State::Stopped && e.isFrozen())
         vs = VMConfig::VmVisualState::Frozen;
 
-    e.styledIcon = VMConfig::styledVmIcon(e.config.icon(KEMUConst::ListViewIconSize), vs, e.isHeadless, KEMUConst::ListViewIconSize);
+    e.styledIcon = VMConfig::styledVmIcon(e.config.icon(KEMUConst::ListViewIconSize), vs, e.isHeadless, e.config.isEncrypted(), KEMUConst::ListViewIconSize);
 }
 
 void VirtualEnvironmentModel::refreshLinks()

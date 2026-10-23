@@ -65,7 +65,14 @@
 #include "widgets/performancemonitorwidget.h"
 #include "widgets/virtualenvironmenttreeview.h"
 
+#include <functional>
+#include <optional>
+
 using namespace Qt::StringLiterals;
+
+class DiskKeyStore;
+class EditVmDialog;
+class EncryptDiskJob;
 
 class MainWindow : public KXmlGuiWindow
 {
@@ -190,6 +197,28 @@ private:
     [[nodiscard]] QString linkBlockReason(const VmEntry *entry) const;
     // Empty when a linked clone of the VM can be made.
     [[nodiscard]] QString linkedCloneBlockReason(const VmEntry *entry) const;
+    // Empty unless the action is not available for encrypted disks yet.
+    [[nodiscard]] QString encryptionBlockReason(const VmEntry *entry) const;
+
+    // Encrypted disks: the password from the wallet, or asked with @p prompt
+    // (and checked). nullopt if the user cancelled. Immediately {} for a VM
+    // without encryption. @p offerStore shows "Store the password in KWallet".
+    void requestDiskKey(const QString &vmName, const QString &prompt, std::function<void(std::optional<QByteArray> key)> done, bool offerStore = true);
+    void continueStartVM(bool headless, const QByteArray &diskKey);
+    // Encryption actions of the VM settings; @p dialog is refreshed when they are done.
+    void encryptSystemDisk(const QString &vmName, EditVmDialog *dialog);
+    void decryptSystemDisk(const QString &vmName, EditVmDialog *dialog);
+    // Shows the progress over @p dialog; @p succeeded runs before warnings are shown.
+    void runEncryptionJob(EncryptDiskJob *job, EditVmDialog *dialog, std::function<void()> succeeded);
+    void changeDiskPassword(const QString &vmName, EditVmDialog *dialog);
+    void storeDiskPassword(const QString &vmName, EditVmDialog *dialog);
+    void forgetDiskPassword(const QString &vmName, EditVmDialog *dialog);
+    // Stores in KWallet and tells the user (over @p parent) if that failed.
+    void storeDiskKeyInWallet(const QString &vmName, const QString &keyId, const QString &password, QWidget *parent, std::function<void(bool ok)> done = {});
+    void continueDeployment(const QString &vmName, const QByteArray &diskKey);
+    // True if QEMU failed on the disk password; the user was told.
+    bool handleWrongDiskPassword(const QString &vmName, const QByteArray &stderrTail);
+    DiskKeyStore *m_diskKeyStore = nullptr;
 
     QDir getVmBaseDir() const;
     QDir getVmDir(const QString &vmName) const;

@@ -7,9 +7,11 @@
 #include "qemucommandbuilder.h"
 
 #include "const.h"
+#include "utils/diskencryption.h"
 #include "utils/externaltools.h"
 #include "utils/qemucapabilities.h"
 #include "utils/sandboxcapabilities.h"
+#include "utils/tpmstate.h"
 #include "utils/utils.h"
 
 #include "kemu_debug.h"
@@ -225,8 +227,17 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     };
 
     // --- Disk ---
+    // Only the system disk can be encrypted; its password is handed over as a
+    // secret object.
+    QString keySecret;
+    if (config.isEncrypted()) {
+        const int keyFd = networkContext.diskKeyFd >= 0 ? networkContext.diskKeyFd : DiskEncryption::ScriptSecretFd;
+        args << u"-object"_s << DiskEncryption::secretObject(keyFd);
+        keySecret = u",encrypt.key-secret=%1"_s.arg(QLatin1StringView(DiskEncryption::SecretId));
+    }
+
     const QString driveId = u"sysdisk"_s;
-    args << u"-drive"_s << u"file=%1,format=qcow2,if=none,id=%2"_s.arg(optPath(config.diskPath(), relativePaths), driveId);
+    args << u"-drive"_s << u"file=%1,format=qcow2,if=none,id=%2"_s.arg(optPath(config.diskPath(), relativePaths), driveId) + keySecret;
 
     if (config.diskInterface() == VMSpecs::DiskInterface::Nvme)
         args << u"-device"_s << u"%1,drive=%2,serial=serial0"_s.arg(VMConfig::toQemuString(config.diskInterface()), driveId) + bootIndexSuffix(diskBootIndex);
@@ -557,6 +568,19 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
             + u"cd \"$(dirname \"$0\")\" || exit 1\n\n"_s;
     }
 
+    // Asked once; swtpm and QEMU read it through pipes.
+    if (config.isEncrypted()) {
+        script += u"# The system disk is encrypted. QEMU (descriptor %1) and swtpm read the password\n"_s.arg(DiskEncryption::ScriptSecretFd);
+        script += u"# through pipes; set KEMU_DISK_PASSWORD to skip the prompt.\n"_s;
+        script += u"if [ -z \"${KEMU_DISK_PASSWORD+x}\" ]; then\n"_s;
+        script += u"  printf '%s' %1 >&2\n"_s.arg(Utils::quoteShellArg(u"Disk password for %1: "_s.arg(config.name())));
+        script += u"  stty -echo 2>/dev/null\n"_s;
+        script += u"  IFS= read -r KEMU_DISK_PASSWORD\n"_s;
+        script += u"  stty echo 2>/dev/null\n"_s;
+        script += u"  printf '\\n' >&2\n"_s;
+        script += u"fi\n\n"_s;
+    }
+
     // --- swtpm ---
     if (config.useTpm()) {
         const QString swtpmPath = relativePaths ? u"swtpm"_s : ExternalTools::instance().path(ExternalTools::Swtpm);
@@ -566,8 +590,14 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
         script += u"# Start software TPM emulator\n"_s;
         if (!relativePaths)
             script += u"# %1\n"_s.arg(ExternalTools::instance().version(ExternalTools::Swtpm));
+        // The state of an encrypted VM is encrypted with the same password.
+        if (config.isEncrypted())
+            script += u"printf '%s' \"$KEMU_DISK_PASSWORD\" | "_s;
         script += u"%1 socket \\\n"_s.arg(swtpmPath) + u"  --ctrl type=unixio,path=%1 \\\n"_s.arg(sockArg) + u"  --terminate \\\n"_s
-            + u"  --tpmstate dir=%1 \\\n"_s.arg(stateArg) + u"  --tpm2 &\n"_s + u"sleep 1\n\n"_s;
+            + u"  --tpmstate dir=%1 \\\n"_s.arg(stateArg);
+        if (config.isEncrypted())
+            script += u"  --key %1 \\\n"_s.arg(TpmState::keyOption(0));
+        script += u"  --tpm2 &\n"_s + u"sleep 1\n\n"_s;
     }
 
     // --- virtiofsd (Windows shared folders) ---
@@ -617,9 +647,16 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
         script += u"else\n  set --\nfi\n\n"_s;
     }
 
+    // The password goes through a pipe, never into the command line.
+    if (config.isEncrypted())
+        script += u"printf '%s' \"$KEMU_DISK_PASSWORD\" | "_s;
+
     script += u"exec "_s;
 
-    script += qemuPath + (sandbox.isEmpty() ? QString() : u" \"$@\""_s) + u" \\\n  "_s + argsToReadableString(args) + u"\n"_s;
+    script += qemuPath + (sandbox.isEmpty() ? QString() : u" \"$@\""_s) + u" \\\n  "_s + argsToReadableString(args);
+    if (config.isEncrypted())
+        script += u" \\\n  %1<&0 </dev/null"_s.arg(DiskEncryption::ScriptSecretFd);
+    script += u"\n"_s;
 
     return script;
 }

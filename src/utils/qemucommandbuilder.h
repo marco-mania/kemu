@@ -56,6 +56,10 @@ struct QemuNetworkContext {
 
     /// Use QEMU's built-in "-netdev user" backend (export scripts only).
     bool useSlirp = false;
+
+    /// Encrypted disks: descriptor QEMU reads the password from. Below zero,
+    /// DiskEncryption::ScriptSecretFd (export scripts).
+    int diskKeyFd = -1;
 };
 
 class QemuCommandBuilder

@@ -80,7 +80,8 @@ find_package(
              KIO
              TextTemplate
              DBusAddons
-             Crash)
+             Crash
+             Wallet)
 
 find_package(LibArchive REQUIRED)
 

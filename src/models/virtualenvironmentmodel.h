@@ -43,6 +43,8 @@ struct VmEntry {
         ShuttingDown,
         Shrinking,
         Flattening, // a linked clone copies in the shared disk data
+        Encrypting, // the system disk is rewritten encrypted
+        Decrypting, // ... and back
         Exporting,
         Deploying,
         Cloning,
@@ -72,7 +74,7 @@ struct VmEntry {
     bool hasSavestateFile = false; // cached: existence of savestate file on disk
     QDateTime startedAt; // wall-clock when the VM entered Running; null otherwise
     QDateTime savestateTime; // mtime of the savestate file; null when none
-    QIcon styledIcon; // cached composed icon (visual state + headless emblem)
+    QIcon styledIcon; // cached composed icon (visual state, headless and encryption emblems)
 
     // Derived from the configs of all VMs on every reload, never stored.
     QStringList linkedClones; // linked clones based on this VM

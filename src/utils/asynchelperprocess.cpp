@@ -15,6 +15,7 @@ extern "C" {
 #include <sys/prctl.h>
 }
 
+#include "utils/diskencryption.h"
 #include "utils/utils.h"
 
 using namespace Qt::StringLiterals;
@@ -113,7 +114,9 @@ void AsyncHelperProcess::start(const Options &options)
     m_process->setOutputChannelMode(KProcess::SeparateChannels);
 
     if (m_opts.setParentDeathSignal)
-        Utils::setDiesWithParent(m_process);
+        Utils::setDiesWithParent(m_process, m_opts.inheritFds);
+    else if (!m_opts.inheritFds.isEmpty())
+        DiskEncryption::inheritFds(m_process, m_opts.inheritFds);
 
     // Hook all signals BEFORE start(). In Qt6 every KProcess signal is
     // delivered through the event loop, so we cannot miss one this way

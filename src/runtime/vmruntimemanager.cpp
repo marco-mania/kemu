@@ -9,9 +9,11 @@
 #include "dialogs/settingsdialog.h"
 #include "models/virtualenvironmentmodel.h"
 #include "utils/asynchelperprocess.h"
+#include "utils/diskencryption.h"
 #include "utils/externaltools.h"
 #include "utils/qemucapabilities.h"
 #include "utils/savestatemanager.h"
+#include "utils/tpmstate.h"
 #include "utils/usermodenetwork.h"
 #include "utils/utils.h"
 #include "utils/virtualnetworkmanager.h"
@@ -62,7 +64,18 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
         return;
     }
 
-    const QemuNetworkContext netCtx = createQemuNetworkContext(config, req.networkFd, qmpFds[1]);
+    QemuNetworkContext netCtx = createQemuNetworkContext(config, req.networkFd, qmpFds[1]);
+
+    if (config.isEncrypted()) {
+        netCtx.diskKeyFd = DiskEncryption::secretFd(req.diskKey);
+        if (netCtx.diskKeyFd < 0) {
+            qCWarning(KEMU) << "VmRuntimeManager: could not pass the disk password to QEMU";
+            ::close(qmpFds[0]);
+            ::close(qmpFds[1]);
+            tearDown(vmName);
+            return;
+        }
+    }
 
     const QString savestatePath =
         (!req.deployment && SaveStateManager::hasSavestate(path, vmName)) ? SaveStateManager::savestateFilePath(path, vmName) : QString{};
@@ -95,6 +108,8 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
         inheritFds << netCtx.switchFd;
     if (netCtx.userNetFd >= 0)
         inheritFds << netCtx.userNetFd;
+    if (netCtx.diskKeyFd >= 0)
+        inheritFds << netCtx.diskKeyFd;
 
     KProcess *process = createQemuProcess(vmName, args, inheritFds);
     if (!sandbox.isEmpty())
@@ -126,6 +141,10 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     });
 
     process->start();
+
+    // QEMU read the password at startup, or never will.
+    if (netCtx.diskKeyFd >= 0)
+        ::close(netCtx.diskKeyFd);
 
     // start() can fail synchronously; errorOccurred has already cleaned up.
     if (process->state() == KProcess::NotRunning) {
@@ -400,7 +419,7 @@ QList<DbusViewerWindow *> VmRuntimeManager::viewerWindows() const
  * Start helper processes
  *********************************************************************************************/
 
-void VmRuntimeManager::startSwtpmAsync(const QString &vmName, HelperResult done)
+void VmRuntimeManager::startSwtpmAsync(const QString &vmName, const QByteArray &diskKey, HelperResult done)
 {
     const QString sockPath = swtpmSocketPath(vmName);
     QFile::remove(sockPath);
@@ -411,6 +430,28 @@ void VmRuntimeManager::startSwtpmAsync(const QString &vmName, HelperResult done)
         {u"socket"_s, u"--ctrl"_s, u"type=unixio,path=%1"_s.arg(sockPath), u"--terminate"_s, u"--tpmstate"_s, u"dir=%1"_s.arg(vmPath(vmName)), u"--tpm2"_s};
     opts.socketPath = sockPath;
 
+    int keyFd = -1;
+    if (!diskKey.isEmpty()) {
+        // A state from before the disk was encrypted is moved over once.
+        const QDir stateDir = vmDir(vmName);
+        if (TpmState::encryptionOf(stateDir) == TpmState::Encryption::Plain) {
+            const QDir target(stateDir.filePath(u".tpm-rekey"_s));
+            const QString error = TpmState::rekey(opts.program, stateDir, {}, diskKey, target);
+            if (!error.isEmpty() || !TpmState::commit(stateDir, target)) {
+                done(false, i18n("The TPM state could not be encrypted: %1", error));
+                return;
+            }
+        }
+
+        keyFd = DiskEncryption::secretFd(diskKey);
+        if (keyFd < 0) {
+            done(false, i18n("The password could not be passed to swtpm."));
+            return;
+        }
+        opts.arguments << u"--key"_s << TpmState::keyOption(keyFd);
+        opts.inheritFds = {keyFd};
+    }
+
     AsyncHelperProcess::run(this, opts, [this, vmName, sockPath, done = std::move(done)](KProcess *process, bool ok, const QString &err) {
         if (!ok) {
             QFile::remove(sockPath);
@@ -420,6 +461,10 @@ void VmRuntimeManager::startSwtpmAsync(const QString &vmName, HelperResult done)
         m_model->setSwtpmProcess(vmName, process);
         done(true, {});
     });
+
+    // swtpm has read the password at startup, or never will.
+    if (keyFd >= 0)
+        ::close(keyFd);
 }
 
 void VmRuntimeManager::startVirtiofsdAsync(const QString &vmName, HelperResult done)

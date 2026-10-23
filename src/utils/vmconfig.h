@@ -531,6 +531,16 @@ public:
     {
         return !m_linkedSourceName.isEmpty();
     }
+    /// Set when the disks are LUKS encrypted: names the password in the
+    /// wallet, independent of the VM name.
+    [[nodiscard]] QString diskKeyId() const
+    {
+        return m_diskKeyId;
+    }
+    [[nodiscard]] bool isEncrypted() const
+    {
+        return !m_diskKeyId.isEmpty();
+    }
     [[nodiscard]] SmbiosSystemInfo smbiosSystemInfo() const
     {
         return m_smbiosSystemInfo;
@@ -793,6 +803,10 @@ public:
     {
         setLinkedSource({}, {});
     }
+    void setDiskKeyId(const QString &keyId)
+    {
+        m_diskKeyId = keyId;
+    }
     void setSmbiosSystemInfo(const SmbiosSystemInfo &info)
     {
         m_smbiosSystemInfo = info;
@@ -856,7 +870,9 @@ public:
         Saved,
         Frozen
     };
-    [[nodiscard]] static QIcon styledVmIcon(const QIcon &baseIcon, VmVisualState state, bool isHeadless, int size = KEMUConst::ListViewIconSize);
+    // @p isEncrypted adds a padlock in the bottom left corner.
+    [[nodiscard]] static QIcon
+    styledVmIcon(const QIcon &baseIcon, VmVisualState state, bool isHeadless, bool isEncrypted, int size = KEMUConst::ListViewIconSize);
     [[nodiscard]] static QString osIconDir();
     [[nodiscard]] static QString defaultIconForFamily(VMSpecs::OsFamily family);
     [[nodiscard]] static QString defaultIconFor(VMSpecs::OsFamily family, const QString &variant);
@@ -1025,6 +1041,8 @@ private:
 
     QString m_linkedSourceName;
     QUuid m_linkedSourceUuid;
+
+    QString m_diskKeyId;
 
     QList<PortForwardRule> m_portForwards;
 

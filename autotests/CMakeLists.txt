@@ -28,3 +28,13 @@ ecm_add_test(diskimagechecktest.cpp ${CMAKE_SOURCE_DIR}/src/utils/diskimagecheck
              TEST_NAME diskimagechecktest
              LINK_LIBRARIES Qt6::Core Qt6::Test KF6::I18n KF6::CoreAddons)
 target_include_directories(diskimagechecktest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+ecm_add_test(diskencryptiontest.cpp ${CMAKE_SOURCE_DIR}/src/utils/diskencryption.cpp
+             TEST_NAME diskencryptiontest
+             LINK_LIBRARIES Qt6::Core Qt6::Test)
+target_include_directories(diskencryptiontest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+ecm_add_test(tpmstatetest.cpp ${CMAKE_SOURCE_DIR}/src/utils/tpmstate.cpp ${CMAKE_SOURCE_DIR}/src/utils/diskencryption.cpp
+             TEST_NAME tpmstatetest
+             LINK_LIBRARIES Qt6::Core Qt6::Test)
+target_include_directories(tpmstatetest PRIVATE ${CMAKE_SOURCE_DIR}/src)

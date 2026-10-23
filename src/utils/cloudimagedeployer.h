@@ -58,7 +58,13 @@ public:
     static constexpr int ProgressSteps = 3;
     using ProgressReport = std::function<void(int step, const QString &message)>;
 
-    static Result deploy(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, const CloudDeployConfig &config, const ProgressReport &progress = {});
+    /// @p diskKey: encrypt the disk with this password; empty for none.
+    static Result deploy(const QString &sourceImage,
+                         const QDir &vmDir,
+                         int diskSizeGb,
+                         const CloudDeployConfig &config,
+                         const ProgressReport &progress = {},
+                         const QByteArray &diskKey = {});
 
     /// Renders a cloud-init template with the variables of @p config.
     /// @p errorOut is set and an empty string returned on template errors.
@@ -71,8 +77,13 @@ public:
 private:
     CloudImageDeployer() = delete;
 
-    static bool
-    prepareImage(const QString &sourceImage, const QDir &vmDir, int diskSizeGb, QString &diskPathOut, QString &errorOut, const ProgressReport &progress);
+    static bool prepareImage(const QString &sourceImage,
+                             const QDir &vmDir,
+                             int diskSizeGb,
+                             QString &diskPathOut,
+                             QString &errorOut,
+                             const ProgressReport &progress,
+                             const QByteArray &diskKey = {});
 
     static QByteArray generateUserData(const CloudDeployConfig &config, QString &errorOut);
     static QByteArray generateMetaData(const CloudDeployConfig &config);

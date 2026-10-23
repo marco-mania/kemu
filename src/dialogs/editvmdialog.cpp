@@ -9,15 +9,18 @@
 #include "const.h"
 #include "dialogs/diskdialog.h"
 #include "dialogs/settingsdialog.h"
+#include "utils/diskkeystore.h"
 #include "utils/qemuimgprocess.h"
 #include "utils/sandboxcapabilities.h"
 #include "utils/snapshotmanager.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
 
+#include <KIconUtils>
 #include <KMessageBox>
 
 #include <QScopeGuard>
+#include <QStyle>
 
 namespace
 {
@@ -162,8 +165,44 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     diskSpin->setValue(40);
     diskSpin->setSuffix(i18n(" GB"));
     diskSpin->setToolTip(i18n("This is the size of the system disk. You can add additional disks under Hardware."));
-    genLayout->addRow(i18n("System Disk:"), diskSpin);
-    diskLabel = qobject_cast<QLabel *>(genLayout->labelForField(diskSpin));
+    auto *diskLayout = new QHBoxLayout();
+    diskLayout->addWidget(diskSpin);
+    if (m_mode == Mode::Edit) {
+        // Encryption: its state as an icon, the actions as small buttons.
+        // They change the disk at once, so a new VM chooses it elsewhere.
+        encryptionStateIcon = new QLabel();
+        const auto makeButton = [](const QIcon &icon, const QString &text) {
+            auto *button = new QToolButton();
+            button->setIcon(icon);
+            button->setToolTip(text);
+            button->setAccessibleName(text);
+            return button;
+        };
+        encryptButton = makeButton(QIcon::fromTheme(u"lock"_s), i18n("Encrypt the system disk..."));
+        decryptButton = makeButton(QIcon::fromTheme(u"unlock"_s, QIcon::fromTheme(u"object-unlocked"_s)), i18n("Decrypt the system disk..."));
+        changePasswordButton = makeButton(QIcon::fromTheme(u"dialog-password"_s, QIcon::fromTheme(u"lock"_s)), i18n("Change the password..."));
+        walletButton = new QToolButton();
+
+        diskLayout->addSpacing(diskLayout->spacing());
+        diskLayout->addWidget(encryptionStateIcon);
+        diskLayout->addWidget(encryptButton);
+        diskLayout->addWidget(decryptButton);
+        diskLayout->addWidget(changePasswordButton);
+        diskLayout->addWidget(walletButton);
+
+        connect(encryptButton, &QToolButton::clicked, this, &EditVmDialog::encryptSystemDiskRequested);
+        connect(decryptButton, &QToolButton::clicked, this, &EditVmDialog::decryptSystemDiskRequested);
+        connect(changePasswordButton, &QToolButton::clicked, this, &EditVmDialog::changeDiskPasswordRequested);
+        connect(walletButton, &QToolButton::clicked, this, [this] {
+            if (DiskKeyStore::hasKey(m_original.diskKeyId()))
+                Q_EMIT forgetDiskPasswordRequested();
+            else
+                Q_EMIT storeDiskPasswordRequested();
+        });
+    }
+    diskLayout->addStretch();
+    genLayout->addRow(i18n("System Disk:"), diskLayout);
+    diskLabel = qobject_cast<QLabel *>(genLayout->labelForField(diskLayout));
 
     isoPathRequester = new KUrlRequester();
     isoPathRequester->lineEdit()->setPlaceholderText(i18n("Leave empty for HDD boot"));
@@ -1019,6 +1058,8 @@ void EditVmDialog::setConfig(const VMConfig &config)
     setCombo(keyboardCombo, config.keyboardDevice());
 
     setCombo(exitActionCombo, config.exitAction());
+    applyEncryptionConstraints();
+    refreshEncryptionState();
     setCombo(guestShutdownActionCombo, config.guestShutdownAction());
 
     uefiCheck->setChecked(config.useUefi());
@@ -1397,6 +1438,7 @@ VMConfig EditVmDialog::getResult() const
     // Not editable here, but the dialog must not drop it: a linked clone
     // would lose track of its source and unfreeze it.
     c.setLinkedSource(m_original.linkedSourceName(), m_original.linkedSourceUuid());
+    c.setDiskKeyId(m_original.diskKeyId());
     SmbiosSystemInfo smbios;
     for (const auto &[member, edit] : m_smbiosEdits)
         smbios.*member = edit->text().trimmed();
@@ -2045,6 +2087,83 @@ void EditVmDialog::updateNetworkCardDependencies()
         macEdit->setText(Utils::generateRandomMac(usedMacAddresses()));
 
     validateForm();
+}
+
+void EditVmDialog::setDiskKeyId(const QString &keyId)
+{
+    m_original.setDiskKeyId(keyId);
+    applyEncryptionConstraints();
+    refreshEncryptionState();
+}
+
+void EditVmDialog::applyEncryptionConstraints()
+{
+    // The saved memory would be written unencrypted.
+    auto *model = qobject_cast<QStandardItemModel *>(exitActionCombo->model());
+    if (!model)
+        return;
+    const bool encrypted = m_original.isEncrypted();
+    const int saveStateIndex = exitActionCombo->findData(QVariant::fromValue(VMSpecs::ExitAction::SaveState));
+    if (QStandardItem *item = model->item(saveStateIndex)) {
+        item->setEnabled(!encrypted);
+        item->setToolTip(encrypted ? i18n("Not available for an encrypted system disk") : QString());
+    }
+    if (encrypted && exitActionCombo->currentIndex() == saveStateIndex)
+        setCombo(exitActionCombo, VMSpecs::ExitAction::Shutdown);
+}
+
+void EditVmDialog::refreshEncryptionState()
+{
+    if (!encryptionStateIcon)
+        return;
+
+    const bool encrypted = m_original.isEncrypted();
+    const bool walletAvailable = DiskKeyStore::isAvailable();
+    const bool stored = encrypted && DiskKeyStore::hasKey(m_original.diskKeyId());
+
+    const int iconSize = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
+    const QIcon stateIcon = QIcon::fromTheme(encrypted ? u"security-high"_s : u"security-low"_s);
+    encryptionStateIcon->setPixmap(stateIcon.pixmap(iconSize, encrypted ? QIcon::Normal : QIcon::Disabled));
+
+    QString state;
+    if (encrypted) {
+        QString password;
+        if (!walletAvailable)
+            password = i18n("KWallet is not available, the password is asked when the VM starts.");
+        else if (stored)
+            password = i18n("The password is stored in KWallet.");
+        else
+            password = i18n("The password is asked when the VM starts.");
+        state = i18n(
+            "<p><b>The system disk is encrypted</b> (LUKS).</p>"
+            "<p>%1</p>"
+            "<p>The TPM state is encrypted with the same password. Save State is not available. Additional disks stay unencrypted.</p>",
+            password);
+    } else {
+        state = i18n("The system disk is not encrypted.");
+    }
+    encryptionStateIcon->setToolTip(state);
+    encryptionStateIcon->setAccessibleName(encrypted ? i18n("System disk encrypted") : i18n("System disk not encrypted"));
+
+    encryptButton->setVisible(!encrypted);
+    decryptButton->setVisible(encrypted);
+    changePasswordButton->setVisible(encrypted);
+    walletButton->setVisible(encrypted);
+
+    encryptButton->setEnabled(!m_readOnly);
+    decryptButton->setEnabled(!m_readOnly);
+    changePasswordButton->setEnabled(!m_readOnly);
+
+    // KWallet's icon with a plus or minus.
+    const QString walletText = !walletAvailable ? i18n("KWallet is not available")
+        : stored                                ? i18n("Remove the password from KWallet")
+                                                : i18n("Store the password in KWallet...");
+    walletButton->setIcon(KIconUtils::addOverlay(QIcon::fromTheme(u"kwalletmanager"_s, QIcon::fromTheme(u"wallet-open"_s)),
+                                                 QIcon::fromTheme(stored ? u"list-remove"_s : u"list-add"_s),
+                                                 Qt::BottomRightCorner));
+    walletButton->setToolTip(walletText);
+    walletButton->setAccessibleName(walletText);
+    walletButton->setEnabled(!m_readOnly && walletAvailable);
 }
 
 void EditVmDialog::applyModeConstraints()

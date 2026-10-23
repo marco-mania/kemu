@@ -10,15 +10,19 @@
 #include "dbusdisplay/dbusdisplayconst.h"
 #include "dialogs/clonevmdialog.h"
 #include "dialogs/deploymentabortdialog.h"
+#include "dialogs/diskpassworddialog.h"
 #include "dialogs/editvmdialog.h"
 #include "dialogs/licenseagreementdialog.h"
 #include "dialogs/missingtoolsdialog.h"
+#include "dialogs/newdiskpassworddialog.h"
 #include "dialogs/newvmdialog.h"
 #include "dialogs/settingsdialog.h"
 #include "dialogs/snapshotdialog.h"
 #include "jobs/clonejob.h"
 #include "jobs/diskimportjob.h"
+#include "jobs/diskpasswordjob.h"
 #include "jobs/downloadjob.h"
+#include "jobs/encryptdiskjob.h"
 #include "jobs/exportjob.h"
 #include "jobs/importjob.h"
 #include "jobs/ovaexportjob.h"
@@ -27,6 +31,8 @@
 #include "runtime/vmruntimeinfo.h"
 #include "utils/asynchelperprocess.h"
 #include "utils/cloudimagedeployer.h"
+#include "utils/diskencryption.h"
+#include "utils/diskkeystore.h"
 #include "utils/linkedclones.h"
 #include "utils/qemucapabilities.h"
 #include "utils/qemucommandbuilder.h"
@@ -43,7 +49,11 @@
 #include <KIO/FileCopyJob>
 
 #include <QBuffer>
+#include <QProgressDialog>
+#include <QScopeGuard>
 #include <QtSvg>
+
+#include <KNewPasswordDialog>
 
 extern "C" {
 #include <fcntl.h>
@@ -69,6 +79,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_networkManager->load();
 
     m_runtimeManager = new VmRuntimeManager(veModel, m_networkManager, this);
+    m_diskKeyStore = new DiskKeyStore(this, this);
     connect(m_runtimeManager, &VmRuntimeManager::runtimeTearingDown, this, &MainWindow::stopDbusViewer);
     connect(m_runtimeManager, &VmRuntimeManager::vmStarted, this, &MainWindow::onVmStarted);
     connect(m_runtimeManager, &VmRuntimeManager::qmpReady, this, &MainWindow::onQmpReady);
@@ -210,7 +221,8 @@ bool MainWindow::queryClose()
         const VmEntry *e = veModel->entryByName(name);
         if (!e)
             continue;
-        if (e->state == VmEntry::State::Shrinking || e->state == VmEntry::State::Flattening)
+        if (e->state == VmEntry::State::Shrinking || e->state == VmEntry::State::Flattening || e->state == VmEntry::State::Encrypting
+            || e->state == VmEntry::State::Decrypting)
             hasShrinking = true;
         if (e->state == VmEntry::State::Running || e->state == VmEntry::State::Deploying)
             hasRunning = true;
@@ -1021,7 +1033,16 @@ void MainWindow::updateActionStates()
     QAction *deleteAction = actionCollection()->action(u"vm_delete"_s);
     deleteAction->setEnabled(hasSelection && !isBusy && !isFrozen);
     deleteAction->setToolTip(isFrozen ? linkBlocker : QString());
-    actionCollection()->action(u"vm_clone"_s)->setEnabled(hasSelection && !isBusy && !isOrphan);
+    // Disk operations that cannot handle encrypted images yet.
+    const QString encryptionBlocker = encryptionBlockReason(entry);
+    const auto gateEncrypted = [&encryptionBlocker](QAction *action, bool enabled) {
+        if (!action->property("kemuDefaultToolTip").isValid())
+            action->setProperty("kemuDefaultToolTip", action->toolTip());
+        action->setEnabled(enabled && encryptionBlocker.isEmpty());
+        action->setToolTip(encryptionBlocker.isEmpty() ? action->property("kemuDefaultToolTip").toString() : encryptionBlocker);
+    };
+
+    gateEncrypted(actionCollection()->action(u"vm_clone"_s), hasSelection && !isBusy && !isOrphan);
 
     QAction *makeIndependentAction = actionCollection()->action(u"vm_make_independent"_s);
     makeIndependentAction->setVisible(isLinkedClone);
@@ -1070,12 +1091,12 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_eject_iso"_s)->setEnabled(canChangeMedia && !currentConfig.isoPath().isEmpty());
     actionCollection()->action(u"vm_change_floppy"_s)->setEnabled(canChangeMedia);
     actionCollection()->action(u"vm_eject_floppy"_s)->setEnabled(canChangeMedia && !currentConfig.floppyPath().isEmpty());
-    actionCollection()->action(u"vm_shrink"_s)->setEnabled(hasSelection && !isBusy && linkBlocker.isEmpty());
+    gateEncrypted(actionCollection()->action(u"vm_shrink"_s), hasSelection && !isBusy && linkBlocker.isEmpty());
 
     // Snapshots must not be managed if the VM is in 'Saved' state.
-    actionCollection()->action(u"vm_manage_snapshots"_s)->setEnabled(hasSelection && hasDisk && !isDeploying && !isSavedOnly && linkBlocker.isEmpty());
+    gateEncrypted(actionCollection()->action(u"vm_manage_snapshots"_s), hasSelection && hasDisk && !isDeploying && !isSavedOnly && linkBlocker.isEmpty());
 
-    actionCollection()->action(u"vm_export"_s)->setEnabled(hasSelection && !isBusy && !isOrphan);
+    gateEncrypted(actionCollection()->action(u"vm_export"_s), hasSelection && !isBusy && !isOrphan);
     actionCollection()->action(u"vm_import"_s)->setEnabled(true);
     actionCollection()->action(u"vm_screenshot"_s)->setEnabled(hasSelection && isRunning && vmSupportsScreendump());
 
@@ -1336,6 +1357,10 @@ void MainWindow::updateDetails()
         statusDot = u"&#x25CF;"_s;
         statusText = i18n("Making Independent...");
         statusColor = colNeutral;
+    } else if (entry && (entry->state == VmEntry::State::Encrypting || entry->state == VmEntry::State::Decrypting)) {
+        statusDot = u"&#x25CF;"_s;
+        statusText = entry->state == VmEntry::State::Encrypting ? i18n("Encrypting...") : i18n("Decrypting...");
+        statusColor = colNeutral;
     } else if (isExporting) {
         statusDot = u"&#x25CF;"_s;
         statusText = i18n("Exporting...");
@@ -1504,6 +1529,13 @@ void MainWindow::updateDetails()
         const QString label = disk.label.isEmpty() ? i18n("Hard Disk %1", i + 2) : disk.label;
         const QString value = diskValueFor(getVmDir(currentConfig.name()).absoluteFilePath(disk.fileName), disk.diskInterface);
         rows.insert(diskRow++, {u"drive-harddisk"_s, label, value, false, false});
+    }
+
+    if (currentConfig.isEncrypted()) {
+        const QString walletInfo = DiskKeyStore::hasKey(currentConfig.diskKeyId()) ? i18n("password stored in KWallet") : i18n("password asked at start");
+        rows.insert(diskRow++, {u"object-locked"_s, i18n("Encryption"), i18n("System disk, LUKS (%1)", walletInfo), false, false});
+    } else {
+        rows.insert(diskRow++, {u"object-unlocked"_s, i18n("Encryption"), i18n("None"), false, true});
     }
 
     if (entry && entry->isFrozen()) {
@@ -1718,6 +1750,11 @@ QString MainWindow::saveStateBlockReason(const VmEntry *entry) const
     if (!entry->attachedUsb.isEmpty())
         return i18n("a USB device is passed through");
 
+    // The state file would hold the guest's memory in plain text, and QEMU
+    // cannot store it inside encrypted images either.
+    if (entry->config.isEncrypted())
+        return i18n("the system disk is encrypted");
+
     // QEMU's NVMe controller cannot be migrated.
     const QList<DiskConfig> extraDisks = entry->config.extraDisks();
     if (entry->config.diskInterface() == VMSpecs::DiskInterface::Nvme || std::any_of(extraDisks.cbegin(), extraDisks.cend(), [](const DiskConfig &disk) {
@@ -1726,6 +1763,352 @@ QString MainWindow::saveStateBlockReason(const VmEntry *entry) const
         return i18n("an NVMe disk is attached");
 
     return {};
+}
+
+QString MainWindow::encryptionBlockReason(const VmEntry *entry) const
+{
+    if (!entry || !entry->config.isEncrypted())
+        return {};
+    return i18n("Not available yet for virtual machines with an encrypted system disk.");
+}
+
+void MainWindow::requestDiskKey(const QString &vmName, const QString &prompt, std::function<void(std::optional<QByteArray> key)> done, bool offerStore)
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry) {
+        done(std::nullopt);
+        return;
+    }
+    if (!entry->config.isEncrypted()) {
+        done(QByteArray());
+        return;
+    }
+
+    // Chosen when the VM was created and not necessarily stored anywhere.
+    if (const VmRuntimeInfo *rt = m_runtimeManager->runtime(vmName); rt && rt->deployment && !rt->deployment->diskKey.isEmpty()) {
+        done(rt->deployment->diskKey);
+        return;
+    }
+
+    const QString keyId = entry->config.diskKeyId();
+    const QString imagePath = entry->config.diskPaths(getVmDir(vmName)).value(0);
+    const QPointer<MainWindow> self(this);
+
+    m_diskKeyStore->readKey(keyId, [this, self, vmName, keyId, imagePath, prompt, done, offerStore](bool found, const QString &stored) {
+        if (!self)
+            return;
+        if (found) {
+            done(stored.toUtf8());
+            return;
+        }
+
+        const QPointer<DiskPasswordDialog> dialog = new DiskPasswordDialog(imagePath, offerStore && DiskKeyStore::isAvailable(), dialogParentFor(vmName));
+        dialog->setPrompt(prompt);
+        const bool accepted = dialog->exec() == QDialog::Accepted;
+        if (!dialog || !self)
+            return;
+        const QString password = dialog->password();
+        const bool keep = dialog->keepPassword();
+        delete dialog;
+
+        if (!accepted) {
+            done(std::nullopt);
+            return;
+        }
+        // Start first: a failure message must not hold the VM back.
+        done(password.toUtf8());
+        if (keep)
+            storeDiskKeyInWallet(vmName, keyId, password, dialogParentFor(vmName));
+    });
+}
+
+void MainWindow::storeDiskKeyInWallet(const QString &vmName, const QString &keyId, const QString &password, QWidget *parent, std::function<void(bool ok)> done)
+{
+    const QPointer<MainWindow> self(this);
+    const QPointer<QWidget> target(parent);
+    m_diskKeyStore->storeKey(keyId, password, [self, target, vmName, done = std::move(done)](bool ok) {
+        if (!self)
+            return;
+        if (!ok)
+            KMessageBox::error(target ? target.data() : self.data(),
+                               i18n("The password of '%1' could not be stored in KWallet. "
+                                    "KEMU asks for it the next time the virtual machine starts.",
+                                    vmName),
+                               i18nc("@title:window", "KWallet"));
+        if (done)
+            done(ok);
+    });
+}
+
+void MainWindow::storeDiskPassword(const QString &vmName, EditVmDialog *dialog)
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry || !entry->config.isEncrypted())
+        return;
+
+    const QString keyId = entry->config.diskKeyId();
+    const QPointer<DiskPasswordDialog> prompt = new DiskPasswordDialog(entry->config.diskPaths(getVmDir(vmName)).value(0), false, dialog);
+    prompt->setPrompt(i18n("Enter the password of the system disk of '%1' to store it in KWallet.", vmName));
+    const bool accepted = prompt->exec() == QDialog::Accepted;
+    if (!prompt)
+        return;
+    const QString password = prompt->password();
+    delete prompt;
+    if (!accepted)
+        return;
+
+    const QPointer<EditVmDialog> target(dialog);
+    storeDiskKeyInWallet(vmName, keyId, password, dialog, [this, target](bool) {
+        if (target)
+            target->refreshEncryptionState();
+        updateDetails();
+    });
+}
+
+void MainWindow::forgetDiskPassword(const QString &vmName, EditVmDialog *dialog)
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry || !entry->config.isEncrypted())
+        return;
+
+    const auto answer = KMessageBox::warningContinueCancel(dialog,
+                                                           i18n("Remove the password of '%1' from KWallet?\n\n"
+                                                                "KEMU then asks for it whenever the virtual machine starts. If you forget it, "
+                                                                "the content of the disks is lost.",
+                                                                vmName),
+                                                           i18nc("@title:window", "Remove Password"),
+                                                           KGuiItem(i18n("Remove"), u"edit-delete"_s));
+    if (answer != KMessageBox::Continue)
+        return;
+
+    const QPointer<EditVmDialog> target(dialog);
+    m_diskKeyStore->removeKey(entry->config.diskKeyId(), [this, target](bool) {
+        if (target)
+            target->refreshEncryptionState();
+        updateDetails();
+    });
+}
+
+void MainWindow::encryptSystemDisk(const QString &vmName, EditVmDialog *dialog)
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry || entry->config.isEncrypted() || veModel->isBusy(vmName))
+        return;
+
+    const QString title = i18nc("@title:window", "Encrypt System Disk");
+    if (entry->config.isLinkedClone()) {
+        KMessageBox::error(dialog, i18n("A linked clone shares its disk with its source and cannot be encrypted. Make it independent first."), title);
+        return;
+    }
+    if (entry->hasSavestateFile) {
+        KMessageBox::error(dialog,
+                           i18n("'%1' has a saved state, which would stay unencrypted. Resume and shut it down, or discard the state first.", vmName),
+                           title);
+        return;
+    }
+
+    const QDir vmDir = getVmDir(vmName);
+    const QStringList diskPaths = entry->config.diskPaths(vmDir);
+    const QStringList snapshots = SnapshotManager().snapshotNames(diskPaths);
+
+    QString text = i18n(
+        "Encrypt the system disk of '%1'?\n\n"
+        "It is copied into an encrypted image, which needs free space of about its current size. The unencrypted original is deleted afterwards. The TPM state "
+        "is encrypted as well.\n\n"
+        "Additional disks stay unencrypted and Save State is no longer available.",
+        vmName);
+    if (!snapshots.isEmpty())
+        text += u"\n\n"_s + i18np("The snapshot (%2) is deleted.", "All %1 snapshots (%2) are deleted.", snapshots.size(), snapshots.join(u", "_s));
+    if (KMessageBox::warningContinueCancel(dialog, text, title, KGuiItem(i18n("Continue"), u"lock"_s)) != KMessageBox::Continue)
+        return;
+
+    const QPointer<EditVmDialog> target(dialog);
+    const QPointer<NewDiskPasswordDialog> prompt = new NewDiskPasswordDialog(dialog);
+    prompt->setPrompt(i18n("Choose the password that encrypts the system disk of '%1'.", vmName));
+    const bool accepted = prompt->exec() == QDialog::Accepted;
+    if (!prompt)
+        return;
+    const QString password = prompt->password();
+    const bool store = prompt->storeInWallet();
+    delete prompt;
+    if (!accepted || !target || veModel->isBusy(vmName))
+        return;
+
+    auto *job = new EncryptDiskJob(EncryptDiskJob::Mode::Encrypt, vmName, vmDir, diskPaths.value(0), diskPaths.mid(1), snapshots, password.toUtf8(), this);
+    runEncryptionJob(job, target, [this, vmName, target, password, store] {
+        const QString vmPath = getVmDir(vmName).absolutePath();
+        VMConfig config = loadVmConfig(vmPath);
+        config.setDiskKeyId(QUuid::createUuid().toString(QUuid::WithoutBraces));
+        if (config.exitAction() == VMSpecs::ExitAction::SaveState)
+            config.setExitAction(VMSpecs::ExitAction::Shutdown);
+        saveVmConfig(vmPath, config);
+        veModel->updateConfig(vmName, config);
+        if (currentConfig.name() == vmName)
+            currentConfig = config;
+        if (store)
+            storeDiskKeyInWallet(vmName, config.diskKeyId(), password, target, [this, target](bool) {
+                if (target)
+                    target->refreshEncryptionState();
+                updateDetails();
+            });
+        if (target)
+            target->setDiskKeyId(config.diskKeyId());
+        statusBar()->showMessage(i18n("The system disk of '%1' is encrypted.", vmName));
+    });
+}
+
+void MainWindow::decryptSystemDisk(const QString &vmName, EditVmDialog *dialog)
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry || !entry->config.isEncrypted() || veModel->isBusy(vmName))
+        return;
+
+    const QDir vmDir = getVmDir(vmName);
+    const QStringList diskPaths = entry->config.diskPaths(vmDir);
+    const QStringList snapshots = SnapshotManager().snapshotNames(diskPaths);
+
+    QString text = i18n(
+        "Decrypt the system disk of '%1'?\n\n"
+        "It is copied into an unencrypted image, which needs free space of about its current size. The TPM state is decrypted as well, "
+        "and the password is removed from KWallet.",
+        vmName);
+    if (!snapshots.isEmpty())
+        text += u"\n\n"_s + i18np("The snapshot (%2) is deleted.", "All %1 snapshots (%2) are deleted.", snapshots.size(), snapshots.join(u", "_s));
+    if (KMessageBox::warningContinueCancel(dialog, text, i18nc("@title:window", "Decrypt System Disk"), KGuiItem(i18n("Continue"), u"unlock"_s))
+        != KMessageBox::Continue)
+        return;
+
+    const QPointer<EditVmDialog> target(dialog);
+    const QString keyId = entry->config.diskKeyId();
+    requestDiskKey(
+        vmName,
+        i18n("Enter the password of the system disk of '%1' to decrypt it.", vmName),
+        [this, vmName, vmDir, diskPaths, snapshots, target, keyId](std::optional<QByteArray> key) {
+            if (!key || !target || veModel->isBusy(vmName))
+                return;
+
+            auto *job = new EncryptDiskJob(EncryptDiskJob::Mode::Decrypt, vmName, vmDir, diskPaths.value(0), diskPaths.mid(1), snapshots, *key, this);
+            runEncryptionJob(job, target, [this, vmName, target, keyId] {
+                const QString vmPath = getVmDir(vmName).absolutePath();
+                VMConfig config = loadVmConfig(vmPath);
+                config.setDiskKeyId({});
+                saveVmConfig(vmPath, config);
+                veModel->updateConfig(vmName, config);
+                if (currentConfig.name() == vmName)
+                    currentConfig = config;
+                m_diskKeyStore->removeKey(keyId, [this](bool) {
+                    updateDetails();
+                });
+                if (target)
+                    target->setDiskKeyId({});
+                statusBar()->showMessage(i18n("The system disk of '%1' is decrypted.", vmName));
+            });
+        },
+        false);
+}
+
+void MainWindow::runEncryptionJob(EncryptDiskJob *job, EditVmDialog *dialog, std::function<void()> succeeded)
+{
+    const bool encrypt = job->mode() == EncryptDiskJob::Mode::Encrypt;
+    const QString vmName = job->vmName();
+    const QString title = encrypt ? i18nc("@title:window", "Encrypt System Disk") : i18nc("@title:window", "Decrypt System Disk");
+    const QPointer<EditVmDialog> target(dialog);
+
+    if (jobTracker)
+        jobTracker->registerJob(job);
+    veModel->setVmState(vmName, encrypt ? VmEntry::State::Encrypting : VmEntry::State::Decrypting);
+
+    // Modal over the edit dialog, so nothing else touches the VM meanwhile.
+    auto *progress =
+        new QProgressDialog(encrypt ? i18n("Encrypting the system disk of '%1'...", vmName) : i18n("Decrypting the system disk of '%1'...", vmName),
+                            i18n("Cancel"),
+                            0,
+                            1000,
+                            dialog);
+    progress->setWindowModality(Qt::WindowModal);
+    progress->setMinimumDuration(0);
+    progress->setAttribute(Qt::WA_DeleteOnClose);
+    connect(job, &KJob::percentChanged, progress, [progress](KJob *, unsigned long percent) {
+        progress->setValue(int(percent) * 10);
+    });
+    connect(progress, &QProgressDialog::canceled, job, [job] {
+        job->kill(KJob::EmitResult);
+    });
+    progress->show();
+
+    connect(job, &KJob::result, this, [this, vmName, title, target, progress, succeeded = std::move(succeeded)](KJob *kjob) {
+        auto *cryptJob = qobject_cast<EncryptDiskJob *>(kjob);
+        progress->disconnect();
+        progress->close();
+        veModel->setVmState(vmName, VmEntry::State::Stopped);
+
+        if (kjob->error() == KJob::KilledJobError) {
+            statusBar()->showMessage(i18n("Operation cancelled."));
+        } else if (kjob->error()) {
+            KMessageBox::error(target, kjob->errorText(), title);
+        } else {
+            succeeded();
+            if (cryptJob && !cryptJob->warnings().isEmpty())
+                KMessageBox::information(target, cryptJob->warnings().join(u'\n'), title);
+        }
+
+        if (currentConfig.name() == vmName)
+            updateDetails();
+        updateActionStates();
+    });
+
+    job->start();
+}
+
+void MainWindow::changeDiskPassword(const QString &vmName, EditVmDialog *dialog)
+{
+    const QPointer<EditVmDialog> target(dialog);
+
+    requestDiskKey(vmName, i18n("Enter the current password of the system disk of '%1'.", vmName), [this, vmName, target](std::optional<QByteArray> oldKey) {
+        const VmEntry *entry = veModel->entryByName(vmName);
+        if (!oldKey || !target || !entry || veModel->isBusy(vmName))
+            return;
+
+        const QPointer<KNewPasswordDialog> prompt = new KNewPasswordDialog(target);
+        prompt->setWindowTitle(i18nc("@title:window", "Change Disk Password"));
+        prompt->setPrompt(i18n("Enter the new password for the system disk of '%1'.", vmName));
+        prompt->setMinimumPasswordLength(8);
+        const bool accepted = prompt->exec() == QDialog::Accepted;
+        if (!prompt || !target)
+            return;
+        const QString newPassword = prompt->password();
+        delete prompt;
+        if (!accepted)
+            return;
+
+        const QString keyId = entry->config.diskKeyId();
+        const bool wasStored = DiskKeyStore::hasKey(keyId);
+        auto *job = new DiskPasswordJob(vmName, {entry->config.diskPaths(getVmDir(vmName)).value(0)}, *oldKey, newPassword.toUtf8(), this);
+        job->setTpmStateDir(getVmDir(vmName).absolutePath());
+
+        // Modal over the edit dialog, so the VM cannot start meanwhile.
+        auto *progress = new QProgressDialog(i18n("Changing the password of the system disk..."), {}, 0, 0, target);
+        progress->setWindowModality(Qt::WindowModal);
+        progress->setMinimumDuration(0);
+        progress->setAttribute(Qt::WA_DeleteOnClose);
+        progress->show();
+
+        connect(job, &KJob::result, this, [this, vmName, target, progress, keyId, wasStored, newPassword](KJob *kjob) {
+            progress->close();
+            if (kjob->error()) {
+                KMessageBox::error(target, kjob->errorText(), i18nc("@title:window", "Change Disk Password"));
+                return;
+            }
+            if (wasStored) {
+                storeDiskKeyInWallet(vmName, keyId, newPassword, target, [target](bool) {
+                    if (target)
+                        target->refreshEncryptionState();
+                });
+            }
+            statusBar()->showMessage(i18n("The disk password was changed."));
+        });
+        job->start();
+    });
 }
 
 QString MainWindow::linkBlockReason(const VmEntry *entry) const
@@ -2010,7 +2393,8 @@ void MainWindow::shrinkDisk()
     if (currentConfig.name().isEmpty())
         return;
 
-    if (veModel->isBusy(currentConfig.name()) || !linkBlockReason(veModel->entryByName(currentConfig.name())).isEmpty())
+    if (veModel->isBusy(currentConfig.name()) || !linkBlockReason(veModel->entryByName(currentConfig.name())).isEmpty()
+        || !encryptionBlockReason(veModel->entryByName(currentConfig.name())).isEmpty())
         return;
 
     const QStringList diskPaths = currentConfig.diskPaths(getVmDir(currentConfig.name()));
@@ -2128,6 +2512,10 @@ void MainWindow::exportVM()
 
     if (veModel->isBusy(currentConfig.name())) {
         KMessageBox::error(this, i18n("The VM '%1' is currently busy. Please wait.", currentConfig.name()), i18n("Busy"));
+        return;
+    }
+    if (const QString blocker = encryptionBlockReason(veModel->entryByName(currentConfig.name())); !blocker.isEmpty()) {
+        KMessageBox::error(this, blocker, i18nc("@title:window", "Export VM"));
         return;
     }
 
@@ -2526,6 +2914,10 @@ void MainWindow::showContextMenu(const QPoint &pos)
             } else if (entry && entry->state == VmEntry::State::Flattening) {
                 auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"view-refresh"_s), i18n("Making independent..."));
                 infoAction->setEnabled(false);
+            } else if (entry && (entry->state == VmEntry::State::Encrypting || entry->state == VmEntry::State::Decrypting)) {
+                auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"view-refresh"_s),
+                                                         entry->state == VmEntry::State::Encrypting ? i18n("Encrypting...") : i18n("Decrypting..."));
+                infoAction->setEnabled(false);
             } else if (isDeploying) {
                 auto *logAction = contextMenu.addAction(QIcon::fromTheme(u"text-x-log"_s), i18n("Show Deployment Log"));
                 connect(logAction, &QAction::triggered, this, [this, vmName]() {
@@ -2684,6 +3076,30 @@ void MainWindow::startVM(bool headless)
         return;
     }
 
+    if (!currentConfig.isEncrypted()) {
+        continueStartVM(headless, {});
+        return;
+    }
+
+    requestDiskKey(vmName,
+                   i18n("The system disk of '%1' is encrypted. Enter the password to start it.", vmName),
+                   [this, vmName, headless](std::optional<QByteArray> key) {
+                       if (!key)
+                           return;
+                       // The wallet may have taken a while to open.
+                       if (currentConfig.name() != vmName)
+                           selectVmByName(vmName);
+                       if (currentConfig.name() != vmName || veModel->isBusy(vmName))
+                           return;
+                       continueStartVM(headless, *key);
+                   });
+}
+
+void MainWindow::continueStartVM(bool headless, const QByteArray &diskKey)
+{
+    const QString vmName = currentConfig.name();
+    const QString vmDirPath = getVmDir(vmName).absolutePath();
+
     // Reset failure-handling state from any previous attempt of this VM.
     m_runtimeManager->runtimeFor(vmName).resetRunState();
 
@@ -2715,8 +3131,8 @@ void MainWindow::startVM(bool headless)
     auto *chain = new StartupChain(this);
 
     if (currentConfig.useTpm()) {
-        chain->then([this, vmName](auto done) {
-            m_runtimeManager->startSwtpmAsync(vmName, reportingDone(vmName, std::move(done)));
+        chain->then([this, vmName, diskKey](auto done) {
+            m_runtimeManager->startSwtpmAsync(vmName, diskKey, reportingDone(vmName, std::move(done)));
         });
     }
     if (!currentConfig.sharedPath().isEmpty() && currentConfig.osFamily() == VMSpecs::OsFamily::Windows) {
@@ -2755,7 +3171,7 @@ void MainWindow::startVM(bool headless)
         }
     }
 
-    chain->run([this, vmName, headless, resolvedNetworkFd](bool ok) {
+    chain->run([this, vmName, headless, resolvedNetworkFd, diskKey](bool ok) {
         if (!ok) {
             m_runtimeManager->tearDown(vmName);
             return;
@@ -2765,6 +3181,7 @@ void MainWindow::startVM(bool headless)
         req.vmName = vmName;
         req.headless = headless;
         req.networkFd = resolvedNetworkFd;
+        req.diskKey = diskKey;
         m_runtimeManager->launch(req);
     });
 }
@@ -3431,6 +3848,10 @@ void MainWindow::manageSnapshotsForVm(const QString &vmName)
         KMessageBox::error(dialogParentFor(vmName), blocker, i18nc("@title:window", "Snapshots"));
         return;
     }
+    if (const QString blocker = encryptionBlockReason(entry); !blocker.isEmpty()) {
+        KMessageBox::error(dialogParentFor(vmName), blocker, i18nc("@title:window", "Snapshots"));
+        return;
+    }
 
     // Anything but a cleanly stopped or saved VM means QEMU, a shrink job or an
     // export has the image open.
@@ -3465,6 +3886,11 @@ void MainWindow::createNewVM()
     VMConfig newConfig = dialog.getResult();
     const NewVmDialog::Source source = dialog.source();
     const CloudDeployConfig cloudCfg = dialog.cloudConfig();
+    QByteArray diskKey = dialog.diskPassword().toUtf8();
+    const bool storeDiskKey = dialog.storeDiskPasswordInWallet();
+    const auto wipeKey = qScopeGuard([&diskKey] {
+        DiskEncryption::wipe(diskKey);
+    });
 
     const QDir baseDir = getVmBaseDir();
 
@@ -3480,6 +3906,13 @@ void MainWindow::createNewVM()
     if (newConfig.uuid().isNull())
         newConfig.regenerateUuid(veModel->vmUuids().values());
 
+    if (!diskKey.isEmpty()) {
+        newConfig.setDiskKeyId(QUuid::createUuid().toString(QUuid::WithoutBraces));
+        // Save State is not available with encrypted disks.
+        if (newConfig.exitAction() == VMSpecs::ExitAction::SaveState)
+            newConfig.setExitAction(VMSpecs::ExitAction::Shutdown);
+    }
+
     baseDir.mkdir(newConfig.name());
     const QString vmPath = baseDir.filePath(newConfig.name());
     const QString diskPath = QDir(vmPath).filePath(KEMUConst::VMDiskFileName);
@@ -3488,11 +3921,22 @@ void MainWindow::createNewVM()
         KProcess imgProcess;
         imgProcess.setOutputChannelMode(KProcess::SeparateChannels);
         imgProcess.setProgram(ExternalTools::instance().path(ExternalTools::QemuImg));
-        imgProcess.setArguments({u"create"_s, u"-f"_s, u"qcow2"_s, diskPath, u"%1G"_s.arg(newConfig.diskSizeGb())});
+        QStringList args{u"create"_s, u"-f"_s, u"qcow2"_s};
+        int keyFd = -1;
+        if (!diskKey.isEmpty()) {
+            keyFd = DiskEncryption::secretFd(diskKey);
+            args << u"--object"_s << DiskEncryption::secretObject(keyFd) << u"-o"_s << DiskEncryption::createOptions();
+            DiskEncryption::inheritFds(&imgProcess, {keyFd});
+        }
+        args << diskPath << u"%1G"_s.arg(newConfig.diskSizeGb());
+        imgProcess.setArguments(args);
         imgProcess.start();
-        imgProcess.waitForFinished(10000);
+        if (keyFd >= 0)
+            ::close(keyFd);
+        // Encryption derives the key for about two seconds.
+        imgProcess.waitForFinished(30000);
 
-        if (imgProcess.exitCode() != 0) {
+        if ((keyFd < 0 && !diskKey.isEmpty()) || imgProcess.exitStatus() != KProcess::NormalExit || imgProcess.exitCode() != 0) {
             KMessageBox::error(this, i18n("Failed to create disk image."));
             QDir vmDir = baseDir.filePath(newConfig.name());
             if (!isManagedVmDir(vmDir)) {
@@ -3503,6 +3947,10 @@ void MainWindow::createNewVM()
             return;
         }
     }
+
+    // Only once there is a disk it belongs to.
+    if (storeDiskKey && newConfig.isEncrypted())
+        storeDiskKeyInWallet(newConfig.name(), newConfig.diskKeyId(), QString::fromUtf8(diskKey), this);
 
     // The VM is created anyway: once the firmware is installed, starting it
     // creates the variable store.
@@ -3527,6 +3975,7 @@ void MainWindow::createNewVM()
         pd.imageUrl = image.url;
         pd.imageLocalPath = imageLocalPath;
         pd.cloudConfig = cloudCfg;
+        pd.diskKey = diskKey;
         m_runtimeManager->runtimeFor(newConfig.name()).deployment = pd;
 
         veModel->setVmState(newConfig.name(), VmEntry::State::Deploying);
@@ -3577,6 +4026,7 @@ void MainWindow::createNewVM()
 
         VmRuntimeInfo::PendingDeployment pd;
         pd.type = VmRuntimeInfo::PendingDeployment::Type::ManualIso;
+        pd.diskKey = diskKey;
         m_runtimeManager->runtimeFor(newConfig.name()).deployment = pd;
 
         veModel->setVmState(newConfig.name(), VmEntry::State::Deploying);
@@ -3618,6 +4068,23 @@ void MainWindow::editVM()
     const QDir vmDirBefore = getVmDir(currentConfig.name());
     dialog.setVmDirectory(vmDirBefore.absolutePath(), CloudImageDeployer::hasNoCloudIso(vmDirBefore));
     dialog.setConfig(currentConfig);
+
+    const QString editedVm = currentConfig.name();
+    connect(&dialog, &EditVmDialog::encryptSystemDiskRequested, this, [this, editedVm, &dialog] {
+        encryptSystemDisk(editedVm, &dialog);
+    });
+    connect(&dialog, &EditVmDialog::decryptSystemDiskRequested, this, [this, editedVm, &dialog] {
+        decryptSystemDisk(editedVm, &dialog);
+    });
+    connect(&dialog, &EditVmDialog::changeDiskPasswordRequested, this, [this, editedVm, &dialog] {
+        changeDiskPassword(editedVm, &dialog);
+    });
+    connect(&dialog, &EditVmDialog::storeDiskPasswordRequested, this, [this, editedVm, &dialog] {
+        storeDiskPassword(editedVm, &dialog);
+    });
+    connect(&dialog, &EditVmDialog::forgetDiskPasswordRequested, this, [this, editedVm, &dialog] {
+        forgetDiskPassword(editedVm, &dialog);
+    });
 
     if (readOnly) {
         dialog.setReadOnly(true, frozen);
@@ -3827,6 +4294,10 @@ void MainWindow::deleteVM()
             vmDir.removeRecursively();
         }
 
+        // The password is of no use without the disks.
+        if (currentConfig.isEncrypted())
+            m_diskKeyStore->removeKey(currentConfig.diskKeyId());
+
         removeViewerPrefs(currentConfig.name());
         m_runtimeManager->dropRuntime(currentConfig.name());
 
@@ -3850,6 +4321,10 @@ void MainWindow::cloneVM()
 
     if (veModel->isBusy(srcName)) {
         KMessageBox::error(this, i18n("The VM '%1' is currently busy.", srcName), i18n("Busy"));
+        return;
+    }
+    if (const QString blocker = encryptionBlockReason(veModel->entryByName(srcName)); !blocker.isEmpty()) {
+        KMessageBox::error(this, blocker, i18n("Clone VM"));
         return;
     }
 
@@ -4261,8 +4736,39 @@ void MainWindow::saveFolderStructure() const
     config->sync();
 }
 
+bool MainWindow::handleWrongDiskPassword(const QString &vmName, const QByteArray &stderrTail)
+{
+    // A stored password that no longer fits would fail every start.
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (entry && entry->config.isEncrypted() && DiskEncryption::isWrongPasswordError(QString::fromUtf8(stderrTail))) {
+        const QString keyId = entry->config.diskKeyId();
+        if (DiskKeyStore::hasKey(keyId)) {
+            const auto answer = KMessageBox::questionTwoActions(dialogParentFor(vmName),
+                                                                i18n("The password stored in KWallet does not open the system disk of '%1'.\n\n"
+                                                                     "Remove it, so that KEMU asks for the password at the next start?",
+                                                                     vmName),
+                                                                i18nc("@title:window", "Wrong Disk Password"),
+                                                                KGuiItem(i18n("Remove from KWallet"), u"edit-delete"_s),
+                                                                KStandardGuiItem::cancel());
+            if (answer == KMessageBox::PrimaryAction)
+                m_diskKeyStore->removeKey(keyId, [this](bool) {
+                    updateDetails();
+                });
+        } else {
+            KMessageBox::error(dialogParentFor(vmName),
+                               i18n("The password does not open the system disk of '%1'.", vmName),
+                               i18nc("@title:window", "Wrong Disk Password"));
+        }
+        return true;
+    }
+    return false;
+}
+
 void MainWindow::showQemuFailureDialog(const QString &vmName, bool startupFailed, int exitCode, KProcess::ExitStatus exitStatus, const QByteArray &stderrTail)
 {
+    if (handleWrongDiskPassword(vmName, stderrTail))
+        return;
+
     const QString title = startupFailed ? i18nc("@title:window", "Failed to Start VM") : i18nc("@title:window", "VM Terminated Unexpectedly");
 
     QString summary;
@@ -4359,6 +4865,31 @@ void MainWindow::startDeployment(const QString &vmName)
     const VMConfig config = loadVmConfig(vmPath);
     veModel->updateConfig(vmName, config);
 
+    if (!config.isEncrypted()) {
+        continueDeployment(vmName, {});
+        return;
+    }
+
+    requestDiskKey(vmName,
+                   i18n("The system disk of '%1' is encrypted. Enter the password to install it.", vmName),
+                   [this, vmName](std::optional<QByteArray> key) {
+                       if (!key) {
+                           abortDeployment(vmName, false);
+                           return;
+                       }
+                       continueDeployment(vmName, *key);
+                   });
+}
+
+void MainWindow::continueDeployment(const QString &vmName, const QByteArray &diskKey)
+{
+    VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry || entry->state != VmEntry::State::Deploying)
+        return;
+
+    const QString vmPath = getVmDir(vmName).absolutePath();
+    const VMConfig config = entry->config;
+
     // Reset failure-handling state from any previous attempt of this VM.
     m_runtimeManager->runtimeFor(vmName).resetRunState();
 
@@ -4377,8 +4908,8 @@ void MainWindow::startDeployment(const QString &vmName)
     auto *chain = new StartupChain(this);
 
     if (config.useTpm()) {
-        chain->then([this, vmName](auto done) {
-            m_runtimeManager->startSwtpmAsync(vmName, reportingDone(vmName, std::move(done)));
+        chain->then([this, vmName, diskKey](auto done) {
+            m_runtimeManager->startSwtpmAsync(vmName, diskKey, reportingDone(vmName, std::move(done)));
         });
     }
     if (!config.sharedPath().isEmpty() && config.osFamily() == VMSpecs::OsFamily::Windows) {
@@ -4424,7 +4955,7 @@ void MainWindow::startDeployment(const QString &vmName)
     const bool unattended = isUnattendedDeployment(vmName);
     const bool headless = unattended && config.displayType() == VMSpecs::DisplayType::Dbus;
 
-    chain->run([this, vmName, headless, unattended, resolvedNetworkFd](bool ok) {
+    chain->run([this, vmName, headless, unattended, resolvedNetworkFd, diskKey](bool ok) {
         if (!ok) {
             m_runtimeManager->tearDown(vmName);
             return;
@@ -4436,6 +4967,7 @@ void MainWindow::startDeployment(const QString &vmName)
         req.networkFd = resolvedNetworkFd;
         req.deployment = true;
         req.unattendedDeployment = unattended;
+        req.diskKey = diskKey;
         m_runtimeManager->launch(req);
     });
 }
@@ -4591,6 +5123,9 @@ void MainWindow::finishDeploymentAbort(const QString &vmName, bool deleteVm)
         return;
     }
 
+    if (const VmEntry *entry = veModel->entryByName(vmName); entry && entry->config.isEncrypted())
+        m_diskKeyStore->removeKey(entry->config.diskKeyId());
+
     QDir vmDir = getVmDir(vmName);
     if (!isManagedVmDir(vmDir)) {
         qCWarning(KEMU) << "Refusing to remove a directory outside the VM store:" << vmDir.absolutePath();
@@ -4662,6 +5197,7 @@ void MainWindow::deployCloudImage(const QString &vmName)
     statusBar()->showMessage(i18n("Deploying '%1'. Preparing cloud image...", vmName));
 
     auto *job = new CloudDeployJob(vmName, pd.imageLocalPath, vmDir, config.diskSizeGb(), pd.cloudConfig, this);
+    job->setDiskKey(pd.diskKey);
     m_cloudDeployJobs.insert(vmName, job);
 
     if (jobTracker)

@@ -64,6 +64,10 @@ public:
         // Install PR_SET_PDEATHSIG=SIGTERM in the child. Almost always
         // desired so the helper dies if KEMU itself crashes.
         bool setParentDeathSignal = true;
+
+        // Descriptors the child inherits, e.g. a secret on a pipe. The
+        // caller closes its copies once run() has returned.
+        QList<int> inheritFds;
     };
 
     using FinishedCallback = std::function<void(KProcess *process, bool ok, const QString &error)>;
