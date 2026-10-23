@@ -54,7 +54,8 @@ private Q_SLOTS:
     void rekeyWithSwtpm()
     {
         const QString swtpm = QStandardPaths::findExecutable(u"swtpm"_s);
-        if (swtpm.isEmpty() || TpmState::ioctlPath(swtpm).isEmpty())
+        const QString ioctl = QStandardPaths::findExecutable(u"swtpm_ioctl"_s);
+        if (swtpm.isEmpty() || ioctl.isEmpty())
             QSKIP("swtpm or swtpm_ioctl not installed");
 
         QTemporaryDir dir;
@@ -74,13 +75,13 @@ private Q_SLOTS:
                      u"not-need-init,startup-clear"_s});
         QVERIFY(plain.waitForStarted());
         QTRY_VERIFY(QFile::exists(dir.filePath(u"c"_s)));
-        QProcess::execute(TpmState::ioctlPath(swtpm), {u"--unix"_s, dir.filePath(u"c"_s), u"-s"_s});
+        QProcess::execute(ioctl, {u"--unix"_s, dir.filePath(u"c"_s), u"-s"_s});
         QVERIFY(plain.waitForFinished());
         QCOMPARE(TpmState::encryptionOf(stateDir), TpmState::Encryption::Plain);
 
         // Plain -> encrypted.
         const QDir target(stateDir.filePath(u".tpm-rekey"_s));
-        QCOMPARE(TpmState::rekey(swtpm, stateDir, {}, "first", target), QString());
+        QCOMPARE(TpmState::rekey(swtpm, ioctl, stateDir, {}, "first", target), QString());
         QCOMPARE(TpmState::encryptionOf(target), TpmState::Encryption::Encrypted);
         QCOMPARE(TpmState::encryptionOf(stateDir), TpmState::Encryption::Plain);
         QVERIFY(TpmState::commit(stateDir, target));
@@ -88,12 +89,23 @@ private Q_SLOTS:
         QVERIFY(!target.exists());
 
         // Wrong key fails and leaves the state alone; the right one re-keys.
-        QVERIFY(!TpmState::rekey(swtpm, stateDir, "wrong", "second", target).isEmpty());
+        QVERIFY(!TpmState::rekey(swtpm, ioctl, stateDir, "wrong", "second", target).isEmpty());
         QVERIFY(!target.exists());
-        QCOMPARE(TpmState::rekey(swtpm, stateDir, "first", "second", target), QString());
+        QCOMPARE(TpmState::rekey(swtpm, ioctl, stateDir, "first", "second", target), QString());
         QVERIFY(TpmState::commit(stateDir, target));
-        QVERIFY(!TpmState::rekey(swtpm, stateDir, "first", "third", target).isEmpty());
-        QCOMPARE(TpmState::rekey(swtpm, stateDir, "second", "third", target), QString());
+        QVERIFY(!TpmState::rekey(swtpm, ioctl, stateDir, "first", "third", target).isEmpty());
+        QCOMPARE(TpmState::rekey(swtpm, ioctl, stateDir, "second", "third", target), QString());
+        QVERIFY(TpmState::commit(stateDir, target));
+
+        // Encrypted -> plain.
+        QCOMPARE(TpmState::rekey(swtpm, ioctl, stateDir, "third", {}, target), QString());
+        QCOMPARE(TpmState::encryptionOf(target), TpmState::Encryption::Plain);
+        QVERIFY(TpmState::commit(stateDir, target));
+        QCOMPARE(TpmState::encryptionOf(stateDir), TpmState::Encryption::Plain);
+
+        // Without swtpm_ioctl nothing is touched.
+        QVERIFY(!TpmState::rekey(swtpm, {}, stateDir, {}, "fourth", target).isEmpty());
+        QCOMPARE(TpmState::encryptionOf(stateDir), TpmState::Encryption::Plain);
     }
 };
 

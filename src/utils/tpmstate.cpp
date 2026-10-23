@@ -146,19 +146,12 @@ QString keyOption(int fd)
     return u"pwdfd=%1,mode=aes-256-cbc,kdf=pbkdf2"_s.arg(fd);
 }
 
-QString ioctlPath(const QString &swtpm)
+QString rekey(const QString &swtpm, const QString &ioctl, const QDir &stateDir, const QByteArray &oldKey, const QByteArray &newKey, const QDir &targetDir)
 {
-    const QString sibling = QFileInfo(swtpm).dir().filePath(u"swtpm_ioctl"_s);
-    if (QFileInfo(sibling).isExecutable())
-        return sibling;
-    return QStandardPaths::findExecutable(u"swtpm_ioctl"_s);
-}
-
-QString rekey(const QString &swtpm, const QDir &stateDir, const QByteArray &oldKey, const QByteArray &newKey, const QDir &targetDir)
-{
-    const QString ioctl = ioctlPath(swtpm);
-    if (swtpm.isEmpty() || ioctl.isEmpty())
-        return u"swtpm or swtpm_ioctl not found"_s;
+    if (swtpm.isEmpty())
+        return u"swtpm not found"_s;
+    if (ioctl.isEmpty())
+        return u"swtpm_ioctl not found"_s;
 
     // Short socket paths, and the plain state blob only on a RAM disk.
     QString base = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);

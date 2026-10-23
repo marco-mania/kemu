@@ -191,13 +191,14 @@ void DiskPasswordJob::rekeyTpm()
     // A state from before the encryption is still plain.
     const QByteArray oldKey = state == TpmState::Encryption::Encrypted ? m_oldPassword : QByteArray();
     const QString swtpm = ExternalTools::instance().path(ExternalTools::Swtpm);
+    const QString ioctl = ExternalTools::instance().path(ExternalTools::SwtpmIoctl);
     const QByteArray newKey = m_newPassword;
     const QString target = stateDir.filePath(u".tpm-rekey"_s);
 
     // rekey() blocks for about a second, so it runs on a thread of its own.
     auto result = std::make_shared<QString>();
-    m_thread = QThread::create([swtpm, stateDir, oldKey, newKey, target, result] {
-        *result = TpmState::rekey(swtpm, stateDir, oldKey, newKey, QDir(target));
+    m_thread = QThread::create([swtpm, ioctl, stateDir, oldKey, newKey, target, result] {
+        *result = TpmState::rekey(swtpm, ioctl, stateDir, oldKey, newKey, QDir(target));
     });
     connect(m_thread, &QThread::finished, this, [this, result] {
         m_thread->deleteLater();

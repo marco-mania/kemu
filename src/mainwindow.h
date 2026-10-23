@@ -231,6 +231,8 @@ private:
     void registerAudioListeners(const QString &vmName);
 
     bool requireTool(const ExternalTools::Tool tool);
+    // swtpm and swtpm_ioctl, if @p vmName has a TPM state to move to a new password.
+    bool requireTpmRekeyTools(const QString &vmName, QWidget *parent);
     /// Creates the VM's UEFI variable store if needed and reports problems.
     /// False if the VM cannot boot with UEFI.
     bool requireUefiFirmware(const QString &vmPath, const VMConfig &config, QWidget *parent);

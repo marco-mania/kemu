@@ -58,7 +58,8 @@ Widgets and KDE Frameworks 6 for deep desktop integration.
 - libisofs (cloud-init seed ISOs)
 - libudev (for USB device passthrough)
 - **Optional:** `edk2-ovmf` (for UEFI boot)
-- **Optional:** `swtpm` (for TPM 2.0 emulation)
+- **Optional:** `swtpm` (for TPM 2.0 emulation) and its `swtpm_ioctl` (for
+  encrypted VMs with a TPM)
 - **Optional:** `virtiofsd` (for shared folders with Windows guests)
 
 ### Arch Linux
@@ -66,7 +67,7 @@ Widgets and KDE Frameworks 6 for deep desktop integration.
 ```sh
 sudo pacman -S qt6-base qt6-declarative extra-cmake-modules \
   kconfig kcoreaddons ki18n kxmlgui kwidgetsaddons kdbusaddons \
-  kiconthemes qemu-full edk2-ovmf libarchive libslirp libisofs \
+  kiconthemes kwallet qemu-full edk2-ovmf libarchive libslirp libisofs \
   wayland wayland-protocols
 ```
 
@@ -82,9 +83,9 @@ sudo pacman -S swtpm virtiofsd
 sudo apt install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-multimedia-dev \
   libkf6config-dev libkf6coreaddons-dev libkf6i18n-dev libkf6kio-dev \
   libkf6crash-dev libkf6xmlgui-dev libkf6widgetsaddons-dev libkf6iconthemes-dev \
-  libkf6texttemplate-dev qemu-system extra-cmake-modules libegl1-mesa-dev \
-  libarchive-dev libslirp-dev libisofs-dev libudev-dev libkf6dbusaddons-dev \
-  libkf6dbusaddons-dev build-essential cmake \
+  libkf6texttemplate-dev libkf6wallet-dev qemu-system extra-cmake-modules \
+  libegl1-mesa-dev libarchive-dev libslirp-dev libisofs-dev libudev-dev \
+  libkf6dbusaddons-dev libkf6dbusaddons-dev build-essential cmake \
   libwayland-dev wayland-protocols qt6-base-private-dev \
   build-essential cmake
 ```
@@ -92,7 +93,7 @@ sudo apt install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-multimedia-dev
 Optional:
 
 ```sh
-sudo apt install ovmf swtpm virtiofsd
+sudo apt install ovmf swtpm swtpm-tools virtiofsd
 ```
 
 ### Fedora 40+
@@ -102,17 +103,17 @@ sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
   qt6-qtmultimedia-devel kf6-kconfig-devel kf6-kcoreaddons-devel kf6-ki18n-devel \
   kf6-kio-devel kf6-kcrash-devel kf6-kxmlgui-devel kf6-kwidgetsaddons-devel \
   kf6-kiconthemes-devel kf6-ktexttemplate-devel kf6-kdbusaddons-devel \
-  extra-cmake-modules qemu-system-x86 qemu-img edk2-ovmf swtpm swtpm-tools \
-  mesa-libEGL-devel libarchive-devel libslirp-devel libisofs-devel \
-  systemd-devel gcc-c++ make cmake wayland-devel wayland-protocols-devel \
-  qt6-qtbase-private-devel systemd-devel \
+  kf6-kwallet-devel extra-cmake-modules qemu-system-x86 qemu-img edk2-ovmf \
+  swtpm swtpm-tools mesa-libEGL-devel libarchive-devel libslirp-devel \
+  libisofs-devel systemd-devel gcc-c++ make cmake wayland-devel \
+  wayland-protocols-devel qt6-qtbase-private-devel systemd-devel \
   gcc-c++ make cmake
 ```
 
 Optional:
 
 ```sh
-sudo dnf install edk2-ovmf swtpm virtiofsd
+sudo dnf install edk2-ovmf swtpm swtpm-tools virtiofsd
 ```
 
 ## Building and Running

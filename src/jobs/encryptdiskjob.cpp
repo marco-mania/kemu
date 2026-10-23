@@ -152,6 +152,7 @@ void EncryptDiskJob::rekeyTpm()
 
     Q_EMIT infoMessage(this, encrypt ? i18n("Encrypting the TPM state...") : i18n("Decrypting the TPM state..."));
     const QString swtpm = ExternalTools::instance().path(ExternalTools::Swtpm);
+    const QString ioctl = ExternalTools::instance().path(ExternalTools::SwtpmIoctl);
     const QDir stateDir = m_vmDir;
     const QByteArray oldKey = encrypt ? QByteArray() : m_password;
     const QByteArray newKey = encrypt ? m_password : QByteArray();
@@ -159,8 +160,8 @@ void EncryptDiskJob::rekeyTpm()
 
     // rekey() blocks for about a second, so it runs on a thread of its own.
     auto result = std::make_shared<QString>();
-    m_thread = QThread::create([swtpm, stateDir, oldKey, newKey, target, result] {
-        *result = TpmState::rekey(swtpm, stateDir, oldKey, newKey, QDir(target));
+    m_thread = QThread::create([swtpm, ioctl, stateDir, oldKey, newKey, target, result] {
+        *result = TpmState::rekey(swtpm, ioctl, stateDir, oldKey, newKey, QDir(target));
     });
     connect(m_thread, &QThread::finished, this, [this, encrypt, result] {
         m_thread->deleteLater();

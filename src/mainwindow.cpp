@@ -40,6 +40,7 @@
 #include "utils/sandboxcapabilities.h"
 #include "utils/snapshotmanager.h"
 #include "utils/startupchain.h"
+#include "utils/tpmstate.h"
 #include "utils/usbenumerator.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
@@ -803,6 +804,22 @@ bool MainWindow::requireTool(const ExternalTools::Tool tool)
         return true;
 
     KMessageBox::error(this, i18n("%1 not found. Please set the path in Settings.", ExternalTools::displayName(tool)));
+    return false;
+}
+
+bool MainWindow::requireTpmRekeyTools(const QString &vmName, QWidget *parent)
+{
+    if (TpmState::encryptionOf(getVmDir(vmName)) == TpmState::Encryption::NoState)
+        return true;
+    if (ExternalTools::instance().isAvailable({ExternalTools::Swtpm, ExternalTools::SwtpmIoctl}))
+        return true;
+
+    KMessageBox::error(parent,
+                       i18n("The TPM state of '%1' is moved to the new password with swtpm and swtpm_ioctl, which were not found.\n\n"
+                            "Install them (swtpm_ioctl comes with swtpm; on Debian, Ubuntu and Fedora in the package swtpm-tools) "
+                            "or set their paths in Settings.",
+                            vmName),
+                       i18nc("@title:window", "TPM State Encryption"));
     return false;
 }
 
@@ -1907,6 +1924,9 @@ void MainWindow::encryptSystemDisk(const QString &vmName, EditVmDialog *dialog)
         return;
     }
 
+    if (!requireTpmRekeyTools(vmName, dialog))
+        return;
+
     const QDir vmDir = getVmDir(vmName);
     const QStringList diskPaths = entry->config.diskPaths(vmDir);
     const QStringList snapshots = SnapshotManager().snapshotNames(diskPaths);
@@ -1961,6 +1981,8 @@ void MainWindow::decryptSystemDisk(const QString &vmName, EditVmDialog *dialog)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || !entry->config.isEncrypted() || veModel->isBusy(vmName))
+        return;
+    if (!requireTpmRekeyTools(vmName, dialog))
         return;
 
     const QDir vmDir = getVmDir(vmName);
@@ -2062,6 +2084,8 @@ void MainWindow::runEncryptionJob(EncryptDiskJob *job, EditVmDialog *dialog, std
 
 void MainWindow::changeDiskPassword(const QString &vmName, EditVmDialog *dialog)
 {
+    if (!requireTpmRekeyTools(vmName, dialog))
+        return;
     const QPointer<EditVmDialog> target(dialog);
 
     requestDiskKey(vmName, i18n("Enter the current password of the system disk of '%1'.", vmName), [this, vmName, target](std::optional<QByteArray> oldKey) {
@@ -3122,6 +3146,10 @@ void MainWindow::continueStartVM(bool headless, const QByteArray &diskKey)
 
     // Pre-flight: a missing tool must not leave half-started helpers behind.
     if (currentConfig.useTpm() && !requireTool(ExternalTools::Swtpm))
+        return;
+    // A plain TPM state of an encrypted VM is moved over before the start.
+    if (currentConfig.useTpm() && currentConfig.isEncrypted() && TpmState::encryptionOf(QDir(vmDirPath)) == TpmState::Encryption::Plain
+        && !requireTool(ExternalTools::SwtpmIoctl))
         return;
     if (!currentConfig.sharedPath().isEmpty() && currentConfig.osFamily() == VMSpecs::OsFamily::Windows && !requireTool(ExternalTools::Virtiofsd))
         return;

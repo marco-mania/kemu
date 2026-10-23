@@ -44,6 +44,7 @@ public:
         QemuSystem, // qemu-system-x86_64
         QemuImg, // qemu-img
         Swtpm, // swtpm
+        SwtpmIoctl, // swtpm_ioctl (moves a TPM state to a new password)
         Virtiofsd // virtiofsd (virtio-fs shared file system daemon)
     };
     Q_ENUM(Tool)
@@ -51,6 +52,7 @@ public:
     enum FeatureGroupId {
         Core,
         TpmEmulation,
+        TpmStateEncryption,
         SharedFolders
     };
     Q_ENUM(FeatureGroupId)

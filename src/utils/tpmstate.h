@@ -31,13 +31,12 @@ enum class Encryption {
 // swtpm "--key" value reading the passphrase from descriptor @p fd.
 [[nodiscard]] QString keyOption(int fd);
 
-// swtpm_ioctl, looked up next to @p swtpm first.
-[[nodiscard]] QString ioctlPath(const QString &swtpm);
-
 // Writes the state of @p stateDir, opened with @p oldKey (empty: plain),
-// encrypted with @p newKey into the new directory @p targetDir. The
-// original stays untouched. Blocks for about a second; returns the error.
-[[nodiscard]] QString rekey(const QString &swtpm, const QDir &stateDir, const QByteArray &oldKey, const QByteArray &newKey, const QDir &targetDir);
+// encrypted with @p newKey (empty: plain) into the new directory
+// @p targetDir, using swtpm and swtpm_ioctl (@p ioctl). The original stays
+// untouched. Blocks for about a second; returns the error.
+[[nodiscard]] QString
+rekey(const QString &swtpm, const QString &ioctl, const QDir &stateDir, const QByteArray &oldKey, const QByteArray &newKey, const QDir &targetDir);
 
 // Replaces the state file in @p stateDir with the one in @p targetDir and
 // removes @p targetDir.

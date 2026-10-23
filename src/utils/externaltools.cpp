@@ -26,6 +26,7 @@ ExternalTools::ExternalTools(QObject *parent)
     registerTool(QemuSystem, u"QemuSystemPath"_s, u"qemu-system-x86_64"_s);
     registerTool(QemuImg, u"QemuImgPath"_s, u"qemu-img"_s);
     registerTool(Swtpm, u"SwtpmPath"_s, u"swtpm"_s);
+    registerTool(SwtpmIoctl, u"SwtpmIoctlPath"_s, u"swtpm_ioctl"_s);
     registerTool(Virtiofsd, u"VirtiofsdPath"_s, u"virtiofsd"_s);
 }
 
@@ -176,6 +177,8 @@ QString ExternalTools::displayName(Tool tool)
         return i18n("QEMU Image Tool");
     case Swtpm:
         return i18n("Software TPM Emulator");
+    case SwtpmIoctl:
+        return i18n("Software TPM Control Tool");
     case Virtiofsd:
         return i18n("Virtio-fs Shared File System Daemon");
     }
@@ -184,7 +187,7 @@ QString ExternalTools::displayName(Tool tool)
 
 QList<ExternalTools::Tool> ExternalTools::allTools()
 {
-    return {QemuSystem, QemuImg, Swtpm, Virtiofsd};
+    return {QemuSystem, QemuImg, Swtpm, SwtpmIoctl, Virtiofsd};
 }
 
 QList<ExternalTools::Tool> ExternalTools::coreTools()
@@ -241,6 +244,11 @@ QList<ExternalTools::FeatureGroup> ExternalTools::featureGroups()
                   "11)."),
              {Swtpm},
              true},
+            {TpmStateEncryption,
+             i18n("TPM State Encryption"),
+             i18n("Moves the TPM state of a VM to a new password when its system disk is encrypted or decrypted, or its password is changed."),
+             {SwtpmIoctl},
+             true},
             {SharedFolders, i18n("Shared Folders"), i18n("Host-to-guest folder sharing via virtio-fs."), {Virtiofsd}, true}};
 }
 
@@ -268,6 +276,8 @@ QString ExternalTools::suppressionConfigKey(FeatureGroupId id)
         return u"IgnoreMissing_Core"_s;
     case TpmEmulation:
         return u"IgnoreMissing_TpmEmulation"_s;
+    case TpmStateEncryption:
+        return u"IgnoreMissing_TpmStateEncryption"_s;
     case SharedFolders:
         return u"IgnoreMissing_SharedFolders"_s;
     }

@@ -436,7 +436,8 @@ void VmRuntimeManager::startSwtpmAsync(const QString &vmName, const QByteArray &
         const QDir stateDir = vmDir(vmName);
         if (TpmState::encryptionOf(stateDir) == TpmState::Encryption::Plain) {
             const QDir target(stateDir.filePath(u".tpm-rekey"_s));
-            const QString error = TpmState::rekey(opts.program, stateDir, {}, diskKey, target);
+            const QString ioctl = ExternalTools::instance().path(ExternalTools::SwtpmIoctl);
+            const QString error = TpmState::rekey(opts.program, ioctl, stateDir, {}, diskKey, target);
             if (!error.isEmpty() || !TpmState::commit(stateDir, target)) {
                 done(false, i18n("The TPM state could not be encrypted: %1", error));
                 return;
