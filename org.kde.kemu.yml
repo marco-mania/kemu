@@ -1,0 +1,332 @@
+# SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Flatpak manifest for KEMU. Build and install locally with:
+#
+#   flatpak install flathub org.kde.Platform//6.11 org.kde.Sdk//6.11 \
+#       org.freedesktop.Sdk.Extension.rust-stable//25.08
+#   flatpak-builder --user --install --force-clean build-dir org.kde.kemu.yml
+#
+# KEMU ships its own QEMU, swtpm and virtiofsd (KEMU_SELF_CONTAINED): the app
+# cannot reach host binaries from inside the sandbox.
+
+app-id: org.kde.kemu
+runtime: org.kde.Platform
+runtime-version: "6.11"
+sdk: org.kde.Sdk
+command: kemu
+
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+
+finish-args:
+  # Display. QEMU's own SDL window and KEMU's viewer both need it.
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  # GPU for Virtio-GL (virglrenderer) and /dev/kvm for hardware virtualization.
+  - --device=dri
+  - --device=kvm
+  # User-mode networking (SLIRP) and the in-process NAT uplink originate their
+  # connections from the host's network namespace.
+  - --share=network
+  # Audio: QEMU talks to PipeWire directly, PulseAudio is the fallback.
+  - --socket=pulseaudio
+  - --filesystem=xdg-run/pipewire-0
+  # Follow the user's KDE colour scheme and fonts.
+  - --filesystem=xdg-config/kdeglobals:ro
+<<<<<<< HEAD
+  # Passwords for encrypted disks. The runtime has the KWallet library,
+  # but the daemon is from the host.
+  - --talk-name=org.kde.kwalletd6
+=======
+>>>>>>> c20b5fc19d43fd490471c051815a3057073392ba
+  # Deliberately NOT granted, so the sandbox keeps meaning something:
+  #  - USB passthrough: opt in with
+  #      flatpak override --user --device=all org.kde.kemu
+  #  - ISO images and shared folders outside the app's own data: pick them in
+  #    the file dialog (portal), or grant a folder, e.g.
+  #      flatpak override --user --filesystem=xdg-download org.kde.kemu
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /lib/cmake
+  - /share/pkgconfig
+  - /share/man
+  - /share/doc
+  - /share/gtk-doc
+  - /share/gir-1.0
+  - /lib/girepository-1.0
+  - /share/installed-tests
+  - /libexec/installed-tests
+  - "*.a"
+  - "*.la"
+
+modules:
+  # --- libraries the runtime may not provide ---------------------------------
+  # (A module that the runtime already satisfies is harmless; one it does not
+  # satisfy is the difference between building and not.)
+
+  # swtpm requires json-glib unconditionally.
+  - name: json-glib
+    buildsystem: meson
+    config-opts:
+      - -Dintrospection=disabled
+      - -Dgtk_doc=disabled
+      - -Dman=false
+      - -Dtests=false
+    sources:
+      - type: git
+        url: https://github.com/GNOME/json-glib.git
+        tag: 1.10.8
+        commit: 8273a7d2539c115c0eb1bcc9e8cd9d26fcde204a
+        x-checker-data:
+          type: git
+          # Even minor versions are GNOME's stable series.
+          tag-pattern: ^(1\.\d*[02468]\.\d+)$
+
+  # virtiofsd links against libcap-ng.
+  - name: libcap-ng
+    buildsystem: autotools
+    config-opts:
+      - --disable-static
+      - --without-python
+      - --without-python3
+    sources:
+      - type: git
+        url: https://github.com/stevegrubb/libcap-ng.git
+        tag: v0.9.6
+        commit: c382c641ca5730442289c09d3c3d30cc2c8635a9
+        x-checker-data:
+          type: git
+          tag-pattern: ^v([\d.]+)$
+
+  # --- libraries KEMU and QEMU build against ---------------------------------
+
+  # NAT and DNS proxy for virtual networks (KEMU) and user-mode networking (QEMU).
+  - name: libslirp
+    buildsystem: meson
+    sources:
+      - type: archive
+        url: https://gitlab.freedesktop.org/slirp/libslirp/-/archive/v4.9.1.tar.gz
+        sha256: 9aef0c439abb5126f935ffec56be7da45a3dec7b8ba4a163d7ede74749f97d56
+        x-checker-data:
+          type: anitya
+          project-id: 96796
+          url-template: https://gitlab.freedesktop.org/slirp/libslirp/-/archive/v$version.tar.gz
+
+  # Cloud-init seed ISOs. Hash taken from the upstream tarball as packaged by
+  # Debian/Ubuntu (libisofs_1.5.6.pl01.orig.tar.gz); the build fails loudly if
+  # files.libburnia-project.org serves something different.
+  - name: libisofs
+    buildsystem: autotools
+    config-opts:
+      - --disable-static
+    sources:
+      - type: archive
+        url: https://files.libburnia-project.org/releases/libisofs-1.5.6.pl01.tar.gz
+        sha256: ac1fd338d641744ca1fb1567917188b79bc8c2506832dd56885fec98656b9f25
+
+  # USB passthrough (QEMU usb-host).
+  - name: libusb
+    config-opts:
+      - --disable-static
+    sources:
+      - type: archive
+        url: https://github.com/libusb/libusb/releases/download/v1.0.29/libusb-1.0.29.tar.bz2
+        sha256: 5977fc950f8d1395ccea9bd48c06b3f808fd3c2c961b44b0c2e6e29fc3a70a85
+        x-checker-data:
+          type: anitya
+          project-id: 1749
+          stable-only: true
+          url-template: https://github.com/libusb/libusb/releases/download/v$version/libusb-$version.tar.bz2
+
+  # Device tree compiler library, needed for the aarch64 and riscv64 machines.
+  - name: dtc
+    buildsystem: meson
+    sources:
+      - type: archive
+        url: https://git.kernel.org/pub/scm/utils/dtc/dtc.git/snapshot/v1.8.1.tar.gz
+        sha256: a6bea318d8d4c80ad9637a0c94571ba1148d482604006f02b70e70126ac2310b
+        x-checker-data:
+          type: anitya
+          project-id: 16911
+          url-template: https://git.kernel.org/pub/scm/utils/dtc/dtc.git/snapshot/v$version.tar.gz
+
+  # --- Python build helpers (QEMU and virglrenderer generate code) ------------
+  - name: python3-distlib
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-index --find-links="file://${PWD}" --prefix="${FLATPAK_DEST}"
+        --no-build-isolation distlib
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/c9/02/bd72be9134d25ed783ecbbc38a539ffaefbf90c78418c7fb7229600dbac7/distlib-0.4.3.tar.gz
+        sha256: f152097224a0ae24be5a0f6bae1b9359af82133bce63f98a95f86cae1aede9ed
+        x-checker-data:
+          type: pypi
+          name: distlib
+
+  - name: python3-PyYAML
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-index --find-links="file://${PWD}" --prefix="${FLATPAK_DEST}"
+        --no-build-isolation PyYAML
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz
+        sha256: d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f
+        x-checker-data:
+          type: pypi
+          name: pyyaml
+
+  # --- 3D acceleration --------------------------------------------------------
+  - name: virglrenderer
+    buildsystem: meson
+    build-options:
+      env:
+        PYTHONPATH: /app/lib/python3.13/site-packages:/usr/lib/python3.13/site-packages
+    config-opts:
+      - -Dvideo=true
+      - -Dvenus=true
+      - -Dtests=false
+    sources:
+      - type: archive
+        url: https://gitlab.freedesktop.org/virgl/virglrenderer/-/archive/1.3.0/virglrenderer-1.3.0.tar.gz
+        sha256: 065bc56e89e6f631f96101cd62eba0748e48eb888b434edc86e89d05395e76f3
+        x-checker-data:
+          type: anitya
+          project-id: 15968
+          url-template: https://gitlab.freedesktop.org/virgl/virglrenderer/-/archive/$version/virglrenderer-$version.tar.gz
+
+  # --- QEMU -------------------------------------------------------------------
+  # The options marked "required" are not optional niceties: leaving one of them
+  # to auto-detection would let a missing library silently turn a KEMU feature
+  # (or its hardening) off. With --enable-* the build fails instead.
+  - name: qemu
+    build-options:
+      env:
+        PYTHONPATH: /app/lib/python3.13/site-packages:/usr/lib/python3.13/site-packages
+    config-opts:
+      - --python=/usr/bin/python3
+      - --target-list=x86_64-softmmu,i386-softmmu,aarch64-softmmu,riscv64-softmmu
+      - --audio-drv-list=pipewire,pa,sdl
+      - --enable-kvm
+      # required: the -sandbox confinement KEMU applies to every QEMU it starts.
+      # Without seccomp support KEMU falls back to running QEMU unconfined.
+      - --enable-seccomp
+      # required: KEMU's integrated viewer (-display dbus).
+      - --enable-dbus-display
+      - --enable-opengl
+      - --enable-virglrenderer
+      # required: user-mode networking.
+      - --enable-slirp
+      # required: KEMU's other display, QEMU's own window.
+      - --enable-sdl
+      - --enable-libusb
+      - --enable-virtfs
+      - --enable-attr
+      - --enable-fdt=system
+      # Not enabled: GTK (KEMU has no GTK display), SPICE, Xen, docs,
+      # user-mode emulation.
+      - --disable-docs
+      - --disable-download
+      - --disable-debug-info
+      - --disable-werror
+      - --disable-user
+      - --disable-linux-user
+      - --disable-bsd-user
+      - --disable-xen
+      - --disable-glusterfs
+      - --disable-oss
+    post-install:
+      # KEMU is the application; do not add a second "QEMU" launcher.
+      - rm -f ${FLATPAK_DEST}/share/applications/qemu.desktop
+      - rm -f ${FLATPAK_DEST}/share/icons/hicolor/*/apps/qemu.*
+    sources:
+      - type: archive
+        url: https://download.qemu.org/qemu-11.0.1.tar.xz
+        sha256: 0d235f5820278d914a3155ec27af8e4258d697ea892895570807d69c0cb8cd64
+        x-checker-data:
+          type: anitya
+          project-id: 13607
+          url-template: https://download.qemu.org/qemu-$version.tar.xz
+
+  # --- TPM 2.0 emulation ------------------------------------------------------
+  - name: libtpms
+    buildsystem: autotools
+    config-opts:
+      - --with-openssl
+      - --with-tpm2
+      - --disable-static
+    sources:
+      - type: git
+        url: https://github.com/stefanberger/libtpms.git
+        tag: v0.10.2
+        commit: 03ff2481e133540be3b3ffe3daa1483d2a73d967
+        x-checker-data:
+          type: git
+          tag-pattern: ^v([\d.]+)$
+
+  - name: swtpm
+    buildsystem: autotools
+    config-opts:
+      - --with-gnutls
+      - --without-cuse
+      - --without-selinux
+      # The test suite wants socat, netstat, trousers and a "tss" user.
+      - --disable-tests
+    sources:
+      - type: git
+        url: https://github.com/stefanberger/swtpm.git
+        tag: v0.10.1
+        commit: 53841482b0a9a1dfe63a120b00283acfe588ee72
+        x-checker-data:
+          type: git
+          tag-pattern: ^v([\d.]+)$
+
+  # --- virtio-fs daemon (shared folders for Windows guests) -------------------
+  # Local builds only: cargo downloads its crates, which Flathub's offline
+  # builders forbid. Before submitting there, generate cargo-sources.json from
+  # virtiofsd's Cargo.lock with flatpak-cargo-generator.py, add it as a source,
+  # drop the --share=network below and build with "cargo build --offline".
+  # Flathub also wants "commit:" next to the tag.
+  - name: virtiofsd
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      build-args:
+        - --share=network
+      env:
+        CARGO_HOME: /run/build/virtiofsd/cargo
+        # libcap-ng is built above into /app/lib; the capng crate links it with
+        # a bare -lcap-ng and does not ask pkg-config, so the linker has to be
+        # told where to look.
+        RUSTFLAGS: -L native=/app/lib
+    build-commands:
+      - cargo build --release --locked
+      - install -Dm755 target/release/virtiofsd ${FLATPAK_DEST}/bin/virtiofsd
+    sources:
+      - type: git
+        url: https://gitlab.com/virtio-fs/virtiofsd.git
+        tag: v1.13.2
+
+  # --- KEMU ---------------------------------------------------------------------
+  - name: kemu
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DKEMU_SELF_CONTAINED=ON
+      - -DBUILD_TESTING=OFF
+    sources:
+      - type: dir
+        path: .
+        skip:
+          - .git
+          - .flatpak-builder
+          - build
+          - build-dir
+          - repo
