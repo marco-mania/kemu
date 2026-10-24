@@ -6,7 +6,9 @@
 
 #include <QClipboard>
 #include <QGuiApplication>
+#include <QStandardPaths>
 
+#include "const.h"
 #include "kemu_dbusdisplay_debug.h"
 
 // =============================================================================
@@ -387,8 +389,13 @@ void DbusViewerWindow::createStatusBar()
     connect(m_indNetwork, &StatusIndicator::activated, m_actNetworkLink, &QAction::trigger);
 
     m_indGuestAgent = new StatusIndicator(this);
-    // Presence icons: the agent is "online" in the guest or not.
-    m_indGuestAgent->setIconNames(u"user-online"_s, u"user-offline"_s);
+    // The QEMU logo, dimmed while the agent is not connected. Presence icons
+    // stand in when the logo is not installed.
+    const QString qemuLogo = QStandardPaths::locate(QStandardPaths::GenericDataLocation, KEMUConst::QemuLogoPath);
+    if (qemuLogo.isEmpty())
+        m_indGuestAgent->setIconNames(u"user-online"_s, u"user-offline"_s);
+    else
+        m_indGuestAgent->setIconNames(qemuLogo, qemuLogo);
     m_indGuestAgent->setAccessibleName(i18nc("@info:whatsthis", "Guest agent"));
     m_indGuestAgent->setVisible(false); // until setGuestAgentState() says otherwise
     connect(m_indGuestAgent, &StatusIndicator::activated, this, [this] {

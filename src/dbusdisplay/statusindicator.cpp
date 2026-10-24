@@ -6,6 +6,8 @@
 
 #include "statusindicator.h"
 
+#include <QDir>
+
 StatusIndicator::StatusIndicator(QWidget *parent)
     : QToolButton(parent)
 {
@@ -67,7 +69,9 @@ void StatusIndicator::paintEvent(QPaintEvent *)
 
 void StatusIndicator::refreshIcon()
 {
-    QIcon icon = QIcon::fromTheme(m_state == Active ? m_activeIcon : m_inactiveIcon);
+    const QString &name = m_state == Active ? m_activeIcon : m_inactiveIcon;
+    // Absolute paths are bundled assets, anything else comes from the theme.
+    QIcon icon = QDir::isAbsolutePath(name) ? QIcon(name) : QIcon::fromTheme(name);
 
     if (!m_emblem.isEmpty()) {
         icon = KIconUtils::addOverlay(icon, QIcon::fromTheme(m_emblem), Qt::BottomRightCorner);

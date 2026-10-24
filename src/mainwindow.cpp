@@ -1179,7 +1179,8 @@ VmRuntimeManager::HelperResult MainWindow::reportingDone(const QString &vmName, 
 
 QString MainWindow::encodeThemeIcon(const QString &name, int sizePx) const
 {
-    const QIcon icon = QIcon::fromTheme(name);
+    // Absolute paths are bundled assets, anything else comes from the theme.
+    const QIcon icon = QDir::isAbsolutePath(name) ? QIcon(name) : QIcon::fromTheme(name);
     if (icon.isNull() || !detailsBrowser)
         return {};
 
@@ -1637,7 +1638,8 @@ void MainWindow::updateDetails()
                 break;
             }
         }
-        rows.append({u"utilities-terminal"_s, i18n("Guest Agent"), agentVal, true, agentMuted});
+        const QString qemuLogo = QStandardPaths::locate(QStandardPaths::GenericDataLocation, KEMUConst::QemuLogoPath);
+        rows.append({qemuLogo.isEmpty() ? u"utilities-terminal"_s : qemuLogo, i18n("Guest Agent"), agentVal, true, agentMuted});
 
         const GuestAgentClient::GuestInfo info = agent && agent->isConnected() ? agent->guestInfo() : GuestAgentClient::GuestInfo{};
         if (!info.hostName.isEmpty())

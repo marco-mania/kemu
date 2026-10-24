@@ -44,7 +44,8 @@ public:
 
     explicit StatusIndicator(QWidget *parent = nullptr);
 
-    // Static configuration, set once after construction.
+    // Static configuration, set once after construction. Either theme icon
+    // names or absolute file paths.
     void setIconNames(const QString &activeIcon, const QString &inactiveIcon);
 
     // Per-update state. An empty emblem removes the corner overlay.

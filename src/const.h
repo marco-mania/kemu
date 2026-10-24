@@ -31,6 +31,8 @@ inline constexpr auto OvmfVarsFileName = "OVMF_VARS.fd"_L1;
 inline constexpr auto VMDefaultIcon = "computer"_L1;
 
 inline constexpr auto OsIconDirPath = "kemu/icons"_L1;
+// Bundled QEMU logo, used for the guest agent and the About dialog.
+inline constexpr auto QemuLogoPath = "kemu/icons/misc-icons/qemu.svg"_L1;
 
 inline constexpr auto TemplateDbFilePath = "kemu/data/templates.json"_L1;
 inline constexpr auto TemplateDropInDirPath = "kemu/data/templates.d"_L1;

@@ -36,6 +36,47 @@ int main(int argc, char *argv[])
     aboutData.addAuthor(u"Marco Nelles"_s, i18n("Main Developer"));
     aboutData.addAuthor(u"Jin Liu"_s, i18n("Contributor"));
 
+    aboutData.addCredit(u"Fabrice Bellard and the QEMU Project developers"_s,
+                        i18n("QEMU, the machine emulator and virtualizer KEMU builds on (GPL-2.0). "
+                             "QEMU logo by Benoît Canet (CC BY 3.0)."),
+                        {},
+                        u"https://www.qemu.org"_s);
+
+    aboutData.addCredit(u"Stefan Berger"_s,
+                        i18n("swtpm and libtpms, the software TPM emulator (BSD-3-Clause)"),
+                        {},
+                        u"https://github.com/stefanberger/swtpm"_s);
+
+    aboutData.addCredit(u"The virtio-fs developers"_s,
+                        i18n("virtiofsd, the shared folder daemon (Apache-2.0 and BSD-3-Clause)"),
+                        {},
+                        u"https://gitlab.com/virtio-fs/virtiofsd"_s);
+
+    aboutData.addCredit(u"The libslirp developers"_s,
+                        i18n("libslirp, the user-mode network stack (BSD-3-Clause)"),
+                        {},
+                        u"https://gitlab.freedesktop.org/slirp/libslirp"_s);
+
+    aboutData.addCredit(u"Thomas Schmitt, Vreixo Formoso and Mario Danic"_s,
+                        i18n("libisofs, used to create ISO images (GPL-2.0-or-later)"),
+                        {},
+                        u"https://dev.lovelyhq.com/libburnia/libisofs"_s);
+
+    aboutData.addCredit(u"Tim Kientzle and the libarchive developers"_s,
+                        i18n("libarchive, used to unpack archives (BSD-2-Clause)"),
+                        {},
+                        u"https://www.libarchive.org"_s);
+
+    aboutData.addCredit(u"The TianoCore Project"_s,
+                        i18n("EDK II / OVMF, the UEFI firmware for virtual machines (BSD-2-Clause-Patent)"),
+                        {},
+                        u"https://www.tianocore.org"_s);
+
+    aboutData.addCredit(u"The cloud-init developers"_s,
+                        i18n("cloud-init, used by the deployment templates (Apache-2.0 or GPL-3.0)"),
+                        {},
+                        u"https://cloud-init.io"_s);
+
     aboutData.addCredit(u"Papirus Development Team"_s,
                         i18n("Papirus Icon Theme (GPL-3.0)"),
                         {},
