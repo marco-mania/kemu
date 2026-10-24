@@ -90,6 +90,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_runtimeManager, &VmRuntimeManager::startFailed, this, &MainWindow::onVmStartFailed);
     connect(m_runtimeManager, &VmRuntimeManager::vmExited, this, &MainWindow::onVmExited);
     connect(m_runtimeManager, &VmRuntimeManager::perfSample, this, &MainWindow::onPerfSample);
+    connect(m_runtimeManager, &VmRuntimeManager::guestAgentChanged, this, [this](const QString &vmName) {
+        if (currentConfig.name() == vmName)
+            updateDetails();
+    });
     connect(m_runtimeManager, &VmRuntimeManager::perfMonitoringStarted, this, &MainWindow::activatePerfMonitorFor);
 
     const QDir dir = getVmBaseDir();
@@ -1570,6 +1574,34 @@ void MainWindow::updateDetails()
 
     rows.append({u"drive-removable-media-usb"_s, i18n("USB Controller"), usbVal, true, false});
     rows.append({u"folder-network"_s, i18n("Shared Folders"), sharedVal, true, currentConfig.sharedPath().isEmpty()});
+
+    // Whether an agent runs in the guest and answers.
+    if (isRunning || isDeploying) {
+        const VmRuntimeInfo *rt = m_runtimeManager ? m_runtimeManager->runtime(currentConfig.name()) : nullptr;
+        const GuestAgentClient *agent = rt ? rt->guestAgent.data() : nullptr;
+        QString agentVal;
+        bool agentMuted = true;
+        if (!agent) {
+            agentVal = currentConfig.useGuestAgent() ? i18n("Not available for this machine type") : i18n("Switched off");
+        } else {
+            switch (agent->status()) {
+            case GuestAgentClient::Status::Waiting:
+                agentVal = i18n("Not running in the guest");
+                break;
+            case GuestAgentClient::Status::Syncing:
+                agentVal = i18n("Connecting...");
+                break;
+            case GuestAgentClient::Status::Connected:
+                agentVal = agent->version().isEmpty() ? i18n("Connected") : i18n("Connected (version %1)", agent->version().toHtmlEscaped());
+                agentMuted = false;
+                break;
+            case GuestAgentClient::Status::Unresponsive:
+                agentVal = i18n("Not responding");
+                break;
+            }
+        }
+        rows.append({u"utilities-terminal"_s, i18n("Guest Agent"), agentVal, true, agentMuted});
+    }
 
     const int hwIconPx = 14;
 

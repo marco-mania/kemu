@@ -11,6 +11,7 @@
 #include "utils/asynchelperprocess.h"
 #include "utils/diskencryption.h"
 #include "utils/externaltools.h"
+#include "utils/guestagentclient.h"
 #include "utils/qemucapabilities.h"
 #include "utils/savestatemanager.h"
 #include "utils/tpmstate.h"
@@ -50,7 +51,7 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     }
 
     // Copy: the model entry is mutated below and torn down on the failure path.
-    const VMConfig config = entry->config;
+    VMConfig config = entry->config;
 
     const QString path = vmPath(vmName);
 
@@ -66,12 +67,33 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
 
     QemuNetworkContext netCtx = createQemuNetworkContext(config, req.networkFd, qmpFds[1]);
 
+    // The guest agent gets a socketpair as well, for the same reasons.
+    int qgaFds[2] = {-1, -1};
+    if (config.useGuestAgent() && VMConfig::supportsPciBus(config.machineType())) {
+        if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, qgaFds) == 0) {
+            netCtx.guestAgentFd = qgaFds[1];
+        } else {
+            // Not worth failing the start for; without a descriptor the
+            // command line would fall back to a listening socket.
+            qCWarning(KEMU) << "VmRuntimeManager: socketpair() for the guest agent failed:" << strerror(errno);
+            config.setUseGuestAgent(false);
+        }
+    }
+    const auto closeQgaFds = [&qgaFds] {
+        for (int &fd : qgaFds) {
+            if (fd >= 0)
+                ::close(fd);
+            fd = -1;
+        }
+    };
+
     if (config.isEncrypted()) {
         netCtx.diskKeyFd = DiskEncryption::secretFd(req.diskKey);
         if (netCtx.diskKeyFd < 0) {
             qCWarning(KEMU) << "VmRuntimeManager: could not pass the disk password to QEMU";
             ::close(qmpFds[0]);
             ::close(qmpFds[1]);
+            closeQgaFds();
             tearDown(vmName);
             return;
         }
@@ -110,6 +132,8 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
         inheritFds << netCtx.userNetFd;
     if (netCtx.diskKeyFd >= 0)
         inheritFds << netCtx.diskKeyFd;
+    if (netCtx.guestAgentFd >= 0)
+        inheritFds << netCtx.guestAgentFd;
 
     KProcess *process = createQemuProcess(vmName, args, inheritFds);
     if (!sandbox.isEmpty())
@@ -150,12 +174,22 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
     if (process->state() == KProcess::NotRunning) {
         ::close(qmpFds[0]);
         ::close(qmpFds[1]);
+        closeQgaFds();
         return;
     }
 
     // The child has the descriptors now, so drop our copies. The switch and
     // the user-mode network own theirs and close them on request.
     ::close(qmpFds[1]);
+    if (qgaFds[0] >= 0) {
+        ::close(qgaFds[1]);
+        auto *agent = new GuestAgentClient(this);
+        agent->connectToVm(qgaFds[0]);
+        connect(agent, &GuestAgentClient::statusChanged, this, [this, vmName] {
+            Q_EMIT guestAgentChanged(vmName);
+        });
+        runtimeFor(vmName).guestAgent = agent;
+    }
     if (netCtx.switchFd >= 0 && m_network_manager)
         m_network_manager->releaseGuestFd(config.virtualNetworkName(), vmName);
     if (netCtx.userNetFd >= 0) {
@@ -267,6 +301,12 @@ void VmRuntimeManager::tearDown(const QString &vmName)
         entry->qmpClient->disconnect(this);
         entry->qmpClient->disconnectFromVm();
         entry->qmpClient->deleteLater();
+    }
+    if (VmRuntimeInfo &rt = runtimeFor(vmName); rt.guestAgent) {
+        rt.guestAgent->disconnect(this);
+        rt.guestAgent->deleteLater();
+        rt.guestAgent = nullptr;
+        Q_EMIT guestAgentChanged(vmName);
     }
 
     // The integrated viewer is a window, so MainWindow owns closing it.
@@ -662,10 +702,30 @@ void VmRuntimeManager::setUpQmpClient(const LaunchRequest &req, int monitorFd, b
         if (eventName == u"SHUTDOWN"_s && data.value(u"guest"_s).toBool() && data.value(u"reason"_s).toString() == u"guest-shutdown"_s)
             runtimeFor(vmName).guestPoweredOff = true;
 
+        // qemu-ga opened or closed its port in the guest.
+        if (eventName == u"VSERPORT_CHANGE"_s && data.value(u"id"_s).toString() == KEMUConst::GuestAgentPortId) {
+            if (GuestAgentClient *agent = runtimeFor(vmName).guestAgent)
+                agent->setPortOpen(data.value(u"open"_s).toBool());
+        }
+
         Q_EMIT qmpEvent(vmName, eventName, data);
     });
 
     connect(client, &QMPClient::connected, this, [this, client, vmName, deployment = req.deployment, isResume]() {
+        // The agent may have been running before anyone listened for
+        // VSERPORT_CHANGE, e.g. in a resumed guest.
+        if (runtimeFor(vmName).guestAgent) {
+            client->sendCommand(u"query-chardev"_s, {}, [this, vmName](const QMPResult &result) {
+                GuestAgentClient *agent = runtimeFor(vmName).guestAgent;
+                if (!agent || !result.success)
+                    return;
+                for (const QJsonValue &chardev : result.dataArray) {
+                    if (chardev.toObject().value(u"label"_s).toString() == KEMUConst::GuestAgentChardevId)
+                        agent->setPortOpen(chardev.toObject().value(u"frontend-open"_s).toBool());
+                }
+            });
+        }
+
         // The monitor widget is the only consumer of these samples.
         if (SettingsDialog::isPerformanceMonitorEnabled()) {
             client->startPerformanceTimer(kPerfSampleIntervalMs);

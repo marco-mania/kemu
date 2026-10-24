@@ -51,6 +51,8 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
                                       const QString &incomingSavestatePath)
 {
     QStringList args;
+    // The clipboard agent and the guest agent share one virtio-serial bus.
+    bool virtioSerial = false;
 
     // guest= does not protect against commas in the name, they still have to
     // be escaped.
@@ -365,6 +367,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         // virtio-serial needs PCI; without it (isapc) QEMU would not start.
         if (VMConfig::supportsPciBus(config.machineType())) {
             args << u"-device"_s << u"virtio-serial-pci"_s;
+            virtioSerial = true;
             args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,clipboard=on,mouse=off"_s;
             args << u"-device"_s << u"virtserialport,chardev=vdagent,name=com.redhat.spice.0"_s;
         }
@@ -499,6 +502,21 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         args << u"-device"_s << device;
     }
 
+    // --- QEMU guest agent ---
+    // A port named as qemu-ga expects it; KEMU talks to the agent through it.
+    if (config.useGuestAgent() && VMConfig::supportsPciBus(config.machineType())) {
+        if (!virtioSerial)
+            args << u"-device"_s << u"virtio-serial-pci"_s;
+        if (networkContext.guestAgentFd >= 0) {
+            args << u"-chardev"_s << u"socket,id=%1,fd=%2"_s.arg(KEMUConst::GuestAgentChardevId).arg(networkContext.guestAgentFd);
+        } else {
+            const QString sockPath = vmDir.absoluteFilePath(KEMUConst::GuestAgentSocketFileName);
+            args << u"-chardev"_s << u"socket,id=%1,path=%2,server=on,wait=off"_s.arg(KEMUConst::GuestAgentChardevId, optPath(sockPath, relativePaths));
+        }
+        args << u"-device"_s
+             << u"virtserialport,chardev=%1,id=%2,name=%3"_s.arg(KEMUConst::GuestAgentChardevId, KEMUConst::GuestAgentPortId, KEMUConst::GuestAgentPortName);
+    }
+
     // --- Monitor / QMP ---
     if (networkContext.monitorFd >= 0) {
         // Socketpair: nothing in the file system for other processes of this
@@ -548,6 +566,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     // back to QEMU's own backends.
     QemuNetworkContext scriptNetCtx = networkContext;
     scriptNetCtx.monitorFd = -1;
+    scriptNetCtx.guestAgentFd = -1;
     scriptNetCtx.switchFd = -1;
     if (config.networkCard() != VMSpecs::NetworkCard::None && config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         scriptNetCtx.mcastAddress = mcastAddressFor(network.name);

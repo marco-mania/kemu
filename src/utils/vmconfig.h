@@ -184,6 +184,7 @@ struct Defaults {
     QSize displayResolution = QSize(1280, 720);
     bool useUefi = true;
     bool useTpm = false;
+    bool useGuestAgent = true;
     bool useSecureBoot = false;
     bool useLocalTime = false;
     bool useAcpi = true;
@@ -469,6 +470,11 @@ public:
     {
         return m_useTpm;
     }
+    // A virtio-serial port for the QEMU guest agent (needs PCI).
+    [[nodiscard]] bool useGuestAgent() const
+    {
+        return m_useGuestAgent;
+    }
     [[nodiscard]] bool useSecureBoot() const
     {
         return m_useSecureBoot;
@@ -743,6 +749,10 @@ public:
     void setUseLocalTime(const bool localTime)
     {
         m_useLocalTime = localTime;
+    }
+    void setUseGuestAgent(const bool guestAgent)
+    {
+        m_useGuestAgent = guestAgent;
     }
     void setUseTpm(const bool tpm)
     {
@@ -1025,6 +1035,7 @@ private:
     bool m_useUefi = GlobalDefaults.useUefi;
     bool m_useLocalTime = GlobalDefaults.useLocalTime;
     bool m_useTpm = GlobalDefaults.useTpm;
+    bool m_useGuestAgent = GlobalDefaults.useGuestAgent;
     bool m_useSecureBoot = GlobalDefaults.useSecureBoot;
     bool m_useAcpi = GlobalDefaults.useAcpi;
     QString m_sharedPath;

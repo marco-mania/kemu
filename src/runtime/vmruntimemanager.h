@@ -180,6 +180,9 @@ Q_SIGNALS:
     // channel matches VirtualEnvironmentModel::appendPerfSample().
     void perfSample(const QString &vmName, int channel, double value);
 
+    // The guest agent of the VM came, went or stopped answering.
+    void guestAgentChanged(const QString &vmName);
+
 private:
     static constexpr int kQemuStartupProbeMs = 750;
     static constexpr int kHelperShutdownMs = 3000;

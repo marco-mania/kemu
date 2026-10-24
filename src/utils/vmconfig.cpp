@@ -1801,6 +1801,7 @@ QJsonObject VMConfig::toJson() const
     j[u"use_uefi"_s] = m_useUefi;
     j[u"use_localtime"_s] = m_useLocalTime;
     j[u"use_tpm"_s] = m_useTpm;
+    j[u"guest_agent"_s] = m_useGuestAgent;
     j[u"use_secureboot"_s] = m_useSecureBoot;
     j[u"use_acpi"_s] = m_useAcpi;
 
@@ -1956,6 +1957,7 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
     c.m_useUefi = j[u"use_uefi"_s].toBool(GlobalDefaults.useUefi);
     c.m_useLocalTime = j[u"use_localtime"_s].toBool(GlobalDefaults.useLocalTime);
     c.m_useTpm = j[u"use_tpm"_s].toBool(GlobalDefaults.useTpm);
+    c.m_useGuestAgent = j[u"guest_agent"_s].toBool(GlobalDefaults.useGuestAgent);
     c.m_useSecureBoot = j[u"use_secureboot"_s].toBool(GlobalDefaults.useSecureBoot);
     c.m_useAcpi = j[u"use_acpi"_s].toBool(GlobalDefaults.useAcpi);
 

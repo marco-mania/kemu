@@ -180,6 +180,7 @@ private:
     QLabel *floppyPathLabel = nullptr;
     QCheckBox *bootFromFloppyCheck = nullptr;
     QLineEdit *extraArgsEdit = nullptr;
+    QCheckBox *guestAgentCheck = nullptr;
     QComboBox *displayCombo = nullptr;
 
     QComboBox *gpuCombo = nullptr;

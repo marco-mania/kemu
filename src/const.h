@@ -85,6 +85,13 @@ inline constexpr auto NetdevId = "nic0"_L1;
 // Chardev id of the QMP monitor when it rides on an inherited descriptor.
 inline constexpr auto QmpChardevId = "qmp0"_L1;
 
+// QEMU guest agent: chardev, virtio-serial port and the name qemu-ga looks
+// for. Export scripts let QEMU listen on GuestAgentSocketFileName instead.
+inline constexpr auto GuestAgentChardevId = "qga0"_L1;
+inline constexpr auto GuestAgentPortId = "qga0port"_L1;
+inline constexpr auto GuestAgentPortName = "org.qemu.guest_agent.0"_L1;
+inline constexpr auto GuestAgentSocketFileName = "qemu-ga.sock"_L1;
+
 // QEMU's seccomp filter, as libvirt applies it. Resource control calls fail
 // with EPERM; anything else on the deny lists kills QEMU with SIGSYS. Opt-in
 // through the "Confine QEMU with its seccomp sandbox" setting, because that

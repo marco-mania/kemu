@@ -615,6 +615,21 @@ content cannot be recovered.
 - Not yet available for encrypted VMs: snapshots, compacting, cloning and
   export.
 
+## QEMU Guest Agent
+
+Every VM with a PCI bus has a channel for the QEMU guest agent
+(Advanced -> "Connect the QEMU guest agent", on by default). Inside the
+guest, the agent comes with the package `qemu-guest-agent` on Linux and
+with the virtio-win guest tools on Windows. While a VM runs, its details
+show whether the agent is connected and which version it has.
+
+- KEMU talks to the agent through a socketpair, like to the QEMU monitor:
+  there is no socket file other processes could connect to. An exported
+  `qemu.sh` lets QEMU listen on `qemu-ga.sock` in the VM folder instead.
+- The agent can also run programs and read files in the guest
+  (`guest-exec`, `guest-file-*`). KEMU does not use these commands.
+- Machines without a PCI bus (ISA PC) have no channel.
+
 ## Additional Disks
 
 The system disk is all most VMs need. Further disks can be added in the VM

@@ -60,6 +60,10 @@ struct QemuNetworkContext {
     /// Encrypted disks: descriptor QEMU reads the password from. Below zero,
     /// DiskEncryption::ScriptSecretFd (export scripts).
     int diskKeyFd = -1;
+
+    /// Guest agent channel. Below zero, QEMU listens on a unix socket in the
+    /// VM folder instead (export scripts).
+    int guestAgentFd = -1;
 };
 
 class QemuCommandBuilder

@@ -682,6 +682,12 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     extraArgsEdit->setPlaceholderText(i18n("Additional QEMU parameters"));
     extraArgsEdit->setClearButtonEnabled(true);
     advLayout->addRow(i18n("Extra Arguments:"), extraArgsEdit);
+
+    guestAgentCheck = new QCheckBox(i18n("Connect the QEMU guest agent"));
+    guestAgentCheck->setToolTip(
+        i18n("Adds a channel for the QEMU guest agent, so KEMU can see whether it runs in the guest. Linux guests need the package "
+             "qemu-guest-agent, Windows guests get it with the virtio-win guest tools."));
+    advLayout->addRow({}, guestAgentCheck);
     advMainLayout->addLayout(advLayout);
 
     auto *identityGroup = new QGroupBox(i18n("System Identity (SMBIOS)"));
@@ -1043,6 +1049,7 @@ void EditVmDialog::setConfig(const VMConfig &config)
             guestPortSpin->setValue(rule.guestPort);
     }
     extraArgsEdit->setText(config.extraArgs());
+    guestAgentCheck->setChecked(config.useGuestAgent());
     sharedPathEdit->setText(config.sharedPath());
     sharedNameEdit->setText(config.sharedName());
 
@@ -1422,6 +1429,7 @@ VMConfig EditVmDialog::getResult() const
     c.setFloppyPath(floppyPathRequester->text());
     c.setBootFromFloppy(bootFromFloppyCheck->isChecked());
     c.setExtraArgs(extraArgsEdit->text());
+    c.setUseGuestAgent(guestAgentCheck->isChecked());
     c.setMachineType(static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt()));
     c.setUseUefi(uefiCheck->isChecked());
     c.setUseLocalTime(localTimeCheck->isChecked());
@@ -1700,6 +1708,8 @@ void EditVmDialog::updateDeviceAvailability()
         balloonCheck->setChecked(false);
     }
     balloonCheck->setEnabled(supportsPci);
+    // Kept as chosen; without PCI the channel is just left out.
+    guestAgentCheck->setEnabled(supportsPci);
 
     const bool hasFloppy = (machine != VMSpecs::MachineType::Q35);
     floppyPathRequester->setEnabled(hasFloppy);
@@ -2340,6 +2350,7 @@ void EditVmDialog::resetToFactoryDefaults()
     m_sb16Config = Sb16Config();
 
     extraArgsEdit->clear();
+    guestAgentCheck->setChecked(GlobalDefaults.useGuestAgent);
 }
 
 QStringList EditVmDialog::usedMacAddresses() const

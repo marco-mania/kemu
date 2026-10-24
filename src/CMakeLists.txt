@@ -102,6 +102,8 @@ target_sources(
           utils/vmconfig.h
           utils/qmpclient.cpp
           utils/qmpclient.h
+          utils/guestagentclient.cpp
+          utils/guestagentclient.h
           utils/externaltools.cpp
           utils/externaltools.h
           utils/qemucommandbuilder.cpp

@@ -14,6 +14,7 @@
 
 #include "dbusdisplay/dbusviewerwindow.h"
 #include "utils/cloudimagedeployer.h"
+#include "utils/guestagentclient.h"
 
 /**
  * Runtime state of a single virtual machine.
@@ -58,6 +59,12 @@ struct VmRuntimeInfo {
     // Armed from the VM's configuration at launch; the menus toggle it per run.
     bool shutdownHostWithGuest = false;
     bool guestPoweredOff = false;
+
+    // --- QEMU guest agent ---
+
+    // Null without a channel (switched off, or a machine without PCI). Its
+    // status tells whether an agent runs in the guest and answers.
+    QPointer<GuestAgentClient> guestAgent;
 
     // --- deployment ---
 
