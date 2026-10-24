@@ -16,6 +16,7 @@
 #include <QMessageBox>
 #include <QScrollArea>
 #include <QStatusBar>
+#include <QStringList>
 #include <QStyle>
 #include <QTimer>
 #include <QToolBar>
@@ -35,6 +36,23 @@
 #include "dbusdisplay/statusindicator.h"
 
 using namespace Qt::StringLiterals;
+
+// What the viewer shows about the QEMU guest agent. Filled by MainWindow,
+// so the viewer needs no knowledge of the agent client.
+struct GuestAgentView {
+    enum class State {
+        Absent, // no channel: the indicator is hidden
+        Waiting, // no agent running in the guest
+        Connecting,
+        Connected,
+        Unresponsive,
+    };
+    State state = State::Absent;
+    QString version;
+    QString hostName;
+    QString osName;
+    QStringList addresses;
+};
 
 struct ViewerDevicePrefs {
     bool audioOut = true; // default: on (current behaviour)
@@ -97,6 +115,9 @@ public:
     // Confirm - or revert - a link change once QMP has answered.
     // persist=false for states QEMU reports on its own (see section 7).
     void setNetworkLinkState(bool up, bool persist = true);
+
+    // State of the guest agent and what it reports about the guest.
+    void setGuestAgentState(const GuestAgentView &view);
 
     // How many USB devices are currently redirected into the VM.
     // Call after every attach/detach, like setMediaState().
@@ -231,6 +252,7 @@ private:
     StatusIndicator *m_indAudioOut = nullptr;
     StatusIndicator *m_indMouse = nullptr;
     StatusIndicator *m_indUsb = nullptr;
+    StatusIndicator *m_indGuestAgent = nullptr;
 
     int m_usbAttached = 0;
 
@@ -253,6 +275,8 @@ private:
 
     QString m_nicLabel;
     bool m_hasNic = false;
+
+    GuestAgentView m_guestAgent;
 
     QSize m_scanoutSize;
     QSize m_lastWindowSize = {1280, 720};

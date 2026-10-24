@@ -91,6 +91,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_runtimeManager, &VmRuntimeManager::vmExited, this, &MainWindow::onVmExited);
     connect(m_runtimeManager, &VmRuntimeManager::perfSample, this, &MainWindow::onPerfSample);
     connect(m_runtimeManager, &VmRuntimeManager::guestAgentChanged, this, [this](const QString &vmName) {
+        pushGuestAgentStateToViewer(vmName);
         if (currentConfig.name() == vmName)
             updateDetails();
     });
@@ -726,6 +727,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
 
                          pushMediaStateToViewer(vmName);
                          pushNetworkStateToViewer(vmName);
+                         pushGuestAgentStateToViewer(vmName);
                          pushHostShutdownStateToViewer(vmName);
 
                          // Audio: asynchronous registration chain (see
@@ -2438,6 +2440,40 @@ void MainWindow::pushMediaStateToViewer(const QString &vmName)
                        isoPath.isEmpty() ? QString() : QFileInfo(isoPath).fileName(),
                        !floppyPath.isEmpty(),
                        floppyPath.isEmpty() ? QString() : QFileInfo(floppyPath).fileName());
+}
+
+void MainWindow::pushGuestAgentStateToViewer(const QString &vmName)
+{
+    auto *win = m_runtimeManager->viewerWindow(vmName);
+    if (!win)
+        return;
+
+    GuestAgentView view;
+    const VmRuntimeInfo *rt = m_runtimeManager->runtime(vmName);
+    if (const GuestAgentClient *agent = rt ? rt->guestAgent.data() : nullptr) {
+        switch (agent->status()) {
+        case GuestAgentClient::Status::Waiting:
+            view.state = GuestAgentView::State::Waiting;
+            break;
+        case GuestAgentClient::Status::Syncing:
+            view.state = GuestAgentView::State::Connecting;
+            break;
+        case GuestAgentClient::Status::Connected:
+            view.state = GuestAgentView::State::Connected;
+            break;
+        case GuestAgentClient::Status::Unresponsive:
+            view.state = GuestAgentView::State::Unresponsive;
+            break;
+        }
+        if (agent->isConnected()) {
+            const GuestAgentClient::GuestInfo info = agent->guestInfo();
+            view.version = agent->version();
+            view.hostName = info.hostName;
+            view.osName = info.osName;
+            view.addresses = info.addresses;
+        }
+    }
+    win->setGuestAgentState(view);
 }
 
 void MainWindow::pushNetworkStateToViewer(const QString &vmName)

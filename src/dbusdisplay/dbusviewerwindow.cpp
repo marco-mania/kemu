@@ -4,6 +4,9 @@
 
 #include "dbusviewerwindow.h"
 
+#include <QClipboard>
+#include <QGuiApplication>
+
 #include "kemu_dbusdisplay_debug.h"
 
 // =============================================================================
@@ -383,6 +386,19 @@ void DbusViewerWindow::createStatusBar()
     // guard we want during a pending QMP link change.
     connect(m_indNetwork, &StatusIndicator::activated, m_actNetworkLink, &QAction::trigger);
 
+    m_indGuestAgent = new StatusIndicator(this);
+    // Presence icons: the agent is "online" in the guest or not.
+    m_indGuestAgent->setIconNames(u"user-online"_s, u"user-offline"_s);
+    m_indGuestAgent->setAccessibleName(i18nc("@info:whatsthis", "Guest agent"));
+    m_indGuestAgent->setVisible(false); // until setGuestAgentState() says otherwise
+    connect(m_indGuestAgent, &StatusIndicator::activated, this, [this] {
+        // The address is what one usually needs from here, e.g. for ssh.
+        if (m_guestAgent.addresses.isEmpty())
+            return;
+        QGuiApplication::clipboard()->setText(m_guestAgent.addresses.first());
+        statusBar()->showMessage(i18n("%1 copied to clipboard", m_guestAgent.addresses.first()), 3000);
+    });
+
     m_indClipboard = new StatusIndicator(this);
     m_indClipboard->setIconNames(u"edit-paste"_s, u"edit-paste"_s);
     m_indClipboard->setAccessibleName(i18nc("@info:whatsthis", "Clipboard sharing"));
@@ -412,6 +428,7 @@ void DbusViewerWindow::createStatusBar()
     statusBar()->addPermanentWidget(m_indAudioIn);
     statusBar()->addPermanentWidget(m_indAudioOut);
     statusBar()->addPermanentWidget(m_indMouse);
+    statusBar()->addPermanentWidget(m_indGuestAgent);
 
     updateStatusBar();
     updateMouseStatus();
@@ -1004,6 +1021,42 @@ void DbusViewerWindow::setDriveAvailability(bool hasCdDrive, bool hasFloppyDrive
     m_hasCdDrive = hasCdDrive;
     m_hasFloppyDrive = hasFloppyDrive;
     updateStatusBar();
+}
+
+void DbusViewerWindow::setGuestAgentState(const GuestAgentView &view)
+{
+    m_guestAgent = view;
+    if (!m_indGuestAgent)
+        return;
+
+    m_indGuestAgent->setVisible(view.state != GuestAgentView::State::Absent);
+    switch (view.state) {
+    case GuestAgentView::State::Absent:
+        break;
+    case GuestAgentView::State::Waiting:
+        m_indGuestAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Guest agent: not running in the guest"));
+        break;
+    case GuestAgentView::State::Connecting:
+        m_indGuestAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Guest agent: connecting..."));
+        break;
+    case GuestAgentView::State::Unresponsive:
+        m_indGuestAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Guest agent: not responding"), u"dialog-warning"_s);
+        break;
+    case GuestAgentView::State::Connected: {
+        QStringList lines{view.version.isEmpty() ? i18nc("@info:tooltip", "Guest agent connected")
+                                                 : i18nc("@info:tooltip", "Guest agent %1 connected", view.version)};
+        if (!view.hostName.isEmpty())
+            lines << i18nc("@info:tooltip", "Host name: %1", view.hostName);
+        if (!view.osName.isEmpty())
+            lines << i18nc("@info:tooltip", "Operating system: %1", view.osName);
+        if (!view.addresses.isEmpty()) {
+            lines << i18ncp("@info:tooltip", "Address: %2", "Addresses: %2", view.addresses.size(), view.addresses.join(u", "_s));
+            lines << i18nc("@info:tooltip", "Click to copy %1", view.addresses.first());
+        }
+        m_indGuestAgent->setStatus(StatusIndicator::Active, lines.join(u'\n'));
+        break;
+    }
+    }
 }
 
 void DbusViewerWindow::setNetworkState(const QString &nicLabel, bool linkUp)

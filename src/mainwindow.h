@@ -160,6 +160,7 @@ private:
     void ejectFloppyForVm(const QString &vmName);
     void pushMediaStateToViewer(const QString &vmName);
     void pushNetworkStateToViewer(const QString &vmName);
+    void pushGuestAgentStateToViewer(const QString &vmName);
 
     ImageDatabase m_imageDatabase;
 
