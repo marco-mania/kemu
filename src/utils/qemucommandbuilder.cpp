@@ -238,8 +238,12 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         keySecret = u",encrypt.key-secret=%1"_s.arg(QLatin1StringView(DiskEncryption::SecretId));
     }
 
+    // Blocks the guest frees (TRIM) or zeroes are released in the image, so
+    // it shrinks on the host without compacting.
+    const QString discard = u",discard=unmap,detect-zeroes=unmap"_s;
+
     const QString driveId = u"sysdisk"_s;
-    args << u"-drive"_s << u"file=%1,format=qcow2,if=none,id=%2"_s.arg(optPath(config.diskPath(), relativePaths), driveId) + keySecret;
+    args << u"-drive"_s << u"file=%1,format=qcow2,if=none,id=%2"_s.arg(optPath(config.diskPath(), relativePaths), driveId) + discard + keySecret;
 
     if (config.diskInterface() == VMSpecs::DiskInterface::Nvme)
         args << u"-device"_s << u"%1,drive=%2,serial=serial0"_s.arg(VMConfig::toQemuString(config.diskInterface()), driveId) + bootIndexSuffix(diskBootIndex);
@@ -494,7 +498,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     // others to new slots, the guest names its NICs after them.
     for (const DiskConfig &disk : config.extraDisks()) {
         const QString id = VMConfig::extraDiskDriveId(disk.fileName);
-        args << u"-drive"_s << u"file=%1,format=qcow2,if=none,id=%2"_s.arg(optPath(vmDir.absoluteFilePath(disk.fileName), relativePaths), id);
+        args << u"-drive"_s << u"file=%1,format=qcow2,if=none,id=%2"_s.arg(optPath(vmDir.absoluteFilePath(disk.fileName), relativePaths), id) + discard;
 
         QString device = u"%1,drive=%2,serial=%3"_s.arg(VMConfig::toQemuString(disk.diskInterface), id, Utils::escapeQemuOptionValue(disk.serial));
         if (disk.diskInterface == VMSpecs::DiskInterface::SataIde)

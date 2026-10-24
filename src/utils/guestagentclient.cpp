@@ -84,14 +84,14 @@ void GuestAgentClient::setPortOpen(bool open)
     setGuestInfo({});
 }
 
-void GuestAgentClient::sendCommand(const QString &command, const QJsonObject &arguments, Callback callback)
+void GuestAgentClient::sendCommand(const QString &command, const QJsonObject &arguments, Callback callback, int timeoutMs)
 {
     if (m_status != Status::Connected) {
         if (callback)
             callback(false, {}, i18n("The guest agent is not connected."));
         return;
     }
-    m_queue.enqueue({command, arguments, std::move(callback)});
+    m_queue.enqueue({command, arguments, std::move(callback), false, timeoutMs});
     sendNext();
 }
 
@@ -183,7 +183,7 @@ void GuestAgentClient::startSync()
     // A leading 0xFF makes the agent drop whatever partial request it holds.
     m_socket.write(QByteArray(1, kDelimiter));
     writeRequest(u"guest-sync-delimited"_s, {{u"id"_s, m_syncId}});
-    m_timeout.start();
+    m_timeout.start(kCommandTimeoutMs);
 }
 
 void GuestAgentClient::sendNext()
@@ -205,7 +205,7 @@ void GuestAgentClient::sendNext()
         return;
     }
     m_inFlight = std::move(request);
-    m_timeout.start();
+    m_timeout.start(m_inFlight->timeoutMs);
 }
 
 void GuestAgentClient::writeRequest(const QString &command, const QJsonObject &arguments)
@@ -273,7 +273,7 @@ void GuestAgentClient::handleLine(const QByteArray &line)
                                  }
                              }};
         writeRequest(m_inFlight->command, m_inFlight->arguments);
-        m_timeout.start();
+        m_timeout.start(kCommandTimeoutMs);
         return;
     }
 

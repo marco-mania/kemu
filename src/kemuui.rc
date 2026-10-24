@@ -5,7 +5,7 @@ SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 <!DOCTYPE gui SYSTEM "kpartgui.dtd">
-<gui name="kemu" version="3">
+<gui name="kemu" version="4">
   <MenuBar>
     <Menu name="file">
       <Action name="vm_new"/>
@@ -18,32 +18,42 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <Action name="vm_start"/>
       <Action name="vm_start_headless"/>
       <Action name="vm_reconnect"/>
-      <Separator/>
-      <Action name="vm_shutdown"/>
+      <Menu name="vm_stop_menu" icon="system-shutdown">
+        <text>S&amp;top</text>
+        <Action name="vm_shutdown"/>
+        <Action name="vm_save_state"/>
+        <Action name="vm_poweroff"/>
+        <Separator/>
+        <Action name="vm_shutdown_host_with_guest"/>
+      </Menu>
       <Action name="vm_reset"/>
-      <Action name="vm_poweroff"/>
-      <Action name="vm_shutdown_host_with_guest"/>
-      <Separator/>
       <Action name="vm_discard_saved_state"/>
       <Separator/>
-      <Action name="vm_edit"/>
-      <Action name="vm_delete"/>
-      <Action name="vm_clone"/>
-      <Action name="vm_make_independent"/>
-      <Separator/>
+      <Menu name="vm_media_menu" icon="media-optical">
+        <text>&amp;Removable Media</text>
+        <Action name="vm_change_iso"/>
+        <Action name="vm_eject_iso"/>
+        <Separator/>
+        <Action name="vm_change_floppy"/>
+        <Action name="vm_eject_floppy"/>
+      </Menu>
       <Action name="vm_usb_devices"/>
       <Separator/>
-      <Action name="vm_change_iso"/>
-      <Action name="vm_eject_iso"/>
-      <Action name="vm_change_floppy"/>
-      <Action name="vm_eject_floppy"/>
-      <Separator/>
-      <Action name="vm_shrink"/>
       <Action name="vm_manage_snapshots"/>
-      <Action name="vm_export"/>
+      <Menu name="vm_disk_menu" icon="drive-harddisk">
+        <text>&amp;Disk Space</text>
+        <Action name="vm_free_blocks"/>
+        <Action name="vm_shrink"/>
+      </Menu>
       <Separator/>
-      <Action name="vm_show_cmd"/>
+      <Action name="vm_edit"/>
+      <Action name="vm_clone"/>
+      <Action name="vm_make_independent"/>
+      <Action name="vm_export"/>
+      <Action name="vm_delete"/>
+      <Separator/>
       <Action name="vm_screenshot"/>
+      <Action name="vm_show_cmd"/>
     </Menu>
   </MenuBar>
 </gui>

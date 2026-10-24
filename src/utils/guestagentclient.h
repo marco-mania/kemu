@@ -86,7 +86,8 @@ public:
     }
 
     // Commands run one after the other. Fails at once unless connected.
-    void sendCommand(const QString &command, const QJsonObject &arguments, Callback callback);
+    // A command still unanswered after @p timeoutMs counts as a hung agent.
+    void sendCommand(const QString &command, const QJsonObject &arguments, Callback callback, int timeoutMs = kCommandTimeoutMs);
 
     // For commands the agent does not answer when they succeed, like
     // guest-shutdown. False unless connected.
@@ -112,6 +113,7 @@ private:
         QJsonObject arguments;
         Callback callback;
         bool noReply = false;
+        int timeoutMs = kCommandTimeoutMs;
     };
 
     void startSync();

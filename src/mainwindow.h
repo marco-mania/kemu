@@ -115,6 +115,7 @@ private Q_SLOTS:
     void changeFloppy();
     void ejectFloppy();
     void shrinkDisk();
+    void freeUnusedBlocks();
     void manageSnapshots();
     void exportVM();
     void importVM();
@@ -219,6 +220,8 @@ private:
     // True if QEMU failed on the disk password; the user was told.
     bool handleWrongDiskPassword(const QString &vmName, const QByteArray &stderrTail);
     DiskKeyStore *m_diskKeyStore = nullptr;
+    // VMs whose guest is trimming its file systems.
+    QSet<QString> m_freeingBlocks;
 
     QDir getVmBaseDir() const;
     QDir getVmDir(const QString &vmName) const;

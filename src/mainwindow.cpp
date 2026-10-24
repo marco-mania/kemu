@@ -49,6 +49,7 @@
 
 #include "kemu_debug.h"
 
+#include <KFormat>
 #include <KIO/FileCopyJob>
 
 #include <QBuffer>
@@ -92,8 +93,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_runtimeManager, &VmRuntimeManager::perfSample, this, &MainWindow::onPerfSample);
     connect(m_runtimeManager, &VmRuntimeManager::guestAgentChanged, this, [this](const QString &vmName) {
         pushGuestAgentStateToViewer(vmName);
-        if (currentConfig.name() == vmName)
+        if (currentConfig.name() == vmName) {
             updateDetails();
+            updateActionStates();
+        }
     });
     connect(m_runtimeManager, &VmRuntimeManager::perfMonitoringStarted, this, &MainWindow::activatePerfMonitorFor);
 
@@ -968,10 +971,14 @@ void MainWindow::setupActions()
     actionShrink->setIcon(QIcon::fromTheme(u"edit-clear-history"_s));
     actionShrink->setText(i18n("Compact System Disk"));
     actionShrink->setToolTip(
-        i18n("Compact the system disk image by removing unused blocks. Please free "
-             "blocks on guest OS level first. Additional disks are compacted in their "
-             "properties in the VM settings."));
+        i18n("Rewrite the system disk image without unused blocks and without snapshots. Additional disks are "
+             "compacted in their properties in the VM settings."));
     connect(actionShrink, &QAction::triggered, this, &MainWindow::shrinkDisk);
+
+    auto *actionFreeBlocks = ac->addAction(u"vm_free_blocks"_s);
+    actionFreeBlocks->setIcon(QIcon::fromTheme(u"edit-clear-all"_s));
+    actionFreeBlocks->setText(i18n("Free Unused Blocks"));
+    connect(actionFreeBlocks, &QAction::triggered, this, &MainWindow::freeUnusedBlocks);
 
     auto *snapshotsAction = actionCollection()->addAction(u"vm_manage_snapshots"_s);
     snapshotsAction->setIcon(QIcon::fromTheme(u"camera-photo"_s));
@@ -1113,6 +1120,21 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_change_floppy"_s)->setEnabled(canChangeMedia);
     actionCollection()->action(u"vm_eject_floppy"_s)->setEnabled(canChangeMedia && !currentConfig.floppyPath().isEmpty());
     actionCollection()->action(u"vm_shrink"_s)->setEnabled(hasSelection && !isBusy && linkBlocker.isEmpty());
+
+    // The guest frees them itself, at the agent's request.
+    {
+        const VmRuntimeInfo *rt = hasSelection && m_runtimeManager ? m_runtimeManager->runtime(name) : nullptr;
+        const bool agentConnected = rt && rt->guestAgent && rt->guestAgent->isConnected();
+        const bool trimming = m_freeingBlocks.contains(name);
+        QAction *freeBlocksAction = actionCollection()->action(u"vm_free_blocks"_s);
+        freeBlocksAction->setEnabled(isRunning && agentConnected && !trimming);
+        if (!isRunning)
+            freeBlocksAction->setToolTip(i18n("Release the blocks the guest no longer uses in the disk images. Available while the VM runs."));
+        else if (!agentConnected)
+            freeBlocksAction->setToolTip(i18n("Needs the QEMU guest agent in the guest."));
+        else
+            freeBlocksAction->setToolTip(i18n("Let the guest release the blocks it no longer uses, so the disk images shrink on the host."));
+    }
 
     // Snapshots must not be managed if the VM is in 'Saved' state.
     // Encrypted VMs: the dialog explains why a running one is read-only.
@@ -2503,6 +2525,65 @@ void MainWindow::shrinkDisk()
     compactDisk(currentConfig.name(), currentConfig.diskPaths(getVmDir(currentConfig.name())).value(0), this);
 }
 
+void MainWindow::freeUnusedBlocks()
+{
+    const QString vmName = currentConfig.name();
+    const VmRuntimeInfo *rt = vmName.isEmpty() ? nullptr : m_runtimeManager->runtime(vmName);
+    GuestAgentClient *agent = rt ? rt->guestAgent.data() : nullptr;
+    if (!agent || !agent->isConnected() || m_freeingBlocks.contains(vmName))
+        return;
+
+    // Measured on the host: what the guest reports is vague or missing.
+    const QStringList diskPaths = currentConfig.diskPaths(getVmDir(vmName));
+    const auto allocatedBytes = [diskPaths] {
+        qint64 total = 0;
+        for (const QString &path : diskPaths)
+            total += QemuImgProcess::inspect(path).actualSizeBytes;
+        return total;
+    };
+    const qint64 before = allocatedBytes();
+
+    m_freeingBlocks.insert(vmName);
+    updateActionStates();
+    statusBar()->showMessage(i18n("Freeing unused blocks in '%1'...", vmName));
+
+    // Large file systems take a while.
+    constexpr int kTrimTimeoutMs = 30 * 60 * 1000;
+    const QPointer<MainWindow> self(this);
+    agent->sendCommand(
+        u"guest-fstrim"_s,
+        {},
+        [self, vmName, before, allocatedBytes](bool ok, const QJsonValue &result, const QString &error) {
+            if (!self)
+                return;
+            self->m_freeingBlocks.remove(vmName);
+            self->updateActionStates();
+
+            if (!ok) {
+                self->statusBar()->showMessage(i18n("Freeing unused blocks in '%1' failed: %2", vmName, error));
+                return;
+            }
+
+            // Per file system; one that cannot be trimmed is no reason to fail.
+            QStringList failed;
+            const QJsonArray paths = result.toObject().value(u"paths"_s).toArray();
+            for (const QJsonValue &path : paths) {
+                const QJsonObject entry = path.toObject();
+                if (entry.contains(u"error"_s))
+                    failed << entry.value(u"path"_s).toString();
+            }
+
+            const qint64 freed = qMax<qint64>(0, before - allocatedBytes());
+            QString message = i18n("Freed %1 in the disk images of '%2'.", KFormat().formatByteSize(freed), vmName);
+            if (!failed.isEmpty())
+                message += u' ' + i18np("%2 could not be trimmed.", "%2 could not be trimmed.", failed.size(), failed.join(u", "_s));
+            self->statusBar()->showMessage(message);
+            if (self->currentConfig.name() == vmName)
+                self->updateDetails();
+        },
+        kTrimTimeoutMs);
+}
+
 void MainWindow::compactDisk(const QString &vmName, const QString &diskPath, QWidget *parent)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
@@ -3206,7 +3287,6 @@ void MainWindow::showContextMenu(const QPoint &pos)
                 if (entry && entry->config.isLinkedClone())
                     contextMenu.addAction(actionCollection()->action(u"vm_make_independent"_s));
                 contextMenu.addSeparator();
-                contextMenu.addAction(actionCollection()->action(u"vm_shrink"_s));
                 contextMenu.addAction(actionCollection()->action(u"vm_export"_s));
                 contextMenu.addAction(actionCollection()->action(u"vm_manage_snapshots"_s));
                 contextMenu.addSeparator();

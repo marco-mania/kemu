@@ -587,6 +587,17 @@ Start-Service VirtioFsSvc
 sc.exe config VirtioFsSvc start=auto
 ```
 
+## Compacting and freeing blocks
+
+- Blocks the guest frees are released in the disk images
+  (`discard=unmap,detect-zeroes=unmap`), so the images shrink on the host
+  whenever the guest trims its file systems - Linux does so weekly through
+  `fstrim.timer`, Windows through "Optimize Drives". With the guest agent,
+  VM -> Disk Space -> "Free Unused Blocks" trims right away. Blocks still
+  used by snapshots stay allocated.
+- "Compact System Disk" rewrites the image without unused blocks and without
+  snapshots; it is rarely needed for disk space anymore.
+
 ## Encrypted Disks
 
 A new virtual machine can store its disks encrypted: select "Encrypt the
@@ -612,8 +623,9 @@ content cannot be recovered.
 - Save State is not available
 - Not encrypted are the UEFI variable store and the cloud-init seed image,
   which holds the user data of a deployment.
-- Not yet available for encrypted VMs: snapshots, compacting, cloning and
-  export.
+- Freed blocks are released in encrypted images as well. The image then
+  shows which areas are unused, as with TRIM on any LUKS volume; their
+  content stays unreadable.
 
 ## QEMU Guest Agent
 
