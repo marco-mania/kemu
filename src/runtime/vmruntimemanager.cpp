@@ -26,6 +26,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <QDateTime>
+
 VmRuntimeManager::VmRuntimeManager(VirtualEnvironmentModel *model, VirtualNetworkManager *network_manager, QObject *parent)
     : QObject(parent)
     , m_model(model)
@@ -185,7 +187,9 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
         ::close(qgaFds[1]);
         auto *agent = new GuestAgentClient(this);
         agent->connectToVm(qgaFds[0]);
-        connect(agent, &GuestAgentClient::statusChanged, this, [this, vmName] {
+        connect(agent, &GuestAgentClient::statusChanged, this, [this, vmName](GuestAgentClient::Status status) {
+            if (status == GuestAgentClient::Status::Connected)
+                syncGuestTime(vmName);
             Q_EMIT guestAgentChanged(vmName);
         });
         connect(agent, &GuestAgentClient::guestInfoChanged, this, [this, agent, vmName] {
@@ -431,6 +435,50 @@ QStringList VmRuntimeManager::vmNamesWithViewer() const
             names << it.key();
     }
     return names;
+}
+
+void VmRuntimeManager::refreshGuestAgentPort(const QString &vmName)
+{
+    const VmEntry *entry = m_model->entryByName(vmName);
+    if (!entry || !entry->qmpClient || !runtimeFor(vmName).guestAgent)
+        return;
+
+    entry->qmpClient->sendCommand(u"query-chardev"_s, {}, [this, vmName](const QMPResult &result) {
+        GuestAgentClient *agent = runtimeFor(vmName).guestAgent;
+        if (!agent || !result.success)
+            return;
+        for (const QJsonValue &chardev : result.dataArray) {
+            if (chardev.toObject().value(u"label"_s).toString() == KEMUConst::GuestAgentChardevId)
+                agent->setPortOpen(chardev.toObject().value(u"frontend-open"_s).toBool());
+        }
+    });
+}
+
+void VmRuntimeManager::requestGuestTimeSync(const QString &vmName, bool resync)
+{
+    VmRuntimeInfo &rt = runtimeFor(vmName);
+    rt.guestTimeSyncPending = true;
+    // A guest put back to an earlier state may have left the agent mid-way.
+    if (resync && rt.guestAgent)
+        rt.guestAgent->resync();
+    syncGuestTime(vmName);
+}
+
+void VmRuntimeManager::syncGuestTime(const QString &vmName)
+{
+    VmRuntimeInfo &rt = runtimeFor(vmName);
+    GuestAgentClient *agent = rt.guestAgent;
+    if (!rt.guestTimeSyncPending || !agent || !agent->isConnected())
+        return; // tried again once the agent connects
+
+    rt.guestTimeSyncPending = false;
+    // Nanoseconds since the epoch, UTC; the agent sets the guest's system
+    // clock (and, on Linux, its RTC) from it.
+    const qint64 now = QDateTime::currentMSecsSinceEpoch() * 1000000;
+    agent->sendCommand(u"guest-set-time"_s, {{u"time"_s, now}}, [vmName](bool ok, const QJsonValue &, const QString &error) {
+        if (!ok)
+            qCWarning(KEMU) << "Could not set the clock of" << vmName << ":" << error;
+    });
 }
 
 void VmRuntimeManager::clearPausedBySuspend()
@@ -717,18 +765,8 @@ void VmRuntimeManager::setUpQmpClient(const LaunchRequest &req, int monitorFd, b
 
     connect(client, &QMPClient::connected, this, [this, client, vmName, deployment = req.deployment, isResume]() {
         // The agent may have been running before anyone listened for
-        // VSERPORT_CHANGE, e.g. in a resumed guest.
-        if (runtimeFor(vmName).guestAgent) {
-            client->sendCommand(u"query-chardev"_s, {}, [this, vmName](const QMPResult &result) {
-                GuestAgentClient *agent = runtimeFor(vmName).guestAgent;
-                if (!agent || !result.success)
-                    return;
-                for (const QJsonValue &chardev : result.dataArray) {
-                    if (chardev.toObject().value(u"label"_s).toString() == KEMUConst::GuestAgentChardevId)
-                        agent->setPortOpen(chardev.toObject().value(u"frontend-open"_s).toBool());
-                }
-            });
-        }
+        // VSERPORT_CHANGE.
+        refreshGuestAgentPort(vmName);
 
         // The monitor widget is the only consumer of these samples.
         if (SettingsDialog::isPerformanceMonitorEnabled()) {

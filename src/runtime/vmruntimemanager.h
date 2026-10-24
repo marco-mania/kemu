@@ -85,6 +85,14 @@ public:
     [[nodiscard]] QStringList vmNamesWithViewer() const;
 
     // Suspend bookkeeping: which VMs did KEMU pause for a system suspend?
+    // Asks QMP whether the guest has the agent's port open.
+    void refreshGuestAgentPort(const QString &vmName);
+
+    // The guest clock fell behind (resume, host wake, reverted snapshot):
+    // set it through the guest agent, now or once it connects. @p resync
+    // first brings the agent stream back in step.
+    void requestGuestTimeSync(const QString &vmName, bool resync = false);
+
     void clearPausedBySuspend();
     [[nodiscard]] QStringList takePausedBySuspend();
 
@@ -185,6 +193,7 @@ Q_SIGNALS:
     void guestAgentChanged(const QString &vmName);
 
 private:
+    void syncGuestTime(const QString &vmName);
     static constexpr int kQemuStartupProbeMs = 750;
     static constexpr int kHelperShutdownMs = 3000;
     // Grace period for the kernel to reap a helper after SIGKILL.

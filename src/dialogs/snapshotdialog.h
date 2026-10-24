@@ -42,6 +42,10 @@ public:
     // does not open the disk.
     void setEncryptedSystemDisk(std::function<void(KeyCallback)> requestKey, std::function<void(const QString &error)> wrongKey);
 
+Q_SIGNALS:
+    // The running guest was put back to a snapshot: its clock is behind.
+    void liveSnapshotReverted();
+
 public Q_SLOTS:
     void reject() override;
 

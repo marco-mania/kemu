@@ -3591,6 +3591,10 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
                         qCWarning(KEMU) << "Could not resume" << vmName << "from savestate:" << r.errorMessage;
                 });
             }
+            // The guest clock stopped when the state was saved. The agent's
+            // port came back with the state; ask, in case no event says so.
+            m_runtimeManager->refreshGuestAgentPort(vmName);
+            m_runtimeManager->requestGuestTimeSync(vmName);
         }
         return;
     }
@@ -3868,6 +3872,8 @@ void MainWindow::onWokeUp()
             continue;
 
         e->qmpClient->sendCommand(u"cont"_s, {}, nullptr);
+        // The guest clock stood still while the host slept.
+        m_runtimeManager->requestGuestTimeSync(name);
         if (auto *win = m_runtimeManager->viewerWindow(name))
             win->setSuspended(false);
     }
@@ -4230,6 +4236,9 @@ void MainWindow::manageSnapshotsForVm(const QString &vmName)
                 handleWrongDiskPassword(vmName, error.toUtf8());
             });
     }
+    connect(dlg, &SnapshotDialog::liveSnapshotReverted, this, [this, vmName] {
+        m_runtimeManager->requestGuestTimeSync(vmName, true);
+    });
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setModal(true);
     dlg->show();

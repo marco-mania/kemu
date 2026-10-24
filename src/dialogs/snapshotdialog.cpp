@@ -358,8 +358,11 @@ void SnapshotDialog::onRevertSnapshot()
                 QTimer::singleShot(0, this, [this, snap, err] {
                     KMessageBox::error(this, i18n("Could not revert to snapshot \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
                 });
-            } else
+            } else {
+                if (isLive)
+                    Q_EMIT liveSnapshotReverted();
                 KMessageBox::information(this, i18n("Successfully reverted to snapshot \"%1\".", snap.name), i18n("Snapshot Restored"));
+            }
 
             loadSnapshots();
         });

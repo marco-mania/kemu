@@ -104,6 +104,12 @@ bool GuestAgentClient::sendCommandNoReply(const QString &command, const QJsonObj
     return true;
 }
 
+void GuestAgentClient::resync()
+{
+    if (m_status == Status::Connected && !m_syncing)
+        startSync();
+}
+
 void GuestAgentClient::refreshGuestInfo()
 {
     if (m_status != Status::Connected)

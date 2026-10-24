@@ -65,6 +65,8 @@ struct VmRuntimeInfo {
     // Null without a channel (switched off, or a machine without PCI). Its
     // status tells whether an agent runs in the guest and answers.
     QPointer<GuestAgentClient> guestAgent;
+    // The guest clock is to be set once the agent answers.
+    bool guestTimeSyncPending = false;
 
     // --- deployment ---
 
@@ -95,5 +97,6 @@ struct VmRuntimeInfo {
         resumingFromSavestate = false;
         startupFailureShown = false;
         guestPoweredOff = false;
+        guestTimeSyncPending = false;
     }
 };

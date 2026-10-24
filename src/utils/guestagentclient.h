@@ -96,6 +96,10 @@ public:
     // Reads host name, OS and addresses again.
     void refreshGuestInfo();
 
+    // Brings the stream back in step before the next command, e.g. after
+    // the guest was put back to an earlier state.
+    void resync();
+
     static constexpr int kCommandTimeoutMs = 10000;
     static constexpr int kRetryIntervalMs = 15000;
     static constexpr int kInfoIntervalMs = 30000;
