@@ -73,6 +73,7 @@ using namespace Qt::StringLiterals;
 class DiskKeyStore;
 class EditVmDialog;
 class EncryptDiskJob;
+class ShrinkJob;
 
 class MainWindow : public KXmlGuiWindow
 {
@@ -232,6 +233,9 @@ private:
 
     bool requireTool(const ExternalTools::Tool tool);
     // swtpm and swtpm_ioctl, if @p vmName has a TPM state to move to a new password.
+    // Rewrites @p diskPath of @p vmName; asks first, over @p parent.
+    void compactDisk(const QString &vmName, const QString &diskPath, QWidget *parent);
+    void runCompactJob(ShrinkJob *job, QWidget *parent);
     bool requireTpmRekeyTools(const QString &vmName, QWidget *parent);
     /// Creates the VM's UEFI variable store if needed and reports problems.
     /// False if the VM cannot boot with UEFI.

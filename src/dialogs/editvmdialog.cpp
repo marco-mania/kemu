@@ -2008,6 +2008,13 @@ void EditVmDialog::editSelectedDisk()
     DiskDialog dlg(DiskDialog::Mode::Edit, static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt()), this);
     dlg.setLabel(entry.disk.label);
     dlg.setDiskInterface(entry.disk.diskInterface);
+    if (m_mode == Mode::Edit && entry.exists && !m_vmDir.isEmpty()) {
+        dlg.setCompactAvailable(true);
+        const QString diskPath = QDir(m_vmDir).filePath(entry.disk.fileName);
+        connect(&dlg, &DiskDialog::compactRequested, this, [this, diskPath, &dlg] {
+            Q_EMIT compactDiskRequested(diskPath, &dlg);
+        });
+    }
     if (dlg.exec() != QDialog::Accepted)
         return;
 

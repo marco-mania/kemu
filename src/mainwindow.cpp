@@ -954,10 +954,11 @@ void MainWindow::setupActions()
 
     auto *actionShrink = ac->addAction(u"vm_shrink"_s);
     actionShrink->setIcon(QIcon::fromTheme(u"edit-clear-history"_s));
-    actionShrink->setText(i18n("Compact Disk"));
+    actionShrink->setText(i18n("Compact System Disk"));
     actionShrink->setToolTip(
-        i18n("Compact the disk image by removing unused blocks. Please free "
-             "blocks on guest OS level first."));
+        i18n("Compact the system disk image by removing unused blocks. Please free "
+             "blocks on guest OS level first. Additional disks are compacted in their "
+             "properties in the VM settings."));
     connect(actionShrink, &QAction::triggered, this, &MainWindow::shrinkDisk);
 
     auto *snapshotsAction = actionCollection()->addAction(u"vm_manage_snapshots"_s);
@@ -1108,7 +1109,7 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_eject_iso"_s)->setEnabled(canChangeMedia && !currentConfig.isoPath().isEmpty());
     actionCollection()->action(u"vm_change_floppy"_s)->setEnabled(canChangeMedia);
     actionCollection()->action(u"vm_eject_floppy"_s)->setEnabled(canChangeMedia && !currentConfig.floppyPath().isEmpty());
-    gateEncrypted(actionCollection()->action(u"vm_shrink"_s), hasSelection && !isBusy && linkBlocker.isEmpty());
+    actionCollection()->action(u"vm_shrink"_s)->setEnabled(hasSelection && !isBusy && linkBlocker.isEmpty());
 
     // Snapshots must not be managed if the VM is in 'Saved' state.
     // Encrypted VMs: the dialog explains why a running one is read-only.
@@ -1530,7 +1531,7 @@ void MainWindow::updateDetails()
                          {u"clock"_s, i18n("Clock"), currentConfig.useLocalTime() ? i18n("Localtime") : i18n("UTC"), false, false},
                          {u"media-flash"_s, i18n("Memory"), memVal, true, false},
                          {u"cpu"_s, i18n("Processors"), cpuVal, false, false},
-                         {u"drive-harddisk"_s, i18n("Hard Disk"), diskVal, true, false},
+                         {u"drive-harddisk"_s, i18n("System Disk"), diskVal, true, false},
                          {u"media-optical"_s, i18n("CD/DVD"), cdVal, false, currentConfig.isoPath().isEmpty()},
                          {u"media-floppy"_s, i18n("Floppy"), floppyVal, false, currentConfig.floppyPath().isEmpty()},
                          {u"video-display"_s, i18n("Display"), displayStr, true, false},
@@ -2417,45 +2418,62 @@ void MainWindow::shrinkDisk()
 {
     if (currentConfig.name().isEmpty())
         return;
+    compactDisk(currentConfig.name(), currentConfig.diskPaths(getVmDir(currentConfig.name())).value(0), this);
+}
 
-    if (veModel->isBusy(currentConfig.name()) || !linkBlockReason(veModel->entryByName(currentConfig.name())).isEmpty()
-        || !encryptionBlockReason(veModel->entryByName(currentConfig.name())).isEmpty())
+void MainWindow::compactDisk(const QString &vmName, const QString &diskPath, QWidget *parent)
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry || diskPath.isEmpty() || veModel->isBusy(vmName))
         return;
 
-    const QStringList diskPaths = currentConfig.diskPaths(getVmDir(currentConfig.name()));
-
-    double virtualGb = 0.0;
-    double actualGb = 0.0;
-    bool sizesKnown = true;
-    for (const QString &path : diskPaths) {
-        const QemuImgProcess::ImageInfo dInfo = diskInfoFor(path);
-        sizesKnown = sizesKnown && dInfo.isValid;
-        virtualGb += dInfo.virtualSizeGb();
-        actualGb += dInfo.actualSizeGb();
+    const QString title = i18nc("@title:window", "Compact Disk Image");
+    if (const QString blocker = linkBlockReason(entry); !blocker.isEmpty()) {
+        KMessageBox::error(parent, blocker, title);
+        return;
     }
+
+    const VMConfig config = entry->config;
+    const QStringList diskPaths = config.diskPaths(getVmDir(vmName));
+    const QString systemDisk = diskPaths.value(0);
+    const bool isSystemDisk = diskPath == systemDisk;
+    QStringList otherDisks = diskPaths;
+    otherDisks.removeAll(diskPath);
 
     QString sizeInfo;
-    if (sizesKnown) {
-        sizeInfo = i18n("\n\nCurrent size: %1 GB (virtual), %2 GB (actual on disk)", QString::number(virtualGb, 'f', 1), QString::number(actualGb, 'f', 1));
+    if (const QemuImgProcess::ImageInfo info = diskInfoFor(diskPath); info.isValid) {
+        sizeInfo = i18n("\n\nCurrent size: %1 GB (virtual), %2 GB (actual on disk)",
+                        QString::number(info.virtualSizeGb(), 'f', 1),
+                        QString::number(info.actualSizeGb(), 'f', 1));
     }
 
-    const QString question = i18n(
-        "Compact the disk image of VM '%1'?\n\n"
-        "This will rewrite the disk image to reclaim unused space. "
-        "The VM must remain stopped during the operation.%2",
-        currentConfig.name(),
-        sizeInfo);
+    QString diskName = QFileInfo(diskPath).fileName();
+    for (const DiskConfig &disk : config.extraDisks()) {
+        if (disk.fileName == diskName && !disk.label.isEmpty())
+            diskName = disk.label;
+    }
 
-    // qemu-img convert writes the current state only.
+    const QString question = isSystemDisk ? i18n(
+                                                "Compact the system disk of VM '%1'?\n\n"
+                                                "This rewrites the disk image to reclaim unused space. "
+                                                "The VM must remain stopped during the operation.%2",
+                                                vmName,
+                                                sizeInfo)
+                                          : i18n(
+                                                "Compact the disk '%2' of VM '%1'?\n\n"
+                                                "This rewrites the disk image to reclaim unused space. "
+                                                "The VM must remain stopped during the operation.%3",
+                                                vmName,
+                                                diskName,
+                                                sizeInfo);
+
+    // qemu-img convert writes the current state only. A snapshot spans all
+    // disks, so it is deleted from the others as well.
     const QStringList snapshots = SnapshotManager().snapshotNames(diskPaths);
 
     KMessageBox::ButtonCode answer;
     if (snapshots.isEmpty()) {
-        answer = KMessageBox::questionTwoActions(this,
-                                                 question,
-                                                 i18nc("@title:window", "Compact Disk Image"),
-                                                 KGuiItem(i18n("Compact"), u"edit-clear-history"_s),
-                                                 KStandardGuiItem::cancel());
+        answer = KMessageBox::questionTwoActions(parent, question, title, KGuiItem(i18n("Compact"), u"edit-clear-history"_s), KStandardGuiItem::cancel());
     } else {
         const QString warning = i18np("The VM has a snapshot (%2). Compacting deletes it, and the VM can no longer be reverted to it.",
                                       "The VM has %1 snapshots (%2). Compacting deletes all of them, and the VM can no longer be reverted to any of them.",
@@ -2463,34 +2481,84 @@ void MainWindow::shrinkDisk()
                                       snapshots.join(u", "_s));
         // Dangerous by default: Cancel is the default button.
         answer =
-            KMessageBox::warningTwoActions(this,
+            KMessageBox::warningTwoActions(parent,
                                            question + u"\n\n"_s + warning,
-                                           i18nc("@title:window", "Compact Disk Image"),
+                                           title,
                                            KGuiItem(i18np("Compact and Delete Snapshot", "Compact and Delete Snapshots", snapshots.size()), u"edit-delete"_s),
                                            KStandardGuiItem::cancel());
     }
-
-    if (answer != KMessageBox::PrimaryAction || veModel->isBusy(currentConfig.name()))
+    if (answer != KMessageBox::PrimaryAction || veModel->isBusy(vmName))
         return;
 
-    auto *job = new ShrinkJob(currentConfig.name(), diskPaths, this);
+    const QPointer<QWidget> target(parent);
+    const auto run = [this, vmName, diskPath, otherDisks, snapshots, systemDisk, target](const QByteArray &key) {
+        if (veModel->isBusy(vmName))
+            return;
+        auto *job = new ShrinkJob(vmName, {diskPath}, this);
+        if (!key.isEmpty())
+            job->setDiskKey(systemDisk, key);
+        job->setSnapshotCleanup(otherDisks, snapshots);
+        runCompactJob(job, target ? target.data() : this);
+    };
 
-    if (jobTracker) {
-        jobTracker->registerJob(job);
+    // The encrypted system disk is opened to rewrite it, or to delete its
+    // snapshots.
+    const bool needsKey = config.isEncrypted() && (isSystemDisk || !SnapshotManager().snapshotNames({systemDisk}).isEmpty());
+    if (!needsKey) {
+        run({});
+        return;
     }
+    requestDiskKey(vmName, i18n("Enter the password of the system disk of '%1' to compact it.", vmName), [run](std::optional<QByteArray> key) {
+        if (key)
+            run(*key);
+    });
+}
 
-    veModel->setVmState(currentConfig.name(), VmEntry::State::Shrinking);
+void MainWindow::runCompactJob(ShrinkJob *job, QWidget *parent)
+{
+    const QString vmName = job->vmName();
+    if (jobTracker)
+        jobTracker->registerJob(job);
+    veModel->setVmState(vmName, VmEntry::State::Shrinking);
 
-    connect(job, &ShrinkJob::finished, this, [this](KJob *kjob) {
+    // From a dialog: modal over it, so the settings cannot change meanwhile.
+    QPointer<QProgressDialog> progress;
+    if (parent != this) {
+        progress = new QProgressDialog(i18n("Compacting the disk of '%1'...", vmName), i18n("Cancel"), 0, 1000, parent);
+        progress->setWindowModality(Qt::WindowModal);
+        progress->setMinimumDuration(0);
+        progress->setAttribute(Qt::WA_DeleteOnClose);
+        connect(job, &KJob::percentChanged, progress, [progress](KJob *, unsigned long percent) {
+            progress->setValue(int(percent) * 10);
+        });
+        connect(progress, &QProgressDialog::canceled, job, [job] {
+            job->kill(KJob::EmitResult);
+        });
+        progress->show();
+    }
+    const QPointer<QWidget> target(parent);
+
+    connect(job, &ShrinkJob::finished, this, [this, progress, target](KJob *kjob) {
         auto *shrinkJob = qobject_cast<ShrinkJob *>(kjob);
         if (!shrinkJob)
             return;
+        if (progress) {
+            progress->disconnect();
+            progress->close();
+        }
 
         const QString vmName = shrinkJob->vmName();
         veModel->setVmState(vmName, VmEntry::State::Stopped);
+        QWidget *messageParent = target ? target.data() : this;
 
-        if (shrinkJob->error()) {
-            statusBar()->showMessage(i18n("Disk compaction of VM '%1' failed: %2", vmName, shrinkJob->errorText()));
+        if (shrinkJob->error() == KJob::KilledJobError) {
+            statusBar()->showMessage(i18n("Operation cancelled."));
+        } else if (shrinkJob->error()) {
+            if (!handleWrongDiskPassword(vmName, shrinkJob->errorText().toUtf8())) {
+                statusBar()->showMessage(i18n("Disk compaction of VM '%1' failed: %2", vmName, shrinkJob->errorText()));
+                if (messageParent != this)
+                    KMessageBox::error(messageParent, shrinkJob->errorText(), i18nc("@title:window", "Compact Disk Image"));
+            }
         } else {
             const VMConfig config = loadVmConfig(getVmDir(vmName).absolutePath());
 
@@ -2508,6 +2576,8 @@ void MainWindow::shrinkDisk()
             }
 
             statusBar()->showMessage(i18n("Disk of VM '%1' compacted successfully%2", vmName, newSizeMsg));
+            if (!shrinkJob->warnings().isEmpty())
+                KMessageBox::information(messageParent, shrinkJob->warnings().join(u'\n'), i18nc("@title:window", "Compact Disk Image"));
         }
 
         if (currentConfig.name() == vmName) {
@@ -2520,7 +2590,7 @@ void MainWindow::shrinkDisk()
 
     job->start();
 
-    statusBar()->showMessage(i18n("Compacting disk of VM '%1'...", currentConfig.name()));
+    statusBar()->showMessage(i18n("Compacting disk of VM '%1'...", vmName));
     updateActionStates();
     updateDetails();
 }
@@ -4105,6 +4175,9 @@ void MainWindow::editVM()
     const QString editedVm = currentConfig.name();
     connect(&dialog, &EditVmDialog::encryptSystemDiskRequested, this, [this, editedVm, &dialog] {
         encryptSystemDisk(editedVm, &dialog);
+    });
+    connect(&dialog, &EditVmDialog::compactDiskRequested, this, [this, editedVm](const QString &diskPath, QWidget *parent) {
+        compactDisk(editedVm, diskPath, parent);
     });
     connect(&dialog, &EditVmDialog::decryptSystemDiskRequested, this, [this, editedVm, &dialog] {
         decryptSystemDisk(editedVm, &dialog);

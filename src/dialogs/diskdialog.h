@@ -14,6 +14,7 @@ class QComboBox;
 class QDialogButtonBox;
 class QLabel;
 class QLineEdit;
+class QPushButton;
 class QRadioButton;
 class QSpinBox;
 class KUrlRequester;
@@ -39,6 +40,13 @@ public:
     /// Image to copy into the VM; empty for a new, blank disk.
     [[nodiscard]] QString sourcePath() const;
 
+    /// Edit mode, for a disk that exists already: offers compacting it,
+    /// which happens at once, independent of OK/Cancel.
+    void setCompactAvailable(bool available);
+
+Q_SIGNALS:
+    void compactRequested();
+
 private:
     void updateState();
 
@@ -54,4 +62,5 @@ private:
     QLabel *m_sourceHint = nullptr;
     QComboBox *m_interfaceCombo = nullptr;
     QDialogButtonBox *m_buttonBox = nullptr;
+    QPushButton *m_compactButton = nullptr;
 };

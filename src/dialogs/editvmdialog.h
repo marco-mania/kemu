@@ -108,6 +108,8 @@ Q_SIGNALS:
     void changeDiskPasswordRequested();
     void storeDiskPasswordRequested();
     void forgetDiskPasswordRequested();
+    // An existing additional disk, from its properties; @p parent shows the progress.
+    void compactDiskRequested(const QString &diskPath, QWidget *parent);
 
 private Q_SLOTS:
     void browseSharedDir();

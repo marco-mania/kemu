@@ -6,11 +6,14 @@
 
 #include "shrinkjob.h"
 
+#include "utils/diskencryption.h"
 #include "utils/externaltools.h"
 #include "utils/qemuimgprocess.h"
 #include "utils/snapshotmanager.h"
 
 #include <utility>
+
+#include <unistd.h>
 
 ShrinkJob::ShrinkJob(const QString &vmName, const QStringList &diskPaths, QObject *parent)
     : KJob(parent)
@@ -19,6 +22,17 @@ ShrinkJob::ShrinkJob(const QString &vmName, const QStringList &diskPaths, QObjec
 {
     setCapabilities(Killable);
     setProperty("immediateProgressReporting", true);
+}
+
+ShrinkJob::~ShrinkJob()
+{
+    for (QByteArray &key : m_diskKeys)
+        DiskEncryption::wipe(key);
+}
+
+void ShrinkJob::setDiskKey(const QString &diskPath, const QByteArray &key)
+{
+    m_diskKeys.insert(diskPath, key);
 }
 
 void ShrinkJob::start()
@@ -57,6 +71,37 @@ void ShrinkJob::startNext()
     });
     connect(m_process, &QemuImgProcess::finished, this, &ShrinkJob::onConvertFinished);
 
+    // An encrypted image is read with its key and written encrypted again,
+    // with the same password.
+    if (m_diskKeys.contains(diskPath)) {
+        const int keyFd = DiskEncryption::secretFd(m_diskKeys.value(diskPath));
+        if (keyFd < 0) {
+            setError(1);
+            setErrorText(i18n("The password could not be passed to qemu-img."));
+            emitResult();
+            return;
+        }
+        const QStringList args{u"convert"_s,
+                               u"-p"_s,
+                               u"--object"_s,
+                               DiskEncryption::secretObject(keyFd),
+                               u"--image-opts"_s,
+                               DiskEncryption::imageOptions(diskPath),
+                               u"-O"_s,
+                               u"qcow2"_s,
+                               u"-o"_s,
+                               DiskEncryption::createOptions(),
+                               m_tmpPath};
+        const bool started = m_process->start(args, {keyFd});
+        ::close(keyFd);
+        if (!started) {
+            setError(1);
+            setErrorText(m_process->errorText());
+            emitResult();
+        }
+        return;
+    }
+
     QStringList args = {u"convert"_s, u"-p"_s, u"-f"_s, u"qcow2"_s, u"-O"_s, u"qcow2"_s};
     if (!m_flatten) {
         // An overlay stays an overlay; -B is resolved relative to the output.
@@ -88,6 +133,7 @@ void ShrinkJob::onConvertFinished(bool ok)
     if (!ok) {
         QFile::remove(m_tmpPath);
         setError(2);
+        // Keeps qemu-img's wording, so a wrong password can be recognized.
         setErrorText(process->errorText());
         emitResult();
         return;
@@ -122,8 +168,34 @@ void ShrinkJob::onConvertFinished(bool ok)
         return;
     }
 
-    emitPercent(1000, 1000);
-    emitResult();
+    deleteNextSnapshot();
+}
+
+void ShrinkJob::deleteNextSnapshot()
+{
+    if (m_snapshotNames.isEmpty() || m_otherDisks.isEmpty()) {
+        emitPercent(1000, 1000);
+        emitResult();
+        return;
+    }
+
+    if (!m_snapshots) {
+        m_snapshots = new SnapshotManager(this);
+        for (auto it = m_diskKeys.cbegin(); it != m_diskKeys.cend(); ++it)
+            m_snapshots->setDiskKey(it.key(), it.value());
+    }
+
+    const QString name = m_snapshotNames.takeFirst();
+    m_snapshots->deleteOfflineSnapshot(m_otherDisks, name, [this, name](bool ok, const QString &error) {
+        if (!ok) {
+            m_warnings << i18n("The snapshot '%1' could not be deleted from the other disks: %2", name, error);
+        } else {
+            // The system disk may be among them, with the descriptions.
+            for (const QString &disk : std::as_const(m_otherDisks))
+                m_snapshots->removeDescription(disk, name);
+        }
+        deleteNextSnapshot();
+    });
 }
 
 bool ShrinkJob::doKill()

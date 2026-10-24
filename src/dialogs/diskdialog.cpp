@@ -98,11 +98,24 @@ DiskDialog::DiskDialog(Mode mode, VMSpecs::MachineType machineType, QWidget *par
     m_buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     if (mode == Mode::Add)
         m_buttonBox->button(QDialogButtonBox::Ok)->setText(i18n("Add"));
+    if (mode == Mode::Edit) {
+        m_compactButton = m_buttonBox->addButton(i18n("Compact..."), QDialogButtonBox::ActionRole);
+        m_compactButton->setIcon(QIcon::fromTheme(u"edit-clear-history"_s));
+        m_compactButton->setToolTip(i18n("Compact the disk image by removing unused blocks. Please free blocks on guest OS level first."));
+        m_compactButton->hide();
+        connect(m_compactButton, &QPushButton::clicked, this, &DiskDialog::compactRequested);
+    }
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     layout->addWidget(m_buttonBox);
 
     updateState();
+}
+
+void DiskDialog::setCompactAvailable(bool available)
+{
+    if (m_compactButton)
+        m_compactButton->setVisible(available);
 }
 
 void DiskDialog::setLabel(const QString &label)
