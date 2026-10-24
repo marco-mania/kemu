@@ -10,6 +10,7 @@
 
 #include <QDateTime>
 #include <QFile>
+#include <QHash>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QList>
@@ -70,6 +71,17 @@ public:
     void revertOfflineSnapshot(const QStringList &diskPaths, const QString &name, std::function<void(bool, QString)> callback);
     void deleteOfflineSnapshot(const QStringList &diskPaths, const QString &name, std::function<void(bool, QString)> callback);
 
+    // Password of an encrypted image, used by the offline operations on
+    // @p diskPath. An empty key removes it.
+    void setDiskKey(const QString &diskPath, const QByteArray &key);
+
+    // Refuses live snapshot operations with @p reason, e.g. because QEMU
+    // cannot store the memory in an encrypted image.
+    void setLiveSnapshotBlocker(const QString &reason)
+    {
+        m_liveBlocker = reason;
+    }
+
     // Asynchronous Operations (Online / QMP)
     void createLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback);
     void revertLiveSnapshot(QMPClient *qmp, const QString &name, std::function<void(bool, QString)> callback);
@@ -101,6 +113,8 @@ private:
         QPointer<QMPClient> qmp;
     };
     QMap<QString, PendingSnapshotJob> m_pendingJobs; // key: job-id
+    QHash<QString, QByteArray> m_diskKeys; // key: disk path
+    QString m_liveBlocker;
     int m_jobCounter = 0;
 
     // Job orchestration

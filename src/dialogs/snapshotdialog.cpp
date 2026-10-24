@@ -7,6 +7,7 @@
 #include "snapshotdialog.h"
 
 #include "dialogs/takesnapshotdialog.h"
+#include "utils/diskencryption.h"
 #include "utils/utils.h"
 
 #include <QFileInfo>
@@ -109,6 +110,60 @@ SnapshotDialog::SnapshotDialog(const QString &vmName, const QStringList &diskPat
                  "Snapshots are read-only until it has stopped."));
         m_hintLabel->show();
     }
+}
+
+namespace
+{
+QString encryptedLiveText()
+{
+    return i18n(
+        "The system disk is encrypted, and QEMU cannot store the memory of a running virtual machine in an encrypted image. "
+        "Shut the virtual machine down to take, revert or delete snapshots.");
+}
+}
+
+void SnapshotDialog::setEncryptedSystemDisk(std::function<void(KeyCallback)> requestKey, std::function<void(const QString &error)> wrongKey)
+{
+    m_encrypted = true;
+    m_requestKey = std::move(requestKey);
+    m_wrongKey = std::move(wrongKey);
+    m_manager.setLiveSnapshotBlocker(encryptedLiveText());
+    updateHint({});
+    updateButtonStates();
+}
+
+void SnapshotDialog::withDiskKey(std::function<void()> action)
+{
+    if (!m_encrypted || m_haveKey) {
+        action();
+        return;
+    }
+    if (!m_requestKey)
+        return;
+
+    const QPointer<SnapshotDialog> self(this);
+    m_requestKey([self, action = std::move(action)](std::optional<QByteArray> key) {
+        if (!self || !key)
+            return;
+        self->m_manager.setDiskKey(self->m_diskPaths.value(0), *key);
+        self->m_haveKey = true;
+        action();
+    });
+}
+
+bool SnapshotDialog::handleWrongKey(const QString &error)
+{
+    if (!m_encrypted || !DiskEncryption::isWrongPasswordError(error))
+        return false;
+
+    m_manager.setDiskKey(m_diskPaths.value(0), {});
+    m_haveKey = false;
+    // Keep the message box off the process teardown stack.
+    QTimer::singleShot(0, this, [this, error] {
+        if (m_wrongKey)
+            m_wrongKey(error);
+    });
+    return true;
 }
 
 // Loading & displaying snapshots
@@ -218,21 +273,27 @@ void SnapshotDialog::onTakeSnapshot()
     if (name.isEmpty())
         return;
 
-    setBusy(true);
+    withDiskKey([this, name, desc] {
+        setBusy(true);
 
-    m_manager.createSnapshot(m_diskPaths, name, m_qmp, m_imageInUse, [this, name, desc](bool ok, QString err) {
-        setBusy(false);
+        m_manager.createSnapshot(m_diskPaths, name, m_qmp, m_imageInUse, [this, name, desc](bool ok, QString err) {
+            setBusy(false);
+            if (!ok && handleWrongKey(err)) {
+                loadSnapshots();
+                return;
+            }
 
-        if (ok) {
-            m_manager.saveDescription(m_diskPaths.value(0), name, desc);
-        } else {
-            // Keep the message box off the QMP teardown stack.
-            QTimer::singleShot(0, this, [this, name, err] {
-                KMessageBox::error(this, i18n("Could not create snapshot \"%1\":\n%2", name, err), i18n("Snapshot Error"));
-            });
-        }
+            if (ok) {
+                m_manager.saveDescription(m_diskPaths.value(0), name, desc);
+            } else {
+                // Keep the message box off the QMP teardown stack.
+                QTimer::singleShot(0, this, [this, name, err] {
+                    KMessageBox::error(this, i18n("Could not create snapshot \"%1\":\n%2", name, err), i18n("Snapshot Error"));
+                });
+            }
 
-        loadSnapshots();
+            loadSnapshots();
+        });
     });
 }
 
@@ -279,23 +340,29 @@ void SnapshotDialog::onRevertSnapshot()
         != KMessageBox::PrimaryAction)
         return;
 
-    setBusy(true);
+    withDiskKey([this, snap, isLive] {
+        setBusy(true);
 
-    m_manager.revertSnapshot(m_diskPaths, snap.name, m_qmp, m_imageInUse, [this, snap, isLive](bool ok, QString err) {
-        setBusy(false);
+        m_manager.revertSnapshot(m_diskPaths, snap.name, m_qmp, m_imageInUse, [this, snap, isLive](bool ok, QString err) {
+            setBusy(false);
+            if (!ok && handleWrongKey(err)) {
+                loadSnapshots();
+                return;
+            }
 
-        if (!ok) {
-            if (isLive)
-                err += u"\n\n"_s + i18n("If disks were removed since the snapshot was taken, shut down the VM and revert the snapshot while it is off.");
+            if (!ok) {
+                if (isLive)
+                    err += u"\n\n"_s + i18n("If disks were removed since the snapshot was taken, shut down the VM and revert the snapshot while it is off.");
 
-            // Keep the message box off the QMP teardown stack.
-            QTimer::singleShot(0, this, [this, snap, err] {
-                KMessageBox::error(this, i18n("Could not revert to snapshot \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
-            });
-        } else
-            KMessageBox::information(this, i18n("Successfully reverted to snapshot \"%1\".", snap.name), i18n("Snapshot Restored"));
+                // Keep the message box off the QMP teardown stack.
+                QTimer::singleShot(0, this, [this, snap, err] {
+                    KMessageBox::error(this, i18n("Could not revert to snapshot \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
+                });
+            } else
+                KMessageBox::information(this, i18n("Successfully reverted to snapshot \"%1\".", snap.name), i18n("Snapshot Restored"));
 
-        loadSnapshots();
+            loadSnapshots();
+        });
     });
 }
 
@@ -321,20 +388,26 @@ void SnapshotDialog::onDeleteSnapshot()
         != KMessageBox::PrimaryAction)
         return;
 
-    setBusy(true);
+    withDiskKey([this, snap] {
+        setBusy(true);
 
-    m_manager.deleteSnapshot(m_diskPaths, snap.name, m_qmp, m_imageInUse, [this, snap](bool ok, QString err) {
-        setBusy(false);
+        m_manager.deleteSnapshot(m_diskPaths, snap.name, m_qmp, m_imageInUse, [this, snap](bool ok, QString err) {
+            setBusy(false);
+            if (!ok && handleWrongKey(err)) {
+                loadSnapshots();
+                return;
+            }
 
-        if (ok) {
-            m_manager.removeDescription(m_diskPaths.value(0), snap.name);
-        } else {
-            QTimer::singleShot(0, this, [this, snap, err] {
-                KMessageBox::error(this, i18n("Could not delete snapshot \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
-            });
-        }
+            if (ok) {
+                m_manager.removeDescription(m_diskPaths.value(0), snap.name);
+            } else {
+                QTimer::singleShot(0, this, [this, snap, err] {
+                    KMessageBox::error(this, i18n("Could not delete snapshot \"%1\":\n%2", snap.name, err), i18n("Snapshot Error"));
+                });
+            }
 
-        loadSnapshots();
+            loadSnapshots();
+        });
     });
 }
 
@@ -350,7 +423,7 @@ void SnapshotDialog::updateButtonStates()
     const bool isSnap = item && !isCurrent;
 
     // A busy image can only be snapshotted through the QEMU monitor.
-    const bool writable = !m_imageInUse || (m_qmp && m_qmp->isConnected());
+    const bool writable = (!m_imageInUse || (m_qmp && m_qmp->isConnected())) && !liveBlocked();
 
     m_takeBtn->setEnabled(writable);
     m_revertBtn->setEnabled(isSnap && writable);
@@ -377,6 +450,12 @@ void SnapshotDialog::updateHint(const QString &listError)
 {
     if (!listError.isEmpty()) {
         m_hintLabel->setText(listError);
+        m_hintLabel->show();
+        return;
+    }
+
+    if (liveBlocked()) {
+        m_hintLabel->setText(encryptedLiveText());
         m_hintLabel->show();
         return;
     }

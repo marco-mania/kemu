@@ -1111,7 +1111,8 @@ void MainWindow::updateActionStates()
     gateEncrypted(actionCollection()->action(u"vm_shrink"_s), hasSelection && !isBusy && linkBlocker.isEmpty());
 
     // Snapshots must not be managed if the VM is in 'Saved' state.
-    gateEncrypted(actionCollection()->action(u"vm_manage_snapshots"_s), hasSelection && hasDisk && !isDeploying && !isSavedOnly && linkBlocker.isEmpty());
+    // Encrypted VMs: the dialog explains why a running one is read-only.
+    actionCollection()->action(u"vm_manage_snapshots"_s)->setEnabled(hasSelection && hasDisk && !isDeploying && !isSavedOnly && linkBlocker.isEmpty());
 
     gateEncrypted(actionCollection()->action(u"vm_export"_s), hasSelection && !isBusy && !isOrphan);
     actionCollection()->action(u"vm_import"_s)->setEnabled(true);
@@ -3876,11 +3877,6 @@ void MainWindow::manageSnapshotsForVm(const QString &vmName)
         KMessageBox::error(dialogParentFor(vmName), blocker, i18nc("@title:window", "Snapshots"));
         return;
     }
-    if (const QString blocker = encryptionBlockReason(entry); !blocker.isEmpty()) {
-        KMessageBox::error(dialogParentFor(vmName), blocker, i18nc("@title:window", "Snapshots"));
-        return;
-    }
-
     // Anything but a cleanly stopped or saved VM means QEMU, a shrink job or an
     // export has the image open.
     const bool imageInUse = entry && entry->state != VmEntry::State::Stopped && entry->state != VmEntry::State::Saved;
@@ -3892,6 +3888,15 @@ void MainWindow::manageSnapshotsForVm(const QString &vmName)
                                    entry ? entry->qmpClient.data() : nullptr,
                                    imageInUse,
                                    dialogParentFor(vmName));
+    if (cfg.isEncrypted()) {
+        dlg->setEncryptedSystemDisk(
+            [this, vmName](SnapshotDialog::KeyCallback done) {
+                requestDiskKey(vmName, i18n("Enter the password of the system disk of '%1' to change its snapshots.", vmName), std::move(done));
+            },
+            [this, vmName](const QString &error) {
+                handleWrongDiskPassword(vmName, error.toUtf8());
+            });
+    }
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setModal(true);
     dlg->show();

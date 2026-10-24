@@ -6,6 +6,9 @@
 
 #pragma once
 
+#include <functional>
+#include <optional>
+
 #include <QDialog>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -32,6 +35,13 @@ class SnapshotDialog : public QDialog
 public:
     explicit SnapshotDialog(const QString &vmName, const QStringList &diskPaths, QMPClient *qmp, bool imageInUse, QWidget *parent = nullptr);
 
+    using KeyCallback = std::function<void(std::optional<QByteArray> key)>;
+
+    // The system disk is encrypted. Changes work only while the VM is off and
+    // ask @p requestKey for the password once; @p wrongKey is told when it
+    // does not open the disk.
+    void setEncryptedSystemDisk(std::function<void(KeyCallback)> requestKey, std::function<void(const QString &error)> wrongKey);
+
 public Q_SLOTS:
     void reject() override;
 
@@ -50,6 +60,20 @@ private:
     bool m_busy = false;
 
     void setBusy(bool busy);
+
+    // Runs @p action once the password of an encrypted system disk is known.
+    void withDiskKey(std::function<void()> action);
+    // True if @p error came from a wrong password; forgets it and reports.
+    bool handleWrongKey(const QString &error);
+    [[nodiscard]] bool liveBlocked() const
+    {
+        return m_encrypted && m_imageInUse;
+    }
+
+    bool m_encrypted = false;
+    bool m_haveKey = false;
+    std::function<void(KeyCallback)> m_requestKey;
+    std::function<void(const QString &)> m_wrongKey;
 
     void updateHint(const QString &listError);
 

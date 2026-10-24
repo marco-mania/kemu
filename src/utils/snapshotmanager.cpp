@@ -6,9 +6,12 @@
 
 #include "snapshotmanager.h"
 
+#include "utils/diskencryption.h"
 #include "utils/externaltools.h"
 
 #include <QFileInfo>
+
+#include <unistd.h>
 
 #include <algorithm>
 
@@ -32,10 +35,23 @@ SnapshotManager::SnapshotManager(QObject *parent)
 
 SnapshotManager::~SnapshotManager()
 {
+    for (QByteArray &key : m_diskKeys)
+        DiskEncryption::wipe(key);
+
     for (auto it = m_pendingJobs.cbegin(); it != m_pendingJobs.cend(); ++it) {
         if (it->qmp)
             it->qmp->sendCommand(u"job-dismiss"_s, {{u"id"_s, it.key()}}, nullptr);
     }
+}
+
+void SnapshotManager::setDiskKey(const QString &diskPath, const QByteArray &key)
+{
+    if (auto it = m_diskKeys.find(diskPath); it != m_diskKeys.end()) {
+        DiskEncryption::wipe(*it);
+        m_diskKeys.erase(it);
+    }
+    if (!key.isEmpty())
+        m_diskKeys.insert(diskPath, key);
 }
 
 // Offline (qemu-img)
@@ -292,6 +308,10 @@ void SnapshotManager::createSnapshot(const QStringList &diskPaths,
                                      bool imageInUse,
                                      std::function<void(bool, QString)> callback)
 {
+    if (qmp && qmp->isConnected() && !m_liveBlocker.isEmpty()) {
+        callback(false, m_liveBlocker);
+        return;
+    }
     if (qmp && qmp->isConnected()) {
         createLiveSnapshot(qmp, name, std::move(callback));
         return;
@@ -309,6 +329,10 @@ void SnapshotManager::revertSnapshot(const QStringList &diskPaths,
                                      bool imageInUse,
                                      std::function<void(bool, QString)> callback)
 {
+    if (qmp && qmp->isConnected() && !m_liveBlocker.isEmpty()) {
+        callback(false, m_liveBlocker);
+        return;
+    }
     if (qmp && qmp->isConnected()) {
         revertLiveSnapshot(qmp, name, callback);
         return;
@@ -326,6 +350,10 @@ void SnapshotManager::deleteSnapshot(const QStringList &diskPaths,
                                      bool imageInUse,
                                      std::function<void(bool, QString)> callback)
 {
+    if (qmp && qmp->isConnected() && !m_liveBlocker.isEmpty()) {
+        callback(false, m_liveBlocker);
+        return;
+    }
     if (qmp && qmp->isConnected()) {
         deleteLiveSnapshot(qmp, name, callback);
         return;
@@ -573,7 +601,23 @@ void SnapshotManager::runQemuImgAsync(const QStringList &args, std::function<voi
 
     auto *proc = new KProcess(this);
     proc->setOutputChannelMode(KProcess::SeparateChannels);
-    proc->setProgram(program, args);
+
+    // "snapshot <options> <image>": an encrypted image is opened with its
+    // key, handed over through a pipe.
+    QStringList finalArgs = args;
+    int keyFd = -1;
+    if (args.size() >= 2 && args.first() == u"snapshot"_s && m_diskKeys.contains(args.last())) {
+        keyFd = DiskEncryption::secretFd(m_diskKeys.value(args.last()));
+        if (keyFd < 0) {
+            proc->deleteLater();
+            callback(false, i18n("The password could not be passed to qemu-img."));
+            return;
+        }
+        finalArgs = QStringList{u"snapshot"_s, u"--object"_s, DiskEncryption::secretObject(keyFd), u"--image-opts"_s} + args.mid(1, args.size() - 2)
+            + QStringList{DiskEncryption::imageOptions(args.last())};
+        DiskEncryption::inheritFds(proc, {keyFd});
+    }
+    proc->setProgram(program, finalArgs);
 
     auto timedOut = std::make_shared<bool>(false);
 
@@ -612,6 +656,8 @@ void SnapshotManager::runQemuImgAsync(const QStringList &args, std::function<voi
     });
 
     proc->start();
+    if (keyFd >= 0)
+        ::close(keyFd);
     limit->start();
 }
 
