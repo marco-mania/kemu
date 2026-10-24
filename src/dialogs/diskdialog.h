@@ -14,9 +14,9 @@ class QComboBox;
 class QDialogButtonBox;
 class QLabel;
 class QLineEdit;
-class QPushButton;
 class QRadioButton;
 class QSpinBox;
+class QToolButton;
 class KUrlRequester;
 
 class DiskDialog : public QDialog
@@ -68,7 +68,7 @@ private:
     QLabel *m_sourceHint = nullptr;
     QComboBox *m_interfaceCombo = nullptr;
     QDialogButtonBox *m_buttonBox = nullptr;
-    QPushButton *m_compactButton = nullptr;
-    QPushButton *m_expandButton = nullptr;
+    QToolButton *m_compactButton = nullptr;
+    QToolButton *m_expandButton = nullptr;
     int m_currentSizeGb = 0;
 };

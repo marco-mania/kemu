@@ -33,6 +33,7 @@
 #include "utils/asynchelperprocess.h"
 #include "utils/cloudimagedeployer.h"
 #include "utils/diskencryption.h"
+#include "utils/diskimagecheck.h"
 #include "utils/diskkeystore.h"
 #include "utils/linkedclones.h"
 #include "utils/qemucapabilities.h"
@@ -1228,6 +1229,11 @@ void MainWindow::updateDetails()
         perfMonitor->setActive(vmLive);
     }
 
+    // A padlock after the label of an encrypted disk; the image header says
+    // so, whatever the configuration.
+    const auto encryptionIcon = [this](const QString &diskPath) {
+        return DiskImageCheck::qcow2IsEncrypted(diskPath) ? u"&nbsp;"_s + encodeThemeIcon(u"object-locked"_s, 14) : QString();
+    };
     const auto diskValueFor = [&](const QString &diskPath, VMSpecs::DiskInterface diskInterface) -> QString {
         const QemuImgProcess::ImageInfo dInfo = diskInfoFor(diskPath);
         QString diskVal;
@@ -1523,7 +1529,7 @@ void MainWindow::updateDetails()
                          {u"clock"_s, i18n("Clock"), currentConfig.useLocalTime() ? i18n("Localtime") : i18n("UTC"), false, false},
                          {u"media-flash"_s, i18n("Memory"), memVal, true, false},
                          {u"cpu"_s, i18n("Processors"), cpuVal, false, false},
-                         {u"drive-harddisk"_s, i18n("System Disk"), diskVal, true, false},
+                         {u"drive-harddisk"_s, i18n("System Disk") + encryptionIcon(currentConfig.diskPath()), diskVal, true, false},
                          {u"media-optical"_s, i18n("CD/DVD"), cdVal, false, currentConfig.isoPath().isEmpty()},
                          {u"media-floppy"_s, i18n("Floppy"), floppyVal, false, currentConfig.floppyPath().isEmpty()},
                          {u"video-display"_s, i18n("Display"), displayStr, true, false},
@@ -1538,15 +1544,8 @@ void MainWindow::updateDetails()
     for (qsizetype i = 0; i < extraDisks.size(); ++i) {
         const DiskConfig &disk = extraDisks.at(i);
         const QString label = disk.label.isEmpty() ? i18n("Hard Disk %1", i + 2) : disk.label;
-        const QString value = diskValueFor(getVmDir(currentConfig.name()).absoluteFilePath(disk.fileName), disk.diskInterface);
-        rows.insert(diskRow++, {u"drive-harddisk"_s, label, value, false, false});
-    }
-
-    if (currentConfig.isEncrypted()) {
-        const QString walletInfo = DiskKeyStore::hasKey(currentConfig.diskKeyId()) ? i18n("password stored in KWallet") : i18n("password asked at start");
-        rows.insert(diskRow++, {u"object-locked"_s, i18n("Encryption"), i18n("System disk, LUKS (%1)", walletInfo), false, false});
-    } else {
-        rows.insert(diskRow++, {u"object-unlocked"_s, i18n("Encryption"), i18n("None"), false, true});
+        const QString path = getVmDir(currentConfig.name()).absoluteFilePath(disk.fileName);
+        rows.insert(diskRow++, {u"drive-harddisk"_s, label + encryptionIcon(path), diskValueFor(path, disk.diskInterface), false, false});
     }
 
     if (entry && entry->isFrozen()) {

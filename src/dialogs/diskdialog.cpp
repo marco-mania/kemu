@@ -11,12 +11,14 @@
 #include <QDialogButtonBox>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSpinBox>
 #include <QStandardItemModel>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <KColorScheme>
@@ -107,27 +109,36 @@ DiskDialog::DiskDialog(Mode mode, VMSpecs::MachineType machineType, QWidget *par
     m_buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     if (mode == Mode::Add)
         m_buttonBox->button(QDialogButtonBox::Ok)->setText(i18n("Add"));
+    // Small buttons in the lower left, as next to the system disk in the
+    // VM settings. They act at once, independent of OK/Cancel.
+    auto *bottom = new QHBoxLayout;
     if (mode == Mode::Edit) {
-        m_expandButton = m_buttonBox->addButton(i18n("Expand..."), QDialogButtonBox::ActionRole);
-        m_expandButton->setIcon(QIcon::fromTheme(u"zoom-in"_s, QIcon::fromTheme(u"list-add"_s)));
-        m_expandButton->setToolTip(i18n("Grow the disk image to the size above. The guest enlarges its partition and file system itself."));
-        m_expandButton->hide();
-        connect(m_expandButton, &QPushButton::clicked, this, [this] {
+        const auto makeButton = [this](const QIcon &icon, const QString &text) {
+            auto *button = new QToolButton(this);
+            button->setIcon(icon);
+            button->setToolTip(text);
+            button->setAccessibleName(text);
+            button->hide();
+            return button;
+        };
+        m_expandButton = makeButton(QIcon::fromTheme(u"zoom-in"_s, QIcon::fromTheme(u"list-add"_s)), i18n("Expand the disk..."));
+        m_compactButton = makeButton(QIcon::fromTheme(u"edit-clear-history"_s), i18n("Compact the disk..."));
+        bottom->addWidget(m_expandButton);
+        bottom->addWidget(m_compactButton);
+
+        connect(m_expandButton, &QToolButton::clicked, this, [this] {
             Q_EMIT expandRequested(m_sizeSpin->value());
         });
         connect(m_sizeSpin, &QSpinBox::valueChanged, this, [this](int value) {
             m_expandButton->setEnabled(m_currentSizeGb > 0 && value > m_currentSizeGb);
         });
-
-        m_compactButton = m_buttonBox->addButton(i18n("Compact..."), QDialogButtonBox::ActionRole);
-        m_compactButton->setIcon(QIcon::fromTheme(u"edit-clear-history"_s));
-        m_compactButton->setToolTip(i18n("Compact the disk image by removing unused blocks. Please free blocks on guest OS level first."));
-        m_compactButton->hide();
-        connect(m_compactButton, &QPushButton::clicked, this, &DiskDialog::compactRequested);
+        connect(m_compactButton, &QToolButton::clicked, this, &DiskDialog::compactRequested);
     }
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    layout->addWidget(m_buttonBox);
+    bottom->addStretch();
+    bottom->addWidget(m_buttonBox);
+    layout->addLayout(bottom);
 
     updateState();
 }
