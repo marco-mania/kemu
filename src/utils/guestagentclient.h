@@ -10,12 +10,14 @@
 #include <optional>
 
 #include <QByteArray>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QLocalSocket>
 #include <QObject>
 #include <QQueue>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
 
 /**
@@ -45,6 +47,15 @@ public:
 
     using Callback = std::function<void(bool ok, const QJsonValue &result, const QString &error)>;
 
+    // What the agent tells about the guest; empty fields are unknown.
+    struct GuestInfo {
+        QString hostName;
+        QString osName; // e.g. "Ubuntu 24.04.1 LTS"
+        QStringList addresses; // IPv4 first; no loopback or link-local
+
+        bool operator==(const GuestInfo &other) const = default;
+    };
+
     explicit GuestAgentClient(QObject *parent = nullptr);
     ~GuestAgentClient() override;
 
@@ -68,20 +79,39 @@ public:
         return m_version;
     }
 
+    // Read once connected and every kInfoIntervalMs.
+    [[nodiscard]] GuestInfo guestInfo() const
+    {
+        return m_info;
+    }
+
     // Commands run one after the other. Fails at once unless connected.
     void sendCommand(const QString &command, const QJsonObject &arguments, Callback callback);
 
+    // For commands the agent does not answer when they succeed, like
+    // guest-shutdown. False unless connected.
+    bool sendCommandNoReply(const QString &command, const QJsonObject &arguments);
+
+    // Reads host name, OS and addresses again.
+    void refreshGuestInfo();
+
     static constexpr int kCommandTimeoutMs = 10000;
     static constexpr int kRetryIntervalMs = 15000;
+    static constexpr int kInfoIntervalMs = 30000;
+
+    // Exposed for testing.
+    [[nodiscard]] static QStringList addressesFromInterfaces(const QJsonArray &interfaces);
 
 Q_SIGNALS:
     void statusChanged(GuestAgentClient::Status status);
+    void guestInfoChanged();
 
 private:
     struct Request {
         QString command;
         QJsonObject arguments;
         Callback callback;
+        bool noReply = false;
     };
 
     void startSync();
@@ -92,15 +122,21 @@ private:
     void onTimeout();
     void setStatus(Status status);
     void failAll(const QString &error);
+    void setGuestInfo(const GuestInfo &info);
 
     QLocalSocket m_socket;
     QByteArray m_buffer;
     QTimer m_timeout;
     QTimer m_retry;
+    QTimer m_infoTimer;
 
     Status m_status = Status::Waiting;
     bool m_portOpen = false;
     QString m_version;
+    GuestInfo m_info;
+    // A command went out without a reply to wait for: whatever the agent
+    // still sends (an error) would be taken for the next reply.
+    bool m_needsSync = false;
 
     // guest-sync-delimited in flight: skip input up to the 0xFF, then expect
     // the reply carrying m_syncId.

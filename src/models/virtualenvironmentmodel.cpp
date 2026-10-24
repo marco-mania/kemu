@@ -159,6 +159,9 @@ QVariant VirtualEnvironmentModel::data(const QModelIndex &index, int role) const
                 QString s = formatUptime(vm.startedAt);
                 if (vm.isHeadless && !s.isEmpty())
                     s += i18nc("appended to VM uptime", " \u00B7 headless");
+                // From the guest agent, if one runs.
+                if (!vm.guestAddress.isEmpty())
+                    s += s.isEmpty() ? vm.guestAddress : u" \u00B7 "_s + vm.guestAddress;
                 return s;
             }
             case VmEntry::State::Saved:
@@ -420,6 +423,16 @@ void VirtualEnvironmentModel::setVmState(const QString &name, VmEntry::State sta
     emitVmChanged(name);
     Q_EMIT vmStateChanged(name, state);
     updateUptimeTimer();
+}
+
+void VirtualEnvironmentModel::setGuestAddress(const QString &name, const QString &address)
+{
+    if (VmEntry *e = entryByName(name)) {
+        if (e->guestAddress == address)
+            return;
+        e->guestAddress = address;
+        emitVmChanged(name);
+    }
 }
 
 void VirtualEnvironmentModel::setHeadless(const QString &name, const bool headless)

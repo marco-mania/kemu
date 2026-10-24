@@ -6,8 +6,11 @@
 
 #include "guestagentclient.h"
 
+#include <memory>
+
 #include <unistd.h>
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QPointer>
 #include <QRandomGenerator>
@@ -33,6 +36,9 @@ GuestAgentClient::GuestAgentClient(QObject *parent)
     m_retry.setSingleShot(true);
     m_retry.setInterval(kRetryIntervalMs);
     connect(&m_retry, &QTimer::timeout, this, &GuestAgentClient::startSync);
+
+    m_infoTimer.setInterval(kInfoIntervalMs);
+    connect(&m_infoTimer, &QTimer::timeout, this, &GuestAgentClient::refreshGuestInfo);
 
     connect(&m_socket, &QLocalSocket::readyRead, this, &GuestAgentClient::onReadyRead);
     connect(&m_socket, &QLocalSocket::disconnected, this, [this] {
@@ -75,6 +81,7 @@ void GuestAgentClient::setPortOpen(bool open)
     m_version.clear();
     failAll(i18n("The guest agent is no longer running."));
     setStatus(Status::Waiting);
+    setGuestInfo({});
 }
 
 void GuestAgentClient::sendCommand(const QString &command, const QJsonObject &arguments, Callback callback)
@@ -88,6 +95,75 @@ void GuestAgentClient::sendCommand(const QString &command, const QJsonObject &ar
     sendNext();
 }
 
+bool GuestAgentClient::sendCommandNoReply(const QString &command, const QJsonObject &arguments)
+{
+    if (m_status != Status::Connected)
+        return false;
+    m_queue.enqueue({command, arguments, {}, true});
+    sendNext();
+    return true;
+}
+
+void GuestAgentClient::refreshGuestInfo()
+{
+    if (m_status != Status::Connected)
+        return;
+
+    // Older agents lack some commands; what fails stays unknown.
+    auto info = std::make_shared<GuestInfo>();
+    const QPointer<GuestAgentClient> self(this);
+    sendCommand(u"guest-get-host-name"_s, {}, [info](bool ok, const QJsonValue &result, const QString &) {
+        if (ok)
+            info->hostName = result.toObject().value(u"host-name"_s).toString();
+    });
+    sendCommand(u"guest-get-osinfo"_s, {}, [info](bool ok, const QJsonValue &result, const QString &) {
+        if (!ok)
+            return;
+        const QJsonObject os = result.toObject();
+        info->osName = os.value(u"pretty-name"_s).toString();
+        if (info->osName.isEmpty())
+            info->osName = QString(os.value(u"name"_s).toString() + u' ' + os.value(u"version"_s).toString()).trimmed();
+    });
+    sendCommand(u"guest-network-get-interfaces"_s, {}, [self, info](bool ok, const QJsonValue &result, const QString &) {
+        if (!self)
+            return;
+        if (ok)
+            info->addresses = addressesFromInterfaces(result.toArray());
+        // The last of the three: replies come in order.
+        if (self->m_status == Status::Connected)
+            self->setGuestInfo(*info);
+    });
+}
+
+QStringList GuestAgentClient::addressesFromInterfaces(const QJsonArray &interfaces)
+{
+    QStringList v4;
+    QStringList v6;
+    for (const QJsonValue &interface : interfaces) {
+        const QJsonArray addresses = interface.toObject().value(u"ip-addresses"_s).toArray();
+        for (const QJsonValue &entry : addresses) {
+            const QJsonObject address = entry.toObject();
+            const QString ip = address.value(u"ip-address"_s).toString();
+            const bool isV6 = address.value(u"ip-address-type"_s).toString() == u"ipv6"_s;
+            // Loopback and link-local addresses do not reach the guest.
+            if (ip.isEmpty() || ip.startsWith(u"127."_s) || ip.startsWith(u"169.254."_s) || ip == u"::1"_s || ip.startsWith(u"fe80:"_s, Qt::CaseInsensitive))
+                continue;
+            QStringList &list = isV6 ? v6 : v4;
+            if (!list.contains(ip))
+                list << ip;
+        }
+    }
+    return v4 + v6;
+}
+
+void GuestAgentClient::setGuestInfo(const GuestInfo &info)
+{
+    if (info == m_info)
+        return;
+    m_info = info;
+    Q_EMIT guestInfoChanged();
+}
+
 void GuestAgentClient::startSync()
 {
     if (!m_portOpen || m_socket.state() != QLocalSocket::ConnectedState)
@@ -95,10 +171,13 @@ void GuestAgentClient::startSync()
 
     m_retry.stop();
     m_buffer.clear();
+    m_needsSync = false;
     m_syncing = true;
     m_skipToDelimiter = true;
     m_syncId = qint64(QRandomGenerator::global()->bounded(1, 1 << 30));
-    if (m_status != Status::Unresponsive)
+    // A connected agent stays connected while the stream is brought back in
+    // step; one that did not answer stays unresponsive until it does.
+    if (m_status == Status::Waiting)
         setStatus(Status::Syncing);
 
     // A leading 0xFF makes the agent drop whatever partial request it holds.
@@ -111,8 +190,21 @@ void GuestAgentClient::sendNext()
 {
     if (m_inFlight || m_syncing || m_queue.isEmpty())
         return;
-    m_inFlight = m_queue.dequeue();
-    writeRequest(m_inFlight->command, m_inFlight->arguments);
+    if (m_needsSync) {
+        startSync();
+        return;
+    }
+
+    Request request = m_queue.dequeue();
+    writeRequest(request.command, request.arguments);
+    if (request.noReply) {
+        m_needsSync = true;
+        if (request.callback)
+            request.callback(true, {}, {});
+        sendNext();
+        return;
+    }
+    m_inFlight = std::move(request);
     m_timeout.start();
 }
 
@@ -173,7 +265,12 @@ void GuestAgentClient::handleLine(const QByteArray &line)
                                  if (!self)
                                      return;
                                  self->m_version = ok ? result.toObject().value(u"version"_s).toString() : QString();
+                                 const bool wasConnected = self->m_status == Status::Connected;
                                  self->setStatus(Status::Connected);
+                                 if (!wasConnected) {
+                                     self->refreshGuestInfo();
+                                     self->m_infoTimer.start();
+                                 }
                              }};
         writeRequest(m_inFlight->command, m_inFlight->arguments);
         m_timeout.start();
@@ -214,6 +311,8 @@ void GuestAgentClient::setStatus(Status status)
     if (status == m_status)
         return;
     m_status = status;
+    if (status != Status::Connected)
+        m_infoTimer.stop();
     Q_EMIT statusChanged(status);
 }
 

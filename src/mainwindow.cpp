@@ -424,6 +424,10 @@ void MainWindow::setupUi()
             const QString pidString = url.path();
             QGuiApplication::clipboard()->setText(pidString);
             QToolTip::showText(QCursor::pos(), i18n("PID %1 copied to clipboard", pidString), detailsBrowser, QRect(), 2000);
+        } else if (url.scheme() == "copy-ip"_L1) {
+            const QString address = url.path();
+            QGuiApplication::clipboard()->setText(address);
+            QToolTip::showText(QCursor::pos(), i18n("%1 copied to clipboard", address), detailsBrowser, QRect(), 2000);
         } else if (url.scheme() == "http"_L1 || url.scheme() == "https"_L1) {
             QDesktopServices::openUrl(url);
         }
@@ -1610,6 +1614,18 @@ void MainWindow::updateDetails()
             }
         }
         rows.append({u"utilities-terminal"_s, i18n("Guest Agent"), agentVal, true, agentMuted});
+
+        const GuestAgentClient::GuestInfo info = agent && agent->isConnected() ? agent->guestInfo() : GuestAgentClient::GuestInfo{};
+        if (!info.hostName.isEmpty())
+            rows.append({u"network-server"_s, i18n("Host Name"), info.hostName.toHtmlEscaped(), false, false});
+        if (!info.addresses.isEmpty()) {
+            QStringList links;
+            for (const QString &address : info.addresses)
+                links << u"<a href='copy-ip:%1' title='%2'>%1</a>"_s.arg(address.toHtmlEscaped(), i18n("Click to copy the address"));
+            rows.append({u"network-wired"_s, i18np("IP Address", "IP Addresses", info.addresses.size()), links.join(u", "_s), false, false});
+        }
+        if (!info.osName.isEmpty())
+            rows.append({u"computer"_s, i18n("Operating System"), info.osName.toHtmlEscaped(), false, false});
     }
 
     const int hwIconPx = 14;
@@ -3764,14 +3780,19 @@ void MainWindow::shutdownVMByName(const QString &vmName)
         return;
     }
 
-    const KGuiItem shutdownItem(i18n("Shutdown"), u"system-shutdown"_s, i18n("Send ACPI power-off signal to the guest"));
+    const VmRuntimeInfo *rt = m_runtimeManager->runtime(vmName);
+    const bool viaAgent = rt && rt->guestAgent && rt->guestAgent->isConnected();
+    const KGuiItem shutdownItem(i18n("Shutdown"),
+                                u"system-shutdown"_s,
+                                viaAgent ? i18n("Shut the guest down through its guest agent") : i18n("Send ACPI power-off signal to the guest"));
 
+    const QString how = viaAgent ? i18n("The guest agent shuts the guest down. Unsaved work inside the guest may be lost.")
+                                 : i18n(
+                                       "The guest will receive an ACPI power-off signal. "
+                                       "Unsaved work inside the guest may be lost if the guest OS "
+                                       "does not handle the signal.");
     const auto answer = KMessageBox::questionTwoActions(parentW,
-                                                        i18n("Are you sure you want to shut down '%1'?\n\n"
-                                                             "The guest will receive an ACPI power-off signal. "
-                                                             "Unsaved work inside the guest may be lost if the guest OS "
-                                                             "does not handle the signal.",
-                                                             vmName),
+                                                        i18n("Are you sure you want to shut down '%1'?\n\n%2", vmName, how),
                                                         i18nc("@title:window", "Confirm Shutdown"),
                                                         shutdownItem,
                                                         KStandardGuiItem::cancel(),
@@ -3781,14 +3802,12 @@ void MainWindow::shutdownVMByName(const QString &vmName)
 
     m_runtimeManager->runtimeFor(vmName).userInitiatedShutdown = true;
 
-    const QMPResult result = client->sendCommandSync(u"system_powerdown"_s);
-
-    if (!result.success) {
+    if (const QString error = requestGuestShutdown(vmName, client); !error.isEmpty()) {
         if (auto *rt = m_runtimeManager->runtime(vmName)) {
             rt->userInitiatedShutdown = false;
             rt->resumingFromSavestate = false;
         }
-        KMessageBox::error(parentW, result.errorMessage, i18n("Shutdown Failed"));
+        KMessageBox::error(parentW, error, i18n("Shutdown Failed"));
         return;
     }
 
@@ -5287,6 +5306,18 @@ void MainWindow::confirmDeploymentAbort(const QString &vmName)
     }
 }
 
+QString MainWindow::requestGuestShutdown(const QString &vmName, QMPClient *client)
+{
+    // The agent does not depend on the guest reacting to ACPI; it does not
+    // answer on success, though.
+    const VmRuntimeInfo *rt = m_runtimeManager->runtime(vmName);
+    if (rt && rt->guestAgent && rt->guestAgent->sendCommandNoReply(u"guest-shutdown"_s, {{u"mode"_s, u"powerdown"_s}}))
+        return {};
+
+    const QMPResult result = client->sendCommandSync(u"system_powerdown"_s);
+    return result.success ? QString() : result.errorMessage;
+}
+
 void MainWindow::shutdownDeployment(const QString &vmName)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
@@ -5304,13 +5335,12 @@ void MainWindow::shutdownDeployment(const QString &vmName)
         m_pendingDeploymentAbort.insert(vmName, false);
     m_runtimeManager->runtimeFor(vmName).userInitiatedShutdown = true;
 
-    const QMPResult result = client->sendCommandSync(u"system_powerdown"_s);
-    if (!result.success) {
+    if (const QString error = requestGuestShutdown(vmName, client); !error.isEmpty()) {
         if (registered)
             m_pendingDeploymentAbort.remove(vmName);
         if (auto *rt = m_runtimeManager->runtime(vmName))
             rt->userInitiatedShutdown = false;
-        KMessageBox::error(dialogParentFor(vmName), result.errorMessage, i18n("Shutdown Failed"));
+        KMessageBox::error(dialogParentFor(vmName), error, i18n("Shutdown Failed"));
         return;
     }
 

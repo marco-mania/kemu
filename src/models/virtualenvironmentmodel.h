@@ -54,6 +54,7 @@ struct VmEntry {
     State state = State::Stopped;
 
     bool isHeadless = false;
+    QString guestAddress; // first address the guest agent reported
 
     QPointer<QMPClient> qmpClient;
 
@@ -108,6 +109,7 @@ struct VmEntry {
     {
         state = State::Stopped;
         isHeadless = false;
+        guestAddress.clear();
         startedAt = {};
         qemuProcess = nullptr;
         swtpmProcess = nullptr;
@@ -180,6 +182,7 @@ public:
     // State management (emits dataChanged)
     void setVmState(const QString &name, VmEntry::State state);
     void setHeadless(const QString &name, const bool headless);
+    void setGuestAddress(const QString &name, const QString &address);
     void setQemuProcess(const QString &name, KProcess *process);
     void setSwtpmProcess(const QString &name, KProcess *process);
     void setVirtiofsdProcess(const QString &name, KProcess *process);

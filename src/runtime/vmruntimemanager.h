@@ -180,7 +180,8 @@ Q_SIGNALS:
     // channel matches VirtualEnvironmentModel::appendPerfSample().
     void perfSample(const QString &vmName, int channel, double value);
 
-    // The guest agent of the VM came, went or stopped answering.
+    // The guest agent of the VM came, went or stopped answering, or told
+    // something new about the guest.
     void guestAgentChanged(const QString &vmName);
 
 private:

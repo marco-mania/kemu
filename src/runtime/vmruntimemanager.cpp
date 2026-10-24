@@ -188,6 +188,10 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
         connect(agent, &GuestAgentClient::statusChanged, this, [this, vmName] {
             Q_EMIT guestAgentChanged(vmName);
         });
+        connect(agent, &GuestAgentClient::guestInfoChanged, this, [this, agent, vmName] {
+            m_model->setGuestAddress(vmName, agent->guestInfo().addresses.value(0));
+            Q_EMIT guestAgentChanged(vmName);
+        });
         runtimeFor(vmName).guestAgent = agent;
     }
     if (netCtx.switchFd >= 0 && m_network_manager)

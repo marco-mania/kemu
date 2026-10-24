@@ -230,6 +230,8 @@ private:
     void registerAudioListeners(const QString &vmName);
 
     bool requireTool(const ExternalTools::Tool tool);
+    // Through the guest agent if it answers, otherwise ACPI; the error, if any.
+    QString requestGuestShutdown(const QString &vmName, QMPClient *client);
     // swtpm and swtpm_ioctl, if @p vmName has a TPM state to move to a new password.
     // Rewrites @p diskPath of @p vmName; asks first, over @p parent.
     // After the clone dialog; @p diskKey opens an encrypted system disk.

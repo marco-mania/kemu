@@ -630,6 +630,13 @@ show whether the agent is connected and which version it has.
   (`guest-exec`, `guest-file-*`). KEMU does not use these commands.
 - Machines without a PCI bus (ISA PC) have no channel.
 
+With the agent connected, the details of a running VM also show the
+guest's host name, operating system and IP addresses (refreshed every 30
+seconds; a click copies an address) and the VM list shows the first
+address next to the uptime. "Shut Down" then goes through the agent, which
+works even if the guest ignores the ACPI power button. Without an agent
+KEMU sends the ACPI signal.
+
 ## Additional Disks
 
 The system disk is all most VMs need. Further disks can be added in the VM
