@@ -30,6 +30,7 @@ timezone: {{ TIMEZONE }}
 
 packages:
   - sudo
+  - qemu-guest-agent
 {% for pkg in PACKAGES %}
   - {{ pkg }}
 {% endfor %}
@@ -51,6 +52,9 @@ chpasswd:
   expire: false
 
 runcmd:
+  # The agent talks through the virtio console driver.
+  - sysrc -f /boot/loader.conf virtio_console_load=YES
+  - sysrc qemu_guest_agent_enable=YES
 {% if DESKTOP_ENVIRONMENT %}
   - sysrc -f /boot/loader.conf hw.usb.usbhid.enable=1
   - sysrc dbus_enable=YES

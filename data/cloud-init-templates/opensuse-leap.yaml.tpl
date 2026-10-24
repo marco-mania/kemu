@@ -45,6 +45,7 @@ package_upgrade: true
 
 packages:
   - glibc-locale
+  - qemu-guest-agent
 {% for pkg in PACKAGES %}
   - {{ pkg }}
 {% endfor %}

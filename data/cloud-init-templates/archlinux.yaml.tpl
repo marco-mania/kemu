@@ -31,9 +31,8 @@ keyboard:
   variant: {{ KB_VARIANT }}
 {% endif %}
 
-{% if PACKAGES or DESKTOP_ENVIRONMENT %}
 packages:
-{% endif %}
+  - qemu-guest-agent
 {% for pkg in PACKAGES %}
   - {{ pkg }}
 {% endfor %}

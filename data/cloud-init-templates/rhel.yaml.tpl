@@ -33,6 +33,7 @@ keyboard:
 
 packages:
   - glibc-langpack-{{ LANG_SHORT }}
+  - qemu-guest-agent
 {% for pkg in PACKAGES %}
   - {{ pkg }}
 {% endfor %}

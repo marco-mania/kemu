@@ -54,6 +54,7 @@ apt:
 packages:
   - console-setup
   - keyboard-configuration
+  - qemu-guest-agent
 {% for pkg in PACKAGES %}
   - {{ pkg }}
 {% endfor %}
