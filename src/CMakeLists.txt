@@ -174,6 +174,8 @@ target_sources(
           jobs/createvmjob.h
           jobs/shrinkjob.cpp
           jobs/shrinkjob.h
+          jobs/expanddiskjob.cpp
+          jobs/expanddiskjob.h
           jobs/exportjob.cpp
           jobs/exportjob.h
           jobs/importjob.cpp

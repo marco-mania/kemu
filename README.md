@@ -19,6 +19,7 @@ Widgets and KDE Frameworks 6 for deep desktop integration.
 - Snapshot support (QCOW2)
 - Linked clones
 - Encrypted system disk and TPM state (LUKS)
+- Expand disks
 - Hot-swapping of ISO and floppy images
 - Networking: User-mode networking or in-process virtual networks
   (in-memory L2 switch with built-in DHCP and optional libslirp NAT)
@@ -37,7 +38,7 @@ Widgets and KDE Frameworks 6 for deep desktop integration.
 - Pointer capture in the D-Bus viewer requires a Wayland session. Under X11 or
   XWayland the capture action is disabled; guests with an absolute pointing
   device (tablet) are unaffected and work everywhere.
-- Virtual network NAT is IPv4-only, and outbound ICMP echo (ping) from guests is
+- Virtual network NAT is IPv4-only and outbound ICMP echo (ping) from guests is
   not translated by the NAT (a limitation of the embedded libslirp stack).
 
 ## Gallery

@@ -43,9 +43,15 @@ public:
     /// Edit mode, for a disk that exists already: offers compacting it,
     /// which happens at once, independent of OK/Cancel.
     void setCompactAvailable(bool available);
+    /// Edit mode, existing disk: its size; larger sizes are applied at once
+    /// through "Expand...". 0 if unknown.
+    void setCurrentSize(int sizeGb);
+    /// Edit mode, disk that is only created on OK: its size can change.
+    void setNewDiskSize(int sizeGb);
 
 Q_SIGNALS:
     void compactRequested();
+    void expandRequested(int sizeGb);
 
 private:
     void updateState();
@@ -63,4 +69,6 @@ private:
     QComboBox *m_interfaceCombo = nullptr;
     QDialogButtonBox *m_buttonBox = nullptr;
     QPushButton *m_compactButton = nullptr;
+    QPushButton *m_expandButton = nullptr;
+    int m_currentSizeGb = 0;
 };

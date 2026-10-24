@@ -236,6 +236,9 @@ private:
     void startClone(const QString &srcName, const QUuid &srcUuid, const QString &srcPath, const QString &dstPath, bool linked, const QByteArray &diskKey);
     void compactDisk(const QString &vmName, const QString &diskPath, QWidget *parent);
     void runCompactJob(ShrinkJob *job, QWidget *parent);
+    // Grows @p diskPath to @p sizeGb after asking over @p parent; tells
+    // @p dialog when done.
+    void expandDisk(const QString &vmName, const QString &diskPath, int sizeGb, EditVmDialog *dialog, QWidget *parent);
     bool requireTpmRekeyTools(const QString &vmName, QWidget *parent);
     /// Creates the VM's UEFI variable store if needed and reports problems.
     /// False if the VM cannot boot with UEFI.

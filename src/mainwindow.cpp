@@ -23,6 +23,7 @@
 #include "jobs/diskpasswordjob.h"
 #include "jobs/downloadjob.h"
 #include "jobs/encryptdiskjob.h"
+#include "jobs/expanddiskjob.h"
 #include "jobs/exportjob.h"
 #include "jobs/importjob.h"
 #include "jobs/ovaexportjob.h"
@@ -2503,6 +2504,93 @@ void MainWindow::compactDisk(const QString &vmName, const QString &diskPath, QWi
     });
 }
 
+void MainWindow::expandDisk(const QString &vmName, const QString &diskPath, int sizeGb, EditVmDialog *dialog, QWidget *parent)
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry || diskPath.isEmpty() || veModel->isBusy(vmName))
+        return;
+
+    const QString title = i18nc("@title:window", "Expand Disk Image");
+    const QemuImgProcess::ImageInfo info = QemuImgProcess::inspect(diskPath);
+    const qint64 newBytes = qint64(sizeGb) << 30;
+    if (!info.isValid || newBytes <= info.virtualSizeBytes)
+        return;
+
+    const VMConfig config = entry->config;
+    const QStringList diskPaths = config.diskPaths(getVmDir(vmName));
+    const bool isSystemDisk = diskPath == diskPaths.value(0);
+
+    QString diskName = QFileInfo(diskPath).fileName();
+    for (const DiskConfig &disk : config.extraDisks()) {
+        if (disk.fileName == diskName && !disk.label.isEmpty())
+            diskName = disk.label;
+    }
+
+    const QString from = QString::number(info.virtualSizeGb(), 'f', 1);
+    QString question = isSystemDisk ? i18n("Expand the system disk of '%1' from %2 GB to %3 GB?", vmName, from, sizeGb)
+                                    : i18n("Expand the disk '%2' of '%1' from %3 GB to %4 GB?", vmName, diskName, from, sizeGb);
+    question += u"\n\n"_s
+        + i18n("The disk image cannot be made smaller again. The partition and file system inside are enlarged by the guest: "
+               "cloud images do this at the next start, otherwise use the partitioning tool of the guest.");
+    if (!SnapshotManager().snapshotNames(diskPaths).isEmpty())
+        question += u"\n\n"_s + i18n("Snapshots are kept. Reverting to one of them restores the size the disk had then.");
+    if (KMessageBox::questionTwoActions(parent, question, title, KGuiItem(i18n("Expand"), u"zoom-in"_s), KStandardGuiItem::cancel())
+        != KMessageBox::PrimaryAction)
+        return;
+
+    const QPointer<QWidget> target(parent);
+    const QPointer<EditVmDialog> settings(dialog);
+    const auto run = [this, vmName, diskPath, sizeGb, newBytes, isSystemDisk, target, settings](const QByteArray &key) {
+        if (veModel->isBusy(vmName))
+            return;
+        auto *job = new ExpandDiskJob(vmName, diskPath, newBytes, this);
+        if (!key.isEmpty())
+            job->setDiskKey(key);
+
+        // Takes a moment, longer for an encrypted image.
+        auto *progress = new QProgressDialog(i18n("Expanding the disk of '%1'...", vmName), {}, 0, 0, target ? target.data() : this);
+        progress->setWindowModality(Qt::WindowModal);
+        progress->setMinimumDuration(0);
+        progress->setAttribute(Qt::WA_DeleteOnClose);
+        progress->show();
+
+        connect(job, &KJob::result, this, [this, vmName, diskPath, sizeGb, isSystemDisk, target, settings, progress](KJob *kjob) {
+            progress->close();
+            QWidget *messageParent = target ? target.data() : this;
+            if (kjob->error()) {
+                if (!handleWrongDiskPassword(vmName, kjob->errorText().toUtf8()))
+                    KMessageBox::error(messageParent, kjob->errorText(), i18nc("@title:window", "Expand Disk Image"));
+                return;
+            }
+
+            if (isSystemDisk) {
+                const QString vmPath = getVmDir(vmName).absolutePath();
+                VMConfig config = loadVmConfig(vmPath);
+                config.setDiskSizeGb(sizeGb);
+                saveVmConfig(vmPath, config);
+                veModel->updateConfig(vmName, config);
+                if (currentConfig.name() == vmName)
+                    currentConfig = config;
+            }
+            if (settings)
+                settings->diskExpanded(diskPath, sizeGb);
+            if (currentConfig.name() == vmName)
+                updateDetails();
+            statusBar()->showMessage(i18n("Disk of VM '%1' expanded to %2 GB.", vmName, sizeGb));
+        });
+        job->start();
+    };
+
+    if (!(config.isEncrypted() && isSystemDisk)) {
+        run({});
+        return;
+    }
+    requestDiskKey(vmName, i18n("Enter the password of the system disk of '%1' to expand it.", vmName), [run](std::optional<QByteArray> key) {
+        if (key)
+            run(*key);
+    });
+}
+
 void MainWindow::runCompactJob(ShrinkJob *job, QWidget *parent)
 {
     const QString vmName = job->vmName();
@@ -4178,6 +4266,9 @@ void MainWindow::editVM()
     });
     connect(&dialog, &EditVmDialog::compactDiskRequested, this, [this, editedVm](const QString &diskPath, QWidget *parent) {
         compactDisk(editedVm, diskPath, parent);
+    });
+    connect(&dialog, &EditVmDialog::expandDiskRequested, this, [this, editedVm, &dialog](const QString &diskPath, int sizeGb, QWidget *parent) {
+        expandDisk(editedVm, diskPath, sizeGb, &dialog, parent);
     });
     connect(&dialog, &EditVmDialog::decryptSystemDiskRequested, this, [this, editedVm, &dialog] {
         decryptSystemDisk(editedVm, &dialog);

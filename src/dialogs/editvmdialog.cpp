@@ -170,9 +170,8 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     auto *diskLayout = new QHBoxLayout();
     diskLayout->addWidget(diskSpin);
     if (m_mode == Mode::Edit) {
-        // Encryption: its state as an icon, the actions as small buttons.
+        // Encryption, as small buttons; which ones are shown tells the state.
         // They change the disk at once, so a new VM chooses it elsewhere.
-        encryptionStateIcon = new QLabel();
         const auto makeButton = [](const QIcon &icon, const QString &text) {
             auto *button = new QToolButton();
             button->setIcon(icon);
@@ -185,8 +184,22 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         changePasswordButton = makeButton(QIcon::fromTheme(u"dialog-password"_s, QIcon::fromTheme(u"lock"_s)), i18n("Change the password..."));
         walletButton = new QToolButton();
 
+        // Resizing and compacting act at once as well. A larger value in the
+        // spin box only takes effect through the expand button.
+        expandDiskButton = makeButton(QIcon::fromTheme(u"zoom-in"_s, QIcon::fromTheme(u"list-add"_s)), i18n("Expand the system disk..."));
+        compactDiskButton = makeButton(QIcon::fromTheme(u"edit-clear-history"_s), i18n("Compact the system disk..."));
+        expandDiskButton->setEnabled(false);
+        diskLayout->addWidget(expandDiskButton);
+        diskLayout->addWidget(compactDiskButton);
+        connect(diskSpin, &QSpinBox::valueChanged, this, &EditVmDialog::updateDiskSizeButtons);
+        connect(expandDiskButton, &QToolButton::clicked, this, [this] {
+            Q_EMIT expandDiskRequested(systemDiskPath(), diskSpin->value(), this);
+        });
+        connect(compactDiskButton, &QToolButton::clicked, this, [this] {
+            Q_EMIT compactDiskRequested(systemDiskPath(), this);
+        });
+
         diskLayout->addSpacing(diskLayout->spacing());
-        diskLayout->addWidget(encryptionStateIcon);
         diskLayout->addWidget(encryptButton);
         diskLayout->addWidget(decryptButton);
         diskLayout->addWidget(changePasswordButton);
@@ -1402,7 +1415,8 @@ VMConfig EditVmDialog::getResult() const
     c.setUseBalloon(balloonCheck->isChecked());
     c.setUsePrealloc(preallocCheck->isChecked());
     c.setCpuCoreCount(cpuSpin->value());
-    c.setDiskSizeGb(diskSpin->value());
+    // A larger, not yet applied value is not the size of the disk.
+    c.setDiskSizeGb(m_mode == Mode::Edit && m_systemDiskGb > 0 ? m_systemDiskGb : diskSpin->value());
     c.setISOPath(isoPathRequester->text());
     c.setBootFromIso(bootFromIsoCheck->isChecked());
     c.setFloppyPath(floppyPathRequester->text());
@@ -2009,14 +2023,31 @@ void EditVmDialog::editSelectedDisk()
     dlg.setLabel(entry.disk.label);
     dlg.setDiskInterface(entry.disk.diskInterface);
     if (m_mode == Mode::Edit && entry.exists && !m_vmDir.isEmpty()) {
-        dlg.setCompactAvailable(true);
         const QString diskPath = QDir(m_vmDir).filePath(entry.disk.fileName);
+        const QemuImgProcess::ImageInfo info = QemuImgProcess::inspect(diskPath);
+        dlg.setCurrentSize(info.isValid ? int((info.virtualSizeBytes + (1LL << 30) - 1) >> 30) : 0);
+        dlg.setCompactAvailable(true);
         connect(&dlg, &DiskDialog::compactRequested, this, [this, diskPath, &dlg] {
             Q_EMIT compactDiskRequested(diskPath, &dlg);
         });
+        connect(&dlg, &DiskDialog::expandRequested, this, [this, diskPath, &dlg](int sizeGb) {
+            Q_EMIT expandDiskRequested(diskPath, sizeGb, &dlg);
+        });
+        m_openDiskDialog = &dlg;
+        m_openDiskPath = diskPath;
+    } else if (!entry.exists && entry.sourcePath.isEmpty()) {
+        // Created on OK, so its size can still change freely.
+        dlg.setNewDiskSize(entry.sizeGb);
     }
+    const auto closed = qScopeGuard([this] {
+        m_openDiskDialog = nullptr;
+        m_openDiskPath.clear();
+    });
     if (dlg.exec() != QDialog::Accepted)
         return;
+
+    if (!entry.exists && entry.sourcePath.isEmpty())
+        entry.sizeGb = dlg.sizeGb();
 
     entry.disk.label = dlg.label();
     entry.disk.diskInterface = dlg.diskInterface();
@@ -2136,36 +2167,13 @@ void EditVmDialog::applyEncryptionConstraints()
 
 void EditVmDialog::refreshEncryptionState()
 {
-    if (!encryptionStateIcon)
+    if (!encryptButton)
         return;
 
+    // Which buttons are shown tells whether the disk is encrypted.
     const bool encrypted = m_original.isEncrypted();
     const bool walletAvailable = DiskKeyStore::isAvailable();
     const bool stored = encrypted && DiskKeyStore::hasKey(m_original.diskKeyId());
-
-    const int iconSize = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
-    const QIcon stateIcon = QIcon::fromTheme(encrypted ? u"security-high"_s : u"security-low"_s);
-    encryptionStateIcon->setPixmap(stateIcon.pixmap(iconSize, encrypted ? QIcon::Normal : QIcon::Disabled));
-
-    QString state;
-    if (encrypted) {
-        QString password;
-        if (!walletAvailable)
-            password = i18n("KWallet is not available, the password is asked when the VM starts.");
-        else if (stored)
-            password = i18n("The password is stored in KWallet.");
-        else
-            password = i18n("The password is asked when the VM starts.");
-        state = i18n(
-            "<p><b>The system disk is encrypted</b> (LUKS).</p>"
-            "<p>%1</p>"
-            "<p>The TPM state is encrypted with the same password. Save State is not available. Additional disks stay unencrypted.</p>",
-            password);
-    } else {
-        state = i18n("The system disk is not encrypted.");
-    }
-    encryptionStateIcon->setToolTip(state);
-    encryptionStateIcon->setAccessibleName(encrypted ? i18n("System disk encrypted") : i18n("System disk not encrypted"));
 
     encryptButton->setVisible(!encrypted);
     decryptButton->setVisible(encrypted);
@@ -2224,18 +2232,53 @@ void EditVmDialog::updateToolWarnings()
          i18n("virtiofsd was not found. Windows guests need it for shared folders. The virtual machine does not start until it is available."));
 }
 
+QString EditVmDialog::systemDiskPath() const
+{
+    if (m_vmDir.isEmpty())
+        return {};
+    return m_original.diskPaths(QDir(m_vmDir)).value(0);
+}
+
+void EditVmDialog::updateDiskSizeButtons()
+{
+    if (!expandDiskButton)
+        return;
+    expandDiskButton->setEnabled(!m_readOnly && m_systemDiskGb > 0 && diskSpin->value() > m_systemDiskGb);
+    compactDiskButton->setEnabled(!m_readOnly && m_systemDiskGb > 0);
+}
+
+void EditVmDialog::diskExpanded(const QString &diskPath, int sizeGb)
+{
+    if (diskPath == systemDiskPath()) {
+        m_systemDiskGb = sizeGb;
+        diskSpin->setMinimum(sizeGb);
+        diskSpin->setValue(sizeGb);
+        updateDiskSizeButtons();
+        return;
+    }
+    if (m_openDiskDialog && m_openDiskPath == diskPath)
+        m_openDiskDialog->setCurrentSize(sizeGb);
+    refreshDiskList();
+}
+
 void EditVmDialog::applyModeConstraints()
 {
     if (m_mode != Mode::Edit)
         return;
 
-    // The disk is resized through the dedicated actions in the main window,
-    // which know how to talk to qemu-img.
-    diskSpin->setEnabled(false);
-
-    if (diskLabel)
-        diskLabel->setEnabled(false);
-    // diskSpin->setToolTip(i18n("Use the disk actions in the main window to resize this disk."));
+    // The spin box offers sizes from the current one up; the image grows
+    // through the expand button only.
+    const QemuImgProcess::ImageInfo info = systemDiskPath().isEmpty() ? QemuImgProcess::ImageInfo{} : QemuImgProcess::inspect(systemDiskPath());
+    m_systemDiskGb = info.isValid ? int((info.virtualSizeBytes + (1LL << 30) - 1) >> 30) : 0;
+    if (m_systemDiskGb > 0) {
+        diskSpin->setMinimum(m_systemDiskGb);
+        diskSpin->setValue(m_systemDiskGb);
+        diskSpin->setToolTip(i18n("The size of the system disk. Enter a larger size and expand the disk with the button next to it."));
+    } else {
+        diskSpin->setEnabled(false);
+        compactDiskButton->setEnabled(false);
+    }
+    updateDiskSizeButtons();
 
     // Changing these on an installed guest usually makes it unbootable.
     const QString warning = i18n("Changing this on an installed guest can make it unbootable.");

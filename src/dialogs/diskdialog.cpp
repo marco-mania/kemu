@@ -77,6 +77,15 @@ DiskDialog::DiskDialog(Mode mode, VMSpecs::MachineType machineType, QWidget *par
         connect(m_sourceRequester, &KUrlRequester::textChanged, this, &DiskDialog::updateState);
     }
 
+    if (mode == Mode::Edit) {
+        m_sizeSpin = new QSpinBox(this);
+        m_sizeSpin->setRange(1, 32000);
+        m_sizeSpin->setSuffix(i18n(" GB"));
+        m_sizeSpin->setEnabled(false);
+        form->addRow(i18n("Size:"), m_sizeSpin);
+        m_sizeLabel = qobject_cast<QLabel *>(form->labelForField(m_sizeSpin));
+    }
+
     m_interfaceCombo = new QComboBox(this);
     for (const auto iface : {VMSpecs::DiskInterface::Virtio, VMSpecs::DiskInterface::Nvme, VMSpecs::DiskInterface::SataIde})
         m_interfaceCombo->addItem(VMConfig::toUIString(iface), static_cast<int>(iface));
@@ -99,6 +108,17 @@ DiskDialog::DiskDialog(Mode mode, VMSpecs::MachineType machineType, QWidget *par
     if (mode == Mode::Add)
         m_buttonBox->button(QDialogButtonBox::Ok)->setText(i18n("Add"));
     if (mode == Mode::Edit) {
+        m_expandButton = m_buttonBox->addButton(i18n("Expand..."), QDialogButtonBox::ActionRole);
+        m_expandButton->setIcon(QIcon::fromTheme(u"zoom-in"_s, QIcon::fromTheme(u"list-add"_s)));
+        m_expandButton->setToolTip(i18n("Grow the disk image to the size above. The guest enlarges its partition and file system itself."));
+        m_expandButton->hide();
+        connect(m_expandButton, &QPushButton::clicked, this, [this] {
+            Q_EMIT expandRequested(m_sizeSpin->value());
+        });
+        connect(m_sizeSpin, &QSpinBox::valueChanged, this, [this](int value) {
+            m_expandButton->setEnabled(m_currentSizeGb > 0 && value > m_currentSizeGb);
+        });
+
         m_compactButton = m_buttonBox->addButton(i18n("Compact..."), QDialogButtonBox::ActionRole);
         m_compactButton->setIcon(QIcon::fromTheme(u"edit-clear-history"_s));
         m_compactButton->setToolTip(i18n("Compact the disk image by removing unused blocks. Please free blocks on guest OS level first."));
@@ -116,6 +136,28 @@ void DiskDialog::setCompactAvailable(bool available)
 {
     if (m_compactButton)
         m_compactButton->setVisible(available);
+}
+
+void DiskDialog::setCurrentSize(int sizeGb)
+{
+    if (!m_expandButton)
+        return;
+    m_currentSizeGb = sizeGb;
+    if (sizeGb > 0) {
+        m_sizeSpin->setMinimum(sizeGb);
+        m_sizeSpin->setValue(sizeGb);
+    }
+    m_sizeSpin->setEnabled(sizeGb > 0);
+    m_expandButton->setVisible(true);
+    m_expandButton->setEnabled(false);
+}
+
+void DiskDialog::setNewDiskSize(int sizeGb)
+{
+    if (!m_sizeSpin || m_mode != Mode::Edit)
+        return;
+    m_sizeSpin->setValue(sizeGb);
+    m_sizeSpin->setEnabled(true);
 }
 
 void DiskDialog::setLabel(const QString &label)

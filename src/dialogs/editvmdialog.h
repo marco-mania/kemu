@@ -25,6 +25,7 @@
 #include <QLineEdit>
 #include <QMetaEnum>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QPushButton>
 #include <QSlider>
 #include <QSpinBox>
@@ -47,6 +48,8 @@
 #include "widgets/vmiconselector.h"
 
 using namespace Qt::StringLiterals;
+
+class DiskDialog;
 
 class EditVmDialog : public QDialog
 {
@@ -100,6 +103,8 @@ public:
     void refreshEncryptionState();
     // After the system disk was en- or decrypted while the dialog is open.
     void setDiskKeyId(const QString &keyId);
+    // After expandDiskRequested() succeeded.
+    void diskExpanded(const QString &diskPath, int sizeGb);
 
 Q_SIGNALS:
     // The disks change at once, independent of OK/Cancel.
@@ -108,8 +113,10 @@ Q_SIGNALS:
     void changeDiskPasswordRequested();
     void storeDiskPasswordRequested();
     void forgetDiskPasswordRequested();
-    // An existing additional disk, from its properties; @p parent shows the progress.
+    // An existing disk; @p parent shows the progress.
     void compactDiskRequested(const QString &diskPath, QWidget *parent);
+    // Grow @p diskPath to @p sizeGb; diskExpanded() tells the dialog.
+    void expandDiskRequested(const QString &diskPath, int sizeGb, QWidget *parent);
 
 private Q_SLOTS:
     void browseSharedDir();
@@ -126,6 +133,8 @@ private Q_SLOTS:
 
 private:
     void applyEncryptionConstraints();
+    [[nodiscard]] QString systemDiskPath() const;
+    void updateDiskSizeButtons();
     // Marks settings whose helper program is missing.
     void updateToolWarnings();
     void filterOsVariants(VMSpecs::OsFamily osFamily); // e.g. Distributions for Linux
@@ -204,11 +213,15 @@ private:
     QComboBox *exitActionCombo = nullptr;
 
     // Next to the system disk size; edit mode only.
-    QLabel *encryptionStateIcon = nullptr;
     QToolButton *encryptButton = nullptr;
     QToolButton *decryptButton = nullptr;
     QToolButton *changePasswordButton = nullptr;
     QToolButton *walletButton = nullptr;
+    QToolButton *expandDiskButton = nullptr;
+    QToolButton *compactDiskButton = nullptr;
+    int m_systemDiskGb = 0; // current size, rounded up; 0 if unknown
+    QPointer<DiskDialog> m_openDiskDialog; // properties of m_openDiskPath
+    QString m_openDiskPath;
     QComboBox *guestShutdownActionCombo = nullptr;
     QLineEdit *sharedPathEdit = nullptr;
     QLineEdit *sharedNameEdit = nullptr;
