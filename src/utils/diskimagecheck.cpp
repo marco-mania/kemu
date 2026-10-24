@@ -29,6 +29,14 @@ constexpr quint32 kQcow2Magic = 0x514649fb; // "QFI\xfb"
 constexpr quint64 kQcow2IncompatDataFile = 1ULL << 2;
 constexpr int kQcow2V2HeaderSize = 72;
 constexpr int kQcow2V3HeaderSize = 104;
+constexpr int kQcow2CryptMethodOffset = 32;
+constexpr quint32 kQcow2CryptAes = 1;
+constexpr quint32 kQcow2CryptLuks = 2;
+
+quint32 cryptMethod(const QByteArray &header)
+{
+    return header.size() >= kQcow2CryptMethodOffset + 4 ? qFromBigEndian<quint32>(header.constData() + kQcow2CryptMethodOffset) : 0;
+}
 }
 
 QString qcow2Problem(const QString &path)
@@ -55,7 +63,22 @@ QString qcow2Problem(const QString &path)
     if (version == 3 && (qFromBigEndian<quint64>(header.constData() + 72) & kQcow2IncompatDataFile))
         return i18n("%1 keeps its data in an external file.", name);
 
+    // The old built-in AES encryption is broken and QEMU refuses it.
+    const quint32 crypt = cryptMethod(header);
+    if (crypt == kQcow2CryptAes)
+        return i18n("%1 uses the outdated qcow2 AES encryption.", name);
+    if (crypt != 0 && crypt != kQcow2CryptLuks)
+        return i18n("%1 uses an unknown encryption.", name);
+
     return {};
+}
+
+bool qcow2IsEncrypted(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+    return cryptMethod(file.read(kQcow2CryptMethodOffset + 4)) == kQcow2CryptLuks;
 }
 
 Inspection evaluate(const QJsonValue &info, const QString &path, const QString &allowedDir, bool allowBacking)

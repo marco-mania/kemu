@@ -43,4 +43,5 @@ private:
     QString m_vmName;
     QString m_targetDir;
     QStringList m_extraDiskFileNames;
+    bool m_systemDiskEncrypted = false; // as config.json says
 };

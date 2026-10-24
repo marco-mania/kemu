@@ -5,9 +5,12 @@
  */
 
 #include "clonejob.h"
+
 #include "const.h"
+#include "utils/diskencryption.h"
 #include "utils/linkedclones.h"
 #include "utils/qemuimgprocess.h"
+#include <unistd.h>
 
 #include <utility>
 
@@ -21,6 +24,17 @@ CloneJob::CloneJob(const QString &vmName, const QString &srcPath, const QString 
     m_cloneName = QDir(dstPath).dirName();
     setCapabilities(Killable);
     setProperty("immediateProgressReporting", true);
+}
+
+CloneJob::~CloneJob()
+{
+    for (QByteArray &key : m_diskKeys)
+        DiskEncryption::wipe(key);
+}
+
+void CloneJob::setDiskKey(const QString &fileName, const QByteArray &key)
+{
+    m_diskKeys.insert(fileName, key);
 }
 
 void CloneJob::start()
@@ -76,14 +90,40 @@ void CloneJob::startNextDisk()
 
     const QString target = m_dstPath + u"/"_s + fileName;
     QStringList args;
-    if (m_linked) {
+    QList<int> keyFds;
+    if (m_diskKeys.contains(fileName)) {
+        // Linked clones of encrypted disks are not offered.
+        const int keyFd = DiskEncryption::secretFd(m_diskKeys.value(fileName));
+        if (keyFd < 0) {
+            QDir(m_dstPath).removeRecursively();
+            setError(4);
+            setErrorText(i18n("The password could not be passed to qemu-img."));
+            emitResult();
+            return;
+        }
+        keyFds << keyFd;
+        args = {u"convert"_s,
+                u"-p"_s,
+                u"--object"_s,
+                DiskEncryption::secretObject(keyFd),
+                u"--image-opts"_s,
+                DiskEncryption::imageOptions(m_srcPath + u"/"_s + fileName),
+                u"-O"_s,
+                u"qcow2"_s,
+                u"-o"_s,
+                DiskEncryption::createOptions(),
+                target};
+    } else if (m_linked) {
         const QString backing = LinkedClones::backingReference(QDir(m_srcPath).dirName(), fileName);
         args = {u"create"_s, u"-q"_s, u"-f"_s, u"qcow2"_s, u"-b"_s, backing, u"-F"_s, u"qcow2"_s, target};
     } else {
         args = {u"convert"_s, u"-p"_s, u"-f"_s, u"qcow2"_s, u"-O"_s, u"qcow2"_s, m_srcPath + u"/"_s + fileName, target};
     }
 
-    if (!m_process->start(args)) {
+    const bool started = m_process->start(args, keyFds);
+    for (const int fd : std::as_const(keyFds))
+        ::close(fd);
+    if (!started) {
         QDir(m_dstPath).removeRecursively();
         setError(4);
         setErrorText(m_process->errorText());

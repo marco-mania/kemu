@@ -20,6 +20,10 @@ namespace DiskImageCheck
 // qcow2 image that stands on its own, otherwise the reason it is not.
 [[nodiscard]] QString qcow2Problem(const QString &path);
 
+// Whether the qcow2 image at @p path is LUKS encrypted, from its header.
+// Call after qcow2Problem() found no problem.
+[[nodiscard]] bool qcow2IsEncrypted(const QString &path);
+
 struct Inspection {
     QString format; // as detected by qemu-img
     QString problem; // empty: safe to convert with -f format

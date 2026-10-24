@@ -1051,16 +1051,7 @@ void MainWindow::updateActionStates()
     QAction *deleteAction = actionCollection()->action(u"vm_delete"_s);
     deleteAction->setEnabled(hasSelection && !isBusy && !isFrozen);
     deleteAction->setToolTip(isFrozen ? linkBlocker : QString());
-    // Disk operations that cannot handle encrypted images yet.
-    const QString encryptionBlocker = encryptionBlockReason(entry);
-    const auto gateEncrypted = [&encryptionBlocker](QAction *action, bool enabled) {
-        if (!action->property("kemuDefaultToolTip").isValid())
-            action->setProperty("kemuDefaultToolTip", action->toolTip());
-        action->setEnabled(enabled && encryptionBlocker.isEmpty());
-        action->setToolTip(encryptionBlocker.isEmpty() ? action->property("kemuDefaultToolTip").toString() : encryptionBlocker);
-    };
-
-    gateEncrypted(actionCollection()->action(u"vm_clone"_s), hasSelection && !isBusy && !isOrphan);
+    actionCollection()->action(u"vm_clone"_s)->setEnabled(hasSelection && !isBusy && !isOrphan);
 
     QAction *makeIndependentAction = actionCollection()->action(u"vm_make_independent"_s);
     makeIndependentAction->setVisible(isLinkedClone);
@@ -1115,7 +1106,7 @@ void MainWindow::updateActionStates()
     // Encrypted VMs: the dialog explains why a running one is read-only.
     actionCollection()->action(u"vm_manage_snapshots"_s)->setEnabled(hasSelection && hasDisk && !isDeploying && !isSavedOnly && linkBlocker.isEmpty());
 
-    gateEncrypted(actionCollection()->action(u"vm_export"_s), hasSelection && !isBusy && !isOrphan);
+    actionCollection()->action(u"vm_export"_s)->setEnabled(hasSelection && !isBusy && !isOrphan);
     actionCollection()->action(u"vm_import"_s)->setEnabled(true);
     actionCollection()->action(u"vm_screenshot"_s)->setEnabled(hasSelection && isRunning && vmSupportsScreendump());
 
@@ -1784,13 +1775,6 @@ QString MainWindow::saveStateBlockReason(const VmEntry *entry) const
     return {};
 }
 
-QString MainWindow::encryptionBlockReason(const VmEntry *entry) const
-{
-    if (!entry || !entry->config.isEncrypted())
-        return {};
-    return i18n("Not available yet for virtual machines with an encrypted system disk.");
-}
-
 void MainWindow::requestDiskKey(const QString &vmName, const QString &prompt, std::function<void(std::optional<QByteArray> key)> done, bool offerStore)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
@@ -2162,6 +2146,11 @@ QString MainWindow::linkedCloneBlockReason(const VmEntry *entry) const
 {
     if (!entry)
         return {};
+
+    // The overlay would have to be encrypted too, and QEMU would need the
+    // key for the source's disk as well.
+    if (entry->config.isEncrypted())
+        return i18n("'%1' has an encrypted system disk and can only be cloned in full.", entry->name);
 
     // One level only: a chain would freeze VMs that are clones themselves.
     if (entry->config.isLinkedClone())
@@ -2609,19 +2598,17 @@ void MainWindow::exportVM()
         KMessageBox::error(this, i18n("The VM '%1' is currently busy. Please wait.", currentConfig.name()), i18n("Busy"));
         return;
     }
-    if (const QString blocker = encryptionBlockReason(veModel->entryByName(currentConfig.name())); !blocker.isEmpty()) {
-        KMessageBox::error(this, blocker, i18nc("@title:window", "Export VM"));
-        return;
-    }
-
     QString filterKemu = i18n("KEMU Portable Archives (*.kemu.tar.zst)");
     QString filterOva = i18n("OVA Files (*.ova)");
     QString selectedFilter;
 
+    // The archive keeps the encrypted files as they are; OVA has no
+    // encryption and is not offered.
+    const bool encrypted = currentConfig.isEncrypted();
     QString filePath = QFileDialog::getSaveFileName(this,
                                                     i18n("Export VM '%1'", currentConfig.name()),
                                                     QDir::homePath() + u"/"_s + currentConfig.name(),
-                                                    filterKemu + u";;"_s + filterOva,
+                                                    encrypted ? filterKemu : filterKemu + u";;"_s + filterOva,
                                                     &selectedFilter);
 
     if (filePath.isEmpty())
@@ -2722,6 +2709,11 @@ void MainWindow::importVM()
             const QStringList used = veModel->usedMacAddresses();
             if (SettingsDialog::importRegenerateMac() || used.contains(config.macAddress(), Qt::CaseInsensitive))
                 config.setMacAddress(Utils::generateRandomMac(used));
+
+            // A KWallet entry of its own; the password is asked at the first
+            // start. The source VM may still be here and use the old one.
+            if (config.isEncrypted())
+                config.setDiskKeyId(QUuid::createUuid().toString(QUuid::WithoutBraces));
 
             // The archive keeps its identity unless the source VM is still here.
             const QList<QUuid> usedUuids = veModel->vmUuids().values();
@@ -3526,6 +3518,14 @@ void MainWindow::importOVA(const QString &filePath)
 
 void MainWindow::exportOVA(const QString &filePath)
 {
+    if (currentConfig.isEncrypted()) {
+        KMessageBox::error(this,
+                           i18n("An OVA file cannot hold an encrypted disk. Export the VM as a KEMU archive, which keeps it encrypted, "
+                                "or decrypt the system disk first."),
+                           i18nc("@title:window", "Export VM"));
+        return;
+    }
+
     QList<OvaExportJob::DiskImage> disks;
     for (const QString &path : currentConfig.diskPaths(getVmDir(currentConfig.name()))) {
         const QemuImgProcess::ImageInfo dInfo = diskInfoFor(path);
@@ -4429,11 +4429,6 @@ void MainWindow::cloneVM()
         KMessageBox::error(this, i18n("The VM '%1' is currently busy.", srcName), i18n("Busy"));
         return;
     }
-    if (const QString blocker = encryptionBlockReason(veModel->entryByName(srcName)); !blocker.isEmpty()) {
-        KMessageBox::error(this, blocker, i18n("Clone VM"));
-        return;
-    }
-
     QString suggestion = srcName + u"_clone"_s;
     int suffix = 1;
     while (existingVmNames().contains(suggestion))
@@ -4476,15 +4471,40 @@ void MainWindow::cloneVM()
     const QString srcPath = baseDir.filePath(srcName);
     const QString dstPath = baseDir.filePath(cloneName);
 
-    auto *job = new CloneJob(srcName, srcPath, dstPath, loadVmConfig(srcPath).diskFileNames(), this);
+    // The encrypted system disk is copied with its password.
+    if (srcEntry->config.isEncrypted()) {
+        requestDiskKey(srcName,
+                       i18n("Enter the password of the system disk of '%1' to clone it.", srcName),
+                       [this, srcName, srcUuid, srcPath, dstPath, cloneName, linked](std::optional<QByteArray> key) {
+                           if (key && !veModel->isBusy(srcName) && !existingVmNames().contains(cloneName))
+                               startClone(srcName, srcUuid, srcPath, dstPath, linked, *key);
+                       });
+        return;
+    }
+    startClone(srcName, srcUuid, srcPath, dstPath, linked, {});
+}
+
+void MainWindow::startClone(const QString &srcName,
+                            const QUuid &srcUuid,
+                            const QString &srcPath,
+                            const QString &dstPath,
+                            bool linked,
+                            const QByteArray &diskKey)
+{
+    const QString cloneName = QDir(dstPath).dirName();
+    const VMConfig srcConfig = loadVmConfig(srcPath);
+    auto *job = new CloneJob(srcName, srcPath, dstPath, srcConfig.diskFileNames(), this);
     job->setLinked(linked);
+    if (!diskKey.isEmpty())
+        job->setDiskKey(srcConfig.diskFileNames().value(0), diskKey);
+    const QString srcKeyId = srcConfig.diskKeyId();
 
     if (jobTracker)
         jobTracker->registerJob(job);
 
     veModel->setVmState(srcName, VmEntry::State::Cloning);
 
-    connect(job, &CloneJob::finished, this, [this, srcName, srcUuid, cloneName, dstPath](KJob *kjob) {
+    connect(job, &CloneJob::finished, this, [this, srcName, srcUuid, cloneName, dstPath, srcKeyId, diskKey](KJob *kjob) {
         auto *cloneJob = qobject_cast<CloneJob *>(kjob);
         if (!cloneJob)
             return;
@@ -4493,7 +4513,8 @@ void MainWindow::cloneVM()
 
         if (cloneJob->error()) {
             statusBar()->showMessage(i18n("Cloning of VM '%1' failed: %2", srcName, cloneJob->errorText()));
-            KMessageBox::error(this, i18n("Failed to clone VM '%1':\n%2", srcName, cloneJob->errorText()), i18n("Clone Failed"));
+            if (!handleWrongDiskPassword(srcName, cloneJob->errorText().toUtf8()))
+                KMessageBox::error(this, i18n("Failed to clone VM '%1':\n%2", srcName, cloneJob->errorText()), i18n("Clone Failed"));
         } else {
             // collect used macs to exclude random generation matches
             const QStringList usedMacs = veModel->usedMacAddresses();
@@ -4545,6 +4566,14 @@ void MainWindow::cloneVM()
             // that way.
             if (!cloneConfig.uuid().isNull())
                 cloneConfig.regenerateUuid(veModel->vmUuids().values());
+
+            // Its own KWallet entry, so a later password change of one VM
+            // leaves the other alone.
+            if (cloneConfig.isEncrypted()) {
+                cloneConfig.setDiskKeyId(QUuid::createUuid().toString(QUuid::WithoutBraces));
+                if (DiskKeyStore::hasKey(srcKeyId))
+                    storeDiskKeyInWallet(cloneName, cloneConfig.diskKeyId(), QString::fromUtf8(diskKey), this);
+            }
 
             saveVmConfig(dstPath, cloneConfig);
             loadVmList();

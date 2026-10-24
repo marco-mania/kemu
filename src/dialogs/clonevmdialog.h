@@ -10,7 +10,6 @@
 
 class QCheckBox;
 class QDialogButtonBox;
-class QLabel;
 class QLineEdit;
 
 /**
@@ -32,6 +31,5 @@ public:
 private:
     QLineEdit *m_nameEdit = nullptr;
     QCheckBox *m_linkedCheck = nullptr;
-    QLabel *m_linkedHint = nullptr;
     QDialogButtonBox *m_buttons = nullptr;
 };

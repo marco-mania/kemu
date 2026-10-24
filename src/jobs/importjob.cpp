@@ -145,8 +145,10 @@ bool ImportJob::parseConfig(const QByteArray &data)
 
     m_vmName = ArchivePaths::sanitizeVmName(obj.value(u"name"_s).toString());
 
-    for (const DiskConfig &disk : VMConfig::fromJson(obj).extraDisks())
+    const VMConfig config = VMConfig::fromJson(obj);
+    for (const DiskConfig &disk : config.extraDisks())
         m_extraDiskFileNames << disk.fileName;
+    m_systemDiskEncrypted = config.isEncrypted();
 
     return !m_vmName.isEmpty();
 }
@@ -230,6 +232,14 @@ bool ImportJob::runWorker()
             const QString problem = DiskImageCheck::qcow2Problem(targetDir.filePath(fileName));
             if (!problem.isEmpty()) {
                 recordError(i18n("The archive cannot be imported: %1", problem));
+                ok = false;
+                break;
+            }
+            // Only the system disk is ever encrypted, and only if the
+            // configuration says so; anything else would not start.
+            const bool expected = fileName == KEMUConst::VMDiskFileName && m_systemDiskEncrypted;
+            if (DiskImageCheck::qcow2IsEncrypted(targetDir.filePath(fileName)) != expected) {
+                recordError(i18n("The archive cannot be imported: the encryption of %1 does not match its configuration.", fileName));
                 ok = false;
                 break;
             }

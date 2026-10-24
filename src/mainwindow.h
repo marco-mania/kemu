@@ -198,8 +198,6 @@ private:
     [[nodiscard]] QString linkBlockReason(const VmEntry *entry) const;
     // Empty when a linked clone of the VM can be made.
     [[nodiscard]] QString linkedCloneBlockReason(const VmEntry *entry) const;
-    // Empty unless the action is not available for encrypted disks yet.
-    [[nodiscard]] QString encryptionBlockReason(const VmEntry *entry) const;
 
     // Encrypted disks: the password from the wallet, or asked with @p prompt
     // (and checked). nullopt if the user cancelled. Immediately {} for a VM
@@ -234,6 +232,8 @@ private:
     bool requireTool(const ExternalTools::Tool tool);
     // swtpm and swtpm_ioctl, if @p vmName has a TPM state to move to a new password.
     // Rewrites @p diskPath of @p vmName; asks first, over @p parent.
+    // After the clone dialog; @p diskKey opens an encrypted system disk.
+    void startClone(const QString &srcName, const QUuid &srcUuid, const QString &srcPath, const QString &dstPath, bool linked, const QByteArray &diskKey);
     void compactDisk(const QString &vmName, const QString &diskPath, QWidget *parent);
     void runCompactJob(ShrinkJob *job, QWidget *parent);
     bool requireTpmRekeyTools(const QString &vmName, QWidget *parent);

@@ -20,12 +20,13 @@ using namespace Qt::StringLiterals;
 namespace
 {
 
-QByteArray qcow2Header(quint32 version, quint64 backingOffset = 0, quint64 incompatible = 0)
+QByteArray qcow2Header(quint32 version, quint64 backingOffset = 0, quint64 incompatible = 0, quint32 cryptMethod = 0)
 {
     QByteArray header(version == 2 ? 72 : 104, '\0');
     qToBigEndian<quint32>(0x514649fb, header.data());
     qToBigEndian<quint32>(version, header.data() + 4);
     qToBigEndian<quint64>(backingOffset, header.data() + 8);
+    qToBigEndian<quint32>(cryptMethod, header.data() + 32);
     if (version == 3) {
         qToBigEndian<quint64>(incompatible, header.data() + 72);
         qToBigEndian<quint32>(104, header.data() + 100);
@@ -91,6 +92,17 @@ private Q_SLOTS:
         QVERIFY(!DiskImageCheck::qcow2Problem(write(u"data.qcow2"_s, qcow2Header(3, 0, 1 << 2))).isEmpty());
         // Other incompatible features do not refer to files.
         QVERIFY(DiskImageCheck::qcow2Problem(write(u"dirty.qcow2"_s, qcow2Header(3, 0, 1 << 0))).isEmpty());
+    }
+
+    void encryption()
+    {
+        // LUKS is fine and detected; the broken legacy AES is not.
+        const QString luks = write(u"luks.qcow2"_s, qcow2Header(3, 0, 0, 2));
+        QVERIFY(DiskImageCheck::qcow2Problem(luks).isEmpty());
+        QVERIFY(DiskImageCheck::qcow2IsEncrypted(luks));
+        QVERIFY(!DiskImageCheck::qcow2IsEncrypted(write(u"plain.qcow2"_s, qcow2Header(3))));
+        QVERIFY(!DiskImageCheck::qcow2Problem(write(u"aes.qcow2"_s, qcow2Header(2, 0, 0, 1))).isEmpty());
+        QVERIFY(!DiskImageCheck::qcow2Problem(write(u"crypt3.qcow2"_s, qcow2Header(3, 0, 0, 3))).isEmpty());
     }
 
     void otherFilesAreRejected()
@@ -215,6 +227,20 @@ private Q_SLOTS:
         QVERIFY(DiskImageCheck::qcow2Problem(dir.filePath(u"real-base.qcow2"_s)).isEmpty());
 
         QVERIFY(!DiskImageCheck::inspect({}, dir.filePath(u"so.vmdk"_s), dir.path(), false).problem.isEmpty());
+
+        QVERIFY(run({u"create"_s,
+                     u"-q"_s,
+                     u"-f"_s,
+                     u"qcow2"_s,
+                     u"--object"_s,
+                     u"secret,id=s,data=password"_s,
+                     u"-o"_s,
+                     u"encrypt.format=luks,encrypt.key-secret=s"_s,
+                     dir.filePath(u"real-luks.qcow2"_s),
+                     u"16M"_s}));
+        QVERIFY(DiskImageCheck::qcow2Problem(dir.filePath(u"real-luks.qcow2"_s)).isEmpty());
+        QVERIFY(DiskImageCheck::qcow2IsEncrypted(dir.filePath(u"real-luks.qcow2"_s)));
+        QVERIFY(!DiskImageCheck::qcow2IsEncrypted(dir.filePath(u"real-base.qcow2"_s)));
     }
 };
 

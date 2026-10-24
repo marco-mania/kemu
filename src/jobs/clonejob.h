@@ -12,6 +12,8 @@
 #include <QObject>
 #include <QStringList>
 
+#include <QHash>
+
 #include <KJob>
 #include <KLocalizedString>
 #include <KProcess>
@@ -28,6 +30,11 @@ class CloneJob : public KJob
 
 public:
     explicit CloneJob(const QString &vmName, const QString &srcPath, const QString &dstPath, const QStringList &diskFileNames, QObject *parent = nullptr);
+    ~CloneJob() override;
+
+    // Password of the encrypted disk @p fileName. Its copy is encrypted with
+    // the same password, under a LUKS header of its own.
+    void setDiskKey(const QString &fileName, const QByteArray &key);
 
     // Overlays on top of the source disks instead of full copies.
     void setLinked(bool linked)
@@ -67,6 +74,7 @@ private:
     qsizetype m_index = 0;
 
     QemuImgProcess *m_process = nullptr;
+    QHash<QString, QByteArray> m_diskKeys; // key: file name
     bool m_linked = false;
     bool m_killed = false;
 };

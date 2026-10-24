@@ -9,7 +9,6 @@
 #include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
-#include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -25,16 +24,10 @@ CloneVmDialog::CloneVmDialog(const QString &sourceName, const QString &suggested
     m_nameEdit->selectAll();
 
     m_linkedCheck = new QCheckBox(i18nc("@option:check", "Create linked clone"), this);
-
-    m_linkedHint = new QLabel(i18n("Linked clones share disks with '%1' and store only changes. "
-                                   "While linked clones exist, '%1' cannot be started or modified.",
-                                   sourceName),
-                              this);
-    m_linkedHint->setWordWrap(true);
-    m_linkedHint->setEnabled(false);
-    QFont hintFont = m_linkedHint->font();
-    hintFont.setPointSizeF(hintFont.pointSizeF() * 0.9);
-    m_linkedHint->setFont(hintFont);
+    m_linkedCheck->setToolTip(
+        i18n("Linked clones share disks with '%1' and store only changes. "
+             "While linked clones exist, '%1' cannot be started or modified.",
+             sourceName));
 
     m_buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     m_buttons->button(QDialogButtonBox::Ok)->setText(i18nc("@action:button", "Clone"));
@@ -52,7 +45,6 @@ CloneVmDialog::CloneVmDialog(const QString &sourceName, const QString &suggested
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(form);
     layout->addWidget(m_linkedCheck);
-    layout->addWidget(m_linkedHint);
     layout->addStretch();
     layout->addWidget(m_buttons);
 
@@ -65,7 +57,7 @@ void CloneVmDialog::setLinkedCloneBlocker(const QString &reason)
         return;
     m_linkedCheck->setChecked(false);
     m_linkedCheck->setEnabled(false);
-    m_linkedHint->setText(reason);
+    m_linkedCheck->setToolTip(reason);
 }
 
 QString CloneVmDialog::cloneName() const
