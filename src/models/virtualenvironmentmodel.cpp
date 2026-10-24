@@ -897,7 +897,7 @@ void VirtualEnvironmentModel::recomputeIcon(VmEntry &e) const
     else if (e.state == VmEntry::State::Stopped && e.isFrozen())
         vs = VMConfig::VmVisualState::Frozen;
 
-    e.styledIcon = VMConfig::styledVmIcon(e.config.icon(KEMUConst::ListViewIconSize), vs, e.isHeadless, e.config.isEncrypted(), KEMUConst::ListViewIconSize);
+    e.styledIcon = VMConfig::styledVmIcon(e.config.icon(KEMUConst::ListViewIconSize), vs, e.isHeadless, KEMUConst::ListViewIconSize);
 }
 
 void VirtualEnvironmentModel::refreshLinks()

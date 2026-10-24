@@ -1235,8 +1235,17 @@ void MainWindow::updateDetails()
 
     // A padlock after the label of an encrypted disk; the image header says
     // so, whatever the configuration.
-    const auto encryptionIcon = [this](const QString &diskPath) {
-        return DiskImageCheck::qcow2IsEncrypted(diskPath) ? u"&nbsp;"_s + encodeThemeIcon(u"object-locked"_s, 14) : QString();
+    const auto encryptionIcon = [this](const QString &diskPath) -> QString {
+        if (!DiskImageCheck::qcow2IsEncrypted(diskPath))
+            return {};
+        // As large as the row icons, so the row keeps its height.
+        constexpr int size = 14;
+        QByteArray png;
+        QBuffer buffer(&png);
+        buffer.open(QIODevice::WriteOnly);
+        VMConfig::padlockPixmap(size, detailsBrowser->devicePixelRatioF()).save(&buffer, "PNG");
+        return u"&nbsp;<img src='data:image/png;base64,%1' width='%2' height='%2' style='vertical-align: middle;'/>"_s.arg(QString::fromLatin1(png.toBase64()))
+            .arg(size);
     };
     const auto diskValueFor = [&](const QString &diskPath, VMSpecs::DiskInterface diskInterface) -> QString {
         const QemuImgProcess::ImageInfo dInfo = diskInfoFor(diskPath);

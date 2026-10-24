@@ -12,6 +12,7 @@
 #include <QIcon>
 #include <QJsonObject>
 #include <QList>
+#include <QPixmap>
 #include <QSize>
 #include <QString>
 #include <QUuid>
@@ -880,9 +881,9 @@ public:
         Saved,
         Frozen
     };
-    // @p isEncrypted adds a padlock in the bottom left corner.
-    [[nodiscard]] static QIcon
-    styledVmIcon(const QIcon &baseIcon, VmVisualState state, bool isHeadless, bool isEncrypted, int size = KEMUConst::ListViewIconSize);
+    [[nodiscard]] static QIcon styledVmIcon(const QIcon &baseIcon, VmVisualState state, bool isHeadless, int size = KEMUConst::ListViewIconSize);
+    // Gold padlock marking encrypted disks, @p size logical pixels square.
+    [[nodiscard]] static QPixmap padlockPixmap(int size, qreal dpr);
     [[nodiscard]] static QString osIconDir();
     [[nodiscard]] static QString defaultIconForFamily(VMSpecs::OsFamily family);
     [[nodiscard]] static QString defaultIconFor(VMSpecs::OsFamily family, const QString &variant);
