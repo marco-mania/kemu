@@ -55,7 +55,7 @@ UnpackResult unpackImage(const QString &sourcePath, const QString &targetPath, Q
         return UnpackResult::NotCompressed;
 
     if (progress)
-        progress(0, i18n("Decompressing the cloud image..."));
+        progress(0, i18n("Decompressing the cloud image…"));
 
     QFile out(targetPath);
     if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -95,14 +95,14 @@ CloudImageDeployer::Result CloudImageDeployer::deploy(const QString &sourceImage
     Result result;
 
     if (progress)
-        progress(0, i18n("Preparing the disk image..."));
+        progress(0, i18n("Preparing the disk image…"));
 
     if (!prepareImage(sourceImage, vmDir, diskSizeGb, result.diskPath, result.errorMessage, progress, diskKey)) {
         return result;
     }
 
     if (progress)
-        progress(2, i18n("Building the cloud-init image..."));
+        progress(2, i18n("Building the cloud-init image…"));
 
     const QByteArray userData = generateUserData(config, result.errorMessage);
     if (userData.isEmpty())
@@ -233,7 +233,7 @@ bool CloudImageDeployer::prepareImage(const QString &sourceImage,
 
     // Resize to target size
     if (progress)
-        progress(1, i18n("Resizing the disk image..."));
+        progress(1, i18n("Resizing the disk image…"));
 
     // Resize to target size
     const QStringList resizeArgs = diskKey.isEmpty()

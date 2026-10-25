@@ -123,7 +123,7 @@ void ExportJob::flattenNextDisk()
     const qsizetype index = m_flattened.size();
     const QString fileName = m_diskFileNames.at(index);
 
-    postInfoMessage(m_diskFileNames.size() > 1 ? i18n("Merging disk image %1 of %2...", index + 1, m_diskFileNames.size()) : i18n("Merging disk image..."));
+    postInfoMessage(m_diskFileNames.size() > 1 ? i18n("Merging disk image %1 of %2…", index + 1, m_diskFileNames.size()) : i18n("Merging disk image…"));
 
     if (m_converter)
         m_converter->deleteLater();
@@ -272,7 +272,7 @@ bool ExportJob::runWorker()
         return false;
     }
 
-    postInfoMessage(i18n("Packing archive..."));
+    postInfoMessage(i18n("Packing archive…"));
 
     bool ok = writeBufferEntry(a, m_configData, KEMUConst::VMConfigFileName);
     reportPhaseBytes(m_configData.size());

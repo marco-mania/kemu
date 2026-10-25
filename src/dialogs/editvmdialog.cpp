@@ -179,15 +179,15 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
             button->setAccessibleName(text);
             return button;
         };
-        encryptButton = makeButton(QIcon::fromTheme(u"lock"_s), i18n("Encrypt the system disk..."));
-        decryptButton = makeButton(QIcon::fromTheme(u"unlock"_s, QIcon::fromTheme(u"object-unlocked"_s)), i18n("Decrypt the system disk..."));
-        changePasswordButton = makeButton(QIcon::fromTheme(u"dialog-password"_s, QIcon::fromTheme(u"lock"_s)), i18n("Change the password..."));
+        encryptButton = makeButton(QIcon::fromTheme(u"lock"_s), i18n("Encrypt the system disk…"));
+        decryptButton = makeButton(QIcon::fromTheme(u"unlock"_s, QIcon::fromTheme(u"object-unlocked"_s)), i18n("Decrypt the system disk…"));
+        changePasswordButton = makeButton(QIcon::fromTheme(u"dialog-password"_s, QIcon::fromTheme(u"lock"_s)), i18n("Change the password…"));
         walletButton = new QToolButton();
 
         // Resizing and compacting act at once as well. A larger value in the
         // spin box only takes effect through the expand button.
-        expandDiskButton = makeButton(QIcon::fromTheme(u"zoom-in"_s, QIcon::fromTheme(u"list-add"_s)), i18n("Expand the system disk..."));
-        compactDiskButton = makeButton(QIcon::fromTheme(u"edit-clear-history"_s), i18n("Compact the system disk..."));
+        expandDiskButton = makeButton(QIcon::fromTheme(u"zoom-in"_s, QIcon::fromTheme(u"list-add"_s)), i18n("Expand the system disk…"));
+        compactDiskButton = makeButton(QIcon::fromTheme(u"edit-clear-history"_s), i18n("Compact the system disk…"));
         expandDiskButton->setEnabled(false);
         diskLayout->addWidget(expandDiskButton);
         diskLayout->addWidget(compactDiskButton);
@@ -340,7 +340,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     acpiCheck->setToolTip(
         i18n("Advanced Configuration and Power Interface. Disable for "
              "legacy guest OSes (e.g. Windows NT4, DOS) that do not "
-             "support ACPI and may fail to boot with it enabled."));
+             "support ACPI."));
     sysLayout->addRow({}, acpiCheck);
 
     exitActionCombo = new QComboBox(this);
@@ -359,9 +359,8 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     const auto &caps = SandboxCapabilities::instance();
     if (caps.has(SandboxCapabilities::HostPowerOff)) {
         guestShutdownActionCombo->setToolTip(
-            i18n("Shut down the host once the guest operating system has powered itself off. "
-                 "Shutting the machine down from KEMU never does this, and a countdown lets you "
-                 "cancel. This can also be changed for a single run in the VM menu."));
+            i18n("Shuts down the host when the guest OS powers off. "
+                 "Includes a cancellation countdown. Can be overridden per run in the VM menu."));
     } else {
         // Keep the stored value: the VM may move to a host where this works.
         guestShutdownActionCombo->setEnabled(false);
@@ -2087,9 +2086,10 @@ void EditVmDialog::removeSelectedDisk()
         // An overlay is useless without the source next to it.
         if (m_original.isLinkedClone()) {
             const auto answer = KMessageBox::warningTwoActions(this,
-                                                               i18n("Remove the disk <b>%1</b> from this virtual machine?<br/><br/>"
-                                                                    "This linked clone only stores its own changes in the image, so it cannot be kept "
-                                                                    "as a separate file and is deleted. The change takes effect when you confirm the settings.",
+                                                               i18n("Remove the disk %1 from this virtual machine?<br/><br/>"
+                                                                    "This image only contains changes specific to this linked clone "
+                                                                    "and will be permanently deleted. This action takes effect when "
+                                                                    "you save the settings.",
                                                                     name.toHtmlEscaped())
                                                                    + snapshotNote,
                                                                i18n("Remove Disk"),
@@ -2106,7 +2106,7 @@ void EditVmDialog::removeSelectedDisk()
         const auto answer = KMessageBox::questionTwoActionsCancel(this,
                                                                   i18n("Remove the disk <b>%1</b> from this virtual machine?<br/><br/>"
                                                                        "Its image can be deleted or kept as a separate file. "
-                                                                       "The change takes effect when you confirm the settings.",
+                                                                       "The action takes effect when you save the settings.",
                                                                        name.toHtmlEscaped())
                                                                       + snapshotNote,
                                                                   i18n("Remove Disk"),
@@ -2194,19 +2194,19 @@ void EditVmDialog::refreshEncryptionState()
     const bool tpmToolsMissing = !m_vmDir.isEmpty() && TpmState::encryptionOf(QDir(m_vmDir)) != TpmState::Encryption::NoState
         && !ExternalTools::instance().isAvailable({ExternalTools::Swtpm, ExternalTools::SwtpmIoctl});
     const QString toolsMissing = i18n(
-        "Not available: The TPM state is moved to the new password with swtpm and swtpm_ioctl, which were not found. Install or set their paths under Settings "
-        "> Executables.");
+        "Not available: Changing the TPM password requires 'swtpm' and 'swtpm_ioctl', which were not found. Install them or set their paths under Settings > "
+        "Executables.");
     encryptButton->setEnabled(!m_readOnly && !tpmToolsMissing);
     decryptButton->setEnabled(!m_readOnly && !tpmToolsMissing);
     changePasswordButton->setEnabled(!m_readOnly && !tpmToolsMissing);
-    encryptButton->setToolTip(tpmToolsMissing ? toolsMissing : i18n("Encrypt the system disk..."));
-    decryptButton->setToolTip(tpmToolsMissing ? toolsMissing : i18n("Decrypt the system disk..."));
-    changePasswordButton->setToolTip(tpmToolsMissing ? toolsMissing : i18n("Change the password..."));
+    encryptButton->setToolTip(tpmToolsMissing ? toolsMissing : i18n("Encrypt the system disk…"));
+    decryptButton->setToolTip(tpmToolsMissing ? toolsMissing : i18n("Decrypt the system disk…"));
+    changePasswordButton->setToolTip(tpmToolsMissing ? toolsMissing : i18n("Change the password…"));
 
     // KWallet's icon with a plus or minus.
     const QString walletText = !walletAvailable ? i18n("KWallet is not available")
         : stored                                ? i18n("Remove the password from KWallet")
-                                                : i18n("Store the password in KWallet...");
+                                                : i18n("Store the password in KWallet…");
     walletButton->setIcon(KIconUtils::addOverlay(QIcon::fromTheme(u"kwalletmanager"_s, QIcon::fromTheme(u"wallet-open"_s)),
                                                  QIcon::fromTheme(stored ? u"list-remove"_s : u"list-add"_s),
                                                  Qt::BottomRightCorner));

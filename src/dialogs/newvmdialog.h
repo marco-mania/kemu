@@ -42,7 +42,7 @@ using namespace Qt::StringLiterals;
  * expect to adjust. Everything else comes from the OS template in
  * data/templates.d/.
  *
- * "Customise..." opens EditVmDialog as a modal child; this dialog stays open
+ * "Customise…" opens EditVmDialog as a modal child; this dialog stays open
  * behind it and keeps the result, so getResult() then builds on the customised
  * configuration instead of the template defaults.
  */

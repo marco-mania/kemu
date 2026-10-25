@@ -128,7 +128,7 @@ void DbusViewerWindow::createActions()
     m_actSendCAD->setStatusTip(i18n("Send the Ctrl+Alt+Del key sequence to the guest"));
     connect(m_actSendCAD, &QAction::triggered, m_display, &QemuDisplayWidget::sendCtrlAltDel);
 
-    m_actSnapshots = new QAction(QIcon::fromTheme(u"camera-photo"_s), i18n("Manage &Snapshots..."), this);
+    m_actSnapshots = new QAction(QIcon::fromTheme(u"camera-photo"_s), i18n("Manage &Snapshots…"), this);
     m_actSnapshots->setStatusTip(i18n("Open the snapshot manager for this VM"));
     connect(m_actSnapshots, &QAction::triggered, this, &DbusViewerWindow::snapshotManagerRequested);
 
@@ -211,7 +211,7 @@ void DbusViewerWindow::createActions()
     connect(m_actAudioIn, &QAction::toggled, this, &DbusViewerWindow::onToggleAudioIn);
 
     // --- Devices: Removable media ---
-    m_actChangeIso = new QAction(QIcon::fromTheme(u"media-optical"_s), i18n("&Change Image..."), this);
+    m_actChangeIso = new QAction(QIcon::fromTheme(u"media-optical"_s), i18n("&Change Image…"), this);
     m_actChangeIso->setStatusTip(i18n("Insert or replace the CD/DVD image"));
     connect(m_actChangeIso, &QAction::triggered, this, &DbusViewerWindow::changeIsoRequested);
 
@@ -220,7 +220,7 @@ void DbusViewerWindow::createActions()
     m_actEjectIso->setEnabled(false);
     connect(m_actEjectIso, &QAction::triggered, this, &DbusViewerWindow::ejectIsoRequested);
 
-    m_actChangeFloppy = new QAction(QIcon::fromTheme(u"media-floppy"_s), i18n("&Change Image..."), this);
+    m_actChangeFloppy = new QAction(QIcon::fromTheme(u"media-floppy"_s), i18n("&Change Image…"), this);
     m_actChangeFloppy->setStatusTip(i18n("Insert or replace the floppy image"));
     connect(m_actChangeFloppy, &QAction::triggered, this, &DbusViewerWindow::changeFloppyRequested);
 
@@ -263,7 +263,7 @@ void DbusViewerWindow::createActions()
     connect(m_actNetworkLink, &QAction::toggled, this, &DbusViewerWindow::onToggleNetworkLink);
 
     // --- Help ---
-    m_actAbout = new QAction(i18n("&About..."), this);
+    m_actAbout = new QAction(i18n("&About…"), this);
     connect(m_actAbout, &QAction::triggered, this, &DbusViewerWindow::onAbout);
 }
 
@@ -779,7 +779,7 @@ void DbusViewerWindow::setSuspended(bool suspended)
 
     if (suspended) {
         // Sticky message (timeout 0). Cleared explicitly when we resume.
-        statusBar()->showMessage(i18n("VM suspended - saving state..."));
+        statusBar()->showMessage(i18n("VM suspended - saving state…"));
     } else {
         statusBar()->clearMessage();
     }
@@ -1044,7 +1044,7 @@ void DbusViewerWindow::setGuestAgentState(const GuestAgentView &view)
         m_indGuestAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Guest agent: not running in the guest"));
         break;
     case GuestAgentView::State::Connecting:
-        m_indGuestAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Guest agent: connecting..."));
+        m_indGuestAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Guest agent: connecting…"));
         break;
     case GuestAgentView::State::Unresponsive:
         m_indGuestAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Guest agent: not responding"), u"dialog-warning"_s);

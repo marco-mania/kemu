@@ -35,7 +35,7 @@ DeploymentLogWindow::DeploymentLogWindow(const QString &vmName, const QString &l
     m_view->setLineWrapMode(QPlainTextEdit::NoWrap);
     m_view->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     m_view->setMaximumBlockCount(kMaxBlocks);
-    m_view->setPlaceholderText(i18n("Waiting for output..."));
+    m_view->setPlaceholderText(i18n("Waiting for output…"));
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
     QPushButton *copyButton = buttons->addButton(i18n("Copy to Clipboard"), QDialogButtonBox::ActionRole);

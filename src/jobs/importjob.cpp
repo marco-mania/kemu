@@ -178,7 +178,7 @@ bool ImportJob::runWorker()
     const QDir targetDir(m_targetDir);
     QDir().mkpath(m_targetDir);
 
-    postInfoMessage(i18n("Extracting archive..."));
+    postInfoMessage(i18n("Extracting archive…"));
 
     bool ok = true;
     archive_entry *entry = nullptr;

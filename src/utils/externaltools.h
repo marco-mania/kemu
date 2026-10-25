@@ -25,13 +25,13 @@ using namespace Qt::StringLiterals;
 
 /**
  * @brief Central registry for external tool dependencies (qemu-system,
- * qemu-img, swtpm, ...).
+ * qemu-img, swtpm, …).
  *
  * Singleton. Call ExternalTools::instance().refresh() once at startup.
  * After that, query paths, versions and availability from anywhere:
  *
  *   const auto& tools = ExternalTools::instance();
- *   if (!tools.isAvailable(ExternalTools::QemuImg)) { ... }
+ *   if (!tools.isAvailable(ExternalTools::QemuImg)) { … }
  *   QString path = tools.path(ExternalTools::QemuImg);
  *
  */

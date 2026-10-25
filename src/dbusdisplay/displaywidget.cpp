@@ -1115,7 +1115,7 @@ void QemuDisplayWidget::onRegionUpdated(const QRect &)
 
 bool QemuDisplayWidget::event(QEvent *event)
 {
-    // Window shortcuts (Ctrl+W, zoom, ...) would otherwise take keys away
+    // Window shortcuts (Ctrl+W, zoom, …) would otherwise take keys away
     // from the guest. Accepting ShortcutOverride delivers them as plain key
     // events instead. F11 stays with the host as the way in and out of
     // fullscreen; while dimmed, all host shortcuts keep working.

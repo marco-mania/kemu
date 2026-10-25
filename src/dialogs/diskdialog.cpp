@@ -121,8 +121,8 @@ DiskDialog::DiskDialog(Mode mode, VMSpecs::MachineType machineType, QWidget *par
             button->hide();
             return button;
         };
-        m_expandButton = makeButton(QIcon::fromTheme(u"zoom-in"_s, QIcon::fromTheme(u"list-add"_s)), i18n("Expand the disk..."));
-        m_compactButton = makeButton(QIcon::fromTheme(u"edit-clear-history"_s), i18n("Compact the disk..."));
+        m_expandButton = makeButton(QIcon::fromTheme(u"zoom-in"_s, QIcon::fromTheme(u"list-add"_s)), i18n("Expand the disk…"));
+        m_compactButton = makeButton(QIcon::fromTheme(u"edit-clear-history"_s), i18n("Compact the disk…"));
         bottom->addWidget(m_expandButton);
         bottom->addWidget(m_compactButton);
 

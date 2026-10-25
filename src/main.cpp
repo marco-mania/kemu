@@ -115,7 +115,7 @@ int main(int argc, char *argv[])
     parser.addOption(headlessOption);
     const QCommandLineOption newVmOption(u"new-vm"_s, i18n("Create a new virtual machine that installs from the disc image <image>."), u"image"_s);
     parser.addOption(newVmOption);
-    parser.addPositionalArgument(u"files"_s, i18n("KEMU archives (.kemu.tar.zst), OVA files or template packages (.kemu-template.tar.gz) to import."), u"[files...]"_s);
+    parser.addPositionalArgument(u"files"_s, i18n("KEMU archives (.kemu.tar.zst), OVA files or template packages (.kemu-template.tar.gz) to import."), u"[files…]"_s);
 
     parser.process(app);
     if (parser.isSet(headlessOption) && !parser.isSet(startOption))

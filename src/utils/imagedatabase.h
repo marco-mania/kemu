@@ -27,7 +27,7 @@ using namespace Qt::StringLiterals;
 struct CloudImageInfo {
     QString arch;
     QString url;
-    QString format; // "qcow2", "raw", ...
+    QString format; // "qcow2", "raw", …
     QString checksumUrl;
     QString defaultUser;
 };

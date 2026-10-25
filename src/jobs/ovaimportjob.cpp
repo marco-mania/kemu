@@ -102,7 +102,7 @@ void OvaImportJob::start()
     Q_EMIT description(this,
                        i18n("Importing OVA"),
                        QPair<QString, QString>(i18n("File"), QFileInfo(m_ovaPath).fileName()),
-                       QPair<QString, QString>(i18n("Step"), i18n("Extracting archive...")));
+                       QPair<QString, QString>(i18n("Step"), i18n("Extracting archive…")));
 
     beginPhase(0, kExtractBand, archiveSize);
     startWorker();
@@ -461,8 +461,8 @@ void OvaImportJob::convertDisk()
                        i18n("Importing OVA"),
                        QPair<QString, QString>(i18n("VM"), m_vmName),
                        QPair<QString, QString>(i18n("Step"),
-                                               m_sourceDisks.size() > 1 ? i18n("Converting disk %1 of %2...", m_convertIndex + 1, m_sourceDisks.size())
-                                                                        : i18n("Converting disk format...")));
+                                               m_sourceDisks.size() > 1 ? i18n("Converting disk %1 of %2…", m_convertIndex + 1, m_sourceDisks.size())
+                                                                        : i18n("Converting disk format…")));
 
     if (m_converter)
         m_converter->deleteLater();

@@ -234,8 +234,8 @@ void OvaExportJob::convertNextDisk()
                        i18n("Exporting as OVA"),
                        QPair<QString, QString>(i18n("VM"), m_vmName),
                        QPair<QString, QString>(i18n("Step"),
-                                               m_disks.size() > 1 ? i18n("Converting disk image %1 of %2...", m_convertIndex + 1, m_disks.size())
-                                                                  : i18n("Converting disk image...")));
+                                               m_disks.size() > 1 ? i18n("Converting disk image %1 of %2…", m_convertIndex + 1, m_disks.size())
+                                                                  : i18n("Converting disk image…")));
 
     if (m_converter)
         m_converter->deleteLater();
@@ -284,14 +284,14 @@ void OvaExportJob::onConvertFinished(bool ok)
 
 bool OvaExportJob::runWorker()
 {
-    postInfoMessage(i18n("Creating manifest (SHA-256)..."));
+    postInfoMessage(i18n("Creating manifest (SHA-256)…"));
     if (!createManifest())
         return false;
 
     if (isCancelled())
         return false;
 
-    postInfoMessage(i18n("Packaging OVA..."));
+    postInfoMessage(i18n("Packaging OVA…"));
     return packageOva();
 }
 

@@ -160,7 +160,7 @@ void NewVmDialog::buildUi()
     auto *deployLayout = new QHBoxLayout();
     deployInfoLabel = new QLabel();
     deployInfoLabel->setWordWrap(true);
-    cloudInitButton = new QPushButton(QIcon::fromTheme(u"preferences-system"_s), i18n("Configure..."));
+    cloudInitButton = new QPushButton(QIcon::fromTheme(u"preferences-system"_s), i18n("Configure…"));
     cloudInitButton->setToolTip(i18n("User, password, SSH keys, locale and packages applied on first boot."));
     deployLayout->addWidget(deployInfoLabel, 1);
     deployLayout->addWidget(cloudInitButton, 0, Qt::AlignTop);
@@ -235,7 +235,7 @@ void NewVmDialog::buildUi()
     encryptCheck->setToolTip(i18n("Stores the system disk LUKS encrypted. Additional disks can be encrypted inside the guest."));
     passwordButton = new QToolButton();
     passwordButton->setIcon(QIcon::fromTheme(u"lock"_s));
-    passwordButton->setToolTip(i18n("Set the password..."));
+    passwordButton->setToolTip(i18n("Set the password…"));
     passwordButton->setEnabled(false);
     passwordStatusLabel = new QLabel();
     passwordStatusLabel->setEnabled(false);
@@ -250,7 +250,7 @@ void NewVmDialog::buildUi()
     buttonBox->button(QDialogButtonBox::Ok)->setText(i18n("Create"));
     buttonBox->button(QDialogButtonBox::Ok)->setIcon(QIcon::fromTheme(u"list-add"_s));
 
-    customiseButton = buttonBox->addButton(i18n("Customise..."), QDialogButtonBox::ActionRole);
+    customiseButton = buttonBox->addButton(i18n("Customise…"), QDialogButtonBox::ActionRole);
     customiseButton->setIcon(QIcon::fromTheme(u"configure"_s));
     customiseButton->setToolTip(i18n("Review and change the full hardware configuration before the machine is created."));
 
@@ -631,7 +631,7 @@ void NewVmDialog::openDiskPasswordDialog()
         m_diskPassword = dialog->password();
         m_storeDiskPassword = dialog->storeInWallet();
         passwordStatusLabel->setText(i18n("Password set"));
-        passwordButton->setToolTip(i18n("Change the password..."));
+        passwordButton->setToolTip(i18n("Change the password…"));
     }
     delete dialog;
     validateForm();
@@ -762,7 +762,7 @@ void NewVmDialog::clearCustomisation()
     m_hasCustomConfig = false;
     m_customConfig = {};
 
-    customiseButton->setText(i18n("Customise..."));
+    customiseButton->setText(i18n("Customise…"));
     customiseButton->setToolTip(i18n("Review and change the full hardware configuration before the machine is created."));
 }
 

@@ -44,7 +44,7 @@ struct VmEntry {
         Shrinking,
         Flattening, // a linked clone copies in the shared disk data
         Encrypting, // the system disk is rewritten encrypted
-        Decrypting, // ... and back
+        Decrypting, // … and back
         Exporting,
         Deploying,
         Cloning,

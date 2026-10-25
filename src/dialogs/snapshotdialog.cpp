@@ -61,8 +61,8 @@ SnapshotDialog::SnapshotDialog(const QString &vmName, const QStringList &diskPat
     // Buttons
     auto *btnLayout = new QHBoxLayout;
 
-    m_takeBtn = new QPushButton(QIcon::fromTheme(u"camera-photo"_s), i18n("Take Snapshot..."));
-    m_revertBtn = new QPushButton(QIcon::fromTheme(u"edit-undo"_s), i18n("Revert To..."));
+    m_takeBtn = new QPushButton(QIcon::fromTheme(u"camera-photo"_s), i18n("Take Snapshot…"));
+    m_revertBtn = new QPushButton(QIcon::fromTheme(u"edit-undo"_s), i18n("Revert To…"));
     m_deleteBtn = new QPushButton(QIcon::fromTheme(u"edit-delete"_s), i18n("Delete"));
     m_closeBtn = new QPushButton(i18n("Close"));
     m_closeBtn->setDefault(true);

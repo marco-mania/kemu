@@ -304,7 +304,7 @@ bool MainWindow::queryClose()
             return false;
 
         if (choice == ExitChoice::ApplyPolicy) {
-            statusBar()->showMessage(i18n("Shutting down virtual machines..."));
+            statusBar()->showMessage(i18n("Shutting down virtual machines…"));
             applyExitPolicy();
             return false; // the watcher calls close() again once we are done
         }
@@ -927,7 +927,7 @@ void MainWindow::setupActions()
 
     auto *actionChangeISO = ac->addAction(u"vm_change_iso"_s);
     actionChangeISO->setIcon(QIcon::fromTheme(u"media-optical"_s));
-    actionChangeISO->setText(i18n("ISO Image..."));
+    actionChangeISO->setText(i18n("ISO Image…"));
     connect(actionChangeISO, &QAction::triggered, this, &MainWindow::changeISO);
 
     auto *actionEjectISO = ac->addAction(u"vm_eject_iso"_s);
@@ -937,7 +937,7 @@ void MainWindow::setupActions()
 
     auto *actionChangeFloppy = ac->addAction(u"vm_change_floppy"_s);
     actionChangeFloppy->setIcon(QIcon::fromTheme(u"media-floppy"_s));
-    actionChangeFloppy->setText(i18n("Floppy Image..."));
+    actionChangeFloppy->setText(i18n("Floppy Image…"));
     connect(actionChangeFloppy, &QAction::triggered, this, &MainWindow::changeFloppy);
 
     auto *actionEjectFloppy = ac->addAction(u"vm_eject_floppy"_s);
@@ -987,7 +987,7 @@ void MainWindow::setupActions()
 
     auto *actionClone = ac->addAction(u"vm_clone"_s);
     actionClone->setIcon(QIcon::fromTheme(u"edit-copy"_s));
-    actionClone->setText(i18n("Clone VM..."));
+    actionClone->setText(i18n("Clone VM…"));
     actionClone->setToolTip(i18n("Create a full or linked copy of this virtual machine"));
     connect(actionClone, &QAction::triggered, this, &MainWindow::cloneVM);
 
@@ -1012,13 +1012,13 @@ void MainWindow::setupActions()
 
     auto *snapshotsAction = actionCollection()->addAction(u"vm_manage_snapshots"_s);
     snapshotsAction->setIcon(QIcon::fromTheme(u"camera-photo"_s));
-    snapshotsAction->setText(i18n("Manage Snapshots..."));
+    snapshotsAction->setText(i18n("Manage Snapshots…"));
     snapshotsAction->setToolTip(i18n("Open the snapshot manager for this VM"));
     connect(snapshotsAction, &QAction::triggered, this, &MainWindow::manageSnapshots);
 
     auto *actionExport = ac->addAction(u"vm_export"_s);
     actionExport->setIcon(QIcon::fromTheme(u"document-export"_s));
-    actionExport->setText(i18n("Export VM..."));
+    actionExport->setText(i18n("Export VM…"));
     actionExport->setToolTip(i18n("Export the virtual machine as a portable archive"));
     connect(actionExport, &QAction::triggered, this, &MainWindow::exportVM);
 
@@ -1031,18 +1031,18 @@ void MainWindow::setupActions()
 
     auto *actionImport = ac->addAction(u"vm_import"_s);
     actionImport->setIcon(QIcon::fromTheme(u"document-import"_s));
-    actionImport->setText(i18n("Import VM..."));
+    actionImport->setText(i18n("Import VM…"));
     actionImport->setToolTip(i18n("Import a virtual machine from an archive"));
     connect(actionImport, &QAction::triggered, this, &MainWindow::importVM);
 
     auto *actionShowCmd = ac->addAction(u"vm_show_cmd"_s);
     actionShowCmd->setIcon(QIcon::fromTheme(u"utilities-terminal"_s));
-    actionShowCmd->setText(i18n("Show command..."));
+    actionShowCmd->setText(i18n("Show command…"));
     connect(actionShowCmd, &QAction::triggered, this, &MainWindow::showCommand);
 
     auto *actionScreenshot = ac->addAction(u"vm_screenshot"_s);
     actionScreenshot->setIcon(QIcon::fromTheme(u"spectacle"_s));
-    actionScreenshot->setText(i18n("Save Screenshot..."));
+    actionScreenshot->setText(i18n("Save Screenshot…"));
     actionScreenshot->setToolTip(i18n("Capture and save a screenshot of the running VM"));
     connect(actionScreenshot, &QAction::triggered, this, &MainWindow::saveScreenshot);
 
@@ -1417,7 +1417,7 @@ void MainWindow::updateDetails()
     if (!currentConfig.distroId().isEmpty() && currentConfig.distroId() != u"other"_s) {
         osVal += u" / "_s + m_imageDatabase.displayName(currentConfig.distroId());
     }
-    osVal += u" / "_s + VMConfig::toUIString(currentConfig.architecture());
+    const QString archVal = VMConfig::toUIString(currentConfig.architecture());
 
     QString memVal = i18n("%1 MB", currentConfig.ramMb());
     QStringList memFlags;
@@ -1456,27 +1456,27 @@ void MainWindow::updateDetails()
         statusColor = colPositive;
     } else if (isShrinking) {
         statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Compacting Disk...");
+        statusText = i18n("Compacting Disk…");
         statusColor = colNeutral;
     } else if (isFlattening) {
         statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Making Independent...");
+        statusText = i18n("Making Independent…");
         statusColor = colNeutral;
     } else if (entry && (entry->state == VmEntry::State::Encrypting || entry->state == VmEntry::State::Decrypting)) {
         statusDot = u"&#x25CF;"_s;
-        statusText = entry->state == VmEntry::State::Encrypting ? i18n("Encrypting...") : i18n("Decrypting...");
+        statusText = entry->state == VmEntry::State::Encrypting ? i18n("Encrypting…") : i18n("Decrypting…");
         statusColor = colNeutral;
     } else if (isExporting) {
         statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Exporting...");
+        statusText = i18n("Exporting…");
         statusColor = colNeutral;
     } else if (isDeploying) {
         statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Deploying...");
+        statusText = i18n("Deploying…");
         statusColor = colNeutral;
     } else if (isCloning) {
         statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Cloning...");
+        statusText = i18n("Cloning…");
         statusColor = colNeutral;
     } else if (entry && entry->isFrozen()) {
         statusDot = u"&#x25CF;"_s;
@@ -1553,6 +1553,52 @@ void MainWindow::updateDetails()
         }
     }
 
+    // Below the status: what the guest agent reports while it answers,
+    // otherwise the operating system as configured.
+    // The architecture is set off like the values of the guest agent line.
+    QString osLine = osVal.toHtmlEscaped() + u"&nbsp;&nbsp;·&nbsp;&nbsp;"_s + archVal.toHtmlEscaped();
+    if (isRunning || isDeploying) {
+        const VmRuntimeInfo *rt = m_runtimeManager ? m_runtimeManager->runtime(currentConfig.name()) : nullptr;
+        const GuestAgentClient *agent = rt ? rt->guestAgent.data() : nullptr;
+        // Tooltips come from the title attribute, which takes no entities.
+        const auto attribute = [](QString text) {
+            return text.replace(u'"', u'\'');
+        };
+
+        QString agentState;
+        if (!agent)
+            agentState = currentConfig.useGuestAgent() ? i18n("Guest agent: not available for this machine type") : i18n("Guest agent: switched off");
+        else if (agent->status() == GuestAgentClient::Status::Waiting)
+            agentState = i18n("Guest agent: not running in the guest");
+        else if (agent->status() == GuestAgentClient::Status::Syncing)
+            agentState = i18n("Guest agent: connecting…");
+        else if (agent->status() == GuestAgentClient::Status::Unresponsive)
+            agentState = i18n("Guest agent: not responding");
+
+        const GuestAgentClient::GuestInfo info = agent && agent->isConnected() ? agent->guestInfo() : GuestAgentClient::GuestInfo{};
+        if (!agent || !agent->isConnected() || (info.hostName.isEmpty() && info.addresses.isEmpty() && info.osName.isEmpty())) {
+            if (!agentState.isEmpty())
+                osLine = u"<span title=\"%1\">%2</span>"_s.arg(attribute(agentState), osLine);
+        } else {
+            QStringList parts;
+            if (!info.hostName.isEmpty())
+                parts << info.hostName.toHtmlEscaped();
+            if (!info.addresses.isEmpty())
+                parts << u"<a href='copy-ip:%1' title='%2'>%1</a>"_s.arg(info.addresses.first().toHtmlEscaped(), i18n("Click to copy the address"));
+            if (!info.osName.isEmpty())
+                parts << info.osName.toHtmlEscaped();
+            parts << VMConfig::toUIString(currentConfig.architecture()).toHtmlEscaped();
+
+            QStringList tip;
+            tip << (agent->version().isEmpty() ? i18n("Reported by the guest agent") : i18n("Reported by the guest agent %1", agent->version()));
+            if (info.addresses.size() > 1)
+                tip << i18n("Addresses: %1", info.addresses.join(u", "_s));
+            tip << i18n("Configured: %1", u"%1 · %2"_s.arg(osVal, archVal));
+
+            osLine = u"<span title=\"%1\">%2</span>"_s.arg(attribute(tip.join(u'\n')), parts.join(u"&nbsp;&nbsp;·&nbsp;&nbsp;"_s));
+        }
+    }
+
     const int nameSize = basePtSize + 3;
 
     // Theme-aware CSS: system font, em-relative sizing, palette colors only
@@ -1571,6 +1617,8 @@ void MainWindow::updateDetails()
         "background-color: %9; border-radius: 3px; }"
         ".vm-status .dot { vertical-align: middle; }"
         ".vm-os { color: %5; }"
+        ".vm-os a { color: %6; text-decoration: none; }"
+        ".vm-os a:hover { text-decoration: underline; color: %7; }"
         ".pid { color: %5; margin-left: 8px; }"
         ".pid a { color: %6; text-decoration: none; }"
         ".pid a:hover { text-decoration: underline; color: %7; }"
@@ -1597,7 +1645,7 @@ void MainWindow::updateDetails()
         "    <span class='badge'><span class='dot'>%3</span> %4</span>"
         "  </div>"
         "  <div class='vm-os'>%5</div>"
-        "</td></tr></table>"_s.arg(iconImgTag, currentConfig.name(), statusDot, statusText, osVal);
+        "</td></tr></table>"_s.arg(iconImgTag, currentConfig.name(), statusDot, statusText, osLine);
 
     const QString displayStr = (currentConfig.displayType() == VMSpecs::DisplayType::Dbus)
         ? QString(gpuVal + u" (%1)"_s.arg(resolutionVal))
@@ -1658,47 +1706,6 @@ void MainWindow::updateDetails()
 
     rows.append({u"drive-removable-media-usb"_s, i18n("USB Controller"), usbVal, true, false});
     rows.append({u"folder-network"_s, i18n("Shared Folders"), sharedVal, true, currentConfig.sharedPath().isEmpty()});
-
-    // Whether an agent runs in the guest and answers.
-    if (isRunning || isDeploying) {
-        const VmRuntimeInfo *rt = m_runtimeManager ? m_runtimeManager->runtime(currentConfig.name()) : nullptr;
-        const GuestAgentClient *agent = rt ? rt->guestAgent.data() : nullptr;
-        QString agentVal;
-        bool agentMuted = true;
-        if (!agent) {
-            agentVal = currentConfig.useGuestAgent() ? i18n("Not available for this machine type") : i18n("Switched off");
-        } else {
-            switch (agent->status()) {
-            case GuestAgentClient::Status::Waiting:
-                agentVal = i18n("Not running in the guest");
-                break;
-            case GuestAgentClient::Status::Syncing:
-                agentVal = i18n("Connecting...");
-                break;
-            case GuestAgentClient::Status::Connected:
-                agentVal = agent->version().isEmpty() ? i18n("Connected") : i18n("Connected (version %1)", agent->version().toHtmlEscaped());
-                agentMuted = false;
-                break;
-            case GuestAgentClient::Status::Unresponsive:
-                agentVal = i18n("Not responding");
-                break;
-            }
-        }
-        const QString qemuLogo = QStandardPaths::locate(QStandardPaths::GenericDataLocation, KEMUConst::QemuLogoPath);
-        rows.append({qemuLogo.isEmpty() ? u"utilities-terminal"_s : qemuLogo, i18n("Guest Agent"), agentVal, true, agentMuted});
-
-        const GuestAgentClient::GuestInfo info = agent && agent->isConnected() ? agent->guestInfo() : GuestAgentClient::GuestInfo{};
-        if (!info.hostName.isEmpty())
-            rows.append({u"network-server"_s, i18n("Host Name"), info.hostName.toHtmlEscaped(), false, false});
-        if (!info.addresses.isEmpty()) {
-            QStringList links;
-            for (const QString &address : info.addresses)
-                links << u"<a href='copy-ip:%1' title='%2'>%1</a>"_s.arg(address.toHtmlEscaped(), i18n("Click to copy the address"));
-            rows.append({u"network-wired"_s, i18np("IP Address", "IP Addresses", info.addresses.size()), links.join(u", "_s), false, false});
-        }
-        if (!info.osName.isEmpty())
-            rows.append({u"computer"_s, i18n("Operating System"), info.osName.toHtmlEscaped(), false, false});
-    }
 
     const int hwIconPx = 14;
 
@@ -2162,7 +2169,7 @@ void MainWindow::runEncryptionJob(EncryptDiskJob *job, EditVmDialog *dialog, std
 
     // Modal over the edit dialog, so nothing else touches the VM meanwhile.
     auto *progress =
-        new QProgressDialog(encrypt ? i18n("Encrypting the system disk of '%1'...", vmName) : i18n("Decrypting the system disk of '%1'...", vmName),
+        new QProgressDialog(encrypt ? i18n("Encrypting the system disk of '%1'…", vmName) : i18n("Decrypting the system disk of '%1'…", vmName),
                             i18n("Cancel"),
                             0,
                             1000,
@@ -2231,7 +2238,7 @@ void MainWindow::changeDiskPassword(const QString &vmName, EditVmDialog *dialog)
         job->setTpmStateDir(getVmDir(vmName).absolutePath());
 
         // Modal over the edit dialog, so the VM cannot start meanwhile.
-        auto *progress = new QProgressDialog(i18n("Changing the password of the system disk..."), {}, 0, 0, target);
+        auto *progress = new QProgressDialog(i18n("Changing the password of the system disk…"), {}, 0, 0, target);
         progress->setWindowModality(Qt::WindowModal);
         progress->setMinimumDuration(0);
         progress->setAttribute(Qt::WA_DeleteOnClose);
@@ -2598,7 +2605,7 @@ void MainWindow::freeUnusedBlocks()
 
     m_freeingBlocks.insert(vmName);
     updateActionStates();
-    statusBar()->showMessage(i18n("Freeing unused blocks in '%1'...", vmName));
+    statusBar()->showMessage(i18n("Freeing unused blocks in '%1'…", vmName));
 
     // Large file systems take a while.
     constexpr int kTrimTimeoutMs = 30 * 60 * 1000;
@@ -2776,7 +2783,7 @@ void MainWindow::expandDisk(const QString &vmName, const QString &diskPath, int 
             job->setDiskKey(key);
 
         // Takes a moment, longer for an encrypted image.
-        auto *progress = new QProgressDialog(i18n("Expanding the disk of '%1'...", vmName), {}, 0, 0, target ? target.data() : this);
+        auto *progress = new QProgressDialog(i18n("Expanding the disk of '%1'…", vmName), {}, 0, 0, target ? target.data() : this);
         progress->setWindowModality(Qt::WindowModal);
         progress->setMinimumDuration(0);
         progress->setAttribute(Qt::WA_DeleteOnClose);
@@ -2829,7 +2836,7 @@ void MainWindow::runCompactJob(ShrinkJob *job, QWidget *parent)
     // From a dialog: modal over it, so the settings cannot change meanwhile.
     QPointer<QProgressDialog> progress;
     if (parent != this) {
-        progress = new QProgressDialog(i18n("Compacting the disk of '%1'...", vmName), i18n("Cancel"), 0, 1000, parent);
+        progress = new QProgressDialog(i18n("Compacting the disk of '%1'…", vmName), i18n("Cancel"), 0, 1000, parent);
         progress->setWindowModality(Qt::WindowModal);
         progress->setMinimumDuration(0);
         progress->setAttribute(Qt::WA_DeleteOnClose);
@@ -2895,7 +2902,7 @@ void MainWindow::runCompactJob(ShrinkJob *job, QWidget *parent)
 
     job->start();
 
-    statusBar()->showMessage(i18n("Compacting disk of VM '%1'...", vmName));
+    statusBar()->showMessage(i18n("Compacting disk of VM '%1'…", vmName));
     updateActionStates();
     updateDetails();
 }
@@ -2971,7 +2978,7 @@ void MainWindow::exportVM()
 
         job->start();
 
-        statusBar()->showMessage(i18n("Exporting VM '%1'...", currentConfig.name()));
+        statusBar()->showMessage(i18n("Exporting VM '%1'…", currentConfig.name()));
         updateActionStates();
         updateDetails();
     }
@@ -3086,7 +3093,7 @@ void MainWindow::importFromPath(const QString &filePath)
     });
 
     job->start();
-    statusBar()->showMessage(i18n("Importing VM..."));
+    statusBar()->showMessage(i18n("Importing VM…"));
 }
 
 void MainWindow::saveScreenshot()
@@ -3169,7 +3176,7 @@ void MainWindow::reconnectViewer()
 
         // startDbusViewer() only reports that the handshake was initiated;
         // finishDbusViewer() clears the headless flag once it succeeds.
-        statusBar()->showMessage(i18n("Connecting viewer to '%1'...", vmName));
+        statusBar()->showMessage(i18n("Connecting viewer to '%1'…", vmName));
         startDbusViewer(vmName);
         return;
     }
@@ -3181,7 +3188,7 @@ void MainWindow::onVmStarted(const QString &vmName, bool headless, bool deployme
     if (deployment) {
         const bool unattended = isUnattendedDeployment(vmName);
 
-        statusBar()->showMessage(unattended ? i18n("Deploying '%1' - unattended installation running...", vmName)
+        statusBar()->showMessage(unattended ? i18n("Deploying '%1' - unattended installation running…", vmName)
                                             : i18n("Installing '%1' - finish the installation in the VM window, then shut the guest down.", vmName));
 
         // The serial log is the only progress view an unattended run has, and
@@ -3350,14 +3357,14 @@ void MainWindow::showContextMenu(const QPoint &pos)
             const bool isShrinking = entry && entry->state == VmEntry::State::Shrinking;
 
             if (isShrinking) {
-                auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"view-refresh"_s), i18n("Compacting disk..."));
+                auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"view-refresh"_s), i18n("Compacting disk…"));
                 infoAction->setEnabled(false);
             } else if (entry && entry->state == VmEntry::State::Flattening) {
-                auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"view-refresh"_s), i18n("Making independent..."));
+                auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"view-refresh"_s), i18n("Making independent…"));
                 infoAction->setEnabled(false);
             } else if (entry && (entry->state == VmEntry::State::Encrypting || entry->state == VmEntry::State::Decrypting)) {
                 auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"view-refresh"_s),
-                                                         entry->state == VmEntry::State::Encrypting ? i18n("Encrypting...") : i18n("Decrypting..."));
+                                                         entry->state == VmEntry::State::Encrypting ? i18n("Encrypting…") : i18n("Decrypting…"));
                 infoAction->setEnabled(false);
             } else if (isDeploying) {
                 auto *logAction = contextMenu.addAction(QIcon::fromTheme(u"text-x-log"_s), i18n("Show Deployment Log"));
@@ -3369,7 +3376,7 @@ void MainWindow::showContextMenu(const QPoint &pos)
                 QAction *customPoweroffAction = contextMenu.addAction(originalPoweroffAction->icon(), i18n("Abort Deployment"));
                 connect(customPoweroffAction, &QAction::triggered, originalPoweroffAction, &QAction::trigger);
             } else if (entry && entry->state == VmEntry::State::Cloning) {
-                auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"edit-copy"_s), i18n("Cloning..."));
+                auto *infoAction = contextMenu.addAction(QIcon::fromTheme(u"edit-copy"_s), i18n("Cloning…"));
                 infoAction->setEnabled(false);
             } else if (!isRunning) {
                 contextMenu.addAction(actionCollection()->action(u"vm_start"_s));
@@ -3672,7 +3679,7 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
     qCDebug(KEMU) << "QMP Event for" << vmName << ":" << eventName << data;
 
     // Pause/resume events that occur as part of a save-state operation are
-    // internal bookkeeping. The user already sees the "Saving state..."
+    // internal bookkeeping. The user already sees the "Saving state…"
     // subtitle and the Saved-style icon, so no extra status-bar noise.
     const VmEntry *entry = veModel->entryByName(vmName);
     const bool isSaving = entry && entry->state == VmEntry::State::Saving;
@@ -3700,7 +3707,7 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
     }
 
     if (eventName == u"SHUTDOWN"_s) {
-        statusBar()->showMessage(i18n("VM '%1' is shutting down...", vmName));
+        statusBar()->showMessage(i18n("VM '%1' is shutting down…", vmName));
         return;
     }
 
@@ -3877,7 +3884,7 @@ void MainWindow::importOVA(const QString &filePath)
     });
 
     job->start();
-    statusBar()->showMessage(i18n("Importing OVA..."));
+    statusBar()->showMessage(i18n("Importing OVA…"));
 }
 
 void MainWindow::exportOVA(const QString &filePath)
@@ -3930,7 +3937,7 @@ void MainWindow::exportOVA(const QString &filePath)
 
     job->start();
 
-    statusBar()->showMessage(i18n("Exporting VM '%1' as OVA...", currentConfig.name()));
+    statusBar()->showMessage(i18n("Exporting VM '%1' as OVA…", currentConfig.name()));
     updateActionStates();
     updateDetails();
 }
@@ -4039,7 +4046,7 @@ void MainWindow::shutdownVMByName(const QString &vmName)
         return;
     }
 
-    statusBar()->showMessage(i18n("Shutting down virtual machine '%1'...", vmName));
+    statusBar()->showMessage(i18n("Shutting down virtual machine '%1'…", vmName));
 }
 
 void MainWindow::resetVMByName(const QString &vmName)
@@ -4167,7 +4174,7 @@ void MainWindow::powerOffVMByName(const QString &vmName)
         }
     }
 
-    statusBar()->showMessage(i18n("Force power-off initiated for virtual machine '%1'...", vmName));
+    statusBar()->showMessage(i18n("Force power-off initiated for virtual machine '%1'…", vmName));
 }
 
 void MainWindow::saveStateVMByName(const QString &vmName, bool skipConfirm)
@@ -4216,7 +4223,7 @@ void MainWindow::saveStateVMByName(const QString &vmName, bool skipConfirm)
     m_runtimeManager->runtimeFor(vmName).userInitiatedShutdown = true;
 
     veModel->setVmState(vmName, VmEntry::State::Saving);
-    statusBar()->showMessage(i18n("Saving state of '%1'...", vmName));
+    statusBar()->showMessage(i18n("Saving state of '%1'…", vmName));
     updateActionStates();
 
     // Visually mark the integrated D-Bus viewer as suspended.
@@ -4480,7 +4487,7 @@ void MainWindow::showNewVmDialog(const QString &isoPath)
         updateActionStates();
 
         if (needsDownload) {
-            statusBar()->showMessage(i18n("Deploying '%1' - downloading cloud image...", newConfig.name()));
+            statusBar()->showMessage(i18n("Deploying '%1' - downloading cloud image…", newConfig.name()));
 
             auto *job = new DownloadJob(image.url, imageLocalPath, Utils::ChecksumType::NONE, {}, this);
             jobTracker->registerJob(job);
@@ -4767,7 +4774,7 @@ void MainWindow::importDisks(const QString &vmName, const QList<DiskImportJob::I
     });
 
     job->start();
-    statusBar()->showMessage(i18n("Importing disk image into VM '%1'...", vmName));
+    statusBar()->showMessage(i18n("Importing disk image into VM '%1'…", vmName));
     updateActionStates();
 }
 
@@ -4939,7 +4946,7 @@ void MainWindow::startClone(const QString &srcName,
                                                                        "random one?",
                                                                        cloneConfig.macAddress()),
                                                                   i18n("MAC Address"),
-                                                                  KGuiItem(i18n("Enter New MAC..."), u"document-edit"_s),
+                                                                  KGuiItem(i18n("Enter New MAC…"), u"document-edit"_s),
                                                                   KGuiItem(i18n("Generate Random"), u"roll"_s));
 
                     if (answer == KMessageBox::PrimaryAction) {
@@ -4991,7 +4998,7 @@ void MainWindow::startClone(const QString &srcName,
 
     job->start();
 
-    statusBar()->showMessage(i18n("Cloning VM '%1'...", srcName));
+    statusBar()->showMessage(i18n("Cloning VM '%1'…", srcName));
     updateActionStates();
     updateDetails();
 }
@@ -5090,7 +5097,7 @@ void MainWindow::makeIndependent()
 
     job->start();
 
-    statusBar()->showMessage(i18n("Making VM '%1' independent...", vmName));
+    statusBar()->showMessage(i18n("Making VM '%1' independent…", vmName));
     updateActionStates();
     updateDetails();
 }
@@ -5748,7 +5755,7 @@ void MainWindow::deployCloudImage(const QString &vmName)
     const QDir vmDir = getVmDir(vmName);
     const VMConfig config = loadVmConfig(vmDir.absolutePath());
 
-    statusBar()->showMessage(i18n("Deploying '%1'. Preparing cloud image...", vmName));
+    statusBar()->showMessage(i18n("Deploying '%1'. Preparing cloud image…", vmName));
 
     auto *job = new CloudDeployJob(vmName, pd.imageLocalPath, vmDir, config.diskSizeGb(), pd.cloudConfig, this);
     job->setDiskKey(pd.diskKey);

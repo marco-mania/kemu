@@ -74,12 +74,12 @@ CloudInitTemplatesTab::CloudInitTemplatesTab(QWidget *parent)
         connect(button, &QPushButton::clicked, this, slot);
         return button;
     };
-    m_newButton = makeButton(u"list-add"_s, i18n("New..."), &CloudInitTemplatesTab::newTemplate);
-    m_duplicateButton = makeButton(u"edit-copy"_s, i18n("Duplicate..."), &CloudInitTemplatesTab::duplicateTemplate);
-    m_editButton = makeButton(u"document-edit"_s, i18n("Edit..."), &CloudInitTemplatesTab::editTemplate);
+    m_newButton = makeButton(u"list-add"_s, i18n("New…"), &CloudInitTemplatesTab::newTemplate);
+    m_duplicateButton = makeButton(u"edit-copy"_s, i18n("Duplicate…"), &CloudInitTemplatesTab::duplicateTemplate);
+    m_editButton = makeButton(u"document-edit"_s, i18n("Edit…"), &CloudInitTemplatesTab::editTemplate);
     m_removeButton = makeButton(u"edit-delete"_s, i18n("Delete"), &CloudInitTemplatesTab::removeTemplate);
-    QPushButton *importButton = makeButton(u"document-import"_s, i18n("Import..."), &CloudInitTemplatesTab::importTemplate);
-    m_exportButton = makeButton(u"document-export"_s, i18n("Export..."), &CloudInitTemplatesTab::exportTemplate);
+    QPushButton *importButton = makeButton(u"document-import"_s, i18n("Import…"), &CloudInitTemplatesTab::importTemplate);
+    m_exportButton = makeButton(u"document-export"_s, i18n("Export…"), &CloudInitTemplatesTab::exportTemplate);
     QPushButton *folderButton = makeButton(u"folder-open"_s, i18n("Open Folder"), &CloudInitTemplatesTab::openFolder);
     folderButton->setToolTip(i18n("Open the folder with your own cloud-init templates"));
 
@@ -220,7 +220,7 @@ void CloudInitTemplatesTab::updateButtons()
     m_duplicateButton->setEnabled(entry.has_value());
     m_editButton->setEnabled(entry.has_value());
     m_exportButton->setEnabled(entry.has_value());
-    m_editButton->setText(!entry || own ? i18n("Edit...") : i18n("Customize..."));
+    m_editButton->setText(!entry || own ? i18n("Edit…") : i18n("Customize…"));
     m_removeButton->setEnabled(own);
     const bool reset = own && entry->replaces.has_value();
     m_removeButton->setText(reset ? i18n("Reset") : i18n("Delete"));

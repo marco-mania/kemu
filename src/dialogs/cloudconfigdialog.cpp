@@ -124,12 +124,12 @@ CloudConfigDialog::CloudConfigDialog(QWidget *parent)
 
     // SSH Keys
     sshKeysEdit = new QPlainTextEdit();
-    sshKeysEdit->setPlaceholderText(i18n("One key per line (ssh-ed25519 AAAA...)"));
+    sshKeysEdit->setPlaceholderText(i18n("One key per line (ssh-ed25519 AAAA…)"));
     sshKeysEdit->setMaximumHeight(80);
     form->addRow(i18n("SSH Keys:"), sshKeysEdit);
 
     auto *sshButtonLayout = new QHBoxLayout();
-    auto *addKeyButton = new QPushButton(i18n("Import from File..."));
+    auto *addKeyButton = new QPushButton(i18n("Import from File…"));
     sshButtonLayout->addWidget(addKeyButton);
     sshButtonLayout->addStretch();
     form->addRow({}, sshButtonLayout);

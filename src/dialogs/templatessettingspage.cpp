@@ -76,13 +76,13 @@ TemplatesSettingsPage::TemplatesSettingsPage(QWidget *parent)
         connect(button, &QPushButton::clicked, this, slot);
         return button;
     };
-    m_newButton = makeButton(u"list-add"_s, i18n("New..."), &TemplatesSettingsPage::newTemplate);
-    m_duplicateButton = makeButton(u"edit-copy"_s, i18n("Duplicate..."), &TemplatesSettingsPage::duplicateTemplate);
-    m_editButton = makeButton(u"document-edit"_s, i18n("Edit..."), &TemplatesSettingsPage::editTemplate);
+    m_newButton = makeButton(u"list-add"_s, i18n("New…"), &TemplatesSettingsPage::newTemplate);
+    m_duplicateButton = makeButton(u"edit-copy"_s, i18n("Duplicate…"), &TemplatesSettingsPage::duplicateTemplate);
+    m_editButton = makeButton(u"document-edit"_s, i18n("Edit…"), &TemplatesSettingsPage::editTemplate);
     m_removeButton = makeButton(u"edit-delete"_s, i18n("Delete"), &TemplatesSettingsPage::removeTemplate);
     m_hideButton = makeButton(u"view-hidden"_s, i18n("Hide"), &TemplatesSettingsPage::toggleHidden);
-    m_importButton = makeButton(u"document-import"_s, i18n("Import..."), &TemplatesSettingsPage::importTemplates);
-    m_exportButton = makeButton(u"document-export"_s, i18n("Export..."), &TemplatesSettingsPage::exportTemplate);
+    m_importButton = makeButton(u"document-import"_s, i18n("Import…"), &TemplatesSettingsPage::importTemplates);
+    m_exportButton = makeButton(u"document-export"_s, i18n("Export…"), &TemplatesSettingsPage::exportTemplate);
     QPushButton *folderButton = makeButton(u"folder-open"_s, i18n("Open Folder"), &TemplatesSettingsPage::openFolder);
     folderButton->setToolTip(i18n("Open the folder with your own templates"));
 
@@ -223,7 +223,7 @@ void TemplatesSettingsPage::updateButtons()
     for (QPushButton *button : {m_duplicateButton, m_editButton, m_hideButton, m_exportButton})
         button->setEnabled(tpl);
 
-    m_editButton->setText(!tpl || own ? i18n("Edit...") : i18n("Customize..."));
+    m_editButton->setText(!tpl || own ? i18n("Edit…") : i18n("Customize…"));
     m_removeButton->setEnabled(own);
     const bool reset = own && tpl->replaces.has_value();
     m_removeButton->setText(reset ? i18n("Reset") : i18n("Delete"));

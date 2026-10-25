@@ -459,7 +459,7 @@ void SettingsDialog::setupAutomatedDeployPage()
     guestLayout->addRow(i18n("User name:"), deployUserEdit);
 
     deploySshKeysEdit = new QPlainTextEdit();
-    deploySshKeysEdit->setPlaceholderText(i18n("One key per line (ssh-ed25519 AAAA...)"));
+    deploySshKeysEdit->setPlaceholderText(i18n("One key per line (ssh-ed25519 AAAA…)"));
     deploySshKeysEdit->setMaximumHeight(80);
     deploySshKeysEdit->setPlainText(defaults.sshKeys.join(u"\n"_s));
     guestLayout->addRow(i18n("SSH keys:"), deploySshKeysEdit);
@@ -533,8 +533,8 @@ void SettingsDialog::setupVirtualNetworksPage()
     layout->addWidget(networkTable);
 
     auto *buttonLayout = new QHBoxLayout();
-    netAddButton = new QPushButton(QIcon::fromTheme(u"list-add"_s), i18n("Add..."));
-    netEditButton = new QPushButton(QIcon::fromTheme(u"document-edit"_s), i18n("Edit..."));
+    netAddButton = new QPushButton(QIcon::fromTheme(u"list-add"_s), i18n("Add…"));
+    netEditButton = new QPushButton(QIcon::fromTheme(u"document-edit"_s), i18n("Edit…"));
     netRemoveButton = new QPushButton(QIcon::fromTheme(u"list-remove"_s), i18n("Remove"));
     netEditButton->setEnabled(false);
     netRemoveButton->setEnabled(false);

@@ -150,7 +150,7 @@ void EncryptDiskJob::rekeyTpm()
         return;
     }
 
-    Q_EMIT infoMessage(this, encrypt ? i18n("Encrypting the TPM state...") : i18n("Decrypting the TPM state..."));
+    Q_EMIT infoMessage(this, encrypt ? i18n("Encrypting the TPM state…") : i18n("Decrypting the TPM state…"));
     const QString swtpm = ExternalTools::instance().path(ExternalTools::Swtpm);
     const QString ioctl = ExternalTools::instance().path(ExternalTools::SwtpmIoctl);
     const QDir stateDir = m_vmDir;

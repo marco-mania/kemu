@@ -171,25 +171,25 @@ QVariant VirtualEnvironmentModel::data(const QModelIndex &index, int role) const
                                  QLocale::system().toString(vm.savestateTime, QLocale::ShortFormat));
                 return i18n("Saved State");
             case VmEntry::State::Saving:
-                return i18n("Saving state...");
+                return i18n("Saving state…");
             case VmEntry::State::Deploying:
-                return i18n("Deploying...");
+                return i18n("Deploying…");
             case VmEntry::State::Cloning:
-                return i18n("Cloning...");
+                return i18n("Cloning…");
             case VmEntry::State::Creating:
-                return i18n("Creating...");
+                return i18n("Creating…");
             case VmEntry::State::Shrinking:
-                return i18n("Shrinking disk...");
+                return i18n("Shrinking disk…");
             case VmEntry::State::Encrypting:
-                return i18n("Encrypting...");
+                return i18n("Encrypting…");
             case VmEntry::State::Decrypting:
-                return i18n("Decrypting...");
+                return i18n("Decrypting…");
             case VmEntry::State::Flattening:
-                return i18n("Making independent...");
+                return i18n("Making independent…");
             case VmEntry::State::Exporting:
-                return i18n("Exporting...");
+                return i18n("Exporting…");
             case VmEntry::State::ShuttingDown:
-                return i18n("Shutting down...");
+                return i18n("Shutting down…");
             case VmEntry::State::Stopped:
                 if (vm.isFrozen())
                     return i18ncp("VM subtitle", "Frozen \u00B7 used by %1 linked clone", "Frozen \u00B7 used by %1 linked clones", vm.linkedClones.size());

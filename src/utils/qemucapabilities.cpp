@@ -141,7 +141,7 @@ QSet<QString> QemuCapabilities::collectProbe(KProcess &process, int remainingMs)
     const QStringList lines = output.split(u'\n', Qt::SkipEmptyParts);
     for (const QString &line : lines) {
         const QString trimmed = line.trimmed();
-        if (trimmed.isEmpty() || trimmed.endsWith(u':')) // "Available ...:" header
+        if (trimmed.isEmpty() || trimmed.endsWith(u':')) // "Available …:" header
             continue;
         result.insert(trimmed.section(u' ', 0, 0).toLower());
     }

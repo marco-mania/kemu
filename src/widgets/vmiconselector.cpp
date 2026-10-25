@@ -177,9 +177,9 @@ void VmIconSelector::clearIcon()
 void VmIconSelector::showIconContextMenu(const QPoint &pos)
 {
     QMenu menu(this);
-    menu.addAction(QIcon::fromTheme(u"preferences-desktop-icons"_s), i18n("Choose Icon..."), this, &VmIconSelector::chooseFromIconSet);
-    menu.addAction(QIcon::fromTheme(u"preferences-desktop-icons"_s), i18n("Choose System Theme Icon..."), this, &VmIconSelector::chooseThemeIcon);
-    menu.addAction(QIcon::fromTheme(u"document-open"_s), i18n("Load Custom Image..."), this, &VmIconSelector::browseCustomIcon);
+    menu.addAction(QIcon::fromTheme(u"preferences-desktop-icons"_s), i18n("Choose Icon…"), this, &VmIconSelector::chooseFromIconSet);
+    menu.addAction(QIcon::fromTheme(u"preferences-desktop-icons"_s), i18n("Choose System Theme Icon…"), this, &VmIconSelector::chooseThemeIcon);
+    menu.addAction(QIcon::fromTheme(u"document-open"_s), i18n("Load Custom Image…"), this, &VmIconSelector::browseCustomIcon);
     menu.addSeparator();
     menu.addAction(QIcon::fromTheme(u"edit-clear"_s), i18n("Reset Icon"), this, &VmIconSelector::clearIcon);
     menu.exec(mapToGlobal(pos));

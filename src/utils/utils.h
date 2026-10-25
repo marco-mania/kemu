@@ -159,7 +159,7 @@ bool isValidDnsDomain(QStringView domain);
 
 QString quoteShellArg(const QString &arg);
 
-// QEMU splits option strings such as "file=...,format=raw" at commas, so a
+// QEMU splits option strings such as "file=…,format=raw" at commas, so a
 // comma inside a value has to be doubled.
 QString escapeQemuOptionValue(const QString &value);
 

@@ -45,7 +45,7 @@ class TemplateStore
 public:
     /// Locations from the XDG data directories.
     TemplateStore();
-    /// Explicit data directories, below which the kemu/... paths are used.
+    /// Explicit data directories, below which the kemu/… paths are used.
     TemplateStore(const QString &userDataDir, const QStringList &systemDataDirs);
 
     [[nodiscard]] QString globalDefaultsPath() const;

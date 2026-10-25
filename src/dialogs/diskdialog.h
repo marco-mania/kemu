@@ -44,7 +44,7 @@ public:
     /// which happens at once, independent of OK/Cancel.
     void setCompactAvailable(bool available);
     /// Edit mode, existing disk: its size; larger sizes are applied at once
-    /// through "Expand...". 0 if unknown.
+    /// through "Expand…". 0 if unknown.
     void setCurrentSize(int sizeGb);
     /// Edit mode, disk that is only created on OK: its size can change.
     void setNewDiskSize(int sizeGb);

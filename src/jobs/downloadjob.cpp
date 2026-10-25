@@ -36,7 +36,7 @@ void DownloadJob::start()
     // TODO: resume support
     QDir().mkpath(QFileInfo(m_localPath).absolutePath());
 
-    Q_EMIT statusMessage(i18n("Starting download..."));
+    Q_EMIT statusMessage(i18n("Starting download…"));
     QTimer::singleShot(0, this, &DownloadJob::startDownload);
 }
 
@@ -139,7 +139,7 @@ void DownloadJob::onDownloadFinished()
         return;
     }
 
-    Q_EMIT statusMessage(i18n("Download complete. Verifying checksum..."));
+    Q_EMIT statusMessage(i18n("Download complete. Verifying checksum…"));
 
     QFile::remove(m_localPath);
     if (!QFile::rename(m_localPath + u".part"_s, m_localPath)) {

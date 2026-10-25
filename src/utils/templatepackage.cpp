@@ -31,7 +31,7 @@ constexpr qint64 kMaxTotalSize = 8 << 20;
 const QString kCloudInitSuffix = u".yaml.tpl"_s;
 const QString kTemplateFileName = u"template.json"_s;
 
-// A file holds {"templates": [...]} or a single template object.
+// A file holds {"templates": […]} or a single template object.
 bool addTemplates(TemplatePackage &package, const QByteArray &data, const QString &name, QString *error)
 {
     QJsonParseError parseError;
