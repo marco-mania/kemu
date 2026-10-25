@@ -58,6 +58,7 @@
 #include <KWindowSystem>
 
 #include <QBuffer>
+#include <QToolButton>
 #include <QProgressDialog>
 #include <QScopeGuard>
 #include <QtSvg>
@@ -1057,14 +1058,29 @@ void MainWindow::setupActions()
     ac->addAction(u"vm_usb_devices"_s, usbActionMenu);
     connect(usbActionMenu->menu(), &QMenu::aboutToShow, this, &MainWindow::onUsbMenuAboutToShow);
 
-    vmActionBar->addAction(actionStart);
-    vmActionBar->addAction(actionStop);
-    vmActionBar->addAction(actionReset);
-    vmActionBar->addAction(actionPowerOff);
-    vmActionBar->addSeparator();
-    vmActionBar->addAction(actionChangeISO);
-    vmActionBar->addAction(actionChangeFloppy);
-    vmActionBar->addSeparator();
+    // The common action on the button, its variants behind the arrow.
+    const auto addSplitButton = [this](QAction *main, const QList<QAction *> &variants) {
+        vmActionBar->addAction(main);
+        auto *button = qobject_cast<QToolButton *>(vmActionBar->widgetForAction(main));
+        if (!button)
+            return;
+        auto *menu = new QMenu(button);
+        menu->addActions(variants);
+        button->setMenu(menu);
+        button->setPopupMode(QToolButton::MenuButtonPopup);
+    };
+    addSplitButton(actionStart, {actionStartHeadless});
+    addSplitButton(actionStop, {actionSaveState, actionPowerOff, actionReset});
+
+    auto *mediaMenu = new KActionMenu(QIcon::fromTheme(u"media-optical"_s), i18n("Removable Media"), this);
+    mediaMenu->setPopupMode(QToolButton::InstantPopup);
+    mediaMenu->addAction(actionChangeISO);
+    mediaMenu->addAction(actionEjectISO);
+    mediaMenu->addSeparator();
+    mediaMenu->addAction(actionChangeFloppy);
+    mediaMenu->addAction(actionEjectFloppy);
+    vmActionBar->addAction(mediaMenu);
+
     vmActionBar->addAction(snapshotsAction);
     auto *spacer = new QWidget();
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
