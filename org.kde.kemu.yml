@@ -36,12 +36,11 @@ finish-args:
   - --filesystem=xdg-run/pipewire-0
   # Follow the user's KDE colour scheme and fonts.
   - --filesystem=xdg-config/kdeglobals:ro
-<<<<<<< HEAD
   # Passwords for encrypted disks. The runtime has the KWallet library,
   # but the daemon is from the host.
   - --talk-name=org.kde.kwalletd6
-=======
->>>>>>> c20b5fc19d43fd490471c051815a3057073392ba
+  # System tray icon (StatusNotifierItem).
+  - --talk-name=org.kde.StatusNotifierWatcher
   # Deliberately NOT granted, so the sandbox keeps meaning something:
   #  - USB passthrough: opt in with
   #      flatpak override --user --device=all org.kde.kemu
@@ -159,8 +158,7 @@ modules:
   - name: python3-distlib
     buildsystem: simple
     build-commands:
-      - pip3 install --no-index --find-links="file://${PWD}" --prefix="${FLATPAK_DEST}"
-        --no-build-isolation distlib
+      - pip3 install --no-index --find-links="file://${PWD}" --prefix="${FLATPAK_DEST}" --no-build-isolation distlib
     sources:
       - type: file
         url: https://files.pythonhosted.org/packages/c9/02/bd72be9134d25ed783ecbbc38a539ffaefbf90c78418c7fb7229600dbac7/distlib-0.4.3.tar.gz
@@ -172,8 +170,7 @@ modules:
   - name: python3-PyYAML
     buildsystem: simple
     build-commands:
-      - pip3 install --no-index --find-links="file://${PWD}" --prefix="${FLATPAK_DEST}"
-        --no-build-isolation PyYAML
+      - pip3 install --no-index --find-links="file://${PWD}" --prefix="${FLATPAK_DEST}" --no-build-isolation PyYAML
     sources:
       - type: file
         url: https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz
