@@ -338,6 +338,12 @@ private:
     void updateSessionInhibitors();
     void applyExitPolicy();
 
+    // Desktop notification for an event of kemu.notifyrc. "Show" brings the
+    // main window up with vmName selected; without a name it only shows it.
+    void notifyEvent(const QString &eventId, const QString &vmName, const QString &text, bool urgent = false);
+    void bringUpMainWindow(const QString &vmName, const QString &activationToken);
+    QSet<QString> m_failedDeployments;
+
     // Creates or removes the tray icon to match the settings.
     void updateTrayIcon();
     void showVmDisplay(const QString &vmName);

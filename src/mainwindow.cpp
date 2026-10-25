@@ -52,6 +52,9 @@
 
 #include <KFormat>
 #include <KIO/FileCopyJob>
+#include <KNotification>
+#include <KNotifyConfigWidget>
+#include <KWindowSystem>
 
 #include <QBuffer>
 #include <QProgressDialog>
@@ -1051,6 +1054,12 @@ void MainWindow::setupActions()
     vmActionBar->addAction(actionEdit);
 
     KStandardAction::preferences(this, &MainWindow::openSettings, ac);
+    KStandardAction::configureNotifications(
+        this,
+        [this]() {
+            KNotifyConfigWidget::configure(this);
+        },
+        ac);
     KStandardAction::quit(this, &MainWindow::quitApplication, ac);
 }
 
@@ -2582,6 +2591,7 @@ void MainWindow::freeUnusedBlocks()
 
             if (!ok) {
                 self->statusBar()->showMessage(i18n("Freeing unused blocks in '%1' failed: %2", vmName, error));
+                self->notifyEvent(u"unusedBlocksFreed"_s, vmName, i18n("Freeing unused blocks failed: %1", error));
                 return;
             }
 
@@ -2599,6 +2609,7 @@ void MainWindow::freeUnusedBlocks()
             if (!failed.isEmpty())
                 message += u' ' + i18np("%2 could not be trimmed.", "%2 could not be trimmed.", failed.size(), failed.join(u", "_s));
             self->statusBar()->showMessage(message);
+            self->notifyEvent(u"unusedBlocksFreed"_s, vmName, message);
             if (self->currentConfig.name() == vmName)
                 self->updateDetails();
         },
@@ -3169,16 +3180,23 @@ void MainWindow::onVmExited(const VmRuntimeManager::ExitInfo &info)
     }
 
     if (info.wasDeploying && info.abnormal && !info.userInitiated) {
+        m_failedDeployments.insert(info.vmName);
+        notifyEvent(u"deploymentFailed"_s, info.vmName, i18n("The deployment failed: QEMU ended unexpectedly (exit code %1).", info.exitCode), true);
         showQemuFailureDialog(info.vmName, /*startupFailed=*/false, info.exitCode, info.exitStatus, info.stderrTail);
         abortDeployment(info.vmName, false);
     } else if (info.wasDeploying) {
         finalizeDeployment(info.vmName);
     } else if (info.savestatePresent && !info.abnormal) {
         statusBar()->showMessage(i18n("VM '%1' state saved.", info.vmName));
+        notifyEvent(u"stateSaved"_s, info.vmName, i18n("The state was saved. The next start resumes where it left off."));
     } else if (info.abnormal && !info.userInitiated && !info.startupFailureAlreadyShown) {
+        // Before the dialog, which blocks until it is closed.
+        notifyEvent(u"vmCrashed"_s, info.vmName, i18n("QEMU ended unexpectedly (exit code %1).", info.exitCode), true);
         showQemuFailureDialog(info.vmName, /*startupFailed=*/false, info.exitCode, info.exitStatus, info.stderrTail);
     } else {
         statusBar()->showMessage(i18n("VM '%1' stopped.", info.vmName));
+        if (!info.startupFailureAlreadyShown)
+            notifyEvent(u"vmStopped"_s, info.vmName, i18n("The virtual machine has shut down."));
     }
 
     if (info.shutdownHostWithGuest && info.guestPoweredOff && !info.abnormal && !info.wasDeploying) {
@@ -3899,6 +3917,12 @@ void MainWindow::onWokeUp()
             win->setSuspended(false);
     }
     m_suspendInProgress = false;
+
+    if (!names.isEmpty())
+        notifyEvent(u"hostSleep"_s,
+                    names.size() == 1 ? names.first() : QString(),
+                    names.size() == 1 ? i18n("Paused while the host slept, running again.")
+                                      : i18n("Paused while the host slept, running again: %1", names.join(i18nc("@info list separator", ", "))));
 }
 
 void MainWindow::shutdownVMByName(const QString &vmName)
@@ -4971,10 +4995,10 @@ void MainWindow::makeIndependent()
                 currentConfig = config;
 
             const VmEntry *source = veModel->entryByName(sourceName);
-            if (source && !source->isFrozen())
-                statusBar()->showMessage(i18n("VM '%1' is independent now; '%2' is no longer frozen.", name, sourceName));
-            else
-                statusBar()->showMessage(i18n("VM '%1' is independent now.", name));
+            const QString message = source && !source->isFrozen() ? i18n("VM '%1' is independent now; '%2' is no longer frozen.", name, sourceName)
+                                                                  : i18n("VM '%1' is independent now.", name);
+            statusBar()->showMessage(message);
+            notifyEvent(u"madeIndependent"_s, name, message);
         }
 
         if (currentConfig.name() == name)
@@ -5427,6 +5451,7 @@ void MainWindow::finalizeDeployment(const QString &vmName)
     }
 
     statusBar()->showMessage(i18n("Deployment of '%1' complete. VM is ready.", vmName));
+    notifyEvent(u"deploymentFinished"_s, vmName, i18n("The deployment is complete. The virtual machine is ready."));
 }
 
 void MainWindow::confirmDeploymentAbort(const QString &vmName)
@@ -5551,6 +5576,9 @@ void MainWindow::abortDeployment(const QString &vmName, bool deleteVm)
 
 void MainWindow::finishDeploymentAbort(const QString &vmName, bool deleteVm)
 {
+    // A failure has been notified already; only a cancellation is news here.
+    const bool cancelled = !m_failedDeployments.remove(vmName);
+
     // Everything process related is gone by now: VmRuntimeManager::tearDown()
     // has stopped the helpers, removed the sockets, released the network and
     // reset the model's runtime state.
@@ -5562,6 +5590,8 @@ void MainWindow::finishDeploymentAbort(const QString &vmName, bool deleteVm)
         updateDetails();
         updateActionStates();
         statusBar()->showMessage(i18n("Deployment of '%1' cancelled.", vmName));
+        if (cancelled)
+            notifyEvent(u"deploymentFailed"_s, vmName, i18n("The deployment was cancelled."));
         return;
     }
 
@@ -5587,6 +5617,8 @@ void MainWindow::finishDeploymentAbort(const QString &vmName, bool deleteVm)
     loadVmList();
     onVmSelectionChanged();
     statusBar()->showMessage(i18n("Deployment of '%1' cancelled. VM deleted.", vmName));
+    if (cancelled)
+        notifyEvent(u"deploymentFailed"_s, QString(), i18n("The deployment of '%1' was cancelled and the virtual machine deleted.", vmName));
 }
 
 QString MainWindow::deploymentLogPath(const QString &vmName) const
@@ -5671,6 +5703,8 @@ void MainWindow::deployCloudImage(const QString &vmName)
 
         if (error) {
             statusBar()->showMessage(i18n("Deployment of '%1' failed.", name));
+            m_failedDeployments.insert(name);
+            notifyEvent(u"deploymentFailed"_s, name, i18n("The deployment failed: %1", errorText), true);
             KMessageBox::error(this, i18n("Cloud image deployment failed:\n%1", errorText));
             abortDeployment(name, /*deleteVm=*/true);
             return;
@@ -5779,6 +5813,39 @@ void MainWindow::updateSessionInhibitors()
     }
 
     m_sessionGuard->setScreensaverInhibited(inhibitSaver, i18n("A virtual machine is in use"));
+}
+
+void MainWindow::notifyEvent(const QString &eventId, const QString &vmName, const QString &text, bool urgent)
+{
+    auto *notification = new KNotification(eventId);
+    if (!vmName.isEmpty())
+        notification->setTitle(vmName);
+    notification->setText(text);
+    if (urgent)
+        notification->setUrgency(KNotification::HighUrgency);
+
+    KNotificationAction *show = notification->addDefaultAction(i18nc("@action:button", "Show"));
+    const QPointer<MainWindow> self(this);
+    connect(show, &KNotificationAction::activated, this, [self, notification, vmName]() {
+        if (self)
+            self->bringUpMainWindow(vmName, notification->xdgActivationToken());
+    });
+
+    notification->sendEvent();
+}
+
+void MainWindow::bringUpMainWindow(const QString &vmName, const QString &activationToken)
+{
+    if (!vmName.isEmpty() && veModel->entryByName(vmName))
+        selectVmByName(vmName);
+
+    // Wayland only raises a window with the token the notification handed out.
+    if (!activationToken.isEmpty())
+        KWindowSystem::setCurrentXdgActivationToken(activationToken);
+    setWindowState(windowState() & ~Qt::WindowMinimized);
+    show();
+    raise();
+    KWindowSystem::activateWindow(windowHandle());
 }
 
 bool MainWindow::startsInTray() const
@@ -5968,6 +6035,13 @@ void MainWindow::offerHostShutdown(const QString &vmName)
     };
     if (refuseIfBusy())
         return;
+
+    notifyEvent(u"hostShutdown"_s,
+                vmName,
+                i18np("The virtual machine has shut down. The host follows in %1 second.",
+                      "The virtual machine has shut down. The host follows in %1 seconds.",
+                      KEMUConst::kHostShutdownCountdownSec),
+                true);
 
     // No parent: the main window may be minimized or hidden behind other windows.
     m_hostShutdownDialog = new HostShutdownDialog(vmName, KEMUConst::kHostShutdownCountdownSec);

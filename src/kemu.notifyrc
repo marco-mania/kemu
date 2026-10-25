@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[Global]
+IconName=org.kde.kemu
+Comment=KEMU
+DesktopEntry=org.kde.kemu
+
+[Event/vmStopped]
+Name=Virtual machine shut down
+Comment=A virtual machine has shut down
+Action=Popup
+
+[Event/vmCrashed]
+Name=Virtual machine stopped unexpectedly
+Comment=QEMU has ended with an error
+Action=Popup
+
+[Event/stateSaved]
+Name=State saved
+Comment=The state of a virtual machine has been saved
+Action=Popup
+
+[Event/hostSleep]
+Name=Paused for host sleep
+Comment=Virtual machines were paused while the host slept and run again
+Action=Popup
+
+[Event/deploymentFinished]
+Name=Deployment finished
+Comment=An automated deployment has finished and the virtual machine is ready
+Action=Popup
+
+[Event/deploymentFailed]
+Name=Deployment failed or cancelled
+Comment=An automated deployment has failed or was cancelled
+Action=Popup
+
+[Event/unusedBlocksFreed]
+Name=Unused blocks freed
+Comment=Freeing the unused blocks of a virtual machine has finished
+Action=Popup
+
+[Event/madeIndependent]
+Name=Linked clone made independent
+Comment=A linked clone no longer depends on its source
+Action=Popup
+
+[Event/hostShutdown]
+Name=Host shutting down
+Comment=A virtual machine has shut down and the host follows
+Action=Popup

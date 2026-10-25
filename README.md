@@ -68,6 +68,7 @@ Widgets and KDE Frameworks 6 for deep desktop integration.
 ```sh
 sudo pacman -S qt6-base qt6-declarative extra-cmake-modules \
   kconfig kcoreaddons ki18n kxmlgui kwidgetsaddons kdbusaddons \
+  knotifications knotifyconfig kwindowsystem \
   kiconthemes kwallet qemu-full edk2-ovmf libarchive libslirp libisofs \
   wayland wayland-protocols
 ```
@@ -84,6 +85,7 @@ sudo pacman -S swtpm virtiofsd
 sudo apt install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-multimedia-dev \
   libkf6config-dev libkf6coreaddons-dev libkf6i18n-dev libkf6kio-dev \
   libkf6crash-dev libkf6xmlgui-dev libkf6widgetsaddons-dev libkf6iconthemes-dev \
+  libkf6notifications-dev libkf6notifyconfig-dev libkf6windowsystem-dev \
   libkf6texttemplate-dev libkf6wallet-dev qemu-system extra-cmake-modules \
   libegl1-mesa-dev libarchive-dev libslirp-dev libisofs-dev libudev-dev \
   libkf6dbusaddons-dev libkf6dbusaddons-dev build-essential cmake \
@@ -104,6 +106,7 @@ sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
   qt6-qtmultimedia-devel kf6-kconfig-devel kf6-kcoreaddons-devel kf6-ki18n-devel \
   kf6-kio-devel kf6-kcrash-devel kf6-kxmlgui-devel kf6-kwidgetsaddons-devel \
   kf6-kiconthemes-devel kf6-ktexttemplate-devel kf6-kdbusaddons-devel \
+  kf6-knotifications-devel kf6-knotifyconfig-devel kf6-kwindowsystem-devel \
   kf6-kwallet-devel extra-cmake-modules qemu-system-x86 qemu-img edk2-ovmf \
   swtpm swtpm-tools mesa-libEGL-devel libarchive-devel libslirp-devel \
   libisofs-devel systemd-devel gcc-c++ make cmake wayland-devel \

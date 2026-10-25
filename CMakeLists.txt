@@ -82,7 +82,10 @@ find_package(
              DBusAddons
              Crash
              Wallet
-             StatusNotifierItem)
+             StatusNotifierItem
+             Notifications
+             NotifyConfig
+             WindowSystem)
 
 find_package(LibArchive REQUIRED)
 
@@ -111,6 +114,7 @@ endif()
 
 install(FILES src/kemuui.rc
         DESTINATION ${KDE_INSTALL_KXMLGUIDIR}/${PROJECT_NAME})
+install(FILES src/kemu.notifyrc DESTINATION ${KDE_INSTALL_KNOTIFYRCDIR})
 install(
   DIRECTORY assets/3rdparty/papirus-icons assets/3rdparty/misc-icons
             assets/kemu-icons

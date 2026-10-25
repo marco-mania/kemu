@@ -317,7 +317,10 @@ target_link_libraries(
   KF6::DBusAddons
   KF6::Crash
   KF6::Wallet
-  KF6::StatusNotifierItem)
+  KF6::StatusNotifierItem
+  KF6::Notifications
+  KF6::NotifyConfig
+  KF6::WindowSystem)
 
 if(TARGET Qt6::GuiPrivate)
   target_link_libraries(${PROJECT_NAME} Qt6::GuiPrivate)
