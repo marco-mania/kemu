@@ -25,6 +25,7 @@
 #include <QStandardPaths>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QTabWidget>
 #include <QTimeZone>
 #include <QVBoxLayout>
 
@@ -57,13 +58,14 @@ public:
     enum Page {
         Appearance,
         General,
-        Firmware,
-        Executables,
-        Monitoring,
         Display,
         AutomatedDeploy,
         VirtualNetworks,
-        Templates
+        Templates,
+        // Tabs of the System page
+        Firmware,
+        Executables,
+        QemuSandbox
     };
     void setPage(Page page);
     // Shows the Templates page and imports the package there once shown.
@@ -112,9 +114,10 @@ private Q_SLOTS:
 private:
     void setupAppearancePage();
     void setupGeneralPage();
-    void setupFirmwarePage();
-    void setupExecutablesPage();
-    void setupMonitoringPage();
+    void setupSystemPage();
+    QWidget *createFirmwareTab();
+    QWidget *createExecutablesTab();
+    QWidget *createSandboxTab();
     void setupDisplayPage();
     void setupAutomatedDeployPage();
 
@@ -123,6 +126,7 @@ private:
     void refreshNetworkTable();
 
     QMap<Page, KPageWidgetItem *> m_pages;
+    QTabWidget *m_systemTabs = nullptr;
     TemplatesSettingsPage *m_templatesPage = nullptr;
 
     QLineEdit *pathEdit = nullptr;

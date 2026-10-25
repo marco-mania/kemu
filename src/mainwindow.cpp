@@ -907,7 +907,7 @@ void MainWindow::setupActions()
 
     auto *actionNew = ac->addAction(u"vm_new"_s);
     actionNew->setIcon(QIcon::fromTheme(u"list-add"_s));
-    actionNew->setText(i18n("New Machine"));
+    actionNew->setText(i18n("New Virtual Machine…"));
     connect(actionNew, &QAction::triggered, this, &MainWindow::createNewVM);
 
     auto *actionStart = ac->addAction(u"vm_start"_s);
@@ -917,12 +917,12 @@ void MainWindow::setupActions()
 
     auto *actionStartHeadless = ac->addAction(u"vm_start_headless"_s);
     actionStartHeadless->setIcon(QIcon::fromTheme(u"system-run"_s));
-    actionStartHeadless->setText(i18n("Start (Headless)"));
+    actionStartHeadless->setText(i18n("Start Headless"));
     connect(actionStartHeadless, &QAction::triggered, this, &MainWindow::startVMHeadless);
 
     auto *actionStop = ac->addAction(u"vm_shutdown"_s);
     actionStop->setIcon(QIcon::fromTheme(u"system-shutdown"_s));
-    actionStop->setText(i18n("Shutdown"));
+    actionStop->setText(i18n("Shut Down"));
     connect(actionStop, &QAction::triggered, this, &MainWindow::shutdownVM);
 
     auto *actionChangeISO = ac->addAction(u"vm_change_iso"_s);
@@ -952,7 +952,7 @@ void MainWindow::setupActions()
 
     auto *actionPowerOff = ac->addAction(u"vm_poweroff"_s);
     actionPowerOff->setIcon(QIcon::fromTheme(u"process-stop"_s));
-    actionPowerOff->setText(i18n("Power-off"));
+    actionPowerOff->setText(i18n("Power Off"));
     connect(actionPowerOff, &QAction::triggered, this, &MainWindow::powerOffVM);
 
     auto *actionShutdownHost = ac->addAction(u"vm_shutdown_host_with_guest"_s);
@@ -977,7 +977,7 @@ void MainWindow::setupActions()
 
     auto *actionEdit = ac->addAction(u"vm_edit"_s);
     actionEdit->setIcon(QIcon::fromTheme(u"document-edit"_s));
-    actionEdit->setText(i18n("Edit"));
+    actionEdit->setText(i18n("Edit…"));
     connect(actionEdit, &QAction::triggered, this, &MainWindow::editVM);
 
     auto *actionDelete = ac->addAction(u"vm_delete"_s);
@@ -987,7 +987,7 @@ void MainWindow::setupActions()
 
     auto *actionClone = ac->addAction(u"vm_clone"_s);
     actionClone->setIcon(QIcon::fromTheme(u"edit-copy"_s));
-    actionClone->setText(i18n("Clone VM…"));
+    actionClone->setText(i18n("Clone…"));
     actionClone->setToolTip(i18n("Create a full or linked copy of this virtual machine"));
     connect(actionClone, &QAction::triggered, this, &MainWindow::cloneVM);
 
@@ -1018,7 +1018,7 @@ void MainWindow::setupActions()
 
     auto *actionExport = ac->addAction(u"vm_export"_s);
     actionExport->setIcon(QIcon::fromTheme(u"document-export"_s));
-    actionExport->setText(i18n("Export VM…"));
+    actionExport->setText(i18n("Export…"));
     actionExport->setToolTip(i18n("Export the virtual machine as a portable archive"));
     connect(actionExport, &QAction::triggered, this, &MainWindow::exportVM);
 
@@ -1031,13 +1031,13 @@ void MainWindow::setupActions()
 
     auto *actionImport = ac->addAction(u"vm_import"_s);
     actionImport->setIcon(QIcon::fromTheme(u"document-import"_s));
-    actionImport->setText(i18n("Import VM…"));
+    actionImport->setText(i18n("Import Virtual Machine…"));
     actionImport->setToolTip(i18n("Import a virtual machine from an archive"));
     connect(actionImport, &QAction::triggered, this, &MainWindow::importVM);
 
     auto *actionShowCmd = ac->addAction(u"vm_show_cmd"_s);
     actionShowCmd->setIcon(QIcon::fromTheme(u"utilities-terminal"_s));
-    actionShowCmd->setText(i18n("Show command…"));
+    actionShowCmd->setText(i18n("Show QEMU Command…"));
     connect(actionShowCmd, &QAction::triggered, this, &MainWindow::showCommand);
 
     auto *actionScreenshot = ac->addAction(u"vm_screenshot"_s);
@@ -1048,8 +1048,8 @@ void MainWindow::setupActions()
 
     auto *actionReconnect = ac->addAction(u"vm_reconnect"_s);
     actionReconnect->setIcon(QIcon::fromTheme(u"view-fullscreen"_s));
-    actionReconnect->setText(i18n("Reconnect Viewer"));
-    actionReconnect->setToolTip(i18n("Re-open the viewer for a running headless VM"));
+    actionReconnect->setText(i18n("Show Display"));
+    actionReconnect->setToolTip(i18n("Open the display of a running headless VM"));
     connect(actionReconnect, &QAction::triggered, this, &MainWindow::reconnectViewer);
 
     // USB passthrough submenu
@@ -1449,7 +1449,7 @@ void MainWindow::updateDetails()
     if (isRunning) {
         auto pid = entry->qemuProcess ? entry->qemuProcess->processId() : 0;
         statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Powered On");
+        statusText = i18n("Running");
         if (isHeadless)
             statusText += i18n(" <b>Headless</b>");
         statusText += u"  <span class='pid'>[<a href='copy-pid:%1' title='%2'>PID %1</a>]</span>"_s.arg(QString::number(pid), i18n("Click to copy PID"));
@@ -1488,7 +1488,7 @@ void MainWindow::updateDetails()
         statusColor = colNegative;
     } else {
         statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Powered Off");
+        statusText = i18n("Stopped");
         statusColor = colInactive;
     }
 
@@ -4017,7 +4017,7 @@ void MainWindow::shutdownVMByName(const QString &vmName)
 
     const VmRuntimeInfo *rt = m_runtimeManager->runtime(vmName);
     const bool viaAgent = rt && rt->guestAgent && rt->guestAgent->isConnected();
-    const KGuiItem shutdownItem(i18n("Shutdown"),
+    const KGuiItem shutdownItem(i18n("Shut Down"),
                                 u"system-shutdown"_s,
                                 viaAgent ? i18n("Shut the guest down through its guest agent") : i18n("Send ACPI power-off signal to the guest"));
 
@@ -4125,7 +4125,7 @@ void MainWindow::powerOffVMByName(const QString &vmName)
                                                            "<b>Force power-off</b> is equivalent to pulling the plug "
                                                            "and may cause data loss.<br/>",
                                                            vmName),
-                                                      i18nc("@title:window", "Power-off Virtual Machine"),
+                                                      i18nc("@title:window", "Power Off Virtual Machine"),
                                                       saveStateItem,
                                                       forceStopItem,
                                                       KStandardGuiItem::cancel(),
@@ -4136,7 +4136,7 @@ void MainWindow::powerOffVMByName(const QString &vmName)
                                                 i18n("Are you sure you want to force a power-off for '%1'? "
                                                      "This is equivalent to pulling the plug and may cause data loss.",
                                                      vmName),
-                                                i18nc("@title:window", "Confirm Force Power-off"),
+                                                i18nc("@title:window", "Confirm Power Off"),
                                                 forceStopItem,
                                                 KStandardGuiItem::cancel(),
                                                 u"ConfirmVmPowerOff"_s);

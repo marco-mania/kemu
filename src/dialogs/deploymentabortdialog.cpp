@@ -30,8 +30,8 @@ DeploymentAbortDialog::DeploymentAbortDialog(const QString &vmName, bool canShut
     iconLabel->setAlignment(Qt::AlignTop);
 
     auto *textLabel = new QLabel(i18n("<p>VM '%1' is currently being deployed. Aborting stops the installation.</p>"
-                                      "<p><b>Shutdown</b> asks the guest to power off and lets it close its file "
-                                      "systems cleanly.<br/><b>Power-off</b> is equivalent to pulling the plug and "
+                                      "<p><b>Shut Down</b> asks the guest to power off and lets it close its file "
+                                      "systems cleanly.<br/><b>Power Off</b> is equivalent to pulling the plug and "
                                       "may leave the disk in an inconsistent state.</p>",
                                       vmName.toHtmlEscaped()),
                                  this);
@@ -50,12 +50,12 @@ DeploymentAbortDialog::DeploymentAbortDialog(const QString &vmName, bool canShut
         return button;
     };
 
-    QPushButton *shutdownButton = addChoice(i18n("Shutdown && Keep"),
+    QPushButton *shutdownButton = addChoice(i18n("Shut Down && Keep"),
                                             u"system-shutdown"_s,
                                             i18n("Send an ACPI power-off signal to the guest and keep the VM"),
                                             Choice::ShutdownAndKeep);
-    addChoice(i18n("Power-off && Keep"), u"media-playback-stop"_s, i18n("Stop the VM immediately and keep it"), Choice::PowerOffAndKeep);
-    addChoice(i18n("Power-off && Delete"), u"edit-delete"_s, i18n("Stop the VM immediately and delete it"), Choice::PowerOffAndDelete);
+    addChoice(i18n("Power Off && Keep"), u"media-playback-stop"_s, i18n("Stop the VM immediately and keep it"), Choice::PowerOffAndKeep);
+    addChoice(i18n("Power Off && Delete"), u"edit-delete"_s, i18n("Stop the VM immediately and delete it"), Choice::PowerOffAndDelete);
     QPushButton *cancelButton = buttons->addButton(QDialogButtonBox::Cancel);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 

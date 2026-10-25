@@ -32,19 +32,21 @@ SettingsDialog::SettingsDialog(QWidget *parent)
 
     setupAppearancePage();
     setupGeneralPage();
-    setupFirmwarePage();
-    setupExecutablesPage();
-    setupMonitoringPage();
     setupDisplayPage();
     setupAutomatedDeployPage();
     setupTemplatesPage();
     setupVirtualNetworksPage();
+    setupSystemPage();
 }
 
 void SettingsDialog::setPage(Page page)
 {
     if (m_pages.contains(page))
         setCurrentPage(m_pages.value(page));
+
+    static const QMap<Page, int> systemTabs{{Firmware, 0}, {Executables, 1}, {QemuSandbox, 2}};
+    if (m_systemTabs && systemTabs.contains(page))
+        m_systemTabs->setCurrentIndex(systemTabs.value(page));
 }
 
 void SettingsDialog::importTemplatePackage(const QString &path)
@@ -82,6 +84,10 @@ void SettingsDialog::setupAppearancePage()
     };
     connect(trayIconCheck, &QCheckBox::toggled, this, updateStartMinimized);
     updateStartMinimized();
+
+    perfMonitorCheck = new QCheckBox(i18n("Show performance monitor (CPU, RAM, I/O)"));
+    perfMonitorCheck->setChecked(isPerformanceMonitorEnabled());
+    layout->addWidget(perfMonitorCheck);
 
     layout->addStretch();
 
@@ -142,36 +148,6 @@ void SettingsDialog::setupGeneralPage()
     importRegenerateMacCheck->setChecked(importRegenerateMac());
     layout->addWidget(importRegenerateMacCheck);
 
-    auto *sandboxLine = new QFrame(this);
-    sandboxLine->setFrameShape(QFrame::HLine);
-    sandboxLine->setFrameShadow(QFrame::Sunken);
-    layout->addWidget(sandboxLine);
-
-    seccompSandboxCheck = new QCheckBox(i18n("Confine QEMU with its seccomp sandbox"));
-    seccompSandboxCheck->setToolTip(
-        i18n("When <b>enabled</b>, QEMU is started with "
-             "<tt>-sandbox on,obsolete=deny,elevateprivileges=deny,spawn=deny,"
-             "resourcecontrol=deny</tt>. The seccomp filter limits what a guest "
-             "could reach if it broke out of QEMU: it may neither start other "
-             "programs nor change its privileges.\n"
-             "The filter applies to QEMU itself, so a feature that needs one of "
-             "those calls kills QEMU with SIGSYS, without a message on why. That "
-             "makes a sandboxed QEMU harder to diagnose.\n"
-             "When <b>disabled</b> (the default), QEMU runs unconfined. A VM whose "
-             "extra arguments carry their own <tt>-sandbox</tt> is never changed by "
-             "this setting."));
-    seccompSandboxCheck->setChecked(qemuSeccompSandbox());
-
-    // A -sandbox on a QEMU built without seccomp is fatal, so do not offer it.
-    if (!QemuCapabilities::instance().hasSeccompSandbox()) {
-        seccompSandboxCheck->setEnabled(false);
-        seccompSandboxCheck->setChecked(false);
-        seccompSandboxCheck->setToolTip(QemuCapabilities::instance().probeSucceeded()
-                                            ? i18n("The QEMU binary in use was built without seccomp support.")
-                                            : i18n("KEMU could not probe the QEMU binary in use for seccomp support."));
-    }
-    layout->addWidget(seccompSandboxCheck);
-
     layout->addStretch();
 
     auto *item = addPage(page, i18n("Virtual Machines"));
@@ -179,7 +155,7 @@ void SettingsDialog::setupGeneralPage()
     m_pages[General] = item;
 }
 
-void SettingsDialog::setupFirmwarePage()
+QWidget *SettingsDialog::createFirmwareTab()
 {
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
@@ -196,13 +172,10 @@ void SettingsDialog::setupFirmwarePage()
     layout->addLayout(row);
 
     layout->addStretch();
-
-    auto *item = addPage(page, i18n("UEFI Firmware"));
-    item->setIcon(QIcon::fromTheme(u"hwinfo"_s));
-    m_pages[Firmware] = item;
+    return page;
 }
 
-void SettingsDialog::setupExecutablesPage()
+QWidget *SettingsDialog::createExecutablesTab()
 {
     const bool editablePaths = SandboxCapabilities::instance().has(SandboxCapabilities::ExternalToolPaths);
 
@@ -332,28 +305,59 @@ void SettingsDialog::setupExecutablesPage()
     wrapperLayout->setContentsMargins(0, 0, 0, 0);
     wrapperLayout->addWidget(scrollArea);
 
-    auto *item = addPage(wrapperWidget, i18n("Executables"));
-    item->setIcon(QIcon::fromTheme(u"application-x-executable"_s));
-    m_pages[Executables] = item;
-
     for (int i = 0; i < m_toolWidgets.size(); ++i)
         updateToolVersion(i);
+    return wrapperWidget;
 }
 
-void SettingsDialog::setupMonitoringPage()
+QWidget *SettingsDialog::createSandboxTab()
 {
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
 
-    perfMonitorCheck = new QCheckBox(i18n("Show performance monitor (CPU, RAM, I/O)"));
-    perfMonitorCheck->setChecked(isPerformanceMonitorEnabled());
-    layout->addWidget(perfMonitorCheck);
+    seccompSandboxCheck = new QCheckBox(i18n("Confine QEMU with its seccomp sandbox"));
+    seccompSandboxCheck->setToolTip(
+        i18n("When <b>enabled</b>, QEMU is started with "
+             "<tt>-sandbox on,obsolete=deny,elevateprivileges=deny,spawn=deny,"
+             "resourcecontrol=deny</tt>. The seccomp filter limits what a guest "
+             "could reach if it broke out of QEMU: it may neither start other "
+             "programs nor change its privileges.\n"
+             "The filter applies to QEMU itself, so a feature that needs one of "
+             "those calls kills QEMU with SIGSYS, without a message on why. That "
+             "makes a sandboxed QEMU harder to diagnose.\n"
+             "When <b>disabled</b> (the default), QEMU runs unconfined. A VM whose "
+             "extra arguments carry their own <tt>-sandbox</tt> is never changed by "
+             "this setting."));
+    seccompSandboxCheck->setChecked(qemuSeccompSandbox());
+
+    // A -sandbox on a QEMU built without seccomp is fatal, so do not offer it.
+    if (!QemuCapabilities::instance().hasSeccompSandbox()) {
+        seccompSandboxCheck->setEnabled(false);
+        seccompSandboxCheck->setChecked(false);
+        seccompSandboxCheck->setToolTip(QemuCapabilities::instance().probeSucceeded()
+                                            ? i18n("The QEMU binary in use was built without seccomp support.")
+                                            : i18n("KEMU could not probe the QEMU binary in use for seccomp support."));
+    }
+    layout->addWidget(seccompSandboxCheck);
 
     layout->addStretch();
+    return page;
+}
 
-    auto *item = addPage(page, i18n("Monitoring"));
-    item->setIcon(QIcon::fromTheme(u"utilities-system-monitor"_s));
-    m_pages[Monitoring] = item;
+void SettingsDialog::setupSystemPage()
+{
+    // Technical settings most never touch, last and in one place.
+    m_systemTabs = new QTabWidget;
+    m_systemTabs->setDocumentMode(true);
+    m_systemTabs->addTab(createFirmwareTab(), i18n("UEFI Firmware"));
+    m_systemTabs->addTab(createExecutablesTab(), i18n("Executables"));
+    m_systemTabs->addTab(createSandboxTab(), i18n("QEMU Sandbox"));
+
+    auto *item = addPage(m_systemTabs, i18n("System"));
+    item->setIcon(QIcon::fromTheme(u"preferences-system"_s));
+    m_pages[Firmware] = item;
+    m_pages[Executables] = item;
+    m_pages[QemuSandbox] = item;
 }
 
 void SettingsDialog::setupDisplayPage()

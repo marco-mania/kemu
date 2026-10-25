@@ -104,7 +104,7 @@ DbusViewerWindow::~DbusViewerWindow()
 void DbusViewerWindow::createActions()
 {
     // --- Machine ---
-    m_actShutdown = new QAction(QIcon::fromTheme(u"system-shutdown"_s), i18n("&Shutdown"), this);
+    m_actShutdown = new QAction(QIcon::fromTheme(u"system-shutdown"_s), i18n("Shut &Down"), this);
     m_actShutdown->setStatusTip(i18n("Send ACPI power-down signal to the guest"));
     connect(m_actShutdown, &QAction::triggered, this, &DbusViewerWindow::shutdownRequested);
 
@@ -112,7 +112,7 @@ void DbusViewerWindow::createActions()
     m_actReset->setStatusTip(i18n("Reset the virtual machine (hard reset)"));
     connect(m_actReset, &QAction::triggered, this, &DbusViewerWindow::resetRequested);
 
-    m_actPowerOff = new QAction(QIcon::fromTheme(u"process-stop"_s), i18n("Power-&off"), this);
+    m_actPowerOff = new QAction(QIcon::fromTheme(u"process-stop"_s), i18n("Power &Off"), this);
     m_actPowerOff->setStatusTip(i18n("Force power-off the virtual machine (may cause data loss)"));
     connect(m_actPowerOff, &QAction::triggered, this, &DbusViewerWindow::powerOffRequested);
 
