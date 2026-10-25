@@ -138,7 +138,14 @@ int main(int argc, char *argv[])
 
     auto *mainwindow = new MainWindow();
     mainwindow->setAttribute(Qt::WA_DeleteOnClose);
-    mainwindow->show();
+
+    // KEMU ends with its main window, not with the last visible one: hidden
+    // to the tray, closing the last viewer must not take the VMs down.
+    QApplication::setQuitOnLastWindowClosed(false);
+    QObject::connect(mainwindow, &QObject::destroyed, &app, &QCoreApplication::quit);
+
+    if (!mainwindow->startsInTray())
+        mainwindow->show();
 
     QObject::connect(&service, &KDBusService::activateRequested, mainwindow, [mainwindow](const QStringList & /*args*/, const QString & /*workingDir*/) {
         mainwindow->show();

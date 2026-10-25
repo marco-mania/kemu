@@ -46,6 +46,7 @@
 #include "utils/usbenumerator.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
+#include "widgets/trayicon.h"
 
 #include "kemu_debug.h"
 
@@ -122,8 +123,11 @@ MainWindow::MainWindow(QWidget *parent)
     connect(veModel, &VirtualEnvironmentModel::vmStateChanged, this, [this](const QString &vmName) {
         updateSessionInhibitors();
         pushHostShutdownStateToViewer(vmName);
+        if (m_trayIcon)
+            m_trayIcon->refresh();
     });
     updateSessionInhibitors();
+    updateTrayIcon();
 
     // preselect first VM
     if (veModel->rowCount() > 0) {
@@ -227,6 +231,18 @@ MainWindow::~MainWindow()
 
 bool MainWindow::queryClose()
 {
+    // With a tray icon, closing the window only hides it; Quit ends KEMU.
+    // Logout and the exit policy's final close() go the usual way.
+    if (m_trayIcon && !m_quitRequested && !m_exitPolicyDone && !m_closingFromSession && !qApp->isSavingSession() && TrayIcon::isAvailable()) {
+        KMessageBox::information(this,
+                                 i18n("KEMU keeps running in the system tray, and so do its virtual machines. "
+                                      "Choose <b>Quit</b> to end KEMU."),
+                                 i18nc("@title:window", "Minimized to Tray"),
+                                 u"MinimizedToTrayInfo"_s);
+        hide();
+        return false;
+    }
+
     bool hasShrinking = false, hasRunning = false;
     for (const QString &name : veModel->vmNames()) {
         const VmEntry *e = veModel->entryByName(name);
@@ -1035,7 +1051,7 @@ void MainWindow::setupActions()
     vmActionBar->addAction(actionEdit);
 
     KStandardAction::preferences(this, &MainWindow::openSettings, ac);
-    KStandardAction::quit(this, &QWidget::close, ac);
+    KStandardAction::quit(this, &MainWindow::quitApplication, ac);
 }
 
 void MainWindow::updateActionStates()
@@ -1701,7 +1717,7 @@ void MainWindow::onVmSelectionChanged()
 
 void MainWindow::openSettings()
 {
-    openSettingsPage(SettingsDialog::General);
+    openSettingsPage(SettingsDialog::Appearance);
 }
 
 void MainWindow::openSettingsPage(SettingsDialog::Page page)
@@ -1725,6 +1741,9 @@ void MainWindow::openSettingsPage(SettingsDialog::Page page)
         m_runtimeManager->setPerfMonitoringEnabled(perfEnabled);
 
         updateSessionInhibitors();
+        updateTrayIcon();
+        if (m_trayIcon)
+            m_trayIcon->refresh(); // the VM folder may have changed
     }
 }
 
@@ -5760,6 +5779,68 @@ void MainWindow::updateSessionInhibitors()
     }
 
     m_sessionGuard->setScreensaverInhibited(inhibitSaver, i18n("A virtual machine is in use"));
+}
+
+bool MainWindow::startsInTray() const
+{
+    return m_trayIcon && SettingsDialog::startMinimizedToTray() && TrayIcon::isAvailable();
+}
+
+void MainWindow::quitApplication()
+{
+    m_quitRequested = true;
+    // Cancelled, or deferred by the exit policy, whose own close() follows.
+    if (!close())
+        m_quitRequested = false;
+}
+
+void MainWindow::updateTrayIcon()
+{
+    const bool wanted = SettingsDialog::systemTrayIconEnabled();
+    if (wanted == (m_trayIcon != nullptr))
+        return;
+
+    if (!wanted) {
+        delete m_trayIcon;
+        m_trayIcon = nullptr;
+        // Nothing else could bring a hidden window back.
+        if (isHidden())
+            show();
+        return;
+    }
+
+    m_trayIcon = new TrayIcon(veModel, this, this);
+    connect(m_trayIcon, &TrayIcon::startRequested, this, [this](const QString &vmName) {
+        selectVmByName(vmName);
+        if (currentConfig.name() == vmName)
+            startVM();
+    });
+    connect(m_trayIcon, &TrayIcon::showDisplayRequested, this, &MainWindow::showVmDisplay);
+    connect(m_trayIcon, &TrayIcon::shutdownRequested, this, &MainWindow::shutdownVMByName);
+    connect(m_trayIcon, &TrayIcon::powerOffRequested, this, &MainWindow::powerOffVMByName);
+    connect(m_trayIcon, &TrayIcon::quitRequested, this, &MainWindow::quitApplication);
+}
+
+void MainWindow::showVmDisplay(const QString &vmName)
+{
+    if (DbusViewerWindow *viewer = m_runtimeManager->viewerWindow(vmName)) {
+        viewer->setWindowState(viewer->windowState() & ~Qt::WindowMinimized);
+        viewer->show();
+        viewer->raise();
+        viewer->activateWindow();
+        return;
+    }
+
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (entry && entry->state == VmEntry::State::Deploying && isUnattendedDeployment(vmName)) {
+        showDeploymentLog(vmName);
+        return;
+    }
+
+    // A headless VM: connect a viewer, as a double click in the list does.
+    selectVmByName(vmName);
+    if (selectedVmName() == vmName)
+        reconnectViewer();
 }
 
 void MainWindow::applyExitPolicy()

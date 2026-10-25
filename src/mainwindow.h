@@ -74,6 +74,7 @@ class DiskKeyStore;
 class EditVmDialog;
 class EncryptDiskJob;
 class ShrinkJob;
+class TrayIcon;
 
 class MainWindow : public KXmlGuiWindow
 {
@@ -89,6 +90,13 @@ public:
     {
         m_closingFromSession = fromSession;
     }
+
+    // Whether main() should leave the window hidden: the user asked for it
+    // and a tray icon is there to bring it back.
+    [[nodiscard]] bool startsInTray() const;
+
+    // Quit for real, also when closing the window only hides it to the tray.
+    void quitApplication();
 
 protected:
     bool queryClose() override;
@@ -329,6 +337,12 @@ private:
 
     void updateSessionInhibitors();
     void applyExitPolicy();
+
+    // Creates or removes the tray icon to match the settings.
+    void updateTrayIcon();
+    void showVmDisplay(const QString &vmName);
+    TrayIcon *m_trayIcon = nullptr;
+    bool m_quitRequested = false;
 
     void setShutdownHostWithGuest(const QString &vmName, bool armed);
     void pushHostShutdownStateToViewer(const QString &vmName);

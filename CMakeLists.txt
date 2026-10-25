@@ -81,7 +81,8 @@ find_package(
              TextTemplate
              DBusAddons
              Crash
-             Wallet)
+             Wallet
+             StatusNotifierItem)
 
 find_package(LibArchive REQUIRED)
 

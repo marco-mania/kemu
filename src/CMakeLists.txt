@@ -245,6 +245,8 @@ target_sources(
           widgets/virtualenvironmenttreeview.h
           widgets/performancemonitorwidget.h
           widgets/performancemonitorwidget.cpp
+          widgets/trayicon.cpp
+          widgets/trayicon.h
           widgets/vmiconselector.h
           widgets/vmiconselector.cpp
           widgets/ramspinbox.h
@@ -314,7 +316,8 @@ target_link_libraries(
   KF6::TextTemplate
   KF6::DBusAddons
   KF6::Crash
-  KF6::Wallet)
+  KF6::Wallet
+  KF6::StatusNotifierItem)
 
 if(TARGET Qt6::GuiPrivate)
   target_link_libraries(${PROJECT_NAME} Qt6::GuiPrivate)

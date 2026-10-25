@@ -28,6 +28,7 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     button(QDialogButtonBox::Ok)->setIcon(QIcon::fromTheme(u"document-save"_s));
     connect(button(QDialogButtonBox::Ok), &QPushButton::clicked, this, &SettingsDialog::saveSettings);
 
+    setupAppearancePage();
     setupGeneralPage();
     setupFirmwarePage();
     setupExecutablesPage();
@@ -42,6 +43,40 @@ void SettingsDialog::setPage(Page page)
 {
     if (m_pages.contains(page))
         setCurrentPage(m_pages.value(page));
+}
+
+void SettingsDialog::setupAppearancePage()
+{
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
+
+    trayIconCheck = new QCheckBox(i18n("Enable system tray icon"));
+    trayIconCheck->setToolTip(
+        i18n("Shows KEMU in the system tray, with the running virtual machines and the ones to start. "
+             "Closing the main window then keeps KEMU running in the tray; <b>Quit</b> ends it."));
+    trayIconCheck->setChecked(systemTrayIconEnabled());
+    layout->addWidget(trayIconCheck);
+
+    startMinimizedCheck = new QCheckBox(i18n("Start minimized to tray"));
+    startMinimizedCheck->setToolTip(i18n("KEMU starts with only its tray icon, without showing the main window."));
+    startMinimizedCheck->setChecked(startMinimizedToTray());
+    // Indented under the box it depends on, aligned with its label.
+    auto *indented = new QHBoxLayout;
+    indented->addSpacing(style()->pixelMetric(QStyle::PM_IndicatorWidth) + style()->pixelMetric(QStyle::PM_CheckBoxLabelSpacing));
+    indented->addWidget(startMinimizedCheck);
+    layout->addLayout(indented);
+
+    const auto updateStartMinimized = [this]() {
+        startMinimizedCheck->setEnabled(trayIconCheck->isChecked());
+    };
+    connect(trayIconCheck, &QCheckBox::toggled, this, updateStartMinimized);
+    updateStartMinimized();
+
+    layout->addStretch();
+
+    auto *item = addPage(page, i18n("Appearance"));
+    item->setIcon(QIcon::fromTheme(u"preferences-desktop-theme-global"_s));
+    m_pages[Appearance] = item;
 }
 
 void SettingsDialog::setupGeneralPage()
@@ -557,6 +592,8 @@ void SettingsDialog::saveSettings()
             general.writeEntry(key, tw.pathEdit->text().trimmed());
         }
     }
+    general.writeEntry("SystemTrayIcon", trayIconCheck->isChecked());
+    general.writeEntry("StartMinimizedToTray", startMinimizedCheck->isChecked());
     general.writeEntry("PerformanceMonitorEnabled", perfMonitorCheck->isChecked());
     const QSize res = resolutionCombo->currentData().toSize();
     general.writeEntry("DisplayWidth", res.width());
@@ -634,6 +671,20 @@ bool SettingsDialog::showAllArchitectures()
     const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
     const KConfigGroup general = config->group(u"General"_s);
     return general.readEntry("ShowAllArchitectures", false);
+}
+
+bool SettingsDialog::systemTrayIconEnabled()
+{
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
+    return general.readEntry("SystemTrayIcon", false);
+}
+
+bool SettingsDialog::startMinimizedToTray()
+{
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
+    return general.readEntry("StartMinimizedToTray", false);
 }
 
 bool SettingsDialog::cloneRegenerateMac()

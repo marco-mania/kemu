@@ -55,6 +55,7 @@ public:
     explicit SettingsDialog(QWidget *parent = nullptr);
 
     enum Page {
+        Appearance,
         General,
         Firmware,
         Executables,
@@ -73,6 +74,10 @@ public:
     static QSize getDefaultResolution();
     static bool showAllArchitectures();
     static bool cloneRegenerateMac();
+
+    // Off by default. Start minimized only applies while the tray icon is on.
+    static bool systemTrayIconEnabled();
+    static bool startMinimizedToTray();
     static bool importRegenerateMac();
 
     // Whether QEMU is started with its seccomp filter (-sandbox). Off by
@@ -103,6 +108,7 @@ private Q_SLOTS:
     void onNetworkSelectionChanged();
 
 private:
+    void setupAppearancePage();
     void setupGeneralPage();
     void setupFirmwarePage();
     void setupExecutablesPage();
@@ -137,6 +143,9 @@ private:
     QCheckBox *deployInstallDesktopCheck = nullptr;
 
     static QStringList detectHostSshKeys();
+
+    QCheckBox *trayIconCheck = nullptr;
+    QCheckBox *startMinimizedCheck = nullptr;
 
     QCheckBox *perfMonitorCheck = nullptr;
     QComboBox *resolutionCombo = nullptr;
