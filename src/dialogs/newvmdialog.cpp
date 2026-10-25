@@ -344,6 +344,17 @@ void NewVmDialog::setVmUuids(const QMap<QString, QUuid> &vmUuids)
     m_vmUuids = vmUuids;
 }
 
+void NewVmDialog::setInstallerIso(const QString &path)
+{
+    // Name first: its OS detection may switch the source, the ISO comes after.
+    if (nameEdit->text().trimmed().isEmpty())
+        nameEdit->setText(QFileInfo(path).completeBaseName());
+
+    isoRadio->setChecked(true);
+    isoRequester->setText(path);
+    onSourceChanged();
+}
+
 // --- Operating system list ---
 
 void NewVmDialog::populateOsCombo()

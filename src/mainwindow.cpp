@@ -18,6 +18,7 @@
 #include "dialogs/newvmdialog.h"
 #include "dialogs/settingsdialog.h"
 #include "dialogs/snapshotdialog.h"
+#include "dialogs/templatessettingspage.h"
 #include "jobs/clonejob.h"
 #include "jobs/diskimportjob.h"
 #include "jobs/diskpasswordjob.h"
@@ -1749,13 +1750,15 @@ void MainWindow::openSettings()
     openSettingsPage(SettingsDialog::Appearance);
 }
 
-void MainWindow::openSettingsPage(SettingsDialog::Page page)
+void MainWindow::openSettingsPage(SettingsDialog::Page page, const QString &templatePackage)
 {
     SettingsDialog dlg(this);
     dlg.setNetworkManager(m_networkManager);
     m_imageDatabase.load();
     dlg.setImageDatabase(&m_imageDatabase);
     dlg.setPage(page);
+    if (!templatePackage.isEmpty())
+        dlg.importTemplatePackage(templatePackage);
     if (dlg.exec() == QDialog::Accepted) {
         currentConfig = VMConfig();
         const QDir dir = getVmBaseDir();
@@ -2985,6 +2988,34 @@ void MainWindow::importVM()
     if (filePath.isEmpty())
         return;
 
+    importFromPath(filePath);
+}
+
+void MainWindow::openFiles(const QStringList &paths)
+{
+    for (const QString &path : paths) {
+        if (!QFileInfo(path).isFile()) {
+            KMessageBox::error(this, i18n("The file %1 does not exist.", path), i18nc("@title:window", "Open File"));
+            continue;
+        }
+        if (path.endsWith(QString::fromLatin1(TemplatesSettingsPage::PackageSuffix), Qt::CaseInsensitive)) {
+            openSettingsPage(SettingsDialog::Templates, path);
+            continue;
+        }
+        if (!path.endsWith(u".ova"_s, Qt::CaseInsensitive) && !path.endsWith(u".kemu.tar.zst"_s, Qt::CaseInsensitive)) {
+            KMessageBox::error(this,
+                               i18n("KEMU opens KEMU archives (.kemu.tar.zst), OVA files and template packages (%1). %2 is none of them.",
+                                    QString::fromLatin1(TemplatesSettingsPage::PackageSuffix),
+                                    path),
+                               i18nc("@title:window", "Open File"));
+            continue;
+        }
+        importFromPath(path);
+    }
+}
+
+void MainWindow::importFromPath(const QString &filePath)
+{
     if (filePath.endsWith(u".ova"_s, Qt::CaseInsensitive)) {
         importOVA(filePath);
         return;
@@ -4321,6 +4352,20 @@ void MainWindow::manageSnapshotsForVm(const QString &vmName)
 
 void MainWindow::createNewVM()
 {
+    showNewVmDialog({});
+}
+
+void MainWindow::createNewVmFromImage(const QString &imagePath)
+{
+    if (!QFileInfo(imagePath).isFile()) {
+        KMessageBox::error(this, i18n("The file %1 does not exist.", imagePath), i18nc("@title:window", "New Virtual Machine"));
+        return;
+    }
+    showNewVmDialog(imagePath);
+}
+
+void MainWindow::showNewVmDialog(const QString &isoPath)
+{
     NewVmDialog dialog(this);
     dialog.setExistingVmNames(existingVmNames());
     // Templates may have changed on disk since the last dialog.
@@ -4329,6 +4374,8 @@ void MainWindow::createNewVM()
     dialog.setNetworkManager(m_networkManager);
     dialog.setMacUsageInfo(veModel->macUsageInfo());
     dialog.setVmUuids(veModel->vmUuids());
+    if (!isoPath.isEmpty())
+        dialog.setInstallerIso(isoPath);
 
     if (dialog.exec() != QDialog::Accepted)
         return;

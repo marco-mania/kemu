@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
+
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-kemu-vm-archive">
+    <comment>KEMU virtual machine archive</comment>
+    <comment xml:lang="de">KEMU-Archiv einer virtuellen Maschine</comment>
+    <icon name="org.kde.kemu"/>
+    <!-- Still a tar.zst, so archivers keep offering it. -->
+    <sub-class-of type="application/x-zstd-compressed-tar"/>
+    <glob pattern="*.kemu.tar.zst"/>
+  </mime-type>
+  <mime-type type="application/x-kemu-template">
+    <comment>KEMU OS template package</comment>
+    <comment xml:lang="de">KEMU-Paket mit Betriebssystem-Vorlagen</comment>
+    <icon name="org.kde.kemu"/>
+    <sub-class-of type="application/x-compressed-tar"/>
+    <glob pattern="*.kemu-template.tar.gz"/>
+  </mime-type>
+</mime-info>

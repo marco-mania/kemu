@@ -66,6 +66,8 @@ public:
         Templates
     };
     void setPage(Page page);
+    // Shows the Templates page and imports the package there once shown.
+    void importTemplatePackage(const QString &path);
 
     static QString getVmBasePath();
     static QString defaultVmBasePath();

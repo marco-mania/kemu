@@ -34,6 +34,11 @@ public:
     /// Values the cloud-init preview renders with.
     void setPreviewConfig(const CloudDeployConfig &config);
 
+    /// Imports a template package, asking about conflicts as it goes.
+    void importPackage(const QString &path);
+
+    static constexpr auto PackageSuffix = ".kemu-template.tar.gz";
+
 private:
     void refresh(const QString &selectId = {});
     void updateButtons();

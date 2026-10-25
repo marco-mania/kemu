@@ -36,7 +36,7 @@ namespace
 {
 
 constexpr int IdRole = Qt::UserRole;
-const QString kPackageSuffix = u".kemu-template.tar.gz"_s;
+const QString kPackageSuffix = QString::fromLatin1(TemplatesSettingsPage::PackageSuffix);
 
 QString readText(const QString &path)
 {
@@ -393,6 +393,11 @@ void TemplatesSettingsPage::importTemplates()
     if (path.isEmpty())
         return;
 
+    importPackage(path);
+}
+
+void TemplatesSettingsPage::importPackage(const QString &path)
+{
     QString error;
     const auto package = TemplatePackage::read(path, &error);
     if (!package) {

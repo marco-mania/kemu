@@ -132,6 +132,13 @@ install(
   PATTERN "*.json")
 
 install(FILES org.kde.kemu.desktop DESTINATION ${KDE_INSTALL_APPDIR})
+# Named after the app id: Flatpak only exports MIME packages named so.
+install(FILES data/org.kde.kemu.xml DESTINATION ${KDE_INSTALL_MIMEDIR})
+find_package(SharedMimeInfo)
+if(SharedMimeInfo_FOUND)
+  update_xdg_mimetypes(${KDE_INSTALL_MIMEDIR})
+endif()
+install(FILES data/kemu-newvm.desktop DESTINATION ${KDE_INSTALL_DATADIR}/kio/servicemenus)
 install(FILES assets/org.kde.kemu.svg
         DESTINATION ${KDE_INSTALL_ICONDIR}/hicolor/scalable/apps)
 install(FILES org.kde.kemu.metainfo.xml DESTINATION ${KDE_INSTALL_METAINFODIR})

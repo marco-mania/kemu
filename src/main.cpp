@@ -13,6 +13,8 @@
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QUrl>
+#include <QDir>
 #include <QTimer>
 
 #include "utils/qemucapabilities.h"
@@ -111,6 +113,9 @@ int main(int argc, char *argv[])
     parser.addOption(startOption);
     const QCommandLineOption headlessOption(u"headless"_s, i18n("With --start: run the virtual machine without a viewer window."));
     parser.addOption(headlessOption);
+    const QCommandLineOption newVmOption(u"new-vm"_s, i18n("Create a new virtual machine that installs from the disc image <image>."), u"image"_s);
+    parser.addOption(newVmOption);
+    parser.addPositionalArgument(u"files"_s, i18n("KEMU archives (.kemu.tar.zst), OVA files or template packages (.kemu-template.tar.gz) to import."), u"[files...]"_s);
 
     parser.process(app);
     if (parser.isSet(headlessOption) && !parser.isSet(startOption))
@@ -154,6 +159,20 @@ int main(int argc, char *argv[])
     QApplication::setQuitOnLastWindowClosed(false);
     QObject::connect(mainwindow, &QObject::destroyed, &app, &QCoreApplication::quit);
 
+    // Files and --new-vm, from this process or one that handed them over.
+    const auto openRequested = [mainwindow, newVmOption](const QCommandLineParser &args, const QString &workingDir) {
+        const QDir cwd(workingDir);
+        QStringList files;
+        for (const QString &file : args.positionalArguments())
+            files << (QUrl(file).isLocalFile() ? QUrl(file).toLocalFile() : cwd.absoluteFilePath(file));
+        const QString image = args.isSet(newVmOption) ? cwd.absoluteFilePath(args.value(newVmOption)) : QString();
+        QTimer::singleShot(0, mainwindow, [mainwindow, files, image] {
+            mainwindow->openFiles(files);
+            if (!image.isEmpty())
+                mainwindow->createNewVmFromImage(image);
+        });
+    };
+
     if (parser.isSet(startOption)) {
         // Hidden in the tray if there is one, else minimized in the task bar.
         if (!mainwindow->hasTrayIcon())
@@ -163,6 +182,9 @@ int main(int argc, char *argv[])
         QTimer::singleShot(0, mainwindow, [mainwindow, vm, headless] {
             mainwindow->startFromCommandLine(vm, headless, /*quitWhenDone=*/true);
         });
+    } else if (!parser.positionalArguments().isEmpty() || parser.isSet(newVmOption)) {
+        mainwindow->show();
+        openRequested(parser, QDir::currentPath());
     } else if (!mainwindow->startsInTray()) {
         mainwindow->show();
     }
@@ -171,9 +193,11 @@ int main(int argc, char *argv[])
     QObject::connect(&service,
                      &KDBusService::activateRequested,
                      mainwindow,
-                     [mainwindow, startOption, headlessOption, disableCapabilityOption](const QStringList &args, const QString & /*workingDir*/) {
+                     [mainwindow, startOption, headlessOption, newVmOption, disableCapabilityOption, openRequested](const QStringList &args,
+                                                                                                                    const QString &workingDir) {
                          QCommandLineParser remote;
-                         remote.addOptions({startOption, headlessOption, disableCapabilityOption});
+                         remote.addOptions({startOption, headlessOption, newVmOption, disableCapabilityOption});
+                         remote.addPositionalArgument(u"files"_s, {});
                          remote.parse(args); // unknown options are no reason to ignore --start
 
                          if (remote.isSet(startOption)) {
@@ -185,6 +209,7 @@ int main(int argc, char *argv[])
                          mainwindow->raise();
                          mainwindow->activateWindow();
                          // KWindowSystem::forceActiveWindow(mainwindow->winId());
+                         openRequested(remote, workingDir);
                      });
 
     const int rc = app.exec();

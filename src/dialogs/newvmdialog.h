@@ -58,6 +58,9 @@ public:
     void setNetworkManager(VirtualNetworkManager *mgr);
     void setMacUsageInfo(const QList<MacUsageInfo> &info);
     void setVmUuids(const QMap<QString, QUuid> &vmUuids);
+    // Preselects "Install from ISO" with this image. The file name is the
+    // name suggestion, so a known one also picks the operating system.
+    void setInstallerIso(const QString &path);
 
     enum class Source {
         CloudImage,

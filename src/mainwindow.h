@@ -108,6 +108,12 @@ public:
     // or started another VM meanwhile.
     void startFromCommandLine(const QString &vmRef, bool headless, bool quitWhenDone);
 
+    // From the file manager: imports KEMU archives, OVA files and template
+    // packages.
+    void openFiles(const QStringList &paths);
+    // The new VM dialog, set to install from this disc image.
+    void createNewVmFromImage(const QString &imagePath);
+
 protected:
     void showEvent(QShowEvent *event) override;
     void changeEvent(QEvent *event) override;
@@ -116,8 +122,10 @@ protected:
 
 private Q_SLOTS:
     void openSettings();
-    void openSettingsPage(SettingsDialog::Page page);
+    void openSettingsPage(SettingsDialog::Page page, const QString &templatePackage = {});
     void createNewVM();
+    void showNewVmDialog(const QString &isoPath);
+    void importFromPath(const QString &filePath);
     void editVM();
     void deleteVM();
     void cloneVM();

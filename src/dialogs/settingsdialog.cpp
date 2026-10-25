@@ -8,6 +8,8 @@
 
 #include <algorithm>
 
+#include <QTimer>
+
 #include "const.h"
 #include "dialogs/templatessettingspage.h"
 #include "utils/guestlocales.h"
@@ -43,6 +45,15 @@ void SettingsDialog::setPage(Page page)
 {
     if (m_pages.contains(page))
         setCurrentPage(m_pages.value(page));
+}
+
+void SettingsDialog::importTemplatePackage(const QString &path)
+{
+    setPage(Templates);
+    // Queued: the questions it may ask belong over the open dialog.
+    QTimer::singleShot(0, m_templatesPage, [page = m_templatesPage, path] {
+        page->importPackage(path);
+    });
 }
 
 void SettingsDialog::setupAppearancePage()

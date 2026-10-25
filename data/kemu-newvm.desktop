@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Dolphin service menu: a new VM that installs from the selected disc image.
+[Desktop Entry]
+Type=Service
+MimeType=application/vnd.efi.iso;application/x-cd-image;
+X-KDE-Protocols=file
+X-KDE-MaxNumberOfUrls=1
+Actions=newVm;
+
+[Desktop Action newVm]
+Name=New Virtual Machine from This Image…
+Name[de]=Neue virtuelle Maschine aus diesem Abbild…
+Icon=org.kde.kemu
+Exec=kemu --new-vm %f
