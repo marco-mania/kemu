@@ -5,7 +5,7 @@ SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 <!DOCTYPE gui SYSTEM "kpartgui.dtd">
-<gui name="kemu" version="4">
+<gui name="kemu" version="5">
   <MenuBar>
     <Menu name="file">
       <Action name="vm_new"/>
@@ -50,6 +50,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <Action name="vm_clone"/>
       <Action name="vm_make_independent"/>
       <Action name="vm_export"/>
+      <Action name="vm_launcher"/>
       <Action name="vm_delete"/>
       <Separator/>
       <Action name="vm_screenshot"/>

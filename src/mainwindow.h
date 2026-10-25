@@ -58,6 +58,7 @@
 #include "utils/externaltools.h"
 #include "utils/imagedatabase.h"
 #include "utils/qemuimgprocess.h"
+#include "utils/vmlauncher.h"
 #include "utils/savestatemanager.h"
 #include "utils/sessionguard.h"
 #include "utils/virtualnetworkmanager.h"
@@ -75,6 +76,7 @@ class EditVmDialog;
 class EncryptDiskJob;
 class ShrinkJob;
 class TrayIcon;
+class VmLauncher;
 
 class MainWindow : public KXmlGuiWindow
 {
@@ -366,6 +368,11 @@ private:
     void showVmDisplay(const QString &vmName);
     TrayIcon *m_trayIcon = nullptr;
     bool m_quitRequested = false;
+
+    // Application menu entries that start a VM.
+    VmLauncher *m_launcher = nullptr;
+    [[nodiscard]] VmLauncher::Entry launcherEntry(const VMConfig &config) const;
+    void toggleLauncher(bool wanted);
 
     void setShutdownHostWithGuest(const QString &vmName, bool armed);
     void pushHostShutdownStateToViewer(const QString &vmName);

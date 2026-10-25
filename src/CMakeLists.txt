@@ -97,6 +97,8 @@ target_sources(
           runtime/vmruntimemanager.cpp
           runtime/vmruntimemanager.h
           utils/utils.cpp
+          utils/vmlauncher.cpp
+          utils/vmlauncher.h
           utils/utils.h
           utils/vmconfig.cpp
           utils/vmconfig.h

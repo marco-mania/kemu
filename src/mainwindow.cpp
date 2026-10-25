@@ -114,6 +114,7 @@ MainWindow::MainWindow(QWidget *parent)
     for (const QString &name : veModel->vmNames())
         SaveStateManager::cleanupStalePart(getVmDir(name).absolutePath(), name);
 
+    m_launcher = new VmLauncher(this);
     m_sessionGuard = new SessionGuard(this);
     connect(m_sessionGuard, &SessionGuard::aboutToSleep, this, &MainWindow::onAboutToSleep);
     connect(m_sessionGuard, &SessionGuard::wokeUp, this, &MainWindow::onWokeUp);
@@ -1020,6 +1021,13 @@ void MainWindow::setupActions()
     actionExport->setToolTip(i18n("Export the virtual machine as a portable archive"));
     connect(actionExport, &QAction::triggered, this, &MainWindow::exportVM);
 
+    auto *actionLauncher = ac->addAction(u"vm_launcher"_s);
+    actionLauncher->setIcon(QIcon::fromTheme(u"application-menu"_s));
+    actionLauncher->setText(i18n("Add to Application Menu"));
+    actionLauncher->setToolTip(i18n("Start this virtual machine from the application menu, like an application of its own"));
+    actionLauncher->setCheckable(true);
+    connect(actionLauncher, &QAction::triggered, this, &MainWindow::toggleLauncher);
+
     auto *actionImport = ac->addAction(u"vm_import"_s);
     actionImport->setIcon(QIcon::fromTheme(u"document-import"_s));
     actionImport->setText(i18n("Import VM..."));
@@ -1175,6 +1183,9 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_manage_snapshots"_s)->setEnabled(hasSelection && hasDisk && !isDeploying && !isSavedOnly && linkBlocker.isEmpty());
 
     actionCollection()->action(u"vm_export"_s)->setEnabled(hasSelection && !isBusy && !isOrphan);
+    QAction *launcherAction = actionCollection()->action(u"vm_launcher"_s);
+    launcherAction->setEnabled(hasSelection && entry && m_launcher);
+    launcherAction->setChecked(hasSelection && m_launcher && m_launcher->has(name));
     actionCollection()->action(u"vm_import"_s)->setEnabled(true);
     actionCollection()->action(u"vm_screenshot"_s)->setEnabled(hasSelection && isRunning && vmSupportsScreendump());
 
@@ -4647,6 +4658,8 @@ void MainWindow::editVM()
 
         saveVmConfig(vmPath, newConfig);
         currentConfig = newConfig;
+        // Name, icon or UUID may have changed.
+        m_launcher->update(oldName, launcherEntry(newConfig), this);
         loadVmList();
         selectVmByName(newConfig.name());
         updateDetails();
@@ -4744,6 +4757,7 @@ void MainWindow::deleteVM()
             m_diskKeyStore->removeKey(currentConfig.diskKeyId());
 
         removeViewerPrefs(currentConfig.name());
+        m_launcher->remove(currentConfig.name());
         m_runtimeManager->dropRuntime(currentConfig.name());
 
         // The log file went with the directory above; close the window before
@@ -5865,6 +5879,65 @@ void MainWindow::bringUpMainWindow(const QString &vmName, const QString &activat
     show();
     raise();
     KWindowSystem::activateWindow(windowHandle());
+}
+
+VmLauncher::Entry MainWindow::launcherEntry(const VMConfig &config) const
+{
+    VmLauncher::Entry entry;
+    entry.vmName = config.name();
+    // The UUID survives a rename; a VM without one goes by its name.
+    entry.vmRef = config.uuid().isNull() ? config.name() : config.uuid().toString(QUuid::WithoutBraces);
+    entry.icon = config.icon(256);
+
+    switch (config.iconSource()) {
+    case VMConfig::IconSource::Custom: {
+        const QString path = getVmDir(config.name()).absoluteFilePath(VMConfig::customIconFileName());
+        if (QFile::exists(path))
+            entry.iconPath = path;
+        break;
+    }
+    case VMConfig::IconSource::IconSet:
+        entry.iconPath = config.iconSetPath();
+        break;
+    case VMConfig::IconSource::SystemTheme:
+        entry.iconName = config.iconIdentifier();
+        break;
+    default:
+        break;
+    }
+    if (entry.iconPath.isEmpty() && entry.iconName.isEmpty())
+        entry.iconName = KEMUConst::VMDefaultIcon;
+    return entry;
+}
+
+void MainWindow::toggleLauncher(bool wanted)
+{
+    const QString vmName = selectedVmName();
+    const VmEntry *e = veModel->entryByName(vmName);
+    if (!e) {
+        updateActionStates();
+        return;
+    }
+
+    if (!wanted) {
+        m_launcher->remove(vmName);
+        statusBar()->showMessage(i18n("'%1' was removed from the application menu.", vmName));
+        updateActionStates();
+        return;
+    }
+
+    const QPointer<MainWindow> self(this);
+    m_launcher->create(launcherEntry(e->config), this, [self, vmName](VmLauncher::Result result, const QString &error) {
+        if (!self)
+            return;
+        self->updateActionStates();
+        if (result == VmLauncher::Result::Created)
+            self->statusBar()->showMessage(i18n("'%1' is in the application menu now.", vmName));
+        else if (result == VmLauncher::Result::Failed)
+            KMessageBox::error(self, i18n("'%1' could not be added to the application menu:\n%2", vmName, error), i18nc("@title:window", "Application Menu"));
+    });
+    // Until the portal answers, the box shows what is installed.
+    updateActionStates();
 }
 
 bool MainWindow::hasTrayIcon() const
