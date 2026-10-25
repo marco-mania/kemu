@@ -128,6 +128,15 @@ MainWindow::MainWindow(QWidget *parent)
         pushHostShutdownStateToViewer(vmName);
         if (m_trayIcon)
             m_trayIcon->refresh();
+
+        if (!m_quitWhenDoneVm.isEmpty()) {
+            const VmEntry *e = veModel->entryByName(vmName);
+            const bool live = e && (e->state == VmEntry::State::Running || e->state == VmEntry::State::Deploying);
+            if (vmName != m_quitWhenDoneVm && live)
+                m_quitWhenDoneVm.clear(); // more than the one VM now
+            else if (vmName == m_quitWhenDoneVm)
+                checkQuitWhenDone();
+        }
     });
     updateSessionInhibitors();
     updateTrayIcon();
@@ -3126,6 +3135,7 @@ void MainWindow::reconnectViewer()
 
 void MainWindow::onVmStarted(const QString &vmName, bool headless, bool deployment)
 {
+    m_startingVms.remove(vmName);
     if (deployment) {
         const bool unattended = isUnattendedDeployment(vmName);
 
@@ -3158,10 +3168,12 @@ void MainWindow::onVmStarted(const QString &vmName, bool headless, bool deployme
 
 void MainWindow::onVmStartFailed(const QString &vmName, const QString &reason, int exitCode, KProcess::ExitStatus exitStatus, const QByteArray &stderrTail)
 {
+    m_startingVms.remove(vmName);
     if (!reason.isEmpty())
         KMessageBox::error(dialogParentFor(vmName), reason, i18nc("@title:window", "Start Failed"));
     else
         showQemuFailureDialog(vmName, /*startupFailed=*/true, exitCode, exitStatus, stderrTail);
+    checkQuitWhenDone();
 
     if (selectedVmName() == vmName) {
         updateDetails();
@@ -3467,9 +3479,13 @@ void MainWindow::startVM(bool headless)
         return;
     }
 
+    m_startingVms.insert(vmName);
     requestDiskKey(vmName,
                    i18n("The system disk of '%1' is encrypted. Enter the password to start it.", vmName),
                    [this, vmName, headless](std::optional<QByteArray> key) {
+                       m_startingVms.remove(vmName);
+                       // Also when the start stops short below.
+                       QTimer::singleShot(0, this, &MainWindow::checkQuitWhenDone);
                        if (!key)
                            return;
                        // The wallet may have taken a while to open.
@@ -3561,9 +3577,12 @@ void MainWindow::continueStartVM(bool headless, const QByteArray &diskKey)
         }
     }
 
+    m_startingVms.insert(vmName);
     chain->run([this, vmName, headless, resolvedNetworkFd, diskKey](bool ok) {
         if (!ok) {
+            m_startingVms.remove(vmName);
             m_runtimeManager->tearDown(vmName);
+            checkQuitWhenDone();
             return;
         }
 
@@ -5846,6 +5865,82 @@ void MainWindow::bringUpMainWindow(const QString &vmName, const QString &activat
     show();
     raise();
     KWindowSystem::activateWindow(windowHandle());
+}
+
+bool MainWindow::hasTrayIcon() const
+{
+    return m_trayIcon && TrayIcon::isAvailable();
+}
+
+void MainWindow::startFromCommandLine(const QString &vmRef, bool headless, bool quitWhenDone)
+{
+    QString vmName;
+    if (veModel->entryByName(vmRef)) {
+        vmName = vmRef;
+    } else if (const QUuid uuid = QUuid::fromString(vmRef); !uuid.isNull()) {
+        const QMap<QString, QUuid> uuids = veModel->vmUuids();
+        for (auto it = uuids.cbegin(); it != uuids.cend(); ++it) {
+            if (it.value() == uuid) {
+                vmName = it.key();
+                break;
+            }
+        }
+    }
+
+    if (vmName.isEmpty()) {
+        KMessageBox::error(this, i18n("There is no virtual machine '%1'.", vmRef), i18nc("@title:window", "Cannot Start VM"));
+        if (quitWhenDone)
+            quitApplication();
+        return;
+    }
+
+    if (quitWhenDone)
+        m_quitWhenDoneVm = vmName;
+
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (entry->state == VmEntry::State::Running || entry->state == VmEntry::State::Deploying) {
+        if (!headless)
+            showVmDisplay(vmName);
+        return;
+    }
+
+    selectVmByName(vmName);
+    if (currentConfig.name() == vmName)
+        startVM(headless);
+    // A start refused right away, after its message, ends a --start process.
+    QTimer::singleShot(0, this, &MainWindow::checkQuitWhenDone);
+}
+
+void MainWindow::checkQuitWhenDone()
+{
+    if (m_quitWhenDoneVm.isEmpty() || m_startingVms.contains(m_quitWhenDoneVm))
+        return;
+    const VmEntry *e = veModel->entryByName(m_quitWhenDoneVm);
+    if (e && e->state != VmEntry::State::Stopped && e->state != VmEntry::State::Saved)
+        return;
+
+    m_quitWhenDoneVm.clear();
+    // Lets the shutdown notification leave before the process does. A host
+    // shutdown the VM was armed for needs KEMU for its countdown.
+    QTimer::singleShot(500, this, [this] {
+        if (!m_hostShutdownDialog)
+            quitApplication();
+    });
+}
+
+void MainWindow::showEvent(QShowEvent *event)
+{
+    KXmlGuiWindow::showEvent(event);
+    // Opened by the user: KEMU is more than the one VM's launcher now.
+    if (!isMinimized())
+        m_quitWhenDoneVm.clear();
+}
+
+void MainWindow::changeEvent(QEvent *event)
+{
+    KXmlGuiWindow::changeEvent(event);
+    if (event->type() == QEvent::WindowStateChange && isVisible() && !isMinimized())
+        m_quitWhenDoneVm.clear();
 }
 
 bool MainWindow::startsInTray() const

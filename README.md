@@ -279,6 +279,14 @@ Each UEFI VM keeps its own copy of the matching VARS template as
 or UEFI is enabled, and on start if it is missing; an existing file is never
 replaced.
 
+## CLI VM start
+
+`kemu --start <vm> [--headless]` starts a virtual machine, given by name or UUID, without
+opening the main window: It stays hidden in the system tray if the tray icon is enabled
+or minimized otherwise. KEMU then ends together with that VM unless the main window was
+opened or another VM was started in the meantime. If KEMU is already running, it takes
+the request over. In the Flatpak: `flatpak run org.kde.kemu --start <vm>`.
+
 ## Display Backends
 
 KEMU supports three display backends, which can be selected per VM in the VM

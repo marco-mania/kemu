@@ -13,6 +13,7 @@
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QTimer>
 
 #include "utils/qemucapabilities.h"
 #include "utils/sandboxcapabilities.h"
@@ -103,8 +104,17 @@ int main(int argc, char *argv[])
                                                     "pipewire-audio, pulseaudio, external-tool-paths, host-power-off."),
                                                u"name"_s);
     parser.addOption(disableCapabilityOption);
+    const QCommandLineOption startOption(u"start"_s,
+                                         i18n("Start the virtual machine <vm>, given by name or UUID, with the main window minimized. "
+                                              "KEMU ends with it, unless the main window was opened or another virtual machine started."),
+                                         u"vm"_s);
+    parser.addOption(startOption);
+    const QCommandLineOption headlessOption(u"headless"_s, i18n("With --start: run the virtual machine without a viewer window."));
+    parser.addOption(headlessOption);
 
     parser.process(app);
+    if (parser.isSet(headlessOption) && !parser.isSet(startOption))
+        qWarning("--headless only applies together with --start");
     aboutData.processCommandLine(&parser);
 
     // Capabilities must be known before MainWindow is constructed; settings read
@@ -144,15 +154,38 @@ int main(int argc, char *argv[])
     QApplication::setQuitOnLastWindowClosed(false);
     QObject::connect(mainwindow, &QObject::destroyed, &app, &QCoreApplication::quit);
 
-    if (!mainwindow->startsInTray())
+    if (parser.isSet(startOption)) {
+        // Hidden in the tray if there is one, else minimized in the task bar.
+        if (!mainwindow->hasTrayIcon())
+            mainwindow->showMinimized();
+        const QString vm = parser.value(startOption);
+        const bool headless = parser.isSet(headlessOption);
+        QTimer::singleShot(0, mainwindow, [mainwindow, vm, headless] {
+            mainwindow->startFromCommandLine(vm, headless, /*quitWhenDone=*/true);
+        });
+    } else if (!mainwindow->startsInTray()) {
         mainwindow->show();
+    }
 
-    QObject::connect(&service, &KDBusService::activateRequested, mainwindow, [mainwindow](const QStringList & /*args*/, const QString & /*workingDir*/) {
-        mainwindow->show();
-        mainwindow->raise();
-        mainwindow->activateWindow();
-        // KWindowSystem::forceActiveWindow(mainwindow->winId());
-    });
+    // A second "kemu" hands its arguments over and exits.
+    QObject::connect(&service,
+                     &KDBusService::activateRequested,
+                     mainwindow,
+                     [mainwindow, startOption, headlessOption, disableCapabilityOption](const QStringList &args, const QString & /*workingDir*/) {
+                         QCommandLineParser remote;
+                         remote.addOptions({startOption, headlessOption, disableCapabilityOption});
+                         remote.parse(args); // unknown options are no reason to ignore --start
+
+                         if (remote.isSet(startOption)) {
+                             mainwindow->startFromCommandLine(remote.value(startOption), remote.isSet(headlessOption), /*quitWhenDone=*/false);
+                             return;
+                         }
+
+                         mainwindow->show();
+                         mainwindow->raise();
+                         mainwindow->activateWindow();
+                         // KWindowSystem::forceActiveWindow(mainwindow->winId());
+                     });
 
     const int rc = app.exec();
     std::quick_exit(rc);

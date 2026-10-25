@@ -98,7 +98,17 @@ public:
     // Quit for real, also when closing the window only hides it to the tray.
     void quitApplication();
 
+    // Whether a tray icon can bring a hidden main window back.
+    [[nodiscard]] bool hasTrayIcon() const;
+
+    // kemu --start: vmRef is a name or a UUID. With quitWhenDone, KEMU ends
+    // once that VM is off again, unless the user has opened the main window
+    // or started another VM meanwhile.
+    void startFromCommandLine(const QString &vmRef, bool headless, bool quitWhenDone);
+
 protected:
+    void showEvent(QShowEvent *event) override;
+    void changeEvent(QEvent *event) override;
     bool queryClose() override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 
@@ -343,6 +353,13 @@ private:
     void notifyEvent(const QString &eventId, const QString &vmName, const QString &text, bool urgent = false);
     void bringUpMainWindow(const QString &vmName, const QString &activationToken);
     QSet<QString> m_failedDeployments;
+
+    // The VM a "kemu --start" process exists for; empty once disarmed.
+    QString m_quitWhenDoneVm;
+    // Starts between the request and QEMU running or failing: a password
+    // being asked for, or helpers and QEMU being launched.
+    QSet<QString> m_startingVms;
+    void checkQuitWhenDone();
 
     // Creates or removes the tray icon to match the settings.
     void updateTrayIcon();
