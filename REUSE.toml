@@ -1,12 +1,16 @@
 version = 1
-SPDX-PackageName = "Papirus Icon Theme"
-SPDX-PackageSupplier = "https://github.com/PapirusDevelopmentTeam/papirus-icon-theme"
+SPDX-PackageName = "KEMU"
+SPDX-PackageSupplier = "Marco Nelles <marco@maniatek.de>"
+
+# --- Documentation ----------------------------------------------------------
 
 [[annotations]]
-path = "assets/3rdparty/papirus-icons/**"
+path = ["README.md", "docs/**"]
 precedence = "aggregate"
-SPDX-FileCopyrightText = "2016-2024 Papirus Development Team"
-SPDX-License-Identifier = "GPL-3.0-only"
+SPDX-FileCopyrightText = "2026 Marco Nelles <marco@maniatek.de>"
+SPDX-License-Identifier = "CC-BY-SA-4.0"
+
+# --- Own assets and data ----------------------------------------------------
 
 [[annotations]]
 path = "assets/kemu-icons/**"
@@ -37,3 +41,17 @@ path = "autotests/data/**"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Marco Nelles <marco@maniatek.de>"
 SPDX-License-Identifier = "CC0-1.0"
+
+# --- Third-party assets -----------------------------------------------------
+
+[[annotations]]
+path = "assets/3rdparty/papirus-icons/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2016-2024 Papirus Development Team"
+SPDX-License-Identifier = "GPL-3.0-only"
+
+[[annotations]]
+path = "assets/3rdparty/misc-icons/qemu.svg"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Benoît Canet"
+SPDX-License-Identifier = "CC-BY-3.0"

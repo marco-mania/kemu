@@ -504,9 +504,7 @@ QString VMConfig::defaultIconForFamily(VMSpecs::OsFamily family)
     case VMSpecs::OsFamily::DOS:
         filename = u"kemu-icons/dos.svg"_s;
         break;
-    case VMSpecs::OsFamily::BSD:
-        filename = u"misc-icons/beastie.svg"_s;
-        break;
+    case VMSpecs::OsFamily::BSD: // the BSDs themselves come with their logos
     case VMSpecs::OsFamily::Other:
         filename = u"misc-icons/generic-vm.svg"_s;
         break;
@@ -1907,6 +1905,12 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
 
     c.m_iconSource = parseIconSource(j[u"icon_source"_s].toString());
     c.m_iconIdentifier = j[u"icon_identifier"_s].toString();
+    // The BSD Daemon is no longer shipped; such VMs get their default icon.
+    if (c.m_iconSource == IconSource::IconSet && c.m_iconIdentifier == u"misc-icons/beastie.svg"_s) {
+        const QString fallback = defaultIconFor(c.m_osFamily, c.m_distroId);
+        if (!fallback.isEmpty())
+            c.m_iconIdentifier = QDir(osIconDir()).relativeFilePath(fallback);
+    }
 
     c.m_useKvm = j[u"use_kvm"_s].toBool(GlobalDefaults.useKvm);
     c.m_ramMb = j[u"ram"_s].toInt(GlobalDefaults.ramMb);

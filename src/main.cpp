@@ -85,12 +85,6 @@ int main(int argc, char *argv[])
                         {},
                         u"https://github.com/PapirusDevelopmentTeam/papirus-icon-theme"_s);
 
-    aboutData.addCredit(u"Marshall Kirk McKusick"_s,
-                        i18n("BSD Daemon Copyright 1988 by Marshall Kirk McKusick. All Rights "
-                             "Reserved."),
-                        {},
-                        u"https://www.mckusick.com/beastie/mainpage/copyright.html"_s);
-
     aboutData.setOrganizationDomain("kde.org"_ba);
     aboutData.setDesktopFileName(u"org.kde.kemu"_s);
     aboutData.setProgramLogo(QIcon::fromTheme(u"org.kde.kemu"_s));
