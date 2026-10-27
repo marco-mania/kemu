@@ -786,6 +786,12 @@ void QemuDisplayWidget::paintGL()
         return;
     }
 
+    if (m_fbSize.isEmpty()) {
+        destroyEglImage();
+        m_listener->ackPendingFrame();
+        return;
+    }
+
     if (m_dmaBufPending && m_eglAvailable) {
         m_dmaBufPending = false;
         if (importDmaBuf())
@@ -1048,13 +1054,7 @@ void QemuDisplayWidget::endRelativeGrab()
 void QemuDisplayWidget::onScanoutChanged(int w, int h)
 {
     qCDebug(KEMU_DBUSDISPLAY) << "QemuDisplayWidget::onScanoutChanged" << w << h;
-    if (w == 0 || h == 0) {
-        return;
-    }
-    if (!m_pointerModeProbed) {
-        m_pointerModeProbed = true;
-        queryPointerMode();
-    }
+    m_dmaBufPending = false;
     m_usingDmaBuf = false;
     m_texAllocSize = QSize(); // present texture was blit-allocated; force realloc
 
@@ -1064,6 +1064,17 @@ void QemuDisplayWidget::onScanoutChanged(int w, int h)
         m_subsurfaceActive = false;
         if (m_subsurface)
             m_subsurface->hide();
+    }
+
+    if (w == 0 || h == 0) {
+        m_fbSize = QSize();
+        m_textureReady = false;
+        scheduleRepaint();
+        return;
+    }
+    if (!m_pointerModeProbed) {
+        m_pointerModeProbed = true;
+        queryPointerMode();
     }
 
     scheduleRepaint();

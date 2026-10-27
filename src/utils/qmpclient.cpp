@@ -142,11 +142,34 @@ void QMPClient::sendFileDescriptor(const QString &fdname, int fd, std::function<
         return;
     }
 
+    const auto failSend = [this, &callback](const QString &reason) {
+        m_socket.abort();
+        failPendingRequests(reason);
+        if (callback)
+            callback({false, reason, {}, QJsonArray()});
+    };
+
     // The fd must ride on the same message as the getfd command, so this
     // bypasses QLocalSocket's buffer. Drain it first to keep byte order.
+    constexpr int kFlushTimeoutMs = 2000;
+    QElapsedTimer flushTimer;
+    flushTimer.start();
     m_socket.flush();
-    while (m_socket.bytesToWrite() > 0)
-        m_socket.waitForBytesWritten(1000);
+    while (m_socket.bytesToWrite() > 0) {
+        const int remaining = kFlushTimeoutMs - int(flushTimer.elapsed());
+        if (remaining <= 0 || !m_socket.waitForBytesWritten(remaining)) {
+            const QString reason = remaining <= 0 ? u"QMP output flush timed out."_s
+                                                   : u"QMP output flush failed: %1"_s.arg(m_socket.errorString());
+            ::close(fd);
+            failSend(reason);
+            return;
+        }
+    }
+    if (m_socket.state() != QLocalSocket::ConnectedState) {
+        ::close(fd);
+        failSend(u"QMP socket disconnected while flushing output."_s);
+        return;
+    }
 
     const QString cmdId = u"cmd_%1"_s.arg(++m_commandCounter);
     QJsonObject cmdObj;
@@ -172,12 +195,14 @@ void QMPClient::sendFileDescriptor(const QString &fdname, int fd, std::function<
     cmsg->cmsg_len = CMSG_LEN(sizeof(int));
     memcpy(CMSG_DATA(cmsg), &fd, sizeof(int));
 
-    const ssize_t sent = ::sendmsg(static_cast<int>(m_socket.socketDescriptor()), &msg, MSG_NOSIGNAL);
+    const ssize_t sent = ::sendmsg(static_cast<int>(m_socket.socketDescriptor()), &msg, MSG_NOSIGNAL | MSG_DONTWAIT);
+    const int sendError = errno;
     ::close(fd); // kernel holds its own reference while the message is in flight
 
-    if (sent < 0) {
-        if (callback)
-            callback({false, u"sendmsg failed: %1"_s.arg(QString::fromLocal8Bit(strerror(errno))), {}, QJsonArray()});
+    if (sent != payload.size()) {
+        const QString reason = sent < 0 ? u"sendmsg failed: %1"_s.arg(QString::fromLocal8Bit(strerror(sendError)))
+                                        : u"sendmsg sent only %1 of %2 bytes"_s.arg(qlonglong(sent)).arg(qlonglong(payload.size()));
+        failSend(reason);
         return;
     }
     if (callback)
