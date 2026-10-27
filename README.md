@@ -162,6 +162,12 @@ Pointer capture uses one private Qt header to reach the Wayland surface of the
 viewer window; there is no public API for it. KEMU therefore has to be rebuilt
 after a Qt minor version upgrade.
 
+### Automated tests
+
+The source tree includes regression tests for VM metadata, storage, templates
+and the D-Bus viewer. Build instructions and test coverage are in
+[docs/testing.md](docs/testing.md).
+
 ## Using KEMU
 
 ### Creating virtual machines
