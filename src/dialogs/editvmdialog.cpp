@@ -1396,7 +1396,7 @@ bool EditVmDialog::iconManuallySet() const
 
 VMConfig EditVmDialog::getResult() const
 {
-    VMConfig c;
+    VMConfig c = m_original;
     c.setName(nameEdit->text().trimmed());
     c.setComment(commentEdit->toPlainText());
     c.setOsFamily(static_cast<VMSpecs::OsFamily>(osFamilyCombo->currentData().toInt()));
