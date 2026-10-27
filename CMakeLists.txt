@@ -8,7 +8,7 @@ if(POLICY CMP0175)
   cmake_policy(SET CMP0175 OLD)
 endif()
 
-project(kemu VERSION 0.6.0)
+project(kemu VERSION 0.7.0)
 
 option(KEMU_SELF_CONTAINED "Application ships its own external tools" OFF)
 
@@ -19,8 +19,8 @@ if(KEMU_SELF_CONTAINED)
   add_compile_definitions(KEMU_SELF_CONTAINED)
 endif()
 
-set(QT_MIN_VERSION "6.6.0")
-set(KF_MIN_VERSION "6.0.0")
+set(QT_MIN_VERSION "6.8.0")
+set(KF_MIN_VERSION "6.13.0")
 
 find_package(ECM ${KF_MIN_VERSION} REQUIRED NO_MODULE)
 set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
@@ -138,7 +138,8 @@ find_package(SharedMimeInfo)
 if(SharedMimeInfo_FOUND)
   update_xdg_mimetypes(${KDE_INSTALL_MIMEDIR})
 endif()
-install(FILES data/kemu-newvm.desktop DESTINATION ${KDE_INSTALL_DATADIR}/kio/servicemenus)
+install(FILES data/kemu-newvm.desktop
+        DESTINATION ${KDE_INSTALL_DATADIR}/kio/servicemenus)
 install(FILES assets/org.kde.kemu.svg
         DESTINATION ${KDE_INSTALL_ICONDIR}/hicolor/scalable/apps)
 install(FILES org.kde.kemu.metainfo.xml DESTINATION ${KDE_INSTALL_METAINFODIR})
