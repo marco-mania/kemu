@@ -1,0 +1,21 @@
+name: Mirror from KDE GitLab
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Fetch and Push
+        run: |
+          git clone --bare https://invent.kde.org/marcon/kemu.git repo
+          cd repo
+          git remote add github https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git push github 'refs/heads/*:refs/heads/*' --force
+          git push github 'refs/tags/*:refs/tags/*' --force
