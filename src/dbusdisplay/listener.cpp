@@ -460,6 +460,12 @@ void QemuDisplayListener::handleScanoutDMABUF(GVariant *parameters, GDBusMethodI
     g_variant_get(parameters, "(huuuutb)", &fdIndex, &width, &height, &stride, &fourcc, &modifier, &y0_top);
 
     DmaBufScanout buf;
+    if (width == 0 || height == 0 || width > guint32(std::numeric_limits<int>::max()) || height > guint32(std::numeric_limits<int>::max())
+        || stride == 0) {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid ScanoutDMABUF geometry");
+        return;
+    }
+
     buf.fds[0] = takeInvocationFd(invocation, fdIndex);
     if (!buf.fds[0].isValid()) {
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "FD error");
@@ -513,7 +519,8 @@ void QemuDisplayListener::handleScanoutDMABUF2(GVariant *parameters, GDBusMethod
     const auto *strides = static_cast<const guint32 *>(g_variant_get_fixed_array(stridesVariant.get(), &nStrides, sizeof(guint32)));
 
     if (numPlanes < 1 || numPlanes > guint32(DmaBufScanout::kMaxPlanes) || nHandles < 1 || nHandles > numPlanes || nOffsets < numPlanes
-        || nStrides < numPlanes || width == 0 || height == 0 || x >= backingWidth || y >= backingHeight) {
+        || nStrides < numPlanes || width == 0 || height == 0 || x >= backingWidth || y >= backingHeight
+        || backingWidth > guint32(std::numeric_limits<int>::max()) || backingHeight > guint32(std::numeric_limits<int>::max())) {
         qCWarning(KEMU_DBUSDISPLAY) << "ScanoutDMABUF2: invalid arguments: planes" << numPlanes << "fds" << nHandles << "rect" << x << y << width << height
                                     << "backing" << backingWidth << backingHeight;
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid ScanoutDMABUF2 arguments");
@@ -525,6 +532,12 @@ void QemuDisplayListener::handleScanoutDMABUF2(GVariant *parameters, GDBusMethod
         buf.fds[i] = takeInvocationFd(invocation, handles[i]);
         if (!buf.fds[i].isValid()) {
             g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "FD error");
+            return;
+        }
+    }
+    for (guint32 i = 0; i < numPlanes; ++i) {
+        if (strides[i] == 0) {
+            g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid ScanoutDMABUF2 stride");
             return;
         }
     }
