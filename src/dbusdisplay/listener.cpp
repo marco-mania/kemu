@@ -9,8 +9,11 @@
 #include <gio/gunixfdlist.h>
 #pragma pop_macro("signals")
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#include <limits>
 
 #include "dbusdisplay/dbusdisplayconst.h"
 #include "dbusdisplay/gvariantptr.h"
@@ -570,6 +573,18 @@ void QemuDisplayListener::handleUpdateDMABUF(GVariant *parameters, GDBusMethodIn
 // =============================================================================
 // Scanout / ScanoutMap / Update
 // =============================================================================
+static bool scanoutFrameSize(guint32 width, guint32 height, guint32 stride, size_t &frameSize)
+{
+    if (width == 0 || height == 0 || width > std::numeric_limits<int>::max() || height > std::numeric_limits<int>::max()
+        || stride > std::numeric_limits<int>::max() || size_t(width) > size_t(stride) / 4
+        || size_t(stride) > std::numeric_limits<size_t>::max() / height) {
+        return false;
+    }
+
+    frameSize = size_t(stride) * height;
+    return true;
+}
+
 void QemuDisplayListener::handleScanout(GVariant *parameters, GDBusMethodInvocation *invocation)
 {
     ackPendingFrame();
@@ -585,41 +600,49 @@ void QemuDisplayListener::handleScanout(GVariant *parameters, GDBusMethodInvocat
         return;
     }
 
+    size_t frameSize = 0;
+    if (!scanoutFrameSize(width, height, stride, frameSize)) {
+        qCWarning(KEMU_DBUSDISPLAY) << "Scanout: invalid geometry" << width << height << stride;
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid Scanout geometry");
+        return;
+    }
+
     gsize dataLen = 0;
     const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
-    const gsize expected = static_cast<gsize>(stride) * height;
-    if (!data || dataLen < expected) {
-        qCWarning(KEMU_DBUSDISPLAY) << "Scanout: short pixel array" << dataLen << "<" << expected;
+    if (!data || dataLen < frameSize) {
+        qCWarning(KEMU_DBUSDISPLAY) << "Scanout: short pixel array" << dataLen << "<" << frameSize;
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "short pixel array");
         return;
     }
 
-    // Drop any previous state (DMA-BUF or ScanoutMap mapping). After
-    // unmapMemory() m_image is null - we re-create it next.
-    closeDmaBuf();
-    unmapMemory();
-
-    // Reuse the existing backbuffer if geometry AND format match.
-    // In steady state (constant resolution, constant format) this
-    // branch is never taken, so no per-frame allocation.
-    if (m_image.size() != QSize(int(width), int(height)) || m_image.format() != qtFormat) {
-        m_image = QImage(int(width), int(height), qtFormat);
+    QImage image;
+    if (m_mappedMemory || m_image.size() != QSize(int(width), int(height)) || m_image.format() != qtFormat) {
+        image = QImage(int(width), int(height), qtFormat);
+        if (image.isNull()) {
+            g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "Cannot allocate Scanout image");
+            return;
+        }
     }
 
-    // memcpy row-by-row. Source and destination strides may differ
-    // (QImage rounds up to 32-bit alignment), so we cannot blast the
-    // whole buffer in one memcpy. dstStride is needed because
-    // m_image.scanLine(y) already accounts for it - but only for the
-    // destination side. We still need srcStride to walk the input.
+    closeDmaBuf();
+    unmapMemory();
+    if (!image.isNull())
+        m_image = std::move(image);
+
     const size_t srcStride = stride;
-    const int bpp = m_image.depth() / 8;
-    const size_t rowBytes = static_cast<size_t>(width) * bpp;
+    const size_t rowBytes = size_t(width) * 4;
+    uchar *pixels = m_image.bits();
+    if (!pixels) {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "Cannot access Scanout image");
+        return;
+    }
 
     if (srcStride == static_cast<size_t>(m_image.bytesPerLine())) {
-        memcpy(m_image.bits(), data, srcStride * height);
+        memcpy(pixels, data, frameSize);
     } else {
+        const size_t dstStride = size_t(m_image.bytesPerLine());
         for (uint32_t y = 0; y < height; ++y) {
-            memcpy(m_image.scanLine(static_cast<int>(y)), data + y * srcStride, rowBytes);
+            memcpy(pixels + y * dstStride, data + y * srcStride, rowBytes);
         }
     }
 
@@ -658,29 +681,44 @@ void QemuDisplayListener::handleScanoutMap(GVariant *parameters, GDBusMethodInvo
         return;
     }
 
-    const size_t mapSize = static_cast<size_t>(height) * stride + offset;
+    size_t frameSize = 0;
+    if (!scanoutFrameSize(width, height, stride, frameSize) || stride % 4 != 0 || offset % 4 != 0
+        || size_t(offset) > std::numeric_limits<size_t>::max() - frameSize) {
+        qCWarning(KEMU_DBUSDISPLAY) << "ScanoutMap: invalid geometry" << width << height << stride << offset;
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid ScanoutMap geometry");
+        return;
+    }
+
+    const size_t mapSize = size_t(offset) + frameSize;
+    struct stat st;
+    if (fstat(memFd.get(), &st) != 0) {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "fstat failed");
+        return;
+    }
+    if (st.st_size < 0 || static_cast<uintmax_t>(st.st_size) < mapSize) {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "ScanoutMap FD too small");
+        return;
+    }
+
     void *mapped = mmap(nullptr, mapSize, PROT_READ, MAP_SHARED, memFd.get(), 0);
-    memFd.reset(); // the mapping stays valid without the descriptor
     if (mapped == MAP_FAILED) {
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "mmap failed");
         return;
     }
 
-    // Drop previous frame/mapping. unmapMemory() handles the munmap of any
-    // existing m_mappedMemory and resets m_image; closeDmaBuf() releases any
-    // previous DMA-BUF FD.
+    const uchar *pixels = static_cast<const uchar *>(mapped) + offset;
+    QImage image(pixels, int(width), int(height), stride, qtFormat);
+    if (image.isNull()) {
+        munmap(mapped, mapSize);
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "Cannot create ScanoutMap image");
+        return;
+    }
+
     closeDmaBuf();
     unmapMemory();
-
-    // Keep the mapping alive: m_image is now a NON-OWNING view over QEMU's
-    // shared framebuffer. Subsequent UpdateMap calls write into this memory
-    // from the QEMU side; paintGL reads from it directly. The mapping stays
-    // alive until the next Scanout/ScanoutMap/Disable or destruction.
     m_mappedMemory = mapped;
     m_mappedSize = mapSize;
-
-    const uchar *pixels = static_cast<const uchar *>(mapped) + offset;
-    m_image = QImage(pixels, width, height, stride, qtFormat);
+    m_image = std::move(image);
 
     // Full-frame change - force a complete texture upload.
     m_dirtyRegion = QRegion(0, 0, int(width), int(height));
@@ -714,33 +752,56 @@ void QemuDisplayListener::handleUpdate(GVariant *parameters, GDBusMethodInvocati
         return;
     }
 
-    // Clip rect to backbuffer (defensive against bogus coordinates).
-    const int dstX = std::max(0, x);
-    const int dstY = std::max(0, y);
-    const int copyW = std::min(w, m_image.width() - dstX);
-    const int copyH = std::min(h, m_image.height() - dstY);
-
-    if (copyW > 0 && copyH > 0) {
-        gsize dataLen = 0;
-        const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
-        const gsize expected = static_cast<gsize>(stride) * copyH;
-        if (data && dataLen >= expected) {
-            const int bpp = m_image.depth() / 8;
-            const size_t rowBytes = static_cast<size_t>(copyW) * bpp;
-            const size_t srcStride = stride;
-
-            for (int row = 0; row < copyH; ++row) {
-                memcpy(m_image.scanLine(dstY + row) + dstX * bpp, data + row * srcStride, rowBytes);
-            }
-
-            addDirtyRect(QRect(dstX, dstY, copyW, copyH));
-        } else {
-            qCWarning(KEMU_DBUSDISPLAY) << "Update: short pixel array";
-        }
+    if (w <= 0 || h <= 0) {
+        g_dbus_method_invocation_return_value(invocation, nullptr);
+        return;
     }
 
+    const qint64 left = std::max<qint64>(0, x);
+    const qint64 top = std::max<qint64>(0, y);
+    const qint64 right = std::min<qint64>(m_image.width(), qint64(x) + w);
+    const qint64 bottom = std::min<qint64>(m_image.height(), qint64(y) + h);
+    if (right <= left || bottom <= top) {
+        g_dbus_method_invocation_return_value(invocation, nullptr);
+        return;
+    }
+
+    const size_t bpp = size_t(m_image.depth()) / 8;
+    const size_t srcStride = stride;
+    if (srcStride < bpp || size_t(w) > srcStride / bpp || srcStride > std::numeric_limits<size_t>::max() / size_t(h)) {
+        qCWarning(KEMU_DBUSDISPLAY) << "Update: invalid stride" << stride;
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid Update stride");
+        return;
+    }
+
+    gsize dataLen = 0;
+    const guint8 *data = static_cast<const guint8 *>(g_variant_get_fixed_array(dataVariant.get(), &dataLen, sizeof(guint8)));
+    if (!data || dataLen < srcStride * size_t(h)) {
+        qCWarning(KEMU_DBUSDISPLAY) << "Update: short pixel array";
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "short pixel array");
+        return;
+    }
+
+    const size_t srcX = size_t(left - x);
+    const size_t srcY = size_t(top - y);
+    const size_t rowBytes = size_t(right - left) * bpp;
+    const size_t dstStride = size_t(m_image.bytesPerLine());
+    uchar *pixels = m_image.bits();
+    if (!pixels) {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "Cannot access Update image");
+        return;
+    }
+
+    for (qint64 row = 0; row < bottom - top; ++row) {
+        memcpy(pixels + size_t(top + row) * dstStride + size_t(left) * bpp,
+               data + (srcY + size_t(row)) * srcStride + srcX * bpp,
+               rowBytes);
+    }
+
+    const QRect updatedRect(int(left), int(top), int(right - left), int(bottom - top));
+    addDirtyRect(updatedRect);
     g_dbus_method_invocation_return_value(invocation, nullptr);
-    Q_EMIT regionUpdated(QRect(x, y, w, h));
+    Q_EMIT regionUpdated(updatedRect);
 }
 
 void QemuDisplayListener::handleUpdateMap(GVariant *parameters, GDBusMethodInvocation *invocation)
