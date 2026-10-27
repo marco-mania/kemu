@@ -15,8 +15,6 @@
 
 #include <functional>
 
-class QWidget;
-
 // =============================================================================
 // VmLauncher
 // =============================================================================
@@ -53,10 +51,10 @@ public:
 
     [[nodiscard]] bool has(const QString &vmName) const;
 
-    void create(const Entry &entry, QWidget *window, Done done);
+    void create(const Entry &entry, Done done);
     // After an edit. Native entries follow silently; the portal needs the
     // user again, so the Flatpak only asks when name or reference changed.
-    void update(const QString &oldName, const Entry &entry, QWidget *window);
+    void update(const QString &oldName, const Entry &entry);
     void remove(const QString &vmName);
 
 private Q_SLOTS:
@@ -77,7 +75,7 @@ private:
     [[nodiscard]] static QString desktopEntry(const Entry &entry, bool sandboxed);
 
     void createNative(const Entry &entry, const QString &fileId, const Done &done);
-    void createWithPortal(const Entry &entry, const QString &fileId, QWidget *window, const Done &done);
+    void createWithPortal(const Entry &entry, const QString &fileId, const Done &done);
 
     struct PendingInstall {
         Entry entry;

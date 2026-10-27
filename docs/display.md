@@ -26,8 +26,8 @@ file in between. The guest needs no special driver for video or input.
 - **Clipboard:** Off, guest → host, host → guest or both, in the viewer's
   *Devices* menu. The guest needs the SPICE vdagent.
 - **Pointer capture:** Locks the pointer to the viewer for guests with a
-  relative mouse. It needs a Wayland session; under X11 or XWayland the action
-  is disabled. Guests with a tablet pointer work everywhere.
+  relative mouse. The compositor must support pointer constraints and
+  relative pointer protocols. Guests with a tablet pointer do not need capture.
 - **Status bar:** Shows CD/DVD, floppy, USB devices, network (click to plug or
   unplug the cable), guest agent (click to copy the guest's address),
   clipboard sharing, microphone, audio output and pointer capture.

@@ -4729,7 +4729,7 @@ void MainWindow::editVM()
         saveVmConfig(vmPath, newConfig);
         currentConfig = newConfig;
         // Name, icon or UUID may have changed.
-        m_launcher->update(oldName, launcherEntry(newConfig), this);
+        m_launcher->update(oldName, launcherEntry(newConfig));
         loadVmList();
         selectVmByName(newConfig.name());
         updateDetails();
@@ -5997,7 +5997,7 @@ void MainWindow::toggleLauncher(bool wanted)
     }
 
     const QPointer<MainWindow> self(this);
-    m_launcher->create(launcherEntry(e->config), this, [self, vmName](VmLauncher::Result result, const QString &error) {
+    m_launcher->create(launcherEntry(e->config), [self, vmName](VmLauncher::Result result, const QString &error) {
         if (!self)
             return;
         self->updateActionStates();

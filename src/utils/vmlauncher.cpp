@@ -24,13 +24,11 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QGuiApplication>
 #include <QPixmap>
 #include <QRandomGenerator>
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QUuid>
-#include <QWidget>
 
 #include "utils/sandboxcapabilities.h"
 
@@ -100,15 +98,6 @@ QString entryString(const QString &value)
     return escaped;
 }
 
-QString parentWindowId(QWidget *window)
-{
-    // Wayland needs an exported xdg-foreign handle; without one the portal
-    // shows its dialog unparented, which is fine.
-    if (window && QGuiApplication::platformName() == u"xcb"_s)
-        return u"x11:%1"_s.arg(window->window()->winId(), 0, 16);
-    return {};
-}
-
 }
 
 Q_DECLARE_METATYPE(PortalIcon)
@@ -128,7 +117,7 @@ bool VmLauncher::has(const QString &vmName) const
     return sandboxed() || QFile::exists(nativePath(r.fileId));
 }
 
-void VmLauncher::create(const Entry &entry, QWidget *window, Done done)
+void VmLauncher::create(const Entry &entry, Done done)
 {
     // The same file again for an existing entry, so it is replaced in place.
     QString fileId = record(entry.vmName).fileId;
@@ -136,12 +125,12 @@ void VmLauncher::create(const Entry &entry, QWidget *window, Done done)
         fileId = newFileId();
 
     if (sandboxed())
-        createWithPortal(entry, fileId, window, done);
+        createWithPortal(entry, fileId, done);
     else
         createNative(entry, fileId, done);
 }
 
-void VmLauncher::update(const QString &oldName, const Entry &entry, QWidget *window)
+void VmLauncher::update(const QString &oldName, const Entry &entry)
 {
     const Record old = record(oldName);
     if (old.fileId.isEmpty())
@@ -162,7 +151,7 @@ void VmLauncher::update(const QString &oldName, const Entry &entry, QWidget *win
 
     if (oldName == entry.vmName && old.vmRef == entry.vmRef)
         return;
-    createWithPortal(entry, old.fileId, window, {});
+    createWithPortal(entry, old.fileId, {});
 }
 
 void VmLauncher::remove(const QString &vmName)
@@ -281,7 +270,7 @@ void VmLauncher::createNative(const Entry &entry, const QString &fileId, const D
         done(Result::Created, {});
 }
 
-void VmLauncher::createWithPortal(const Entry &entry, const QString &fileId, QWidget *window, const Done &done)
+void VmLauncher::createWithPortal(const Entry &entry, const QString &fileId, const Done &done)
 {
     QDBusConnection bus = QDBusConnection::sessionBus();
 
@@ -302,7 +291,7 @@ void VmLauncher::createWithPortal(const Entry &entry, const QString &fileId, QWi
     watchRequest(requestPath);
 
     QDBusMessage call = QDBusMessage::createMethodCall(PortalService, PortalPath, LauncherInterface, u"PrepareInstall"_s);
-    call << parentWindowId(window) << entry.vmName << QVariant::fromValue(QDBusVariant(QVariant::fromValue(icon)))
+    call << QString() << entry.vmName << QVariant::fromValue(QDBusVariant(QVariant::fromValue(icon)))
          << QVariantMap{{u"handle_token"_s, token}, {u"modal"_s, true}, {u"launcher_type"_s, 1u}};
 
     auto *watcher = new QDBusPendingCallWatcher(bus.asyncCall(call), this);

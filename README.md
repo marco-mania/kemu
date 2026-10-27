@@ -4,7 +4,10 @@ KEMU is a desktop frontend that runs QEMU directly – no libvirt, no daemon, no
 root. It is built with Qt 6 Widgets and KDE Frameworks 6 and integrates deeply
 with the Plasma desktop.
 
-**Disclaimer:** This project is in early-stage development.
+**Disclaimer:** This project is in development.
+
+KEMU requires a native Wayland desktop session. X11 and XWayland are not
+supported as host display backends. Guest operating systems can still use X11.
 
 ![image](screenshots/fullview.png) ![image](screenshots/newvm.png)
 ![image](screenshots/vmsettings.png) ![image](screenshots/snapshotdialog.png)
@@ -73,12 +76,13 @@ What differs in the sandbox, and how to grant more access, is described in
 
 **Requirements:**
 
-- Qt ≥ 6.6 (Core, Gui, Widgets, Network, Svg, DBus, Multimedia, OpenGL) and its
-  private headers (`Qt6::GuiPrivate`, for pointer capture under Wayland)
-- KDE Frameworks ≥ 6.0: CoreAddons, Config, ConfigWidgets, Crash, DBusAddons,
+- Qt ≥ 6.8 (Core, Gui, Widgets, Network, Svg, DBus, Multimedia, OpenGL) and its
+  private headers
+- Qt Wayland platform plugin (required at runtime)
+- KDE Frameworks ≥ 6.13: CoreAddons, Config, ConfigWidgets, Crash, DBusAddons,
   I18n, IconThemes, JobWidgets, KIO, Notifications, NotifyConfig,
   StatusNotifierItem, TextTemplate, Wallet, WidgetsAddons, WindowSystem, XmlGui
-- QEMU ≥ 7.2
+- QEMU ≥ 7.2 (SDL with Wayland support if using the SDL display backend)
 - libarchive, libslirp ≥ 4.7, libisofs, libudev, EGL, Wayland (client library,
   protocols, `wayland-scanner`)
 
@@ -98,7 +102,7 @@ sudo pacman -S cmake extra-cmake-modules qt6-base qt6-svg qt6-multimedia \
   kcoreaddons kconfig kconfigwidgets kcrash kdbusaddons ki18n kiconthemes \
   kjobwidgets kio knotifications knotifyconfig kstatusnotifieritem \
   ktexttemplate kwallet kwidgetsaddons kwindowsystem kxmlgui \
-  libarchive libslirp libisofs wayland wayland-protocols qemu-full
+  libarchive libslirp libisofs wayland wayland-protocols qt6-wayland qemu-full
 sudo pacman -S edk2-ovmf swtpm virtiofsd   # optional
 ```
 
@@ -106,7 +110,7 @@ sudo pacman -S edk2-ovmf swtpm virtiofsd   # optional
 
 ```sh
 sudo apt install build-essential cmake extra-cmake-modules \
-  qt6-base-dev qt6-base-private-dev qt6-svg-dev qt6-multimedia-dev \
+  qt6-base-dev qt6-base-private-dev qt6-wayland qt6-svg-dev qt6-multimedia-dev \
   libkf6coreaddons-dev libkf6config-dev libkf6configwidgets-dev libkf6crash-dev \
   libkf6dbusaddons-dev libkf6i18n-dev libkf6iconthemes-dev libkf6jobwidgets-dev \
   libkf6kio-dev libkf6notifications-dev libkf6notifyconfig-dev \
@@ -121,7 +125,7 @@ sudo apt install ovmf swtpm swtpm-tools virtiofsd   # optional
 
 ```sh
 sudo dnf install gcc-c++ cmake extra-cmake-modules \
-  qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtsvg-devel qt6-qtmultimedia-devel \
+  qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtwayland qt6-qtsvg-devel qt6-qtmultimedia-devel \
   kf6-kcoreaddons-devel kf6-kconfig-devel kf6-kconfigwidgets-devel kf6-kcrash-devel \
   kf6-kdbusaddons-devel kf6-ki18n-devel kf6-kiconthemes-devel kf6-kjobwidgets-devel \
   kf6-kio-devel kf6-knotifications-devel kf6-knotifyconfig-devel \
@@ -187,10 +191,10 @@ in [docs/templates.md](docs/templates.md).
 
 Each VM uses one of two display backends:
 
-| Backend   | Window              | 3D acceleration | Audio            | Clipboard |
-| --------- | ------------------- | --------------- | ---------------- | --------- |
-| **D-Bus** | KEMU's viewer       | Yes (Virtio)    | Through the viewer | Yes     |
-| **SDL**   | QEMU's own window   | Yes (Virtio)    | System (PipeWire)  | No      |
+| Backend   | Window              | 3D acceleration | Audio              | Clipboard |
+| --------- | ------------------- | --------------- | ------------------ | --------- |
+| **D-Bus** | KEMU's viewer       | Yes (Virtio)    | Through the viewer | Yes       |
+| **SDL**   | QEMU's own window   | Yes (Virtio)    | System (PipeWire)  | No        |
 
 Closing the viewer keeps the VM running headless; *Show Display* opens it
 again. Clipboard sharing needs the SPICE vdagent in the guest. Details, and a

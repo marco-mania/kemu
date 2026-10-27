@@ -138,8 +138,13 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
         inheritFds << netCtx.guestAgentFd;
 
     KProcess *process = createQemuProcess(vmName, args, inheritFds);
-    if (!sandbox.isEmpty())
-        process->setProcessEnvironment(Utils::environmentWithoutDbusAutolaunch());
+    const bool sdlDisplay = config.displayType() == VMSpecs::DisplayType::Sdl && !req.headless;
+    if (!sandbox.isEmpty() || sdlDisplay) {
+        QProcessEnvironment env = sandbox.isEmpty() ? QProcessEnvironment::systemEnvironment() : Utils::environmentWithoutDbusAutolaunch();
+        if (sdlDisplay)
+            env.insert(u"SDL_VIDEODRIVER"_s, u"wayland"_s);
+        process->setProcessEnvironment(env);
+    }
 
     connect(process, &KProcess::finished, this, [this, vmName](int code, KProcess::ExitStatus status) {
         onQemuExit(vmName, code, status);

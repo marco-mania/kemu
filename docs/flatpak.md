@@ -9,7 +9,7 @@ and adjusts itself; features can also be switched off for testing with
 
 | Permission                                    | Purpose                                                        |
 | --------------------------------------------- | -------------------------------------------------------------- |
-| `--socket=wayland`, `--socket=fallback-x11`, `--share=ipc` | Viewer and QEMU's SDL window                      |
+| `--socket=wayland`, `--share=ipc`                 | Native Wayland viewer and QEMU's SDL window            |
 | `--device=dri`                                | 3D acceleration (virglrenderer)                                |
 | `--device=kvm`                                | Hardware virtualization                                        |
 | `--share=network`                             | User-mode networking and NAT of virtual networks               |

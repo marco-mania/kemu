@@ -24,7 +24,6 @@ finish-args:
   # Display. QEMU's own SDL window and KEMU's viewer both need it.
   - --share=ipc
   - --socket=wayland
-  - --socket=fallback-x11
   # GPU for Virtio-GL (virglrenderer) and /dev/kvm for hardware virtualization.
   - --device=dri
   - --device=kvm

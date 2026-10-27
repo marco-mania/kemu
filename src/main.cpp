@@ -12,6 +12,7 @@
 #include <KLocalizedString>
 
 #include <QApplication>
+#include <QGuiApplication>
 #include <QCommandLineParser>
 #include <QUrl>
 #include <QDir>
@@ -115,6 +116,12 @@ int main(int argc, char *argv[])
     if (parser.isSet(headlessOption) && !parser.isSet(startOption))
         qWarning("--headless only applies together with --start");
     aboutData.processCommandLine(&parser);
+
+    const QString platform = QGuiApplication::platformName();
+    if (platform != u"wayland"_s && platform != u"wayland-egl"_s) {
+        qCritical("KEMU requires a native Wayland session (Qt platform: %s).", qPrintable(platform));
+        return 1;
+    }
 
     // Capabilities must be known before MainWindow is constructed; settings read
     // during startup already query them.

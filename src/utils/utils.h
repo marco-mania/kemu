@@ -176,9 +176,8 @@ QString vmNameToHostname(const QString &vmName);
 void setDiesWithParent(KProcess *process, const QList<int> &inheritFds = {});
 
 // The system environment, unless it offers no session bus: then libdbus and
-// GDBus would fork "dbus-launch --autolaunch" on X11 (SDL), which a
-// seccomp sandbox with spawn=deny answers with SIGSYS. The bus address is
-// set to one that fails instead.
+// GDBus could attempt to spawn dbus-launch, which a seccomp sandbox with
+// spawn=deny answers with SIGSYS. The bus address is set to one that fails.
 QProcessEnvironment environmentWithoutDbusAutolaunch();
 
 // Appends to a rolling tail, discarding the oldest bytes beyond maxBytes.
