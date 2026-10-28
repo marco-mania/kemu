@@ -768,6 +768,8 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                          // registerAudioListeners); runs against the map entry, so it
                          // must come after the insert above.
                          registerAudioListeners(vmName);
+
+                         updateSessionInhibitors();
                      });
 }
 
@@ -794,6 +796,8 @@ void MainWindow::stopDbusViewer(const QString &vmName)
 
     if (state.ctrl)
         state.ctrl->deleteLater();
+
+    updateSessionInhibitors();
 }
 
 void MainWindow::registerAudioListeners(const QString &vmName)
