@@ -78,6 +78,12 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
     connect(m_display, &QemuDisplayWidget::relativeGrabChanged, this, &DbusViewerWindow::onPointerCaptureChanged);
     connect(m_display, &QemuDisplayWidget::pointerModeChanged, this, &DbusViewerWindow::updateMouseStatus);
 
+    m_keyboardShortcutsInhibit = new WaylandKeyboardShortcutsInhibit(this);
+    onKeyboardShortcutsInhibitSupportedChanged(m_keyboardShortcutsInhibit->isSupported());
+    connect(m_keyboardShortcutsInhibit, &WaylandKeyboardShortcutsInhibit::supportedChanged, this, &DbusViewerWindow::onKeyboardShortcutsInhibitSupportedChanged);
+    onKeyboardShortcutsInhibitStateChanged();
+    connect(m_keyboardShortcutsInhibit, &WaylandKeyboardShortcutsInhibit::inhibitorActiveChanged, this, &DbusViewerWindow::onKeyboardShortcutsInhibitStateChanged);
+
     qCDebug(KEMU_DBUSDISPLAY) << "DbusViewerWindow: audioOutConnected=" << m_audioOutConnected << "audioInConnected=" << m_audioInConnected;
 
     m_actGrabMouse->setEnabled(m_display->isPointerCaptureSupported());
@@ -182,6 +188,15 @@ void DbusViewerWindow::createActions()
         m_actGrabMouse->setToolTip(i18nc("@info:tooltip", "Pointer capture requires a Wayland session"));
     }
     connect(m_actGrabMouse, &QAction::toggled, m_display, &QemuDisplayWidget::setPointerCaptured);
+
+    m_actKeyboardShortcutsInhibit = new QAction(QIcon::fromTheme(u"input-keyboard"_s), i18n("&Inhibit keyboard shortcuts"), this);
+    m_actKeyboardShortcutsInhibit->setCheckable(true);
+    m_actKeyboardShortcutsInhibit->setStatusTip(i18n("Disable global keyboard shortcuts when this window is focused"));
+    connect(m_actKeyboardShortcutsInhibit, &QAction::toggled, m_display, [this](bool checked) {
+        if (!setKeyboardShortcutsInhibited(checked)) {
+            m_actKeyboardShortcutsInhibit->setChecked(!checked);
+        }
+    });
 
     // --- Devices: Audio ---
     m_actAudioOut = new QAction(i18n("Audio &Output"), this);
@@ -311,6 +326,10 @@ void DbusViewerWindow::createMenus()
     mouseMenu->setToolTipsVisible(true);
     mouseMenu->addAction(m_actGrabMouse);
 
+    QMenu *keyboardMenu = devicesMenu->addMenu(i18n("&Keyboard"));
+    keyboardMenu->setToolTipsVisible(true);
+    keyboardMenu->addAction(m_actKeyboardShortcutsInhibit);
+
     devicesMenu->addSeparator();
 
     m_cdMenu = devicesMenu->addMenu(QIcon::fromTheme(u"media-optical"_s), i18n("&CD/DVD"));
@@ -426,6 +445,10 @@ void DbusViewerWindow::createStatusBar()
     m_indMouse->setAccessibleName(i18nc("@info:whatsthis", "Pointer"));
     connect(m_indMouse, &StatusIndicator::activated, m_actGrabMouse, &QAction::trigger);
 
+    m_indKeyboardShortcutsInhibit = new StatusIndicator(this);
+    m_indKeyboardShortcutsInhibit->setAccessibleName(i18nc("@info:whatsthis", "Keyboard Shortcuts Inhibit"));
+    connect(m_indKeyboardShortcutsInhibit, &StatusIndicator::activated, m_actKeyboardShortcutsInhibit, &QAction::toggle);
+
     statusBar()->addPermanentWidget(m_lblResolution);
     statusBar()->addPermanentWidget(m_indCdrom);
     statusBar()->addPermanentWidget(m_indFloppy);
@@ -435,6 +458,7 @@ void DbusViewerWindow::createStatusBar()
     statusBar()->addPermanentWidget(m_indAudioIn);
     statusBar()->addPermanentWidget(m_indAudioOut);
     statusBar()->addPermanentWidget(m_indMouse);
+    statusBar()->addPermanentWidget(m_indKeyboardShortcutsInhibit);
     statusBar()->addPermanentWidget(m_indGuestAgent);
 
     updateStatusBar();
@@ -872,6 +896,37 @@ void DbusViewerWindow::onPointerCaptureChanged(bool active)
     Q_EMIT inhibitStateChanged();
 }
 
+void DbusViewerWindow::onKeyboardShortcutsInhibitSupportedChanged(bool supported)
+{
+    if (supported) {
+        m_actKeyboardShortcutsInhibit->setEnabled(true);
+        m_actKeyboardShortcutsInhibit->setToolTip(QString());
+        m_indKeyboardShortcutsInhibit->setVisible(true);
+    } else {
+        m_actKeyboardShortcutsInhibit->setEnabled(false);
+        m_actKeyboardShortcutsInhibit->setToolTip(i18nc("@info:tooltip", "Requires keyboard-shortcuts-inhibit-unstable-v1 Wayland protocol"));
+        m_indKeyboardShortcutsInhibit->setVisible(false);
+    }
+}
+
+void DbusViewerWindow::onKeyboardShortcutsInhibitStateChanged()
+{
+    if (!m_keyboardShortcutsInhibit->hasInhibitor()) {
+        m_actKeyboardShortcutsInhibit->setChecked(false);
+        m_indKeyboardShortcutsInhibit->setIconNames(u"input-keyboard"_s, u"input-keyboard"_s);
+        m_indKeyboardShortcutsInhibit->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Global keyboard shortcuts inhibition OFF"));
+    } else {
+        m_actKeyboardShortcutsInhibit->setChecked(true);
+        if (m_keyboardShortcutsInhibit->isInhibitorActive()) {
+            m_indKeyboardShortcutsInhibit->setIconNames(u"input-keyboard"_s, u"input-keyboard"_s);
+            m_indKeyboardShortcutsInhibit->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Global keyboard shortcuts inhibition ON"));
+        } else {
+            m_indKeyboardShortcutsInhibit->setIconNames(u"action-unavailable-symbolic"_s, u"input-keyboard"_s);
+            m_indKeyboardShortcutsInhibit->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Global keyboard shortcuts inhibition temporarily disabled in the compositor"));
+        }
+    }
+}
+
 // =============================================================================
 // Close Event
 // =============================================================================
@@ -1166,4 +1221,23 @@ void DbusViewerWindow::showFullscreenHint()
     }
 
     showOsd(i18nc("@info:status", "Press %1 to leave fullscreen", key), 3500);
+}
+
+bool DbusViewerWindow::setKeyboardShortcutsInhibited(bool inhibit)
+{
+    if (!(m_keyboardShortcutsInhibit && m_keyboardShortcutsInhibit->isSupported())) {
+        return false;
+    }
+    if (m_keyboardShortcutsInhibit->hasInhibitor() == inhibit) {
+        return true;
+    }
+    if (inhibit) {
+        if (!m_keyboardShortcutsInhibit->inhibit(windowHandle())) {
+            return false;
+        }
+    } else {
+        m_keyboardShortcutsInhibit->uninhibit();
+    }
+    onKeyboardShortcutsInhibitStateChanged();
+    return true;
 }

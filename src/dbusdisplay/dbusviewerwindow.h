@@ -34,6 +34,7 @@
 #include "dbusdisplay/listener.h"
 #include "dbusdisplay/osdoverlay.h"
 #include "dbusdisplay/statusindicator.h"
+#include "dbusdisplay/waylandkeyboardshortcutsinhibit.h"
 
 using namespace Qt::StringLiterals;
 
@@ -178,6 +179,8 @@ private Q_SLOTS:
     void onAbout();
     void updateMouseStatus();
     void onPointerCaptureChanged(bool active);
+    void onKeyboardShortcutsInhibitSupportedChanged(bool supported);
+    void onKeyboardShortcutsInhibitStateChanged();
 
 private:
     void createActions();
@@ -193,6 +196,7 @@ private:
     void fitWindowToContent(bool force);
     void updateViewActions();
     void showFullscreenHint();
+    bool setKeyboardShortcutsInhibited(bool inhibit);
 
     QemuControlConnection *m_ctrl;
     QString m_consolePath;
@@ -236,6 +240,7 @@ private:
     QAction *m_actClipToGuest = nullptr;
     QAction *m_actClipBoth = nullptr;
     QAction *m_actGrabMouse = nullptr;
+    QAction *m_actKeyboardShortcutsInhibit = nullptr;
     QAction *m_actNetworkLink = nullptr;
     QAction *m_actAbout = nullptr;
 
@@ -251,6 +256,7 @@ private:
     StatusIndicator *m_indAudioIn = nullptr;
     StatusIndicator *m_indAudioOut = nullptr;
     StatusIndicator *m_indMouse = nullptr;
+    StatusIndicator *m_indKeyboardShortcutsInhibit = nullptr;
     StatusIndicator *m_indUsb = nullptr;
     StatusIndicator *m_indGuestAgent = nullptr;
 
@@ -262,6 +268,7 @@ private:
     QMenu *m_clipMenu = nullptr;
 
     OsdOverlay *m_osd = nullptr;
+    WaylandKeyboardShortcutsInhibit *m_keyboardShortcutsInhibit = nullptr;
 
     ViewerDevicePrefs m_prefs;
     ClipboardDirection m_clipDirection;
