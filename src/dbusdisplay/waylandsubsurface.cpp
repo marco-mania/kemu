@@ -6,8 +6,6 @@
 
 #include "waylandsubsurface.h"
 
-#ifdef KEMU_HAVE_QT_GUI_PRIVATE
-
 #include <QGuiApplication>
 #include <QWindow>
 
@@ -801,64 +799,3 @@ void WaylandSubSurface::setOverlay(const QImage &image, const QPoint &position, 
     showImageSlot(m_overlay, image, position - m_frameOrigin, 1.0);
     commitFrame();
 }
-
-#else // !KEMU_HAVE_QT_GUI_PRIVATE
-
-// Reaching a QWindow's wl_surface requires Qt's private QPA headers, which
-// are not available in this build (see the top-level CMakeLists.txt), so the
-// zero-copy path is compiled out. attachToWindow() reports failure and the
-// display widget keeps using its OpenGL pipeline.
-
-WaylandSubSurface::WaylandSubSurface(QObject *parent)
-    : QObject(parent)
-{
-}
-
-WaylandSubSurface::~WaylandSubSurface() = default;
-
-bool WaylandSubSurface::attachToWindow(QWindow *)
-{
-    return false;
-}
-
-bool WaylandSubSurface::attach(wl_display *, wl_surface *)
-{
-    return false;
-}
-
-void WaylandSubSurface::detach()
-{
-}
-
-bool WaylandSubSurface::isAttached() const
-{
-    return false;
-}
-
-bool WaylandSubSurface::supportsFormat(uint32_t, uint64_t) const
-{
-    return false;
-}
-
-void WaylandSubSurface::setGeometry(const QRect &, const QRect &)
-{
-}
-
-bool WaylandSubSurface::present(const DmaBufScanout &, const QRegion &)
-{
-    return false;
-}
-
-void WaylandSubSurface::setCursor(const QImage &, const QPoint &, const QPoint &, bool)
-{
-}
-
-void WaylandSubSurface::setOverlay(const QImage &, const QPoint &, bool)
-{
-}
-
-void WaylandSubSurface::hide()
-{
-}
-
-#endif // KEMU_HAVE_QT_GUI_PRIVATE

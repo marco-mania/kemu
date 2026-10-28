@@ -6,8 +6,6 @@
 
 #include "waylandkeyboardshortcutsinhibit.h"
 
-#ifdef KEMU_HAVE_QT_GUI_PRIVATE
-
 #include <QGuiApplication>
 #include <QWaylandClientExtensionTemplate>
 #include <qpa/qplatformwindow_p.h>
@@ -187,43 +185,5 @@ void WaylandKeyboardShortcutsInhibit::uninhibit()
     m_manager->uninhibit();
 }
 
-#else // !KEMU_HAVE_QT_GUI_PRIVATE
-
-struct WaylandKeyboardShortcutsInhibitPrivate
-{
-};
-
-WaylandKeyboardShortcutsInhibit::WaylandKeyboardShortcutsInhibit(QObject *parent)
-    : QObject(parent)
-{
-}
-
-WaylandKeyboardShortcutsInhibit::~WaylandKeyboardShortcutsInhibit() = default;
-
-bool WaylandKeyboardShortcutsInhibit::isSupported() const
-{
-    return false;
-}
-
-bool WaylandKeyboardShortcutsInhibit::hasInhibitor() const
-{
-    return false;
-}
-
-bool WaylandKeyboardShortcutsInhibit::isInhibitorActive() const
-{
-    return false;
-}
-
-bool WaylandKeyboardShortcutsInhibit::inhibit(QWindow *)
-{
-    return false;
-}
-
-void WaylandKeyboardShortcutsInhibit::uninhibit()
-{
-}
-
-#endif // KEMU_HAVE_QT_GUI_PRIVATE
 
 #include "waylandkeyboardshortcutsinhibit.moc"

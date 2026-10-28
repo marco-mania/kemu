@@ -36,34 +36,29 @@ function(kemu_find_wayland_protocol_xml outvar)
   message(FATAL_ERROR "No usable protocol XML found for ${outvar}")
 endfunction()
 
-if(TARGET Qt6::GuiPrivate)
-  kemu_add_wayland_protocol(
-    pointer-constraints-unstable-v1
-    ${WAYLAND_PROTOCOLS_DIR}/unstable/pointer-constraints/pointer-constraints-unstable-v1.xml
-  )
-  kemu_add_wayland_protocol(
-    relative-pointer-unstable-v1
-    ${WAYLAND_PROTOCOLS_DIR}/unstable/relative-pointer/relative-pointer-unstable-v1.xml
-  )
+kemu_add_wayland_protocol(
+  pointer-constraints-unstable-v1
+  ${WAYLAND_PROTOCOLS_DIR}/unstable/pointer-constraints/pointer-constraints-unstable-v1.xml)
+kemu_add_wayland_protocol(
+  relative-pointer-unstable-v1
+  ${WAYLAND_PROTOCOLS_DIR}/unstable/relative-pointer/relative-pointer-unstable-v1.xml)
 
-  qt_generate_wayland_protocol_client_sources(
-      ${PROJECT_NAME}
-      PRIVATE_CODE
-      FILES
-          ${WAYLAND_PROTOCOLS_DIR}/unstable/keyboard-shortcuts-inhibit/keyboard-shortcuts-inhibit-unstable-v1.xml
-  )
+qt_generate_wayland_protocol_client_sources(
+  ${PROJECT_NAME}
+  PRIVATE_CODE
+  FILES
+    ${WAYLAND_PROTOCOLS_DIR}/unstable/keyboard-shortcuts-inhibit/keyboard-shortcuts-inhibit-unstable-v1.xml)
 
-  # Zero-copy display path: viewporter does the crop/scale that sub-surfaces
-  # cannot inherit, linux-dmabuf hands the guest's buffer to the compositor.
-  kemu_add_wayland_protocol(
-    viewporter ${WAYLAND_PROTOCOLS_DIR}/stable/viewporter/viewporter.xml)
+# Zero-copy display path: viewporter does the crop/scale that sub-surfaces
+# cannot inherit, linux-dmabuf hands the guest's buffer to the compositor.
+kemu_add_wayland_protocol(
+  viewporter ${WAYLAND_PROTOCOLS_DIR}/stable/viewporter/viewporter.xml)
 
-  kemu_find_wayland_protocol_xml(
-    KEMU_LINUX_DMABUF_XML
-    ${WAYLAND_PROTOCOLS_DIR}/stable/linux-dmabuf/linux-dmabuf-v1.xml
-    ${WAYLAND_PROTOCOLS_DIR}/unstable/linux-dmabuf/linux-dmabuf-unstable-v1.xml)
-  kemu_add_wayland_protocol(linux-dmabuf-v1 ${KEMU_LINUX_DMABUF_XML})
-endif()
+kemu_find_wayland_protocol_xml(
+  KEMU_LINUX_DMABUF_XML
+  ${WAYLAND_PROTOCOLS_DIR}/stable/linux-dmabuf/linux-dmabuf-v1.xml
+  ${WAYLAND_PROTOCOLS_DIR}/unstable/linux-dmabuf/linux-dmabuf-unstable-v1.xml)
+kemu_add_wayland_protocol(linux-dmabuf-v1 ${KEMU_LINUX_DMABUF_XML})
 
 ecm_qt_declare_logging_category(
   ${PROJECT_NAME}
@@ -307,6 +302,8 @@ target_link_libraries(
   PkgConfig::WAYLAND_CLIENT
   Qt6::Core
   Qt6::Gui
+  Qt6::GuiPrivate
+  Qt6::WaylandClient
   Qt6::Widgets
   Qt6::Network
   Qt6::Svg
@@ -332,9 +329,5 @@ target_link_libraries(
   KF6::Notifications
   KF6::NotifyConfig
   KF6::WindowSystem)
-
-if(TARGET Qt6::GuiPrivate)
-  target_link_libraries(${PROJECT_NAME} Qt6::GuiPrivate Qt6::WaylandClient)
-endif()
 
 install(TARGETS ${PROJECT_NAME} ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
