@@ -825,14 +825,24 @@ void QemuDisplayListener::handleUpdateMap(GVariant *parameters, GDBusMethodInvoc
     gint32 x, y, w, h;
     g_variant_get(parameters, "(iiii)", &x, &y, &w, &h);
 
-    // The pixels are already visible through the shared mapping, but the
-    // GPU upload still needs to know which rect changed.
-    addDirtyRect(QRect(x, y, w, h));
+    if (!m_mappedMemory || m_image.isNull() || w <= 0 || h <= 0) {
+        g_dbus_method_invocation_return_value(invocation, nullptr);
+        return;
+    }
 
-    // QEMU fires UpdateMap without waiting for the reply, so deferring it
-    // would throttle nothing.
+    const qint64 left = std::max<qint64>(0, x);
+    const qint64 top = std::max<qint64>(0, y);
+    const qint64 right = std::min<qint64>(m_image.width(), qint64(x) + w);
+    const qint64 bottom = std::min<qint64>(m_image.height(), qint64(y) + h);
+    if (left >= right || top >= bottom) {
+        g_dbus_method_invocation_return_value(invocation, nullptr);
+        return;
+    }
+
+    const QRect updatedRect(int(left), int(top), int(right - left), int(bottom - top));
+    addDirtyRect(updatedRect);
     g_dbus_method_invocation_return_value(invocation, nullptr);
-    Q_EMIT regionUpdated(QRect(x, y, w, h));
+    Q_EMIT regionUpdated(updatedRect);
 }
 
 // =============================================================================

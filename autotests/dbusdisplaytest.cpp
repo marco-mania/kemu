@@ -268,6 +268,41 @@ private Q_SLOTS:
         QCOMPARE(updates.size(), 1);
     }
 
+    void updateMapIgnoresUnmappedAndClipsDamage()
+    {
+        DisplayPeer peer;
+        QVERIFY(peer.start());
+        QSignalSpy updates(&peer.listener, &QemuDisplayListener::regionUpdated);
+
+        QVERIFY(peer.call(kMapIface, "UpdateMap", g_variant_new("(iiii)", 0, 0, 4, 4)).ok);
+        QVERIFY(peer.listener.takeDirtyRegion().isEmpty());
+        QCOMPARE(updates.size(), 0);
+
+        QTemporaryFile file;
+        QVERIFY(file.open());
+        QCOMPARE(file.write(QByteArray(64, '\x23')), qint64(64));
+        QVERIFY(file.flush());
+
+        GUnixFDList *fds = g_unix_fd_list_new();
+        GError *error = nullptr;
+        QCOMPARE(g_unix_fd_list_append(fds, file.handle(), &error), 0);
+        QVERIFY(error == nullptr);
+        const CallResult result = peer.call(kMapIface, "ScanoutMap", g_variant_new("(huuuuu)", 0, 0u, 4u, 4u, 16u, kPixmanX8R8G8B8), fds);
+        g_object_unref(fds);
+        QVERIFY2(result.ok, qPrintable(result.error));
+        peer.listener.takeDirtyRegion();
+
+        QVERIFY(peer.call(kMapIface, "UpdateMap", g_variant_new("(iiii)", -2, -1, 4, 3)).ok);
+        QCOMPARE(peer.listener.takeDirtyRegion(), QRegion(QRect(0, 0, 2, 2)));
+        QCOMPARE(updates.size(), 1);
+        QCOMPARE(updates.at(0).at(0).toRect(), QRect(0, 0, 2, 2));
+
+        QVERIFY(peer.call(kMapIface, "UpdateMap", g_variant_new("(iiii)", INT32_MAX, 0, INT32_MAX, 2)).ok);
+        QVERIFY(peer.call(kMapIface, "UpdateMap", g_variant_new("(iiii)", 0, 0, -1, 2)).ok);
+        QVERIFY(peer.listener.takeDirtyRegion().isEmpty());
+        QCOMPARE(updates.size(), 1);
+    }
+
     void cursorAndMouseEvents()
     {
         DisplayPeer peer;
