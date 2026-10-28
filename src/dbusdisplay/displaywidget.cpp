@@ -653,7 +653,6 @@ bool QemuDisplayWidget::importDmaBuf()
     m_fbSize = QSize(int(buf.width), int(buf.height));
     m_importOrigin = QPoint(int(buf.x), int(buf.y));
     m_importBackingSize = QSize(int(buf.backingWidth), int(buf.backingHeight));
-    m_texAllocSize = QSize(); // force present-texture realloc on next blit
     m_usingDmaBuf = true;
     m_flipY = buf.y0_top;
     // m_textureReady is set by the first blit into the present texture.
@@ -1091,6 +1090,8 @@ void QemuDisplayWidget::onDmaBufScanout(int w, int h)
     }
     // The sub-surface path hands the buffer to the compositor directly and
     // needs no EGL import of our own.
+    if (!m_usingDmaBuf)
+        m_texAllocSize = QSize();
     if (m_eglAvailable || subSurfacePossible()) {
         m_dmaBufPending = true;
     } else {
