@@ -611,10 +611,10 @@ bool WaylandSubSurface::present(const DmaBufScanout &buf, const QRegion &damage)
     m_layout.y0_top = buf.y0_top;
     m_layout.valid = true;
 
-    if (!buf.y0_top && !m_transformSet) {
-        wl_surface_set_buffer_transform(m_frame.surface, WL_OUTPUT_TRANSFORM_FLIPPED_180);
-        m_transformSet = true;
-        qCDebug(KEMU_DBUSDISPLAY) << "SubSurface: bottom-up buffer, using a flipped buffer transform";
+    if (m_transformSet != !buf.y0_top) {
+        wl_surface_set_buffer_transform(m_frame.surface, buf.y0_top ? WL_OUTPUT_TRANSFORM_NORMAL : WL_OUTPUT_TRANSFORM_FLIPPED_180);
+        m_transformSet = !buf.y0_top;
+        qCDebug(KEMU_DBUSDISPLAY) << "SubSurface: buffer transform" << (buf.y0_top ? "normal" : "flipped");
     }
 
     if (visibleRect().isEmpty()) {
