@@ -60,9 +60,10 @@ find_package(Qt6 ${QT_MIN_VERSION} CONFIG QUIET COMPONENTS GuiPrivate)
 if(TARGET Qt6::GuiPrivate)
   add_compile_definitions(KEMU_HAVE_QT_GUI_PRIVATE)
   set(KEMU_HAVE_QT_GUI_PRIVATE TRUE)
+  find_package(Qt6WaylandClient ${QT_MIN_VERSION} REQUIRED CONFIG)
 endif()
 add_feature_info(
-  "Wayland pointer lock"
+  "Wayland pointer lock and keyboard shortcuts inhibition"
   KEMU_HAVE_QT_GUI_PRIVATE
   "requires Qt6 private headers (e.g. qt6-base-private-dev / qt6-qtbase-private-devel)"
 )

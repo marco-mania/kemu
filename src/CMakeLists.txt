@@ -46,6 +46,13 @@ if(TARGET Qt6::GuiPrivate)
     ${WAYLAND_PROTOCOLS_DIR}/unstable/relative-pointer/relative-pointer-unstable-v1.xml
   )
 
+  qt_generate_wayland_protocol_client_sources(
+      ${PROJECT_NAME}
+      PRIVATE_CODE
+      FILES
+          ${WAYLAND_PROTOCOLS_DIR}/unstable/keyboard-shortcuts-inhibit/keyboard-shortcuts-inhibit-unstable-v1.xml
+  )
+
   # Zero-copy display path: viewporter does the crop/scale that sub-surfaces
   # cannot inherit, linux-dmabuf hands the guest's buffer to the compositor.
   kemu_add_wayland_protocol(
@@ -279,6 +286,8 @@ target_sources(
           dbusdisplay/uniquefd.h
           dbusdisplay/gvariantptr.h
           dbusdisplay/pcmringbuffer.h
+          dbusdisplay/waylandkeyboardshortcutsinhibit.cpp
+          dbusdisplay/waylandkeyboardshortcutsinhibit.h
           dbusdisplay/waylandpointerlock.cpp
           dbusdisplay/waylandpointerlock.h
           dbusdisplay/waylandsubsurface.cpp
@@ -325,7 +334,7 @@ target_link_libraries(
   KF6::WindowSystem)
 
 if(TARGET Qt6::GuiPrivate)
-  target_link_libraries(${PROJECT_NAME} Qt6::GuiPrivate)
+  target_link_libraries(${PROJECT_NAME} Qt6::GuiPrivate Qt6::WaylandClient)
 endif()
 
 install(TARGETS ${PROJECT_NAME} ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
