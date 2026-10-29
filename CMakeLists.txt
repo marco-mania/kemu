@@ -42,7 +42,6 @@ find_package(
   Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED
   COMPONENTS Core
              Gui
-             GuiPrivate
              Widgets
              Network
              Svg
@@ -50,6 +49,13 @@ find_package(
              Multimedia
              OpenGL
              OpenGLWidgets)
+
+if(Qt6_VERSION VERSION_GREATER_EQUAL "6.10.0")
+  find_package(Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED COMPONENTS GuiPrivate)
+endif()
+if(NOT TARGET Qt6::GuiPrivate)
+  message(FATAL_ERROR "Qt6::GuiPrivate is required (install the Qt private development headers)")
+endif()
 
 find_package(Qt6WaylandClient ${QT_MIN_VERSION} REQUIRED CONFIG)
 

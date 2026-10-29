@@ -110,7 +110,7 @@ sudo pacman -S edk2-ovmf swtpm virtiofsd   # optional
 
 ```sh
 sudo apt install build-essential cmake extra-cmake-modules \
-  qt6-base-dev qt6-base-private-dev qt6-wayland qt6-svg-dev qt6-multimedia-dev \
+  qt6-base-dev qt6-base-private-dev qt6-wayland-dev qt6-svg-dev qt6-multimedia-dev \
   libkf6coreaddons-dev libkf6config-dev libkf6configwidgets-dev libkf6crash-dev \
   libkf6dbusaddons-dev libkf6i18n-dev libkf6iconthemes-dev libkf6jobwidgets-dev \
   libkf6kio-dev libkf6notifications-dev libkf6notifyconfig-dev \
