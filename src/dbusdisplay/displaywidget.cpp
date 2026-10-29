@@ -259,10 +259,9 @@ bool QemuDisplayWidget::presentViaSubSurface()
 
     const QRegion damage = m_listener->takeDirtyRegion();
     if (!m_subsurface->present(buf, damage)) {
-        // The buffer is already consumed, so this one frame is lost; the
-        // OpenGL path picks up again from the guest's next update.
+        m_listener->restoreDmaBufScanout(std::move(buf));
+        m_dmaBufPending = true;
         disableSubSurface("compositor rejected the guest's buffer format");
-        m_listener->ackPendingFrame();
         return false;
     }
 
@@ -664,7 +663,10 @@ bool QemuDisplayWidget::ensureDmaBufImported()
 {
     if (m_dmaBufPending) {
         m_dmaBufPending = false;
-        importDmaBuf();
+        if (!importDmaBuf()) {
+            m_usingDmaBuf = false;
+            m_textureReady = false;
+        }
     }
     return m_usingDmaBuf && m_eglImage != EGL_NO_IMAGE_KHR;
 }
@@ -719,7 +721,7 @@ void QemuDisplayWidget::presentDmaBufFrame()
         return;
 
     makeCurrent();
-    if (ensureDmaBufImported())
+    if (m_eglAvailable && ensureDmaBufImported())
         blitImportToPresent();
     glFlush(); // submit the copy before QEMU may write into the buffer again
     doneCurrent();
@@ -791,11 +793,8 @@ void QemuDisplayWidget::paintGL()
         return;
     }
 
-    if (m_dmaBufPending && m_eglAvailable) {
-        m_dmaBufPending = false;
-        if (importDmaBuf())
-            blitImportToPresent();
-    }
+    if (m_dmaBufPending && m_eglAvailable && ensureDmaBufImported())
+        blitImportToPresent();
 
     if (!m_usingDmaBuf) {
         uploadSoftwareFrame();
@@ -1092,11 +1091,7 @@ void QemuDisplayWidget::onDmaBufScanout(int w, int h)
     // needs no EGL import of our own.
     if (!m_usingDmaBuf)
         m_texAllocSize = QSize();
-    if (m_eglAvailable || subSurfacePossible()) {
-        m_dmaBufPending = true;
-    } else {
-        qCDebug(KEMU_DBUSDISPLAY) << "DMA-BUF scanout received but EGL is not available";
-    }
+    m_dmaBufPending = true;
     scheduleRepaint();
     if (m_fbSize != QSize(w, h)) {
         m_fbSize = QSize(w, h);

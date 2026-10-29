@@ -353,8 +353,16 @@ private Q_SLOTS:
         QCOMPARE(scanout.width, 4u);
         QVERIFY(scanout.fds[0].isValid());
         QVERIFY(!peer.listener.isDmaBuf());
+        const int savedFd = scanout.fds[0].get();
+        peer.listener.restoreDmaBufScanout(std::move(scanout));
+        QVERIFY(peer.listener.isDmaBuf());
+
+        DmaBufScanout retry;
+        QVERIFY(peer.listener.takeDmaBufScanout(retry));
+        QCOMPARE(retry.planeFd(0), savedFd);
+        QVERIFY(!peer.listener.isDmaBuf());
         QVERIFY(peer.call(kListenerIface, "Disable").ok);
-        QVERIFY(scanout.fds[0].isValid());
+        QVERIFY(retry.fds[0].isValid());
     }
 
     void rejectsShortMappedFile()

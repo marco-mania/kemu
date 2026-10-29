@@ -206,6 +206,12 @@ bool QemuDisplayListener::takeDmaBufScanout(DmaBufScanout &out)
     return true;
 }
 
+void QemuDisplayListener::restoreDmaBufScanout(DmaBufScanout &&buf)
+{
+    Q_ASSERT(!isDmaBuf());
+    m_dmaBuf = std::move(buf);
+}
+
 // =============================================================================
 // Socketpair + connection (identical to before)
 // =============================================================================
