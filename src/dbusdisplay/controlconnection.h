@@ -15,6 +15,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <QVector>
 
 #include <functional>
 
@@ -29,6 +30,8 @@ using namespace Qt::StringLiterals;
 // Runs on its own GMainContext, dispatched by GLibEventBridge on the GUI
 // thread. All callbacks fire on the GUI thread.
 // =============================================================================
+
+class QemuControlDispatch;
 
 class QemuControlConnection : public QObject
 {
@@ -58,8 +61,8 @@ public:
     using ReplyFn = std::function<void(GVariant *reply, const GError *error)>;
     void callWithReply(const QString &path, const QString &iface, const QString &method, GVariant *params, ReplyFn fn);
 
-    // Method call passing one fd (index 0 in the fd list). Does not close
-    // fd. The callback is invoked from the Qt event loop (decoupled from
+    // Method call passing one fd (index 0 in the fd list). Takes ownership
+    // of fd. The callback is invoked from the Qt event loop (decoupled from
     // the bridge dispatch), with the error message empty on success.
     //
     // NEVER wait synchronously on this connection: QEMU issues synchronous
@@ -86,6 +89,8 @@ private:
     static void onClosed(GDBusConnection *conn, gboolean remotePeerVanished, GError *error, gpointer userData);
 
     GDBusConnection *m_conn = nullptr;
+    QemuControlDispatch *m_dispatch = nullptr;
     GMainContext *m_context = nullptr;
-    GLibEventBridge *m_bridge = nullptr;
+    QVector<guint> m_signalIds;
+    QVector<guint> m_objectIds;
 };

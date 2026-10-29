@@ -50,3 +50,14 @@ ecm_qt_declare_logging_category(dbusdisplaytest
                                 HEADER "kemu_dbusdisplay_debug.h"
                                 IDENTIFIER "KEMU_DBUSDISPLAY"
                                 CATEGORY_NAME "org.kde.kemu.dbusdisplay")
+
+ecm_add_test(controlconnectiontest.cpp
+             ${CMAKE_SOURCE_DIR}/src/dbusdisplay/controlconnection.cpp
+             ${CMAKE_SOURCE_DIR}/src/dbusdisplay/glibeventbridge.cpp
+             TEST_NAME controlconnectiontest
+             LINK_LIBRARIES Qt6::Core Qt6::Test PkgConfig::GIO)
+target_include_directories(controlconnectiontest PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR})
+ecm_qt_declare_logging_category(controlconnectiontest
+                                HEADER "kemu_dbusdisplay_debug.h"
+                                IDENTIFIER "KEMU_DBUSDISPLAY"
+                                CATEGORY_NAME "org.kde.kemu.dbusdisplay")

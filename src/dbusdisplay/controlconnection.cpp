@@ -11,11 +11,69 @@
 #include <gio/gunixfdlist.h>
 #pragma pop_macro("signals")
 #include <unistd.h>
+#include <utility>
 
 #include "kemu_dbusdisplay_debug.h"
 
+class QemuControlDispatch : public QObject
+{
+public:
+    QemuControlDispatch()
+        : m_context(g_main_context_new())
+        , m_bridge(new GLibEventBridge(m_context, this))
+        , m_cancellable(g_cancellable_new())
+    {
+    }
+
+    ~QemuControlDispatch() override
+    {
+        delete m_bridge;
+        g_object_unref(m_cancellable);
+        g_main_context_unref(m_context);
+    }
+
+    GMainContext *context() const
+    {
+        return m_context;
+    }
+
+    GCancellable *cancellable() const
+    {
+        return m_cancellable;
+    }
+
+    void begin()
+    {
+        ++m_pending;
+    }
+
+    void finish()
+    {
+        --m_pending;
+        if (m_shuttingDown && !m_pending)
+            deleteLater();
+    }
+
+    void shutdown()
+    {
+        m_shuttingDown = true;
+        g_cancellable_cancel(m_cancellable);
+        if (!m_pending)
+            deleteLater();
+    }
+
+private:
+    GMainContext *m_context;
+    GLibEventBridge *m_bridge;
+    GCancellable *m_cancellable;
+    int m_pending = 0;
+    bool m_shuttingDown = false;
+};
+
 QemuControlConnection::QemuControlConnection(QObject *parent)
     : QObject(parent)
+    , m_dispatch(new QemuControlDispatch)
+    , m_context(m_dispatch->context())
 {
 }
 
@@ -34,26 +92,24 @@ void QemuControlConnection::createAsync(int fd, QObject *parent, int timeoutMs, 
     g_object_unref(gsock);
 
     auto *self = new QemuControlConnection(parent);
-    self->m_context = g_main_context_new();
-    // Bridge first, so the async completion below gets dispatched.
-    self->m_bridge = new GLibEventBridge(self->m_context, self);
+    auto *dispatch = self->m_dispatch;
 
     struct Ctx {
-        QemuControlConnection *self;
+        QPointer<QemuControlConnection> self;
+        QemuControlDispatch *dispatch;
         CreateFn done;
         GCancellable *cancellable;
+        QTimer *timer;
     };
-    auto *ctx = new Ctx{self, std::move(done), g_cancellable_new()};
-
-    // Bound the handshake. The timer holds its own reference: on success the
-    // completion callback drops its ref long before the timer fires.
-    g_object_ref(ctx->cancellable);
-    QTimer::singleShot(timeoutMs, self, [cancellable = ctx->cancellable]() {
+    auto *ctx = new Ctx{self, dispatch, std::move(done), G_CANCELLABLE(g_object_ref(dispatch->cancellable())), new QTimer(dispatch)};
+    ctx->timer->setSingleShot(true);
+    QObject::connect(ctx->timer, &QTimer::timeout, dispatch, [cancellable = ctx->cancellable]() {
         g_cancellable_cancel(cancellable);
-        g_object_unref(cancellable);
     });
+    ctx->timer->start(timeoutMs);
 
-    g_main_context_push_thread_default(self->m_context);
+    dispatch->begin();
+    g_main_context_push_thread_default(dispatch->context());
     g_dbus_connection_new(
         G_IO_STREAM(sockConn),
         nullptr,
@@ -68,43 +124,64 @@ void QemuControlConnection::createAsync(int fd, QObject *parent, int timeoutMs, 
             if (!conn) {
                 msg = QString::fromUtf8(err->message);
                 g_error_free(err);
-            } else {
+            } else if (ctx->self) {
                 ctx->self->m_conn = conn;
                 g_dbus_connection_set_exit_on_close(conn, FALSE);
-                g_signal_connect(conn, "closed", G_CALLBACK(QemuControlConnection::onClosed), ctx->self);
+                g_signal_connect(conn, "closed", G_CALLBACK(QemuControlConnection::onClosed), ctx->self.data());
+            } else {
+                g_dbus_connection_close(conn, nullptr, nullptr, nullptr);
+                g_object_unref(conn);
             }
+            ctx->timer->stop();
+            delete ctx->timer;
             g_object_unref(ctx->cancellable);
 
-            // Leave the bridge's dispatch stack before running the
-            // continuation: it may build windows, run sync calls, or show
-            // dialogs with nested event loops.
             const bool ok = (conn != nullptr);
-            QTimer::singleShot(0, ctx->self, [ctx, ok, msg]() {
-                if (ok) {
-                    ctx->done(ctx->self, QString());
-                } else {
-                    ctx->done(nullptr, msg);
-                    ctx->self->deleteLater();
+            QTimer::singleShot(0, ctx->dispatch, [ctx, ok, msg]() {
+                if (ctx->self) {
+                    if (ok) {
+                        ctx->done(ctx->self.data(), QString());
+                    } else {
+                        ctx->done(nullptr, msg);
+                        if (ctx->self)
+                            ctx->self->deleteLater();
+                    }
                 }
+                auto *dispatch = ctx->dispatch;
                 delete ctx;
+                dispatch->finish();
             });
         },
         ctx);
-    g_main_context_pop_thread_default(self->m_context);
+    g_main_context_pop_thread_default(dispatch->context());
     g_object_unref(sockConn);
 }
 
 QemuControlConnection::~QemuControlConnection()
 {
-    if (m_bridge)
-        m_bridge->stop();
     if (m_conn) {
         g_signal_handlers_disconnect_by_data(m_conn, this);
-        g_dbus_connection_close_sync(m_conn, nullptr, nullptr);
+        for (guint id : std::as_const(m_signalIds))
+            g_dbus_connection_signal_unsubscribe(m_conn, id);
+        for (guint id : std::as_const(m_objectIds))
+            g_dbus_connection_unregister_object(m_conn, id);
+
+        m_dispatch->begin();
+        g_main_context_push_thread_default(m_context);
+        g_dbus_connection_close(m_conn,
+                                nullptr,
+                                [](GObject *source, GAsyncResult *res, gpointer userData) {
+                                    auto *dispatch = static_cast<QemuControlDispatch *>(userData);
+                                    GError *error = nullptr;
+                                    g_dbus_connection_close_finish(G_DBUS_CONNECTION(source), res, &error);
+                                    g_clear_error(&error);
+                                    dispatch->finish();
+                                },
+                                m_dispatch);
+        g_main_context_pop_thread_default(m_context);
         g_object_unref(m_conn);
     }
-    if (m_context)
-        g_main_context_unref(m_context);
+    m_dispatch->shutdown();
 }
 
 void QemuControlConnection::onClosed(GDBusConnection *, gboolean, GError *, gpointer userData)
@@ -129,7 +206,7 @@ void QemuControlConnection::callAsync(const QString &path, const QLatin1StringVi
                            nullptr,
                            G_DBUS_CALL_FLAGS_NONE,
                            -1,
-                           nullptr,
+                           m_dispatch->cancellable(),
                            nullptr,
                            nullptr);
 }
@@ -138,10 +215,12 @@ void QemuControlConnection::callWithReply(const QString &path, const QString &if
 {
     struct Ctx {
         ReplyFn fn;
+        QPointer<QemuControlConnection> self;
+        QemuControlDispatch *dispatch;
     };
-    auto *ctx = new Ctx{std::move(fn)};
+    auto *ctx = new Ctx{std::move(fn), this, m_dispatch};
 
-    // Route the reply into our bridged context so it fires on the GUI thread.
+    m_dispatch->begin();
     g_main_context_push_thread_default(m_context);
     g_dbus_connection_call(
         m_conn,
@@ -153,17 +232,20 @@ void QemuControlConnection::callWithReply(const QString &path, const QString &if
         nullptr,
         G_DBUS_CALL_FLAGS_NONE,
         -1,
-        nullptr,
+        m_dispatch->cancellable(),
         [](GObject *source, GAsyncResult *res, gpointer userData) {
             auto *ctx = static_cast<Ctx *>(userData);
             GError *error = nullptr;
             GVariant *reply = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), res, &error);
-            ctx->fn(reply, error);
+            if (ctx->self)
+                ctx->fn(reply, error);
             if (reply)
                 g_variant_unref(reply);
             if (error)
                 g_error_free(error);
+            auto *dispatch = ctx->dispatch;
             delete ctx;
+            dispatch->finish();
         },
         ctx);
     g_main_context_pop_thread_default(m_context);
@@ -173,7 +255,9 @@ void QemuControlConnection::callWithFd(const QString &path, const QString &iface
 {
     GError *error = nullptr;
     GUnixFDList *fdList = g_unix_fd_list_new();
-    if (g_unix_fd_list_append(fdList, fd, &error) < 0) {
+    const int index = g_unix_fd_list_append(fdList, fd, &error);
+    close(fd);
+    if (index < 0) {
         const QString msg = QString::fromUtf8(error->message);
         g_error_free(error);
         g_object_unref(fdList);
@@ -184,9 +268,11 @@ void QemuControlConnection::callWithFd(const QString &path, const QString &iface
     struct Ctx {
         FdCallFn fn;
         QPointer<QemuControlConnection> self;
+        QemuControlDispatch *dispatch;
     };
-    auto *ctx = new Ctx{std::move(fn), this};
+    auto *ctx = new Ctx{std::move(fn), this, m_dispatch};
 
+    m_dispatch->begin();
     g_main_context_push_thread_default(m_context);
     g_dbus_connection_call_with_unix_fd_list(
         m_conn,
@@ -199,7 +285,7 @@ void QemuControlConnection::callWithFd(const QString &path, const QString &iface
         G_DBUS_CALL_FLAGS_NONE,
         5000,
         fdList,
-        nullptr,
+        m_dispatch->cancellable(),
         [](GObject *source, GAsyncResult *res, gpointer userData) {
             auto *ctx = static_cast<Ctx *>(userData);
             GError *err = nullptr;
@@ -212,11 +298,12 @@ void QemuControlConnection::callWithFd(const QString &path, const QString &iface
                 msg = QString::fromUtf8(err->message);
                 g_error_free(err);
             }
-            // Leave the bridge's dispatch stack before running continuations.
-            QObject *guard = ctx->self ? static_cast<QObject *>(ctx->self.data()) : QCoreApplication::instance();
-            QTimer::singleShot(0, guard, [ctx, ok, msg]() {
-                ctx->fn(ok, msg);
+            QTimer::singleShot(0, ctx->dispatch, [ctx, ok, msg]() {
+                if (ctx->self)
+                    ctx->fn(ok, msg);
+                auto *dispatch = ctx->dispatch;
                 delete ctx;
+                dispatch->finish();
             });
         },
         ctx);
@@ -228,8 +315,9 @@ guint QemuControlConnection::subscribeSignal(const QString &path, const QString 
 {
     struct Ctx {
         SignalFn fn;
+        QPointer<QemuControlConnection> self;
     };
-    auto *ctx = new Ctx{std::move(fn)};
+    auto *ctx = new Ctx{std::move(fn), this};
 
     g_main_context_push_thread_default(m_context);
     const guint id = g_dbus_connection_signal_subscribe(
@@ -241,20 +329,26 @@ guint QemuControlConnection::subscribeSignal(const QString &path, const QString 
         nullptr,
         G_DBUS_SIGNAL_FLAGS_NONE,
         [](GDBusConnection *, const gchar *, const gchar *, const gchar *, const gchar *, GVariant *parameters, gpointer userData) {
-            static_cast<Ctx *>(userData)->fn(parameters);
+            auto *ctx = static_cast<Ctx *>(userData);
+            if (ctx->self)
+                ctx->fn(parameters);
         },
         ctx,
         [](gpointer userData) {
             delete static_cast<Ctx *>(userData);
         });
     g_main_context_pop_thread_default(m_context);
+    if (id)
+        m_signalIds.append(id);
     return id;
 }
 
 void QemuControlConnection::unsubscribeSignal(guint id)
 {
-    if (id && m_conn)
+    if (id && m_conn) {
+        m_signalIds.removeAll(id);
         g_dbus_connection_signal_unsubscribe(m_conn, id);
+    }
 }
 
 guint QemuControlConnection::registerObject(const QString &path,
@@ -280,12 +374,16 @@ guint QemuControlConnection::registerObject(const QString &path,
         if (errorMsg)
             *errorMsg = QString::fromUtf8(error->message);
         g_error_free(error);
+    } else {
+        m_objectIds.append(id);
     }
     return id;
 }
 
 void QemuControlConnection::unregisterObject(guint id)
 {
-    if (id && m_conn)
+    if (id && m_conn) {
+        m_objectIds.removeAll(id);
         g_dbus_connection_unregister_object(m_conn, id);
+    }
 }

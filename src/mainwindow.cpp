@@ -598,8 +598,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                      KemuDbusDisplayConst::ConsoleIface,
                      u"RegisterListener"_s,
                      listenerFd,
-                     [this, vmName, ctrl, displayListener, consolePath, listenerFd](bool ok, const QString &err) {
-                         ::close(listenerFd); // QEMU received its own duplicate via the fd list
+                     [this, vmName, ctrl, displayListener, consolePath](bool ok, const QString &err) {
 
                          // The reply went through the event loop; re-validate the world.
                          const bool vmAlive = m_runtimeManager->hasLiveQemu(vmName) && !m_runtimeManager->hasViewer(vmName);
@@ -813,8 +812,7 @@ void MainWindow::registerAudioListeners(const QString &vmName)
                          KemuDbusDisplayConst::AudioIface,
                          u"RegisterOutListener"_s,
                          outFd,
-                         [this, vmName, outFd](bool ok, const QString &err) {
-                             ::close(outFd);
+                         [this, vmName](bool ok, const QString &err) {
                              auto *rt = m_runtimeManager->runtime(vmName);
                              if (!rt || !rt->viewer)
                                  return;
@@ -833,8 +831,7 @@ void MainWindow::registerAudioListeners(const QString &vmName)
                          KemuDbusDisplayConst::AudioIface,
                          u"RegisterInListener"_s,
                          inFd,
-                         [this, vmName, inFd](bool ok, const QString &err) {
-                             ::close(inFd);
+                         [this, vmName](bool ok, const QString &err) {
                              auto *rt = m_runtimeManager->runtime(vmName);
                              if (!rt || !rt->viewer)
                                  return;
