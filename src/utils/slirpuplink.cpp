@@ -23,6 +23,7 @@ extern "C" {
 #include <QtEndian>
 
 #include <atomic>
+#include <cerrno>
 #include <cstdint>
 #include <fcntl.h>
 #include <functional>
@@ -193,7 +194,12 @@ private:
         if (m_wakePipe[1] < 0)
             return;
         const char byte = 0;
-        Q_UNUSED(write(m_wakePipe[1], &byte, 1)); // EAGAIN when full is fine
+        ssize_t written;
+        do {
+            written = write(m_wakePipe[1], &byte, 1);
+        } while (written < 0 && errno == EINTR);
+        if (written < 0 && errno != EAGAIN)
+            qCWarning(KEMU) << "SlirpUplink: wake pipe write failed:" << errno;
     }
 
     void closeWakePipe()
