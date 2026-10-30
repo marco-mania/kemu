@@ -15,12 +15,13 @@
 #include <QHBoxLayout>
 #include <QPointer>
 #include <QSignalBlocker>
+#include <QSizePolicy>
 #include <QStandardItemModel>
 #include <QToolButton>
 #include <QVBoxLayout>
 
-#include <KColorScheme>
 #include <KLocalizedString>
+#include <KMessageWidget>
 
 #include "const.h"
 #include "dialogs/cloudconfigdialog.h"
@@ -106,13 +107,17 @@ void NewVmDialog::buildUi()
     nameEdit->setClearButtonEnabled(true);
     nameLayout->addRow(i18n("Name:"), nameEdit);
 
-    const KColorScheme scheme(QPalette::Active, KColorScheme::View);
-    warningLabel = new QLabel();
-    warningLabel->setStyleSheet(u"color: %1; font-size: 11px;"_s.arg(scheme.foreground(KColorScheme::NegativeText).color().name()));
-    warningLabel->setWordWrap(true);
-    // Grow to a second line for long messages instead of clipping them.
-    warningLabel->setMinimumHeight(warningLabel->fontMetrics().height() + 2);
-    nameLayout->addRow({}, warningLabel);
+    errorMessage = new KMessageWidget(this);
+    errorMessage->setMessageType(KMessageWidget::Error);
+    errorMessage->setCloseButtonVisible(false);
+    errorMessage->setWordWrap(true);
+    errorMessage->setFocusPolicy(Qt::NoFocus);
+    auto messagePolicy = errorMessage->sizePolicy();
+    messagePolicy.setHorizontalPolicy(QSizePolicy::Ignored);
+    errorMessage->setSizePolicy(messagePolicy);
+    errorMessage->setMinimumWidth(0);
+    errorMessage->hide();
+    nameLayout->addRow({}, errorMessage);
 
     topLayout->addLayout(nameLayout, 1);
     topLayout->addSpacing(12);
@@ -313,6 +318,7 @@ void NewVmDialog::buildUi()
     cloudRadio->setChecked(true);
     updateDeployInfo();
     validateForm();
+    nameEdit->setFocus(Qt::OtherFocusReason);
 }
 
 // --- Setters ---
@@ -605,7 +611,16 @@ void NewVmDialog::validateForm()
         valid = false;
     }
 
-    warningLabel->setText(error);
+    if (error.isEmpty()) {
+        if (!errorMessage->isHidden())
+            errorMessage->animatedHide();
+    } else {
+        if (errorMessage->text() != error)
+            errorMessage->setText(error);
+        if (errorMessage->isHidden() || errorMessage->isHideAnimationRunning())
+            errorMessage->animatedShow();
+    }
+
     buttonBox->button(QDialogButtonBox::Ok)->setEnabled(valid);
     customiseButton->setEnabled(valid);
 }

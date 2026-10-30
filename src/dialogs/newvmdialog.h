@@ -23,6 +23,7 @@
 
 class QCheckBox;
 class QToolButton;
+class KMessageWidget;
 
 #include "utils/cloudimagedeployer.h"
 #include "utils/imagedatabase.h"
@@ -116,7 +117,7 @@ private:
     VmIconSelector *iconSelector = nullptr;
 
     QLineEdit *nameEdit = nullptr;
-    QLabel *warningLabel = nullptr;
+    KMessageWidget *errorMessage = nullptr;
     QComboBox *osCombo = nullptr;
 
     QRadioButton *cloudRadio = nullptr;
