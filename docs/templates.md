@@ -1,39 +1,41 @@
 # OS and cloud-init templates
 
-OS templates describe the operating systems offered for new VMs: hardware
-defaults, releases and their cloud images. Cloud-init templates (`.yaml.tpl`)
-produce the user data and network configuration of an automated deployment.
+OS templates define the operating systems available when creating a VM,
+including hardware defaults, releases and cloud images. Cloud-init templates
+(`.yaml.tpl`) generate the user data and network configuration for automated
+deployments.
 
 ## Managing templates
 
-Under *Settings → Templates* templates can be created, duplicated, customized,
-reset, hidden and shared. Changes take effect immediately.
+Under *Settings → Templates*, you can create, duplicate, customise, reset,
+hide and share templates. Changes take effect immediately.
 
-- **Sharing:** *Export* writes a package (`.kemu-template.tar.gz`) with
-  `template.json` and the cloud-init templates it uses; *Import* reads packages
-  and plain `.json` files. Packages also open from the file manager.
-- **Cloud-init templates:** The *Cloud-Init Templates* tab lists the available
-  placeholders and shows a preview rendered from the deployment defaults.
-  Templates named `network-*` provide the network configuration, all others
-  the user data. The new VM dialog can choose a user-data template other than
-  the one of the OS template.
+- **Sharing:** *Export* creates a `.kemu-template.tar.gz` package containing
+  `template.json` and the cloud-init templates it uses. *Import* accepts
+  packages and plain `.json` files. Packages can also be opened from the file
+  manager.
+- **Cloud-init templates:** The *Cloud-Init Templates* tab lists available
+  placeholders and previews the rendered output using deployment defaults.
+  Templates named `network-*` provide network configuration; all others
+  provide user data. The new VM dialog also lets you choose a different
+  user-data template from the one defined by the OS template.
 
 ## Where templates come from
 
-`data/templates.json` holds the global QEMU defaults, `data/templates.d/` one
-JSON file per shipped template. Downloaded templates
-(`~/.local/share/kemu/ghns/`, one package per subdirectory) come on top of the
-shipped ones, and the user's own templates in
-`~/.local/share/kemu/data/templates.d/` on top of both:
+`data/templates.json` defines global QEMU defaults, while
+`data/templates.d/` contains one JSON file per bundled template. Downloaded
+templates are stored under `~/.local/share/kemu/ghns/`, with one package per
+subdirectory. User templates in `~/.local/share/kemu/data/templates.d/` take
+precedence over both downloaded and bundled templates:
 
-- A file replaces the shipped file of the same name; an empty file (or a
+- A file overrides a bundled file with the same name. An empty file (or a
   symlink to `/dev/null`) hides it.
 - A template with an existing `id` replaces that template completely.
-- `sort_order` sets the position within the OS group (shipped: 100–199,
-  default: 500, "Other": 1000).
-- `cloud_init_template` and `network_template` name a `.yaml.tpl` file, looked
-  up in the user's `cloud-init-templates/` first, then among the downloaded
-  ones (including packages), then among the shipped ones.
+- `sort_order` determines the position within an OS group (bundled:
+  100–199; default: 500; "Other": 1000).
+- `cloud_init_template` and `network_template` reference `.yaml.tpl` files.
+  KEMU searches the user's `cloud-init-templates/` directory first, followed
+  by downloaded templates (including packages), then bundled templates.
 - Templates listed in `~/.local/share/kemu/data/hidden-templates.json` are not
   offered for new VMs.
 
@@ -65,5 +67,5 @@ Minimal example (`mydistro.json`):
 ```
 
 Valid `os_family` values are `linux`, `windows`, `bsd`, `dos` and `other`.
-Templates are read at startup; malformed files are skipped with a warning in
-the debug log.
+Templates are loaded at startup. Malformed files are skipped and a warning
+is written to the debug log.

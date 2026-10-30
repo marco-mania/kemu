@@ -5,9 +5,9 @@
 | **Linux/BSD** | 9p (VirtFS) | built in    | Kernel support          |
 | **Windows**   | virtio-fs   | `virtiofsd` | VirtIO drivers + WinFsp |
 
-The shared folder is set in the VM settings. Its *Shared Name* is the mount
-tag in the guest. The examples use the tag `exchange` and the mount point
-`/mnt/shared`.
+Configure shared folders in the VM settings. The *Shared Name* is the mount
+tag used by the guest. The examples below use `exchange` as the tag and
+`/mnt/shared` as the mount point.
 
 ## Linux
 
@@ -15,7 +15,7 @@ tag in the guest. The examples use the tag `exchange` and the mount point
 sudo mount -t 9p -o trans=virtio,version=9p2000.L exchange /mnt/shared
 ```
 
-fstab:
+`/etc/fstab`:
 
 ```text
 exchange /mnt/shared 9p trans=virtio,version=9p2000.L,rw,nofail 0 0
@@ -27,18 +27,20 @@ exchange /mnt/shared 9p trans=virtio,version=9p2000.L,rw,nofail 0 0
 sudo mount -t virtfs -o trans=virtio exchange /mnt/shared
 ```
 
-fstab:
+`/etc/fstab`:
 
 ```text
 exchange /mnt/shared virtfs trans=virtio,rw 0 0
 ```
 
-OpenBSD and NetBSD support 9p only partly; check before relying on it.
+OpenBSD and NetBSD provide only partial 9p support; verify compatibility
+before relying on it.
 
 ## Mounting at login
 
-Instead of fstab, an autostart entry can mount the share when the desktop
-starts, e.g. `~/.config/autostart/mount-exchange.desktop`:
+As an alternative to `fstab`, an autostart entry can mount the share when
+the desktop session starts. For example, create
+`~/.config/autostart/mount-exchange.desktop`:
 
 ```ini
 [Desktop Entry]
@@ -47,18 +49,19 @@ Name=Mount exchange
 Exec=sudo mount -t 9p -o trans=virtio,version=9p2000.L exchange /home/myuser/exchange
 ```
 
-This needs a sudo rule that allows the command without a password.
+This requires a sudo rule allowing the mount command to run without a
+password.
 
 ## Windows
 
-KEMU starts `virtiofsd` on the host by itself. In the guest, the order of
-installation matters:
+KEMU starts `virtiofsd` on the host automatically. In the Windows guest,
+install the following components in order:
 
 1. Install [WinFsp](https://winfsp.dev/rel/).
 2. Install the VirtIO guest tools (`virtio-win-gt-x64.msi`).
 3. Reboot.
 
-If the drive does not appear, check the service in PowerShell:
+If the drive does not appear, check the service from PowerShell:
 
 ```powershell
 Get-Service VirtioFsSvc                    # running?

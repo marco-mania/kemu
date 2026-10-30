@@ -1,12 +1,12 @@
 # Automated tests
 
-KEMU uses QtTest and CTest for its automated regression tests. The test sources
-are in `autotests/`; tests run from the build tree without installing KEMU or
-starting a virtual machine.
+KEMU uses QtTest and CTest for automated regression testing. Test sources
+live in `autotests/`, and the tests run from the build tree without installing
+KEMU or starting a VM.
 
 ## Build and run
 
-Configure a development build with tests enabled, then run the complete suite:
+Configure a development build with tests enabled, then run the full suite:
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
@@ -14,16 +14,16 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-List registered tests or run an individual suite:
+List the available tests or run a specific suite:
 
 ```sh
 ctest --test-dir build -N
 ctest --test-dir build -R '^dbusdisplaytest$' --output-on-failure
 ```
 
-Use `ctest --test-dir build -V` for verbose output. Building just the D-Bus
-viewer test is also possible with `cmake --build build --target dbusdisplaytest`.
-The build requires the normal KEMU development dependencies plus Qt6 Test.
+Use `ctest --test-dir build -V` for verbose output. To build only the D-Bus
+viewer test, run `cmake --build build --target dbusdisplaytest`.
+The normal KEMU development dependencies and Qt6 Test are required.
 
 ## Test suites
 
@@ -37,29 +37,40 @@ The build requires the normal KEMU development dependencies plus Qt6 Test.
 | `diskencryptiontest` | Secret file descriptors, command-line options, password errors and secret erasure |
 | `tpmstatetest` | Encrypted TPM-state detection, key descriptors and rekeying |
 | `dbusdisplaytest` | D-Bus display protocol, framebuffer updates, DMA-BUF descriptors, cursor, audio buffers and acknowledgements |
+| `controlconnectiontest` | Asynchronous D-Bus control-connection teardown, pending calls and file-descriptor ownership |
 
 ### D-Bus viewer tests
 
-`dbusdisplaytest` uses a local peer-to-peer GDBus connection to exercise the
-`QemuDisplayListener` methods without launching QEMU. Its 13 test cases cover
-software and mapped scanouts, stride and buffer validation, clipped updates,
-short backing files, dirty regions, `Disable`, cursor and mouse events,
-DMA-BUF geometry and FD ownership, deferred update replies, audio jitter
-prebuffering and PCM ring-buffer wraparound.
+`dbusdisplaytest` uses a local peer-to-peer GDBus connection to exercise
+`QemuDisplayListener` without launching QEMU. Its 13 test cases cover software
+and mapped scanouts, stride and buffer validation, clipped updates, short
+backing files, dirty regions, `Disable`, cursor and mouse events, DMA-BUF
+geometry and FD ownership, deferred update replies, audio jitter prebuffering
+and PCM ring-buffer wraparound.
 
-These are protocol and buffer regression tests, **not** end-to-end graphics
-tests. EGL/DMA-BUF rendering, Wayland subsurfaces, pointer capture and real
-QEMU reconnect behaviour still require manual or integration testing on a
-suitable desktop session.
+`controlconnectiontest` exercises the asynchronous control-connection lifecycle
+without running QEMU. Its two tests cover destruction during the D-Bus
+handshake and teardown with pending method calls, including FD ownership
+and suppression of callbacks after their owner is destroyed. Run both
+D-Bus suites with:
+
+```sh
+ctest --test-dir build -R '^(dbusdisplaytest|controlconnectiontest)$' --output-on-failure
+```
+
+These tests validate protocol handling and buffers; they are **not**
+end-to-end graphics tests. EGL/DMA-BUF rendering, Wayland subsurfaces, pointer
+capture and reconnecting to a real QEMU instance still require manual or
+integration testing in a suitable desktop session.
 
 ## External tools
 
-Most tests need no running services. A few suites invoke host utilities:
+Most tests require no running services. Some suites also invoke host tools:
 
 - `qemu-img`: real disk-image checks and encrypted image verification; these
   cases are skipped when the tool is missing.
 - `swtpm` and `swtpm_ioctl`: TPM-state rekeying; skipped if unavailable.
 - `tar`: required by `templatepackagetest` for archive fixtures.
 
-Skipped cases are reported by QtTest; a passing CTest suite does not imply
-that every optional integration case ran.
+QtTest reports skipped cases. A passing CTest suite does not necessarily
+mean that every optional integration test was executed.
