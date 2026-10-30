@@ -7,8 +7,14 @@
 #include "settingsdialog.h"
 
 #include <algorithm>
+#include <memory>
 
+#include <QApplication>
+#include <QHostAddress>
+#include <QSizePolicy>
 #include <QTimer>
+
+#include <KMessageWidget>
 
 #include "const.h"
 #include "dialogs/templatessettingspage.h"
@@ -774,13 +780,51 @@ void SettingsDialog::setNetworkManager(VirtualNetworkManager *mgr)
     refreshNetworkTable();
 }
 
-static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString &title, bool isNew)
+class NetworkFormLayout : public QFormLayout
+{
+public:
+    explicit NetworkFormLayout(QWidget *parent)
+        : QFormLayout(parent)
+    {
+    }
+
+    void lockWidth()
+    {
+        m_width = QFormLayout::sizeHint().width();
+        invalidate();
+    }
+
+    QSize sizeHint() const override
+    {
+        QSize hint = QFormLayout::sizeHint();
+        if (m_width > 0)
+            hint.setWidth(m_width);
+        return hint;
+    }
+
+private:
+    int m_width = 0;
+};
+
+static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString &title, bool isNew, const VirtualNetworkManager *manager)
 {
     QDialog dlg(parent);
     dlg.setWindowTitle(title);
 
-    auto *form = new QFormLayout(&dlg);
+    auto *form = new NetworkFormLayout(&dlg);
     form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    form->setSizeConstraint(QLayout::SetFixedSize);
+
+    auto *errorMessage = new KMessageWidget(&dlg);
+    errorMessage->setMessageType(KMessageWidget::Error);
+    errorMessage->setCloseButtonVisible(false);
+    errorMessage->setWordWrap(true);
+    errorMessage->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    errorMessage->setMinimumWidth(0);
+    errorMessage->hide();
+    form->addRow(errorMessage);
+
+    const QList<VirtualNetwork> existingNetworks = manager ? manager->networks() : QList<VirtualNetwork>();
 
     // --- Name ---
     auto *nameEdit = new QLineEdit(net.name);
@@ -789,21 +833,17 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
         nameEdit->setReadOnly(true);
     form->addRow(i18n("Name:"), nameEdit);
 
-    auto *nameHint = new QLabel;
-    nameHint->setWordWrap(true);
-    nameHint->setStyleSheet(u"color: palette(mid);"_s);
-    form->addRow(u""_s, nameHint);
-
     // --- Gateway / Subnet ---
     auto *gatewayEdit = new QLineEdit(net.gateway);
     gatewayEdit->setPlaceholderText(u"192.168.100.1"_s);
     gatewayEdit->setToolTip(i18n("Gateway address of the virtual network."));
-    form->addRow(i18n("Gateway:"), gatewayEdit);
 
     auto *prefixSpin = new QSpinBox;
     prefixSpin->setRange(8, 30);
     prefixSpin->setValue(net.prefixLength);
     prefixSpin->setSuffix(u" (CIDR)"_s);
+
+    form->addRow(i18n("Gateway:"), gatewayEdit);
     form->addRow(i18n("Prefix length:"), prefixSpin);
 
     auto *subnetInfoLabel = new QLabel;
@@ -811,18 +851,13 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     form->addRow(u""_s, subnetInfoLabel);
 
     auto updateSubnetLabel = [subnetInfoLabel, gatewayEdit, prefixSpin]() {
-        const QString gw = gatewayEdit->text().trimmed();
-        if (gw.isEmpty()) {
-            subnetInfoLabel->setText(i18n("Subnet: (enter a gateway address)"));
+        const QHostAddress gateway(gatewayEdit->text().trimmed());
+        if (gateway.protocol() != QAbstractSocket::IPv4Protocol) {
+            subnetInfoLabel->setText(i18n("Subnet: (enter a valid IPv4 gateway)"));
             return;
         }
-        QStringList parts = gw.split(u'.');
-        if (parts.size() != 4) {
-            subnetInfoLabel->setText(i18n("Subnet: (invalid gateway)"));
-            return;
-        }
-        parts[3] = u"0"_s;
-        subnetInfoLabel->setText(i18n("Subnet: %1/%2", parts.join(u'.'), QString::number(prefixSpin->value())));
+        const quint32 mask = 0xffffffffu << (32 - prefixSpin->value());
+        subnetInfoLabel->setText(i18n("Subnet: %1/%2", QHostAddress(gateway.toIPv4Address() & mask).toString(), prefixSpin->value()));
     };
     updateSubnetLabel();
     QObject::connect(gatewayEdit, &QLineEdit::textChanged, &dlg, updateSubnetLabel);
@@ -834,27 +869,31 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     form->addRow(dhcpCheck);
 
     auto *dhcpStartEdit = new QLineEdit(net.dhcpRangeStart);
-    dhcpStartEdit->setPlaceholderText(u"192.168.100.100"_s);
+    dhcpStartEdit->setPlaceholderText(i18n("Automatic"));
     auto *dhcpStartLabel = new QLabel(i18n("DHCP range start:"));
     form->addRow(dhcpStartLabel, dhcpStartEdit);
 
     auto *dhcpEndEdit = new QLineEdit(net.dhcpRangeEnd);
-    dhcpEndEdit->setPlaceholderText(u"192.168.100.200"_s);
+    dhcpEndEdit->setPlaceholderText(i18n("Automatic"));
     auto *dhcpEndLabel = new QLabel(i18n("DHCP range end:"));
     form->addRow(dhcpEndLabel, dhcpEndEdit);
+    dhcpStartEdit->setToolTip(i18n("Leave both DHCP range fields empty to use an automatic range."));
+    dhcpEndEdit->setToolTip(dhcpStartEdit->toolTip());
 
     // --- DNS ---
     auto *dnsCheck = new QCheckBox(i18n("Enable DNS server"));
     dnsCheck->setChecked(net.enableDns);
-    dnsCheck->setToolTip(i18n("Resolves the VMs' hostnames inside this network "
-                              "(\"<hostname>.<DNS domain>\"). Other queries are forwarded "
-                              "to the host resolver only if NAT is enabled. Requires DHCP."));
+    dnsCheck->setToolTip(
+        i18n("Resolves the VMs' hostnames inside this network "
+             "(\"<hostname>.<DNS domain>\"). Other queries are forwarded "
+             "to the host resolver only if NAT is enabled. Requires DHCP."));
     form->addRow(dnsCheck);
 
     auto *domainEdit = new QLineEdit(net.dnsDomain);
     auto *domainLabel = new QLabel(i18n("DNS domain:"));
-    domainEdit->setToolTip(i18n("Domain of the VMs' names and search domain handed to guests. "
-                                "Leave empty for \"<network>.internal\"."));
+    domainEdit->setToolTip(
+        i18n("Domain of the VMs' names and search domain handed to guests. "
+             "Leave empty for \"<network>.internal\"."));
     form->addRow(domainLabel, domainEdit);
     const auto updateDomainPlaceholder = [=]() {
         domainEdit->setPlaceholderText(Utils::vmNameToHostname(nameEdit->text().trimmed()) + u".internal"_s);
@@ -929,46 +968,206 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     form->addRow(buttons);
 
-    // The name becomes a directory and part of the socket paths QEMU gets,
-    // so it is only validated where it can still be changed.
-    const auto updateNameHint = [=]() {
-        QString reason;
-        const bool valid = !isNew || Utils::isValidNetworkName(nameEdit->text().trimmed(), &reason);
-        nameHint->setText(valid ? QString() : reason);
-        nameHint->setVisible(!valid);
-        return valid;
+    struct ValidationFeedback {
+        bool name = false;
+        bool gateway = false;
+        bool dhcp = false;
+        bool domain = false;
+        bool nameEdited = false;
+        bool gatewayEdited = false;
+        bool dhcpEdited = false;
+    };
+    const auto feedback = std::make_shared<ValidationFeedback>();
+
+    const auto updateValidation = [=]() {
+        QString error;
+        QString visibleError;
+        const auto reportError = [&](const QString &reason, bool show) {
+            if (error.isEmpty())
+                error = reason;
+            if (show && visibleError.isEmpty())
+                visibleError = reason;
+        };
+
+        const QString name = nameEdit->text().trimmed();
+        const QHostAddress gateway(gatewayEdit->text().trimmed());
+        const bool validGateway = gateway.protocol() == QAbstractSocket::IPv4Protocol;
+        const quint32 mask = 0xffffffffu << (32 - prefixSpin->value());
+        const quint32 gatewayIp = validGateway ? gateway.toIPv4Address() : 0;
+        const quint32 networkIp = gatewayIp & mask;
+        const quint32 broadcastIp = networkIp | ~mask;
+        const bool usableGateway = validGateway && gatewayIp != networkIp && gatewayIp != broadcastIp;
+
+        QString nameError;
+        if (isNew && !Utils::isValidNetworkName(name, &nameError)) {
+            reportError(nameError, feedback->name);
+        } else if (isNew && std::any_of(existingNetworks.cbegin(), existingNetworks.cend(), [&name](const VirtualNetwork &other) {
+                       return other.name == name;
+                   })) {
+            reportError(i18n("A virtual network named '%1' already exists.", name), feedback->name || feedback->nameEdited);
+        }
+
+        if (!validGateway) {
+            reportError(i18n("Enter a valid IPv4 gateway address."), feedback->gateway);
+        } else if (!usableGateway) {
+            reportError(i18n("The gateway must be a usable host address in its subnet."), feedback->gateway || feedback->gatewayEdited);
+        } else if (std::any_of(existingNetworks.cbegin(), existingNetworks.cend(), [&](const VirtualNetwork &other) {
+                       if (!isNew && other.name == net.name)
+                           return false;
+                       const QHostAddress address(other.gateway);
+                       return address.protocol() == QAbstractSocket::IPv4Protocol && address.toIPv4Address() == gatewayIp;
+                   })) {
+            reportError(i18n("Gateway %1 is already used by another virtual network.", gateway.toString()), feedback->gateway || feedback->gatewayEdited);
+        }
+
+        if (dhcpCheck->isChecked() && usableGateway) {
+            const QString startText = dhcpStartEdit->text().trimmed();
+            const QString endText = dhcpEndEdit->text().trimmed();
+            if (startText.isEmpty() && endText.isEmpty()) {
+                const quint64 autoStart = quint64(networkIp) + 100;
+                const quint32 autoEnd = std::min<quint64>(quint64(networkIp) + 200, quint64(broadcastIp) - 1);
+                if (autoStart > autoEnd) {
+                    reportError(i18n("No automatic DHCP range fits this subnet. Enter a range manually or disable DHCP."), feedback->dhcp);
+                } else if (autoStart <= gatewayIp && gatewayIp <= autoEnd) {
+                    reportError(i18n("The automatic DHCP range includes the gateway. Enter a range manually."), feedback->dhcp);
+                }
+            } else if (startText.isEmpty() || endText.isEmpty()) {
+                reportError(i18n("Enter both DHCP range addresses or leave both empty for an automatic range."), feedback->dhcp);
+            } else {
+                const QHostAddress startAddress(startText);
+                const QHostAddress endAddress(endText);
+                if (startAddress.protocol() != QAbstractSocket::IPv4Protocol || endAddress.protocol() != QAbstractSocket::IPv4Protocol) {
+                    reportError(i18n("Enter valid IPv4 addresses for the DHCP range."), feedback->dhcp);
+                } else {
+                    const quint32 startIp = startAddress.toIPv4Address();
+                    const quint32 endIp = endAddress.toIPv4Address();
+                    if (startIp > endIp) {
+                        reportError(i18n("The DHCP range start must not be after its end."), feedback->dhcp || feedback->dhcpEdited);
+                    } else if (startIp <= networkIp || endIp >= broadcastIp) {
+                        reportError(
+                            i18n("The DHCP range must be inside the gateway's subnet (%1/%2).", QHostAddress(networkIp).toString(), prefixSpin->value()),
+                            feedback->dhcp || feedback->dhcpEdited);
+                    } else if (startIp <= gatewayIp && gatewayIp <= endIp) {
+                        reportError(i18n("The DHCP range must not include the gateway address."), feedback->dhcp || feedback->dhcpEdited);
+                    }
+                }
+            }
+        }
+
+        if (dhcpCheck->isChecked() && dnsCheck->isChecked()) {
+            const QString domain = domainEdit->text().trimmed().toLower();
+            if (!domain.isEmpty() && !Utils::isValidDnsDomain(domain))
+                reportError(i18n("Not a valid DNS domain name."), feedback->domain);
+        }
+
+        buttons->button(QDialogButtonBox::Ok)->setEnabled(error.isEmpty());
+        if (!visibleError.isEmpty()) {
+            if (errorMessage->text() != visibleError) {
+                errorMessage->setText(visibleError);
+                errorMessage->setToolTip(visibleError);
+            }
+            if (!errorMessage->isVisible() || errorMessage->isHideAnimationRunning())
+                errorMessage->animatedShow();
+        } else if (errorMessage->isVisible() && !errorMessage->isHideAnimationRunning()) {
+            errorMessage->animatedHide();
+        }
     };
 
     const auto updateDomainHint = [=]() {
         const QString domain = domainEdit->text().trimmed().toLower();
         const bool dnsOn = dhcpCheck->isChecked() && dnsCheck->isChecked();
         const bool valid = domain.isEmpty() || Utils::isValidDnsDomain(domain);
-        buttons->button(QDialogButtonBox::Ok)->setEnabled((valid || !dnsOn) && updateNameHint());
 
         QString hint;
-        if (!dnsOn || domain.isEmpty()) {
+        if (!dnsOn || domain.isEmpty() || !valid) {
             hint.clear();
-        } else if (!valid) {
-            hint = i18n("Not a valid domain name.");
         } else if (domain == u"local"_s || domain.endsWith(u".local"_s)) {
             hint = i18n("\".local\" is used by multicast DNS; guests will not ask this network's DNS server.");
-        } else {
-            static const QStringList privateSuffixes = {u"internal"_s, u"lan"_s, u"test"_s, u"example"_s, u"invalid"_s, u"home.arpa"_s};
-            const bool isPrivate = std::any_of(privateSuffixes.cbegin(), privateSuffixes.cend(), [&domain](const QString &suffix) {
-                return domain == suffix || domain.endsWith(u'.' + suffix);
-            });
-            if (!isPrivate && natCheck->isChecked())
-                hint = i18n("Names below this domain are answered inside the network and never reach the real DNS.");
         }
         domainHint->setText(hint);
         domainHint->setVisible(!hint.isEmpty());
     };
+    QObject::connect(nameEdit, &QLineEdit::textChanged, &dlg, updateValidation);
+    QObject::connect(gatewayEdit, &QLineEdit::textChanged, &dlg, updateValidation);
+    QObject::connect(prefixSpin, &QSpinBox::valueChanged, &dlg, [=]() {
+        feedback->gateway = true;
+        feedback->dhcp = true;
+        updateValidation();
+    });
+    QObject::connect(dhcpCheck, &QCheckBox::toggled, &dlg, [=]() {
+        feedback->dhcp = true;
+        updateValidation();
+    });
+    QObject::connect(dhcpStartEdit, &QLineEdit::textChanged, &dlg, updateValidation);
+    QObject::connect(dhcpEndEdit, &QLineEdit::textChanged, &dlg, updateValidation);
+    QObject::connect(domainEdit, &QLineEdit::textChanged, &dlg, updateValidation);
+    QObject::connect(dnsCheck, &QCheckBox::toggled, &dlg, [=]() {
+        feedback->domain = true;
+        updateValidation();
+    });
+
+    QObject::connect(nameEdit, &QLineEdit::textEdited, &dlg, [=]() {
+        feedback->nameEdited = true;
+        updateValidation();
+    });
+    QObject::connect(nameEdit, &QLineEdit::editingFinished, &dlg, [=]() {
+        feedback->name = true;
+        updateValidation();
+    });
+    QObject::connect(gatewayEdit, &QLineEdit::textEdited, &dlg, [=]() {
+        feedback->gatewayEdited = true;
+        updateValidation();
+    });
+    QObject::connect(gatewayEdit, &QLineEdit::editingFinished, &dlg, [=]() {
+        feedback->gateway = true;
+        feedback->dhcp = true;
+        updateValidation();
+    });
+    QObject::connect(prefixSpin, &QSpinBox::editingFinished, &dlg, [=]() {
+        feedback->gateway = true;
+        feedback->dhcp = true;
+        updateValidation();
+    });
+    const auto editDhcp = [=]() {
+        feedback->dhcpEdited = true;
+        updateValidation();
+    };
+    QObject::connect(dhcpStartEdit, &QLineEdit::textEdited, &dlg, editDhcp);
+    QObject::connect(dhcpEndEdit, &QLineEdit::textEdited, &dlg, editDhcp);
+    const auto validateDhcp = [=]() {
+        feedback->dhcp = true;
+        updateValidation();
+    };
+    QObject::connect(dhcpStartEdit, &QLineEdit::editingFinished, &dlg, validateDhcp);
+    QObject::connect(dhcpEndEdit, &QLineEdit::editingFinished, &dlg, validateDhcp);
+    QObject::connect(domainEdit, &QLineEdit::editingFinished, &dlg, [=]() {
+        feedback->domain = true;
+        updateValidation();
+    });
+    QObject::connect(qApp, &QApplication::focusChanged, &dlg, [=](QWidget *previous, QWidget *) {
+        if (previous == nameEdit) {
+            feedback->name = true;
+        } else if (previous == gatewayEdit || previous == prefixSpin) {
+            feedback->gateway = true;
+            feedback->dhcp = true;
+        } else if (previous == dhcpStartEdit || previous == dhcpEndEdit) {
+            feedback->dhcp = true;
+        } else if (previous == domainEdit) {
+            feedback->domain = true;
+        } else {
+            return;
+        }
+        updateValidation();
+    });
+    updateValidation();
+
     QObject::connect(nameEdit, &QLineEdit::textChanged, &dlg, updateDomainHint);
     QObject::connect(domainEdit, &QLineEdit::textChanged, &dlg, updateDomainHint);
     QObject::connect(dnsCheck, &QCheckBox::toggled, &dlg, updateDomainHint);
     QObject::connect(dhcpCheck, &QCheckBox::toggled, &dlg, updateDomainHint);
-    QObject::connect(natCheck, &QCheckBox::toggled, &dlg, updateDomainHint);
     updateDomainHint();
+    form->activate();
+    form->lockWidth();
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
 
@@ -1006,7 +1205,7 @@ void SettingsDialog::addNetwork()
         return;
 
     VirtualNetwork net;
-    if (!showNetworkForm(this, net, i18n("New Virtual Network"), true))
+    if (!showNetworkForm(this, net, i18n("New Virtual Network"), true, m_networkManager))
         return;
 
     if (!m_networkManager->addNetwork(net)) {
@@ -1029,7 +1228,7 @@ void SettingsDialog::editNetwork()
     }
 
     VirtualNetwork net = m_networkManager->network(name);
-    if (!showNetworkForm(this, net, i18n("Edit Virtual Network"), false))
+    if (!showNetworkForm(this, net, i18n("Edit Virtual Network"), false, m_networkManager))
         return;
 
     m_networkManager->updateNetwork(net);
