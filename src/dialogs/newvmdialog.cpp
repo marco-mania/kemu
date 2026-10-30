@@ -118,6 +118,14 @@ void NewVmDialog::buildUi()
     errorMessage->setMinimumWidth(0);
     errorMessage->hide();
     nameLayout->addRow({}, errorMessage);
+    connect(errorMessage, &KMessageWidget::hideAnimationFinished, this, [this]() {
+        if (!errorMessage->isHidden())
+            return;
+
+        layout()->invalidate();
+        layout()->activate();
+        update();
+    });
 
     topLayout->addLayout(nameLayout, 1);
     topLayout->addSpacing(12);
