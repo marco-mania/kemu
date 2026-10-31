@@ -61,6 +61,9 @@ public:
     }
 
     void sendCtrlAltDel();
+    void sendCtrlAltNumber(int number);
+    void sendSysRq();
+    void sendAltSysRq();
 
     void setPointerCaptured(bool capture);
     bool isPointerCaptureSupported() const;
@@ -173,6 +176,7 @@ private:
     // Every key press sent to the guest, so it can be released again when
     // the matching release never reaches us.
     void sendKey(uint32_t qnum, bool down);
+    void sendKeyChord(const QList<uint32_t> &evdevKeys);
     void releaseAllKeys();
     QSet<uint32_t> m_pressedKeys;
     QPoint m_wheelAccum;

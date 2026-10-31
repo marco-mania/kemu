@@ -222,6 +222,8 @@ private:
     QAction *m_actPowerOff = nullptr;
     QAction *m_actShutdownHost = nullptr;
     QAction *m_actSendCAD = nullptr;
+    QAction *m_actSendSysRq = nullptr;
+    QAction *m_actSendAltSysRq = nullptr;
     QAction *m_actSnapshots = nullptr;
     QAction *m_actScreenshot = nullptr;
     QAction *m_actQuit = nullptr;

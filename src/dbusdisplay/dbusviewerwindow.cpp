@@ -82,9 +82,15 @@ DbusViewerWindow::DbusViewerWindow(QemuDisplayListener *listener,
 
     m_keyboardShortcutsInhibit = new WaylandKeyboardShortcutsInhibit(this);
     onKeyboardShortcutsInhibitSupportedChanged(m_keyboardShortcutsInhibit->isSupported());
-    connect(m_keyboardShortcutsInhibit, &WaylandKeyboardShortcutsInhibit::supportedChanged, this, &DbusViewerWindow::onKeyboardShortcutsInhibitSupportedChanged);
+    connect(m_keyboardShortcutsInhibit,
+            &WaylandKeyboardShortcutsInhibit::supportedChanged,
+            this,
+            &DbusViewerWindow::onKeyboardShortcutsInhibitSupportedChanged);
     onKeyboardShortcutsInhibitStateChanged();
-    connect(m_keyboardShortcutsInhibit, &WaylandKeyboardShortcutsInhibit::inhibitorActiveChanged, this, &DbusViewerWindow::onKeyboardShortcutsInhibitStateChanged);
+    connect(m_keyboardShortcutsInhibit,
+            &WaylandKeyboardShortcutsInhibit::inhibitorActiveChanged,
+            this,
+            &DbusViewerWindow::onKeyboardShortcutsInhibitStateChanged);
 
     qCDebug(KEMU_DBUSDISPLAY) << "DbusViewerWindow: audioOutConnected=" << m_audioOutConnected << "audioInConnected=" << m_audioInConnected;
 
@@ -157,9 +163,17 @@ void DbusViewerWindow::createActions()
         Q_EMIT shutdownHostWithGuestToggled(armed);
     });
 
-    m_actSendCAD = new QAction(QIcon::fromTheme(u"input-keyboard"_s), i18n("Send Ctrl+Alt+&Del"), this);
+    m_actSendCAD = new QAction(i18n("Send Ctrl+Alt+&Del"), this);
     m_actSendCAD->setStatusTip(i18n("Send the Ctrl+Alt+Del key sequence to the guest"));
     connect(m_actSendCAD, &QAction::triggered, m_display, &QemuDisplayWidget::sendCtrlAltDel);
+
+    m_actSendSysRq = new QAction(i18n("Send SysRq"), this);
+    m_actSendSysRq->setStatusTip(i18n("Send the SysRq key to the guest"));
+    connect(m_actSendSysRq, &QAction::triggered, m_display, &QemuDisplayWidget::sendSysRq);
+
+    m_actSendAltSysRq = new QAction(i18n("Send Alt+SysRq"), this);
+    m_actSendAltSysRq->setStatusTip(i18n("Send the Alt+SysRq key sequence to the guest"));
+    connect(m_actSendAltSysRq, &QAction::triggered, m_display, &QemuDisplayWidget::sendAltSysRq);
 
     m_actSnapshots = new QAction(QIcon::fromTheme(u"camera-photo"_s), i18n("Manage &Snapshots…"), this);
     m_actSnapshots->setStatusTip(i18n("Open the snapshot manager for this VM"));
@@ -327,9 +341,8 @@ void DbusViewerWindow::createMenus()
     machineMenu->addSeparator();
     machineMenu->addAction(m_actShutdownHost);
     machineMenu->addSeparator();
-    machineMenu->addAction(m_actSendCAD);
-    machineMenu->addSeparator();
     machineMenu->addAction(m_actSnapshots);
+    machineMenu->addSeparator();
     machineMenu->addAction(m_actScreenshot);
     machineMenu->addSeparator();
     machineMenu->addAction(m_actQuit);
@@ -361,6 +374,21 @@ void DbusViewerWindow::createMenus()
     QMenu *keyboardMenu = devicesMenu->addMenu(i18n("&Keyboard"));
     keyboardMenu->setToolTipsVisible(true);
     keyboardMenu->addAction(m_actKeyboardShortcutsInhibit);
+    keyboardMenu->addSeparator();
+    keyboardMenu->addAction(m_actSendCAD);
+    keyboardMenu->addSeparator();
+    keyboardMenu->addAction(m_actSendAltSysRq);
+    keyboardMenu->addAction(m_actSendSysRq);
+    keyboardMenu->addSeparator();
+    QMenu *numberMenu = keyboardMenu->addMenu(i18n("Send Ctrl+Alt+&Number"));
+    for (int number = 1; number <= 10; ++number) {
+        const int digit = number % 10;
+        QAction *action = numberMenu->addAction(i18n("Ctrl+Alt+%1", digit));
+        action->setStatusTip(i18n("Send Ctrl+Alt+%1 to the guest", digit));
+        connect(action, &QAction::triggered, m_display, [this, digit] {
+            m_display->sendCtrlAltNumber(digit);
+        });
+    }
 
     devicesMenu->addSeparator();
 
@@ -954,7 +982,8 @@ void DbusViewerWindow::onKeyboardShortcutsInhibitStateChanged()
             m_indKeyboardShortcutsInhibit->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Global keyboard shortcuts inhibition ON"));
         } else {
             m_indKeyboardShortcutsInhibit->setIconNames(u"action-unavailable-symbolic"_s, u"input-keyboard"_s);
-            m_indKeyboardShortcutsInhibit->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Global keyboard shortcuts inhibition temporarily disabled in the compositor"));
+            m_indKeyboardShortcutsInhibit->setStatus(StatusIndicator::Active,
+                                                     i18nc("@info:tooltip", "Global keyboard shortcuts inhibition temporarily disabled in the compositor"));
         }
     }
 }

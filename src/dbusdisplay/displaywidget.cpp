@@ -578,10 +578,26 @@ bool QemuDisplayWidget::importDmaBuf(const DmaBufScanout &buf)
     }
 
     static constexpr EGLint kPlaneAttribs[DmaBufScanout::kMaxPlanes][5] = {
-        {EGL_DMA_BUF_PLANE0_FD_EXT, EGL_DMA_BUF_PLANE0_OFFSET_EXT, EGL_DMA_BUF_PLANE0_PITCH_EXT, EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT},
-        {EGL_DMA_BUF_PLANE1_FD_EXT, EGL_DMA_BUF_PLANE1_OFFSET_EXT, EGL_DMA_BUF_PLANE1_PITCH_EXT, EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT},
-        {EGL_DMA_BUF_PLANE2_FD_EXT, EGL_DMA_BUF_PLANE2_OFFSET_EXT, EGL_DMA_BUF_PLANE2_PITCH_EXT, EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT},
-        {EGL_DMA_BUF_PLANE3_FD_EXT, EGL_DMA_BUF_PLANE3_OFFSET_EXT, EGL_DMA_BUF_PLANE3_PITCH_EXT, EGL_DMA_BUF_PLANE3_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE3_MODIFIER_HI_EXT},
+        {EGL_DMA_BUF_PLANE0_FD_EXT,
+         EGL_DMA_BUF_PLANE0_OFFSET_EXT,
+         EGL_DMA_BUF_PLANE0_PITCH_EXT,
+         EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT,
+         EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT},
+        {EGL_DMA_BUF_PLANE1_FD_EXT,
+         EGL_DMA_BUF_PLANE1_OFFSET_EXT,
+         EGL_DMA_BUF_PLANE1_PITCH_EXT,
+         EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT,
+         EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT},
+        {EGL_DMA_BUF_PLANE2_FD_EXT,
+         EGL_DMA_BUF_PLANE2_OFFSET_EXT,
+         EGL_DMA_BUF_PLANE2_PITCH_EXT,
+         EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT,
+         EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT},
+        {EGL_DMA_BUF_PLANE3_FD_EXT,
+         EGL_DMA_BUF_PLANE3_OFFSET_EXT,
+         EGL_DMA_BUF_PLANE3_PITCH_EXT,
+         EGL_DMA_BUF_PLANE3_MODIFIER_LO_EXT,
+         EGL_DMA_BUF_PLANE3_MODIFIER_HI_EXT},
     };
 
     EGLint attribs[6 + DmaBufScanout::kMaxPlanes * 10 + 1];
@@ -611,8 +627,8 @@ bool QemuDisplayWidget::importDmaBuf(const DmaBufScanout &buf)
 
     if (buf.fourcc != m_importFourcc || buf.modifier != m_importModifier || buf.numPlanes != m_importPlanes) {
         qCDebug(KEMU_DBUSDISPLAY).nospace() << "DMA-BUF layout: fourcc=0x" << Qt::hex << buf.fourcc << " modifier=0x" << buf.modifier << Qt::dec
-                                            << " planes=" << buf.numPlanes << " backing=" << buf.backingWidth << "x" << buf.backingHeight
-                                            << " rect=" << buf.x << "," << buf.y << " " << buf.width << "x" << buf.height;
+                                            << " planes=" << buf.numPlanes << " backing=" << buf.backingWidth << "x" << buf.backingHeight << " rect=" << buf.x
+                                            << "," << buf.y << " " << buf.width << "x" << buf.height;
         m_importFourcc = buf.fourcc;
         m_importModifier = buf.modifier;
         m_importPlanes = buf.numPlanes;
@@ -641,8 +657,8 @@ bool QemuDisplayWidget::importDmaBuf(const DmaBufScanout &buf)
     if (const GLenum err = glGetError(); err != GL_NO_ERROR) {
         // Typically a format/modifier pair the driver supports only as
         // GL_TEXTURE_EXTERNAL_OES.
-        qCWarning(KEMU_DBUSDISPLAY).nospace() << "Binding DMA-BUF image failed: GL error 0x" << Qt::hex << err << " fourcc=0x" << buf.fourcc
-                                              << " modifier=0x" << buf.modifier << Qt::dec;
+        qCWarning(KEMU_DBUSDISPLAY).nospace() << "Binding DMA-BUF image failed: GL error 0x" << Qt::hex << err << " fourcc=0x" << buf.fourcc << " modifier=0x"
+                                              << buf.modifier << Qt::dec;
         destroyEglImage();
         return false;
     }
@@ -1524,17 +1540,39 @@ void QemuDisplayWidget::setDimmed(bool dimmed)
     scheduleRepaint();
 }
 
-void QemuDisplayWidget::sendCtrlAltDel()
+void QemuDisplayWidget::sendKeyChord(const QList<uint32_t> &evdevKeys)
 {
-    if (m_dimmed)
+    if (m_dimmed || !m_ctrl)
         return;
 
-    // Inject Ctrl+Alt+Del directly to the guest; the host normally
-    // intercepts the real key combination.
-    for (uint32_t evdev : {29u /*LCtrl*/, 56u /*LAlt*/, 111u /*Delete*/})
+    for (uint32_t evdev : evdevKeys)
         m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, u"Press"_s, g_variant_new("(u)", evdevToQnum(evdev)));
-    for (uint32_t evdev : {111u /*Delete*/, 56u /*LAlt*/, 29u /*LCtrl*/})
-        m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, u"Release"_s, g_variant_new("(u)", evdevToQnum(evdev)));
+    for (auto it = evdevKeys.crbegin(); it != evdevKeys.crend(); ++it)
+        m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::KeyboardIface, u"Release"_s, g_variant_new("(u)", evdevToQnum(*it)));
+}
+
+void QemuDisplayWidget::sendCtrlAltDel()
+{
+    sendKeyChord({29u, 56u, 111u});
+}
+
+void QemuDisplayWidget::sendCtrlAltNumber(int number)
+{
+    if (number < 0 || number > 9)
+        return;
+
+    const uint32_t digitKey = number == 0 ? 11u : static_cast<uint32_t>(number + 1);
+    sendKeyChord({29u, 56u, digitKey});
+}
+
+void QemuDisplayWidget::sendSysRq()
+{
+    sendKeyChord({99u});
+}
+
+void QemuDisplayWidget::sendAltSysRq()
+{
+    sendKeyChord({56u, 99u});
 }
 
 void QemuDisplayWidget::setPointerCaptured(bool capture)
