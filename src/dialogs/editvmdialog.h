@@ -199,7 +199,7 @@ private:
     QPushButton *addDiskButton = nullptr;
     QPushButton *editDiskButton = nullptr;
     QPushButton *removeDiskButton = nullptr;
-    QLabel *storageWarningLabel = nullptr;
+    KMessageWidget *storageWarningMessage = nullptr;
     QLabel *usbControllerLabel = nullptr;
     QComboBox *usbCombo = nullptr;
     QComboBox *mouseCombo = nullptr;
@@ -239,9 +239,9 @@ private:
     QWidget *userModeGroup = nullptr;
     QWidget *vdeGroup = nullptr;
 
-    QLabel *nameWarningLabel = nullptr;
+    KMessageWidget *nameWarningMessage = nullptr;
     KMessageWidget *macWarningMessage = nullptr;
-    QLabel *hostnameWarningLabel = nullptr;
+    KMessageWidget *hostnameWarningMessage = nullptr;
 
     QLineEdit *uuidEdit = nullptr;
     QPushButton *regenerateUuidButton = nullptr;

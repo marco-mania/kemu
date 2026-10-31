@@ -137,11 +137,8 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         return u"QLabel { color: %1; font-size: 11px; }"_s.arg(scheme.foreground(role).color().name());
     };
 
-    nameWarningLabel = new QLabel();
-    nameWarningLabel->setStyleSheet(infoStyle(KColorScheme::NegativeText));
-    nameWarningLabel->setWordWrap(false);
-    nameWarningLabel->setFixedHeight(nameWarningLabel->fontMetrics().height() + 2);
-    topFormLayout->addRow({}, nameWarningLabel);
+    nameWarningMessage = createInlineMessage(KMessageWidget::Error);
+    topFormLayout->addRow({}, nameWarningMessage);
 
     commentEdit = new QPlainTextEdit();
     commentEdit->setPlaceholderText(i18n("Optional notes about this VM"));
@@ -472,11 +469,8 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     diskButtonsLayout->addStretch();
     extraDisksLayout->addLayout(diskButtonsLayout);
 
-    storageWarningLabel = new QLabel();
-    storageWarningLabel->setStyleSheet(infoStyle(KColorScheme::NegativeText));
-    storageWarningLabel->setWordWrap(true);
-    storageWarningLabel->setVisible(false);
-    extraDisksLayout->addWidget(storageWarningLabel);
+    storageWarningMessage = createInlineMessage(KMessageWidget::Error);
+    extraDisksLayout->addWidget(storageWarningMessage);
 
     hwLayout->addRow(i18n("Additional Disks:"), extraDisksWidget);
     // A VM that does not exist yet has no folder to put further disks into.
@@ -679,11 +673,8 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     hostnameEdit->setToolTip(i18n("DNS hostname of this VM inside the virtual network (\"<hostname>.<DNS domain of the network>\")"));
     vdeLayout->addRow(i18n("Hostname:"), hostnameEdit);
 
-    hostnameWarningLabel = new QLabel();
-    hostnameWarningLabel->setStyleSheet(u"QLabel { color: %1; font-size: 11px; }"_s.arg(scheme.foreground(KColorScheme::NegativeText).color().name()));
-    hostnameWarningLabel->setWordWrap(false);
-    hostnameWarningLabel->setFixedHeight(hostnameWarningLabel->fontMetrics().height() + 2);
-    vdeLayout->addRow({}, hostnameWarningLabel);
+    hostnameWarningMessage = createInlineMessage(KMessageWidget::Error);
+    vdeLayout->addRow({}, hostnameWarningMessage);
 
     netMainLayout->addWidget(vdeGroup);
 
@@ -1803,11 +1794,7 @@ void EditVmDialog::validateForm()
     if (osDistroId.isEmpty() && osText.length() < 2)
         valid = false;
 
-    if (warning.isEmpty()) {
-        nameWarningLabel->clear();
-    } else {
-        nameWarningLabel->setText(warning);
-    }
+    updateInlineMessage(nameWarningMessage, warning, KMessageWidget::Error);
 
     // Shared folder requires a mount tag
     if (valid && !sharedPathEdit->text().trimmed().isEmpty() && sharedNameEdit->text().trimmed().isEmpty()) {
@@ -1877,11 +1864,7 @@ void EditVmDialog::validateForm()
         }
     }
 
-    if (hostnameWarningLabel && !hostnameWarningText.isEmpty()) {
-        hostnameWarningLabel->setText(hostnameWarningText);
-    } else {
-        hostnameWarningLabel->clear();
-    }
+    updateInlineMessage(hostnameWarningMessage, hostnameWarningText, KMessageWidget::Error);
 
     // A duplicate UUID only confuses guest software, so it does not block.
     QString uuidWarningText;
@@ -1904,10 +1887,9 @@ void EditVmDialog::validateForm()
     }
     updateInlineMessage(uuidWarningMessage, uuidWarningText, uuidMessageType);
 
-    if (storageWarningLabel) {
+    if (storageWarningMessage) {
         const QString storageError = storageLayoutError();
-        storageWarningLabel->setText(storageError);
-        storageWarningLabel->setVisible(!storageError.isEmpty());
+        updateInlineMessage(storageWarningMessage, storageError, KMessageWidget::Error);
         if (!storageError.isEmpty())
             valid = false;
     }
