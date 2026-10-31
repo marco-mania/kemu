@@ -117,7 +117,6 @@ void NewVmDialog::buildUi()
     errorMessage->setSizePolicy(messagePolicy);
     errorMessage->setMinimumWidth(0);
     errorMessage->hide();
-    nameLayout->addRow({}, errorMessage);
     connect(errorMessage, &KMessageWidget::hideAnimationFinished, this, [this]() {
         if (!errorMessage->isHidden())
             return;
@@ -134,6 +133,7 @@ void NewVmDialog::buildUi()
     iconSelector->setSelectorSize(64);
     topLayout->addWidget(iconSelector, 0, Qt::AlignTop);
 
+    mainLayout->addWidget(errorMessage);
     mainLayout->addLayout(topLayout);
 
     // --- Operating system ---
@@ -272,12 +272,19 @@ void NewVmDialog::buildUi()
     // --- Connections ---
 
     connect(nameEdit, &QLineEdit::textChanged, this, &NewVmDialog::onNameEdited);
+    connect(nameEdit, &QLineEdit::editingFinished, this, &NewVmDialog::activateValidationFeedback);
     connect(osCombo, &QComboBox::currentIndexChanged, this, &NewVmDialog::onOsChanged);
+    connect(osCombo, &QComboBox::activated, this, &NewVmDialog::activateValidationFeedback);
+    connect(osCombo->lineEdit(), &QLineEdit::editingFinished, this, &NewVmDialog::activateValidationFeedback);
+    connect(cloudImageCombo, &QComboBox::activated, this, &NewVmDialog::activateValidationFeedback);
 
     connect(cloudRadio, &QRadioButton::toggled, this, &NewVmDialog::onSourceChanged);
     connect(isoRadio, &QRadioButton::toggled, this, &NewVmDialog::onSourceChanged);
     connect(blankRadio, &QRadioButton::toggled, this, &NewVmDialog::onSourceChanged);
+    for (auto *radio : {cloudRadio, isoRadio, blankRadio})
+        connect(radio, &QRadioButton::clicked, this, &NewVmDialog::activateValidationFeedback);
     connect(isoRequester, &KUrlRequester::textChanged, this, &NewVmDialog::validateForm);
+    connect(isoRequester->lineEdit(), &QLineEdit::editingFinished, this, &NewVmDialog::activateValidationFeedback);
 
     connect(ramSlider, &QSlider::valueChanged, this, [this](int index) {
         if (index < 0 || index >= m_ramSteps.size())
@@ -315,7 +322,7 @@ void NewVmDialog::buildUi()
     connect(encryptCheck, &QCheckBox::toggled, this, [this](bool on) {
         passwordButton->setEnabled(on);
         passwordStatusLabel->setText(on ? (m_diskPassword.isEmpty() ? i18n("No password set") : i18n("Password set")) : QString());
-        validateForm();
+        activateValidationFeedback();
     });
     connect(passwordButton, &QToolButton::clicked, this, &NewVmDialog::openDiskPasswordDialog);
 
@@ -578,6 +585,12 @@ void NewVmDialog::openCloudConfigDialog()
     updateDeployInfo();
 }
 
+void NewVmDialog::activateValidationFeedback()
+{
+    m_validationFeedbackActive = true;
+    validateForm();
+}
+
 void NewVmDialog::validateForm()
 {
     const QString name = nameEdit->text().trimmed();
@@ -619,7 +632,7 @@ void NewVmDialog::validateForm()
         valid = false;
     }
 
-    if (error.isEmpty()) {
+    if (error.isEmpty() || !m_validationFeedbackActive) {
         if (!errorMessage->isHidden())
             errorMessage->animatedHide();
     } else {

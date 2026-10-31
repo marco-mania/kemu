@@ -94,6 +94,7 @@ private Q_SLOTS:
     void onNameEdited();
     void openCloudConfigDialog();
     void openDiskPasswordDialog();
+    void activateValidationFeedback();
     void validateForm();
 
 private:
@@ -167,6 +168,8 @@ private:
     // Set while detection changes the OS, so onOsChanged() can tell an
     // implicit switch from a deliberate one.
     bool m_detectingOs = false;
+
+    bool m_validationFeedbackActive = false;
 
     QList<CloudImageInfo> m_cloudImages;
 
