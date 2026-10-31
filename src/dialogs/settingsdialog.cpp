@@ -968,6 +968,30 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     form->addRow(buttons);
 
+    const auto applyForm = [&](VirtualNetwork &target) {
+        target.name = nameEdit->text().trimmed();
+        target.gateway = gatewayEdit->text().trimmed();
+        target.prefixLength = prefixSpin->value();
+        target.enableDhcp = dhcpCheck->isChecked();
+        target.enableDns = dnsCheck->isChecked();
+        target.dnsDomain = domainEdit->text().trimmed().toLower();
+        target.dhcpRangeStart = dhcpStartEdit->text().trimmed();
+        target.dhcpRangeEnd = dhcpEndEdit->text().trimmed();
+        target.enableNat = natCheck->isChecked();
+        target.allowHostAccess = target.enableNat && hostAccessCheck->isChecked();
+
+        target.portForwards.clear();
+        // Only parse and save port forwards if NAT and Port Forwarding are enabled
+        if (natCheck->isChecked() && portFwdCheck->isChecked()) {
+            const QString rawForwards = portFwdEdit->text().trimmed();
+            if (!rawForwards.isEmpty()) {
+                const QStringList parts = rawForwards.split(u',', Qt::SkipEmptyParts);
+                for (const QString &p : parts)
+                    target.portForwards << p.trimmed();
+            }
+        }
+    };
+
     struct ValidationFeedback {
         bool name = false;
         bool gateway = false;
@@ -976,6 +1000,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
         bool nameEdited = false;
         bool gatewayEdited = false;
         bool dhcpEdited = false;
+        bool portForwards = false;
     };
     const auto feedback = std::make_shared<ValidationFeedback>();
 
@@ -1067,6 +1092,16 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
                 reportError(i18n("Not a valid DNS domain name."), feedback->domain, domainEdit);
         }
 
+        if (error.isEmpty() && natCheck->isChecked() && portFwdCheck->isChecked() && !portFwdEdit->text().trimmed().isEmpty()) {
+            VirtualNetwork candidate = net;
+            applyForm(candidate);
+            if (!candidate.isValid()) {
+                reportError(i18n("The port forwarding configuration is invalid. Use entries in the form protocol/hostPort:guestIp:guestPort."),
+                            feedback->portForwards,
+                            portFwdEdit);
+            }
+        }
+
         buttons->button(QDialogButtonBox::Ok)->setEnabled(error.isEmpty());
         if (!visibleError.isEmpty()) {
             if (errorMessage->text() != visibleError) {
@@ -1108,6 +1143,13 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     QObject::connect(dhcpStartEdit, &QLineEdit::textChanged, &dlg, updateValidation);
     QObject::connect(dhcpEndEdit, &QLineEdit::textChanged, &dlg, updateValidation);
     QObject::connect(domainEdit, &QLineEdit::textChanged, &dlg, updateValidation);
+    QObject::connect(portFwdEdit, &QLineEdit::textChanged, &dlg, updateValidation);
+    const auto validatePortForwards = [=]() {
+        feedback->portForwards = true;
+        updateValidation();
+    };
+    QObject::connect(natCheck, &QCheckBox::toggled, &dlg, validatePortForwards);
+    QObject::connect(portFwdCheck, &QCheckBox::toggled, &dlg, validatePortForwards);
     QObject::connect(dnsCheck, &QCheckBox::toggled, &dlg, [=]() {
         feedback->domain = true;
         updateValidation();
@@ -1151,6 +1193,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
         feedback->domain = true;
         updateValidation();
     });
+    QObject::connect(portFwdEdit, &QLineEdit::editingFinished, &dlg, validatePortForwards);
     QObject::connect(qApp, &QApplication::focusChanged, &dlg, [=](QWidget *previous, QWidget *) {
         if (previous == nameEdit) {
             feedback->name = true;
@@ -1161,6 +1204,8 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
             feedback->dhcp = true;
         } else if (previous == domainEdit) {
             feedback->domain = true;
+        } else if (previous == portFwdEdit) {
+            feedback->portForwards = true;
         } else {
             return;
         }
@@ -1176,33 +1221,10 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     form->activate();
     form->lockWidth();
 
-    const auto applyForm = [&]() {
-        net.name = nameEdit->text().trimmed();
-        net.gateway = gatewayEdit->text().trimmed();
-        net.prefixLength = prefixSpin->value();
-        net.enableDhcp = dhcpCheck->isChecked();
-        net.enableDns = dnsCheck->isChecked();
-        net.dnsDomain = domainEdit->text().trimmed().toLower();
-        net.dhcpRangeStart = dhcpStartEdit->text().trimmed();
-        net.dhcpRangeEnd = dhcpEndEdit->text().trimmed();
-        net.enableNat = natCheck->isChecked();
-        net.allowHostAccess = net.enableNat && hostAccessCheck->isChecked();
-
-        net.portForwards.clear();
-        // Only parse and save port forwards if NAT and Port Forwarding are enabled
-        if (natCheck->isChecked() && portFwdCheck->isChecked()) {
-            const QString rawForwards = portFwdEdit->text().trimmed();
-            if (!rawForwards.isEmpty()) {
-                const QStringList parts = rawForwards.split(u',', Qt::SkipEmptyParts);
-                for (const QString &p : parts)
-                    net.portForwards << p.trimmed();
-            }
-        }
-    };
-
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, [&]() {
-        applyForm();
+        applyForm(net);
         if (!net.isValid()) {
+            feedback->portForwards = true;
             const QString error = i18n("The port forwarding configuration is invalid. Use entries in the form protocol/hostPort:guestIp:guestPort.");
             errorMessage->setText(error);
             errorMessage->setToolTip(error);

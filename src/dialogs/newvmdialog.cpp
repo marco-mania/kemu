@@ -179,6 +179,16 @@ void NewVmDialog::buildUi()
     deployLayout->addWidget(cloudInitButton, 0, Qt::AlignTop);
     cloudOptionsLayout->addLayout(deployLayout);
 
+    deployWarningMessage = new KMessageWidget();
+    deployWarningMessage->setMessageType(KMessageWidget::Warning);
+    deployWarningMessage->setCloseButtonVisible(false);
+    deployWarningMessage->setWordWrap(true);
+    deployWarningMessage->setFocusPolicy(Qt::NoFocus);
+    deployWarningMessage->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    deployWarningMessage->setMinimumWidth(0);
+    deployWarningMessage->hide();
+    cloudOptionsLayout->addWidget(deployWarningMessage);
+
     sourceLayout->addWidget(cloudOptions);
 
     isoRadio = new QRadioButton(i18n("Install from ISO"));
@@ -272,6 +282,7 @@ void NewVmDialog::buildUi()
     // --- Connections ---
 
     connect(nameEdit, &QLineEdit::textChanged, this, &NewVmDialog::onNameEdited);
+    connect(nameEdit, &QLineEdit::textEdited, this, &NewVmDialog::activateValidationFeedback);
     connect(nameEdit, &QLineEdit::editingFinished, this, &NewVmDialog::activateValidationFeedback);
     connect(osCombo, &QComboBox::currentIndexChanged, this, &NewVmDialog::onOsChanged);
     connect(osCombo, &QComboBox::activated, this, &NewVmDialog::activateValidationFeedback);
@@ -596,49 +607,57 @@ void NewVmDialog::validateForm()
 {
     const QString name = nameEdit->text().trimmed();
 
-    QString error;
-    bool valid = VMConfig::isValidVmName(name, &error);
-
-    if (valid && m_existingVmNames.contains(name, Qt::CaseSensitive)) {
-        error = i18n("A virtual machine named '%1' already exists.", name);
+    bool valid = true;
+    QString visibleError;
+    bool visibleErrorHasFocus = false;
+    const auto reportError = [&](const QString &reason, QWidget *field) {
         valid = false;
+
+        const QWidget *focusedWidget = QWidget::focusWidget();
+        const bool fieldHasFocus = field && (field->hasFocus() || (focusedWidget && field->isAncestorOf(focusedWidget)));
+        if (visibleError.isEmpty() || (fieldHasFocus && !visibleErrorHasFocus)) {
+            visibleError = reason;
+            visibleErrorHasFocus = fieldHasFocus;
+        }
+    };
+
+    QString nameError;
+    if (!VMConfig::isValidVmName(name, &nameError)) {
+        reportError(nameError, nameEdit);
+    } else if (m_existingVmNames.contains(name, Qt::CaseSensitive)) {
+        reportError(i18n("A virtual machine named '%1' already exists.", name), nameEdit);
     }
 
-    if (valid && selectedTemplateId().isEmpty()) {
-        error = i18n("Please select an operating system.");
-        valid = false;
-    }
+    if (selectedTemplateId().isEmpty())
+        reportError(i18n("Please select an operating system."), osCombo);
 
-    if (valid && source() == Source::InstallerIso) {
+    if (source() == Source::InstallerIso) {
         const QString iso = isoRequester->text().trimmed();
+        QWidget *field = isoRadio->hasFocus() ? static_cast<QWidget *>(isoRadio) : static_cast<QWidget *>(isoRequester);
         if (iso.isEmpty()) {
-            error = i18n("Please select an installation image.");
-            valid = false;
+            reportError(i18n("Please select an installation image."), field);
         } else if (!QFileInfo::exists(iso)) {
-            error = i18n("The selected installation image does not exist.");
-            valid = false;
+            reportError(i18n("The selected installation image does not exist."), field);
         }
     }
 
-    if (valid && source() == Source::CloudImage) {
+    if (source() == Source::CloudImage) {
         const CloudImageInfo img = selectedCloudImage();
-        if (!img.arch.isEmpty() && !ImageDatabase::isArchCompatible(img.arch)) {
-            error = i18n("Foreign architecture. Emulation support is not yet available.");
-            valid = false;
-        }
+        if (!img.arch.isEmpty() && !ImageDatabase::isArchCompatible(img.arch))
+            reportError(i18n("Foreign architecture. Emulation support is not yet available."), cloudImageCombo);
     }
 
-    if (valid && encryptCheck->isChecked() && m_diskPassword.isEmpty()) {
-        error = i18n("Set a password for the system disk.");
-        valid = false;
+    if (encryptCheck->isChecked() && m_diskPassword.isEmpty()) {
+        QWidget *field = encryptCheck->hasFocus() ? static_cast<QWidget *>(encryptCheck) : static_cast<QWidget *>(passwordButton);
+        reportError(i18n("Set a password for the system disk."), field);
     }
 
-    if (error.isEmpty() || !m_validationFeedbackActive) {
+    if (visibleError.isEmpty() || !m_validationFeedbackActive) {
         if (!errorMessage->isHidden())
             errorMessage->animatedHide();
     } else {
-        if (errorMessage->text() != error)
-            errorMessage->setText(error);
+        if (errorMessage->text() != visibleError)
+            errorMessage->setText(visibleError);
         if (errorMessage->isHidden() || errorMessage->isHideAnimationRunning())
             errorMessage->animatedShow();
     }
@@ -777,18 +796,31 @@ void NewVmDialog::updateDeployInfo()
 {
     const CloudDeployConfig config = cloudConfig();
 
-    QString credentials;
-    if (!config.sshKeys.isEmpty())
-        credentials = i18n("SSH key");
-    else if (!config.password.isEmpty())
-        credentials = i18n("password");
-    else
-        credentials = i18n("no way to log in");
+    const bool hasSshKeys = !config.sshKeys.isEmpty();
+    const bool hasPassword = !config.password.isEmpty();
+    const bool hasLogin = hasSshKeys || hasPassword;
 
-    QString info = i18n("User \"%1\", host name \"%2\", %3.", config.username, config.hostname, credentials);
+    QString info;
+    if (hasLogin) {
+        const QString credentials = hasSshKeys ? i18n("SSH key") : i18n("password");
+        info = i18n("User \"%1\", host name \"%2\", %3.", config.username, config.hostname, credentials);
+    } else {
+        info = i18n("User \"%1\", host name \"%2\".", config.username, config.hostname);
+    }
     if (!config.customTemplateId.isEmpty())
         info += u' ' + i18n("Cloud-init template \"%1\".", config.customTemplateId);
     deployInfoLabel->setText(u"<small>%1</small>"_s.arg(info.toHtmlEscaped()));
+
+    if (hasLogin) {
+        if (!deployWarningMessage->isHidden())
+            deployWarningMessage->animatedHide();
+    } else {
+        const QString warning = i18n("No SSH key or password is configured. You will not be able to log in to the new virtual machine.");
+        if (deployWarningMessage->text() != warning)
+            deployWarningMessage->setText(warning);
+        if (deployWarningMessage->isHidden() || deployWarningMessage->isHideAnimationRunning())
+            deployWarningMessage->animatedShow();
+    }
 }
 
 void NewVmDialog::clearCustomisation()

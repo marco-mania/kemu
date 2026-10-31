@@ -145,6 +145,7 @@ private:
     bool m_storeDiskPassword = true;
 
     QLabel *deployInfoLabel = nullptr;
+    KMessageWidget *deployWarningMessage = nullptr;
     QDialogButtonBox *buttonBox = nullptr;
     QPushButton *customiseButton = nullptr;
 
