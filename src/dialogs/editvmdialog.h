@@ -240,12 +240,12 @@ private:
     QWidget *vdeGroup = nullptr;
 
     QLabel *nameWarningLabel = nullptr;
-    QLabel *macWarningLabel = nullptr;
+    KMessageWidget *macWarningMessage = nullptr;
     QLabel *hostnameWarningLabel = nullptr;
 
     QLineEdit *uuidEdit = nullptr;
     QPushButton *regenerateUuidButton = nullptr;
-    QLabel *uuidWarningLabel = nullptr;
+    KMessageWidget *uuidWarningMessage = nullptr;
     QList<std::pair<QString SmbiosSystemInfo::*, QLineEdit *>> m_smbiosEdits;
 
     QDialogButtonBox *buttonBox = nullptr;

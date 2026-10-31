@@ -636,11 +636,8 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 
     netFormLayout->addRow(i18n("MAC Address:"), macLayout);
 
-    macWarningLabel = new QLabel();
-    macWarningLabel->setStyleSheet(u"QLabel { color: %1; font-size: 11px; }"_s.arg(scheme.foreground(KColorScheme::NegativeText).color().name()));
-    macWarningLabel->setWordWrap(false);
-    macWarningLabel->setFixedHeight(macWarningLabel->fontMetrics().height() + 2);
-    netFormLayout->addRow({}, macWarningLabel);
+    macWarningMessage = createInlineMessage(KMessageWidget::Error);
+    netFormLayout->addRow({}, macWarningMessage);
 
     netMainLayout->addLayout(netFormLayout);
 
@@ -732,10 +729,8 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     uuidLayout->addWidget(regenerateUuidButton);
     identityLayout->addRow(i18n("UUID:"), uuidLayout);
 
-    uuidWarningLabel = new QLabel();
-    uuidWarningLabel->setStyleSheet(infoStyle(KColorScheme::NegativeText));
-    uuidWarningLabel->setVisible(false);
-    identityLayout->addRow({}, uuidWarningLabel);
+    uuidWarningMessage = createInlineMessage(KMessageWidget::Error);
+    identityLayout->addRow({}, uuidWarningMessage);
 
     const QList<std::pair<QString SmbiosSystemInfo::*, QString>> smbiosLabels = {
         {&SmbiosSystemInfo::manufacturer, i18n("Manufacturer:")},
@@ -1821,6 +1816,7 @@ void EditVmDialog::validateForm()
 
     // Check for duplicate mac addresses
     QString macWarningText;
+    auto macMessageType = KMessageWidget::Error;
     const QString mac = macEdit->text();
     if (!mac.isEmpty() && !Utils::isValidMacAddress(mac)) {
         macWarningText = i18n("Invalid MAC address format.");
@@ -1841,23 +1837,21 @@ void EditVmDialog::validateForm()
             if (mode == VMSpecs::NetworkMode::VirtualNetwork && info.networkMode == VMSpecs::NetworkMode::VirtualNetwork
                 && info.virtualNetworkName == netName) {
                 macWarningText = i18n("MAC conflict with '%1' on network '%2'.", info.vmName, netName);
+                macMessageType = KMessageWidget::Error;
                 valid = false;
                 break;
             }
 
             // Duplicate elsewhere: harmless today, but it breaks as soon as
             // both VMs end up on the same network.
-            if (macWarningText.isEmpty())
+            if (macWarningText.isEmpty()) {
                 macWarningText = i18n("MAC address is already used by '%1'.", info.vmName);
+                macMessageType = KMessageWidget::Warning;
+            }
         }
     }
 
-    // Update visibility and text of the label
-    if (macWarningLabel && !macWarningText.isEmpty()) {
-        macWarningLabel->setText(macWarningText);
-    } else {
-        macWarningLabel->clear();
-    }
+    updateInlineMessage(macWarningMessage, macWarningText, macMessageType);
 
     // DNS hostname: only relevant (and visible) in VirtualNetwork mode.
     QString hostnameWarningText;
@@ -1891,6 +1885,7 @@ void EditVmDialog::validateForm()
 
     // A duplicate UUID only confuses guest software, so it does not block.
     QString uuidWarningText;
+    auto uuidMessageType = KMessageWidget::Error;
     const QString uuidText = uuidEdit->text().trimmed();
     if (!uuidText.isEmpty()) {
         const QUuid uuid = QUuid::fromString(uuidText);
@@ -1901,13 +1896,13 @@ void EditVmDialog::validateForm()
             for (auto it = m_vmUuids.cbegin(); it != m_vmUuids.cend(); ++it) {
                 if (it.value() == uuid && !(m_mode == Mode::Edit && it.key() == m_original.name())) {
                     uuidWarningText = i18n("This UUID is already used by '%1'.", it.key());
+                    uuidMessageType = KMessageWidget::Warning;
                     break;
                 }
             }
         }
     }
-    uuidWarningLabel->setText(uuidWarningText);
-    uuidWarningLabel->setVisible(!uuidWarningText.isEmpty());
+    updateInlineMessage(uuidWarningMessage, uuidWarningText, uuidMessageType);
 
     if (storageWarningLabel) {
         const QString storageError = storageLayoutError();
