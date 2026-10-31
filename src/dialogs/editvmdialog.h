@@ -50,6 +50,7 @@
 using namespace Qt::StringLiterals;
 
 class DiskDialog;
+class KMessageWidget;
 
 class EditVmDialog : public QDialog
 {
@@ -207,8 +208,8 @@ private:
     QCheckBox *uefiCheck = nullptr;
     QCheckBox *localTimeCheck = nullptr;
     QCheckBox *tpmCheck = nullptr;
-    QLabel *tpmToolWarning = nullptr;
-    QLabel *shareToolWarning = nullptr;
+    KMessageWidget *tpmToolWarning = nullptr;
+    KMessageWidget *shareToolWarning = nullptr;
     QCheckBox *secureBootCheck = nullptr;
     QCheckBox *acpiCheck = nullptr;
     QComboBox *exitActionCombo = nullptr;

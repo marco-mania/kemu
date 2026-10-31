@@ -20,9 +20,9 @@
 
 #include <KIconUtils>
 #include <KMessageBox>
+#include <KMessageWidget>
 
 #include <QScopeGuard>
-#include <QStyle>
 
 namespace
 {
@@ -66,6 +66,37 @@ void makeReadOnly(QWidget *widget)
     }
     for (QWidget *child : widget->findChildren<QWidget *>(Qt::FindDirectChildrenOnly))
         makeReadOnly(child);
+}
+
+KMessageWidget *createInlineMessage(KMessageWidget::MessageType type)
+{
+    auto *message = new KMessageWidget();
+    message->setMessageType(type);
+    message->setCloseButtonVisible(false);
+    message->setWordWrap(true);
+    message->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    message->setMinimumWidth(0);
+    message->hide();
+    return message;
+}
+
+void updateInlineMessage(KMessageWidget *message, const QString &text, KMessageWidget::MessageType type)
+{
+    if (!message)
+        return;
+
+    message->setAccessibleName(text);
+    if (text.isEmpty()) {
+        if (!message->isHidden() && !message->isHideAnimationRunning())
+            message->animatedHide();
+        return;
+    }
+
+    message->setMessageType(type);
+    if (message->text() != text)
+        message->setText(text);
+    if (message->isHidden() || message->isHideAnimationRunning())
+        message->animatedShow();
 }
 } // namespace
 
@@ -252,10 +283,9 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     sharedPathEdit->setClearButtonEnabled(true);
     shareLayout->addWidget(sharedPathEdit);
     shareLayout->addWidget(btnBrowseShare);
-    shareToolWarning = new QLabel();
-    shareToolWarning->hide();
-    shareLayout->addWidget(shareToolWarning);
     genLayout->addRow(i18n("Shared Folder (VirtFS):"), shareLayout);
+    shareToolWarning = createInlineMessage(KMessageWidget::Warning);
+    genLayout->addRow({}, shareToolWarning);
 
     sharedNameEdit = new QLineEdit();
     sharedNameEdit->setValidator(new QRegularExpressionValidator(QRegularExpression(u"^[a-zA-Z0-9]*$"_s), this));
@@ -318,13 +348,9 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 
     tpmCheck = new QCheckBox(i18n("Emulate TPM 2.0 (swtpm)"));
     tpmCheck->setToolTip(i18n("Required for Windows 11. Uses swtpm as software TPM emulator."));
-    tpmToolWarning = new QLabel();
-    tpmToolWarning->hide();
-    auto *tpmLayout = new QHBoxLayout();
-    tpmLayout->addWidget(tpmCheck);
-    tpmLayout->addWidget(tpmToolWarning);
-    tpmLayout->addStretch();
-    sysLayout->addRow({}, tpmLayout);
+    sysLayout->addRow({}, tpmCheck);
+    tpmToolWarning = createInlineMessage(KMessageWidget::Warning);
+    sysLayout->addRow({}, tpmToolWarning);
 
     // Secure Boot
     secureBootCheck = new QCheckBox(i18n("Enable Secure Boot"));
@@ -2219,16 +2245,8 @@ void EditVmDialog::updateToolWarnings()
 {
     // Settings stay usable, since the tool may be installed later; the VM
     // just does not start without it.
-    const auto show = [this](QLabel *label, bool missing, const QString &text) {
-        if (!label)
-            return;
-        if (missing) {
-            const int size = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
-            label->setPixmap(QIcon::fromTheme(u"dialog-warning"_s).pixmap(size));
-            label->setToolTip(text);
-            label->setAccessibleName(text);
-        }
-        label->setVisible(missing);
+    const auto show = [](KMessageWidget *message, bool missing, const QString &text) {
+        updateInlineMessage(message, missing ? text : QString(), KMessageWidget::Warning);
     };
 
     const ExternalTools &tools = ExternalTools::instance();
