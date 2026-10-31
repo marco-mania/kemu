@@ -616,10 +616,10 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
         // The state of an encrypted VM is encrypted with the same password.
         if (config.isEncrypted())
             script += u"printf '%s' \"$KEMU_DISK_PASSWORD\" | "_s;
-        script += u"%1 socket \\\n"_s.arg(swtpmPath) + u"  --ctrl type=unixio,path=%1 \\\n"_s.arg(sockArg) + u"  --terminate \\\n"_s
-            + u"  --tpmstate dir=%1 \\\n"_s.arg(stateArg);
+        script += u"%1 socket \\\n"_s.arg(Utils::quoteShellArg(swtpmPath)) + u"  --ctrl %1 \\\n"_s.arg(Utils::quoteShellArg(u"type=unixio,path=%1"_s.arg(sockArg)))
+            + u"  --terminate \\\n"_s + u"  --tpmstate %1 \\\n"_s.arg(Utils::quoteShellArg(u"dir=%1"_s.arg(stateArg)));
         if (config.isEncrypted())
-            script += u"  --key %1 \\\n"_s.arg(TpmState::keyOption(0));
+            script += u"  --key %1 \\\n"_s.arg(Utils::quoteShellArg(TpmState::keyOption(0)));
         script += u"  --tpm2 &\n"_s + u"sleep 1\n\n"_s;
     }
 
@@ -629,8 +629,9 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
         const QString sockArg = relativePaths ? KEMUConst::VirtiofsdSocketFileName : vmDir.absoluteFilePath(KEMUConst::VirtiofsdSocketFileName);
 
         script += u"# Start virtiofsd for shared folder\n"_s;
-        script += u"%1 \\\n"_s.arg(virtiofsdPath) + u"  --socket-path=%1 \\\n"_s.arg(sockArg) + u"  --shared-dir=%1 \\\n"_s.arg(config.sharedPath())
-            + u"  --cache=auto \\\n"_s + u"  --sandbox=none &\n"_s + u"sleep 1\n\n"_s;
+        script += u"%1 \\\n"_s.arg(Utils::quoteShellArg(virtiofsdPath)) + u"  %1 \\\n"_s.arg(Utils::quoteShellArg(u"--socket-path=%1"_s.arg(sockArg)))
+            + u"  %1 \\\n"_s.arg(Utils::quoteShellArg(u"--shared-dir=%1"_s.arg(config.sharedPath()))) + u"  --cache=auto \\\n"_s
+            + u"  --sandbox=none &\n"_s + u"sleep 1\n\n"_s;
     }
 
     // --- Network ---
@@ -662,7 +663,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     const QStringList sandbox = sandboxArgs(config, seccompSandbox);
     if (!sandbox.isEmpty()) {
         script += u"# Confine QEMU with its seccomp sandbox if it was built with one.\n"_s;
-        script += u"SANDBOX=%1\n"_s.arg(sandbox.last());
+        script += u"SANDBOX=%1\n"_s.arg(Utils::quoteShellArg(sandbox.last()));
         script += u"if %1 -sandbox \"$SANDBOX\" -version >/dev/null 2>&1; then\n"_s.arg(Utils::quoteShellArg(qemuPath));
         script += u"  set -- -sandbox \"$SANDBOX\"\n"_s;
         script += u"  # Without a session bus D-Bus would fork dbus-launch, which the sandbox forbids.\n"_s;
@@ -676,7 +677,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
 
     script += u"exec "_s;
 
-    script += qemuPath + (sandbox.isEmpty() ? QString() : u" \"$@\""_s) + u" \\\n  "_s + argsToReadableString(args);
+    script += Utils::quoteShellArg(qemuPath) + (sandbox.isEmpty() ? QString() : u" \"$@\""_s) + u" \\\n  "_s + argsToReadableString(args);
     if (config.isEncrypted())
         script += u" \\\n  %1<&0 </dev/null"_s.arg(DiskEncryption::ScriptSecretFd);
     script += u"\n"_s;
@@ -701,12 +702,12 @@ QString QemuCommandBuilder::argsToReadableString(const QStringList &args)
     QString currentLine;
 
     for (const QString &arg : args) {
+        const QString quotedArg = Utils::quoteShellArg(arg);
         if (arg.startsWith(u'-')) {
             if (!currentLine.isEmpty())
                 formattedLines << currentLine;
-            currentLine = arg;
+            currentLine = quotedArg;
         } else {
-            const QString quotedArg = Utils::quoteShellArg(arg);
             currentLine += currentLine.isEmpty() ? quotedArg : u" "_s + quotedArg;
         }
     }

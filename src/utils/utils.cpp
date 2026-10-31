@@ -328,16 +328,6 @@ bool isValidDnsDomain(QStringView domain)
 
 QString quoteShellArg(const QString &arg)
 {
-    const QStringView view = arg;
-    bool needsQuoting = false;
-    for (const auto ch : view) {
-        if (ch.isSpace() || ch == u'\t' || ch == u'\n' || ch == u'$' || ch == u'`' || ch == u'\\' || ch == u'"' || ch == u'!') {
-            needsQuoting = true;
-            break;
-        }
-    }
-    if (!needsQuoting)
-        return arg;
     QString escaped = arg;
     escaped.replace(u'\'', u"'\\''"_s);
     return u"'"_s + escaped + u"'"_s;

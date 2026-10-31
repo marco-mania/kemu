@@ -61,3 +61,23 @@ ecm_qt_declare_logging_category(controlconnectiontest
                                 HEADER "kemu_dbusdisplay_debug.h"
                                 IDENTIFIER "KEMU_DBUSDISPLAY"
                                 CATEGORY_NAME "org.kde.kemu.dbusdisplay")
+
+ecm_add_test(qemucommandbuildertest.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/qemucommandbuilder.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/vmconfig.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/utils.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/externaltools.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/qemucapabilities.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/sandboxcapabilities.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/sessionguard.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/diskencryption.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/tpmstate.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/3rdparty/crypt_sha512.c
+             TEST_NAME qemucommandbuildertest
+             LINK_LIBRARIES Qt6::Core Qt6::Gui Qt6::Widgets Qt6::DBus Qt6::Test
+                            KF6::CoreAddons KF6::I18n KF6::ConfigCore)
+target_include_directories(qemucommandbuildertest PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR})
+ecm_qt_declare_logging_category(qemucommandbuildertest
+                                HEADER "kemu_debug.h"
+                                IDENTIFIER "KEMU"
+                                CATEGORY_NAME "org.kde.kemu")
