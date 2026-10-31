@@ -77,7 +77,7 @@ public:
      * @param monitorSocketPath      Path to the QMP socket.
      * @param networkContext         Network-mode-specific context (switch or user-mode socket).
      * @param relativePaths          Whether to emit relative paths.
-     * @param headless               Whether to suppress display output.
+     * @param headless               Whether to start without a display window or viewer.
      * @param incomingSavestatePath  Path to file with saved state.
      */
     static QStringList build(const VMConfig &config,

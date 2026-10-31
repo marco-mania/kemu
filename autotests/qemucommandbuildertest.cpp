@@ -121,6 +121,59 @@ private Q_SLOTS:
         QCOMPARE(shell.readAllStandardOutput(), encodedArgs(args));
     }
 
+    void graphicsInHeadlessMode_data()
+    {
+        QTest::addColumn<bool>("dbus");
+        QTest::addColumn<bool>("headless");
+        QTest::addColumn<bool>("acceleration");
+        QTest::addColumn<bool>("virtio");
+        QTest::addColumn<QString>("expectedDevice");
+        QTest::addColumn<QString>("expectedDisplay");
+
+        QTest::newRow("dbus-windowed-3d") << true << false << true << true << u"virtio-vga-gl"_s << u"dbus,p2p=on,gl=on"_s;
+        QTest::newRow("dbus-windowed-2d") << true << false << false << true << u"virtio-vga"_s << u"dbus,p2p=on"_s;
+        QTest::newRow("dbus-headless-3d") << true << true << true << true << u"virtio-vga-gl"_s << u"dbus,p2p=on,gl=on"_s;
+        QTest::newRow("dbus-headless-2d") << true << true << false << true << u"virtio-vga"_s << u"dbus,p2p=on"_s;
+        QTest::newRow("dbus-headless-qxl") << true << true << true << false << u"qxl-vga"_s << u"dbus,p2p=on"_s;
+        QTest::newRow("sdl-windowed-3d") << false << false << true << true << u"virtio-vga-gl"_s << u"sdl,gl=on"_s;
+        QTest::newRow("sdl-windowed-2d") << false << false << false << true << u"virtio-vga"_s << u"sdl"_s;
+        QTest::newRow("sdl-headless-3d") << false << true << true << true << u"virtio-vga"_s << u"none"_s;
+        QTest::newRow("sdl-headless-2d") << false << true << false << true << u"virtio-vga"_s << u"none"_s;
+        QTest::newRow("sdl-headless-qxl") << false << true << true << false << u"qxl-vga"_s << u"none"_s;
+    }
+
+    void graphicsInHeadlessMode()
+    {
+        QFETCH(bool, dbus);
+        QFETCH(bool, headless);
+        QFETCH(bool, acceleration);
+        QFETCH(bool, virtio);
+        QFETCH(QString, expectedDevice);
+        QFETCH(QString, expectedDisplay);
+
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QDir vmDir(dir.path());
+        VMConfig config = testConfig(vmDir);
+        config.setDisplayType(dbus ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Sdl);
+        config.setGpuType(virtio ? VMSpecs::GpuType::Virtio : VMSpecs::GpuType::Qxl);
+        config.setGpu3dAcceleration(acceleration);
+
+        const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s), {}, false, headless);
+        const int displayIndex = args.indexOf(u"-display"_s);
+        QVERIFY(displayIndex >= 0);
+        QVERIFY(displayIndex + 1 < args.size());
+        QCOMPARE(args.at(displayIndex + 1), expectedDisplay);
+
+        QStringList graphicsDevices;
+        for (const QString &arg : args) {
+            if (arg.startsWith(u"virtio-vga"_s) || arg.startsWith(u"qxl-vga"_s))
+                graphicsDevices << arg;
+        }
+        QCOMPARE(graphicsDevices.size(), 1);
+        QCOMPARE(graphicsDevices.constFirst().section(u',', 0, 0), expectedDevice);
+    }
+
     void exportedScript_data()
     {
         QTest::addColumn<bool>("relativePaths");

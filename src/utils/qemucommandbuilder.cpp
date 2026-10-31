@@ -322,9 +322,9 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     }
 
     // --- Graphics ---
-    // 3D acceleration requires a GL display backend (SDL or D-Bus).
-    // Disable it for headless mode.
-    const bool effective3d = config.gpu3dAcceleration() && config.gpuType() == VMSpecs::GpuType::Virtio && !headless;
+    // D-Bus keeps its GL backend active even when no viewer is attached.
+    const bool effective3d = config.gpu3dAcceleration() && config.gpuType() == VMSpecs::GpuType::Virtio
+        && (!headless || config.displayType() == VMSpecs::DisplayType::Dbus);
 
     const int mem = qBound(VMConfig::vgaMemMbLowerLimit(config.gpuType()), config.gpuMemMb(), VMConfig::vgaMemMbUpperLimit(config.gpuType()));
 
