@@ -277,6 +277,7 @@ void NewVmDialog::buildUi()
     connect(osCombo, &QComboBox::activated, this, &NewVmDialog::activateValidationFeedback);
     connect(osCombo->lineEdit(), &QLineEdit::editingFinished, this, &NewVmDialog::activateValidationFeedback);
     connect(cloudImageCombo, &QComboBox::activated, this, &NewVmDialog::activateValidationFeedback);
+    connect(cloudImageCombo, &QComboBox::currentIndexChanged, this, &NewVmDialog::validateForm);
 
     connect(cloudRadio, &QRadioButton::toggled, this, &NewVmDialog::onSourceChanged);
     connect(isoRadio, &QRadioButton::toggled, this, &NewVmDialog::onSourceChanged);
