@@ -982,11 +982,16 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     const auto updateValidation = [=]() {
         QString error;
         QString visibleError;
-        const auto reportError = [&](const QString &reason, bool show) {
+        bool visibleErrorHasFocus = false;
+        const auto reportError = [&](const QString &reason, bool show, QWidget *field) {
             if (error.isEmpty())
                 error = reason;
-            if (show && visibleError.isEmpty())
+
+            const bool fieldHasFocus = field && field->hasFocus();
+            if (show && (visibleError.isEmpty() || (fieldHasFocus && !visibleErrorHasFocus))) {
                 visibleError = reason;
+                visibleErrorHasFocus = fieldHasFocus;
+            }
         };
 
         const QString name = nameEdit->text().trimmed();
@@ -1000,24 +1005,24 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
 
         QString nameError;
         if (isNew && !Utils::isValidNetworkName(name, &nameError)) {
-            reportError(nameError, feedback->name);
+            reportError(nameError, feedback->name, nameEdit);
         } else if (isNew && std::any_of(existingNetworks.cbegin(), existingNetworks.cend(), [&name](const VirtualNetwork &other) {
                        return other.name == name;
                    })) {
-            reportError(i18n("A virtual network named '%1' already exists.", name), feedback->name || feedback->nameEdited);
+            reportError(i18n("A virtual network named '%1' already exists.", name), feedback->name || feedback->nameEdited, nameEdit);
         }
 
         if (!validGateway) {
-            reportError(i18n("Enter a valid IPv4 gateway address."), feedback->gateway);
+            reportError(i18n("Enter a valid IPv4 gateway address."), feedback->gateway, gatewayEdit);
         } else if (!usableGateway) {
-            reportError(i18n("The gateway must be a usable host address in its subnet."), feedback->gateway || feedback->gatewayEdited);
+            reportError(i18n("The gateway must be a usable host address in its subnet."), feedback->gateway || feedback->gatewayEdited, gatewayEdit);
         } else if (std::any_of(existingNetworks.cbegin(), existingNetworks.cend(), [&](const VirtualNetwork &other) {
                        if (!isNew && other.name == net.name)
                            return false;
                        const QHostAddress address(other.gateway);
                        return address.protocol() == QAbstractSocket::IPv4Protocol && address.toIPv4Address() == gatewayIp;
                    })) {
-            reportError(i18n("Gateway %1 is already used by another virtual network.", gateway.toString()), feedback->gateway || feedback->gatewayEdited);
+            reportError(i18n("Gateway %1 is already used by another virtual network.", gateway.toString()), feedback->gateway || feedback->gatewayEdited, gatewayEdit);
         }
 
         if (dhcpCheck->isChecked() && usableGateway) {
@@ -1027,28 +1032,30 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
                 const quint64 autoStart = quint64(networkIp) + 100;
                 const quint32 autoEnd = std::min<quint64>(quint64(networkIp) + 200, quint64(broadcastIp) - 1);
                 if (autoStart > autoEnd) {
-                    reportError(i18n("No automatic DHCP range fits this subnet. Enter a range manually or disable DHCP."), feedback->dhcp);
+                    reportError(i18n("No automatic DHCP range fits this subnet. Enter a range manually or disable DHCP."), feedback->dhcp, dhcpStartEdit);
                 } else if (autoStart <= gatewayIp && gatewayIp <= autoEnd) {
-                    reportError(i18n("The automatic DHCP range includes the gateway. Enter a range manually."), feedback->dhcp);
+                    reportError(i18n("The automatic DHCP range includes the gateway. Enter a range manually."), feedback->dhcp, dhcpStartEdit);
                 }
             } else if (startText.isEmpty() || endText.isEmpty()) {
-                reportError(i18n("Enter both DHCP range addresses or leave both empty for an automatic range."), feedback->dhcp);
+                reportError(i18n("Enter both DHCP range addresses or leave both empty for an automatic range."), feedback->dhcp, startText.isEmpty() ? dhcpStartEdit : dhcpEndEdit);
             } else {
                 const QHostAddress startAddress(startText);
                 const QHostAddress endAddress(endText);
                 if (startAddress.protocol() != QAbstractSocket::IPv4Protocol || endAddress.protocol() != QAbstractSocket::IPv4Protocol) {
-                    reportError(i18n("Enter valid IPv4 addresses for the DHCP range."), feedback->dhcp);
+                    auto *invalidField = startAddress.protocol() != QAbstractSocket::IPv4Protocol ? dhcpStartEdit : dhcpEndEdit;
+                    reportError(i18n("Enter valid IPv4 addresses for the DHCP range."), feedback->dhcp, invalidField);
                 } else {
                     const quint32 startIp = startAddress.toIPv4Address();
                     const quint32 endIp = endAddress.toIPv4Address();
                     if (startIp > endIp) {
-                        reportError(i18n("The DHCP range start must not be after its end."), feedback->dhcp || feedback->dhcpEdited);
+                        reportError(i18n("The DHCP range start must not be after its end."), feedback->dhcp || feedback->dhcpEdited, dhcpStartEdit->hasFocus() ? dhcpStartEdit : dhcpEndEdit);
                     } else if (startIp <= networkIp || endIp >= broadcastIp) {
                         reportError(
                             i18n("The DHCP range must be inside the gateway's subnet (%1/%2).", QHostAddress(networkIp).toString(), prefixSpin->value()),
-                            feedback->dhcp || feedback->dhcpEdited);
+                            feedback->dhcp || feedback->dhcpEdited,
+                            dhcpStartEdit->hasFocus() ? dhcpStartEdit : dhcpEndEdit);
                     } else if (startIp <= gatewayIp && gatewayIp <= endIp) {
-                        reportError(i18n("The DHCP range must not include the gateway address."), feedback->dhcp || feedback->dhcpEdited);
+                        reportError(i18n("The DHCP range must not include the gateway address."), feedback->dhcp || feedback->dhcpEdited, dhcpStartEdit->hasFocus() ? dhcpStartEdit : dhcpEndEdit);
                     }
                 }
             }
@@ -1057,7 +1064,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
         if (dhcpCheck->isChecked() && dnsCheck->isChecked()) {
             const QString domain = domainEdit->text().trimmed().toLower();
             if (!domain.isEmpty() && !Utils::isValidDnsDomain(domain))
-                reportError(i18n("Not a valid DNS domain name."), feedback->domain);
+                reportError(i18n("Not a valid DNS domain name."), feedback->domain, domainEdit);
         }
 
         buttons->button(QDialogButtonBox::Ok)->setEnabled(error.isEmpty());
@@ -1168,35 +1175,50 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     updateDomainHint();
     form->activate();
     form->lockWidth();
-    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+
+    const auto applyForm = [&]() {
+        net.name = nameEdit->text().trimmed();
+        net.gateway = gatewayEdit->text().trimmed();
+        net.prefixLength = prefixSpin->value();
+        net.enableDhcp = dhcpCheck->isChecked();
+        net.enableDns = dnsCheck->isChecked();
+        net.dnsDomain = domainEdit->text().trimmed().toLower();
+        net.dhcpRangeStart = dhcpStartEdit->text().trimmed();
+        net.dhcpRangeEnd = dhcpEndEdit->text().trimmed();
+        net.enableNat = natCheck->isChecked();
+        net.allowHostAccess = net.enableNat && hostAccessCheck->isChecked();
+
+        net.portForwards.clear();
+        // Only parse and save port forwards if NAT and Port Forwarding are enabled
+        if (natCheck->isChecked() && portFwdCheck->isChecked()) {
+            const QString rawForwards = portFwdEdit->text().trimmed();
+            if (!rawForwards.isEmpty()) {
+                const QStringList parts = rawForwards.split(u',', Qt::SkipEmptyParts);
+                for (const QString &p : parts)
+                    net.portForwards << p.trimmed();
+            }
+        }
+    };
+
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, [&]() {
+        applyForm();
+        if (!net.isValid()) {
+            const QString error = i18n("The port forwarding configuration is invalid. Use entries in the form protocol/hostPort:guestIp:guestPort.");
+            errorMessage->setText(error);
+            errorMessage->setToolTip(error);
+            if (!errorMessage->isVisible() || errorMessage->isHideAnimationRunning())
+                errorMessage->animatedShow();
+            portFwdEdit->setFocus();
+            return;
+        }
+        dlg.accept();
+    });
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
 
     if (dlg.exec() != QDialog::Accepted)
         return false;
 
-    net.name = nameEdit->text().trimmed();
-    net.gateway = gatewayEdit->text().trimmed();
-    net.prefixLength = prefixSpin->value();
-    net.enableDhcp = dhcpCheck->isChecked();
-    net.enableDns = dnsCheck->isChecked();
-    net.dnsDomain = domainEdit->text().trimmed().toLower();
-    net.dhcpRangeStart = dhcpStartEdit->text().trimmed();
-    net.dhcpRangeEnd = dhcpEndEdit->text().trimmed();
-    net.enableNat = natCheck->isChecked();
-    net.allowHostAccess = net.enableNat && hostAccessCheck->isChecked();
-
-    net.portForwards.clear();
-    // Only parse and save port forwards if NAT and Port Forwarding are enabled
-    if (natCheck->isChecked() && portFwdCheck->isChecked()) {
-        const QString rawForwards = portFwdEdit->text().trimmed();
-        if (!rawForwards.isEmpty()) {
-            const QStringList parts = rawForwards.split(u',', Qt::SkipEmptyParts);
-            for (const QString &p : parts)
-                net.portForwards << p.trimmed();
-        }
-    }
-
-    return net.isValid();
+    return true;
 }
 
 void SettingsDialog::addNetwork()
