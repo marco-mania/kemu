@@ -5,6 +5,8 @@
 #include "dbusviewerwindow.h"
 
 #include <QClipboard>
+#include <QDateTime>
+#include <QFileDialog>
 #include <QGuiApplication>
 #include <QStandardPaths>
 
@@ -104,6 +106,31 @@ DbusViewerWindow::~DbusViewerWindow()
 }
 
 // =============================================================================
+// Screenshot
+// =============================================================================
+
+void DbusViewerWindow::saveScreenshot()
+{
+    const QImage image = m_display->captureGuestFrame();
+    if (image.isNull()) {
+        QMessageBox::warning(this, i18n("Screenshot Failed"), i18n("Could not capture the guest display."));
+        return;
+    }
+
+    const QString picturesDir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+    const QString defaultName = u"%1/%2_%3.png"_s.arg(picturesDir, windowTitle(), QDateTime::currentDateTime().toString(u"yyyyMMdd_HHmmss"_s));
+    const QString filePath = QFileDialog::getSaveFileName(this, i18n("Save Screenshot"), defaultName, i18n("PNG Image (*.png);;JPEG Image (*.jpg *.jpeg)"));
+    if (filePath.isEmpty())
+        return;
+
+    const QByteArray format = filePath.endsWith(u".jpg"_s, Qt::CaseInsensitive) || filePath.endsWith(u".jpeg"_s, Qt::CaseInsensitive) ? "JPEG" : "PNG";
+    if (image.save(filePath, format.constData()))
+        statusBar()->showMessage(i18n("Screenshot saved to %1", filePath));
+    else
+        QMessageBox::warning(this, i18n("Error"), i18n("Failed to save screenshot to %1", filePath));
+}
+
+// =============================================================================
 // Create Actions
 // =============================================================================
 
@@ -137,6 +164,10 @@ void DbusViewerWindow::createActions()
     m_actSnapshots = new QAction(QIcon::fromTheme(u"camera-photo"_s), i18n("Manage &Snapshots…"), this);
     m_actSnapshots->setStatusTip(i18n("Open the snapshot manager for this VM"));
     connect(m_actSnapshots, &QAction::triggered, this, &DbusViewerWindow::snapshotManagerRequested);
+
+    m_actScreenshot = new QAction(QIcon::fromTheme(u"spectacle"_s), i18n("Save &Screenshot…"), this);
+    m_actScreenshot->setStatusTip(i18n("Capture the guest display at its native resolution"));
+    connect(m_actScreenshot, &QAction::triggered, this, &DbusViewerWindow::saveScreenshot);
 
     m_actQuit = new QAction(QIcon::fromTheme(u"window-close"_s), i18n("&Quit Viewer"), this);
     m_actQuit->setShortcut(QKeySequence(u"Ctrl+W"_s));
@@ -299,6 +330,7 @@ void DbusViewerWindow::createMenus()
     machineMenu->addAction(m_actSendCAD);
     machineMenu->addSeparator();
     machineMenu->addAction(m_actSnapshots);
+    machineMenu->addAction(m_actScreenshot);
     machineMenu->addSeparator();
     machineMenu->addAction(m_actQuit);
 

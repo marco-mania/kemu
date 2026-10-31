@@ -259,6 +259,8 @@ target_sources(
           dbusdisplay/dbusviewerwindow.h
           dbusdisplay/displaywidget.cpp
           dbusdisplay/displaywidget.h
+          dbusdisplay/framecapture.cpp
+          dbusdisplay/framecapture.h
           dbusdisplay/listener.cpp
           dbusdisplay/listener.h
           dbusdisplay/audiojittercore.h

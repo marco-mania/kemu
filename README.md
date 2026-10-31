@@ -395,11 +395,14 @@ it first.
 Each UEFI VM stores its NVRAM in a separate `OVMF_VARS.fd`, created from a
 matching template when needed. Existing files are never overwritten.
 
-### Screenshots of 3D-accelerated VMs
+### Screenshots
 
-*Save Screenshot…* uses QEMU's `screendump`, which captures the software
-framebuffer. Virtio-GL renders on the host GPU instead, so switch to VGA or
-VirtIO without 3D acceleration to take screenshots.
+The D-Bus viewer's *Machine → Save Screenshot…* captures the guest display at
+its native resolution, including Virtio-GL. The optional Wayland zero-copy
+path is supported when the DMA-BUF can also be imported through EGL. The main
+window's screenshot action uses the viewer when connected and
+falls back to QEMU's `screendump` for 2D VMs without a viewer or with SDL.
+For a headless 3D VM, open the D-Bus viewer before taking a screenshot.
 
 ### QEMU sandbox
 

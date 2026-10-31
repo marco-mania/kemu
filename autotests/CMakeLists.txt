@@ -81,3 +81,9 @@ ecm_qt_declare_logging_category(qemucommandbuildertest
                                 HEADER "kemu_debug.h"
                                 IDENTIFIER "KEMU"
                                 CATEGORY_NAME "org.kde.kemu")
+
+ecm_add_test(framecapturetest.cpp
+             ${CMAKE_SOURCE_DIR}/src/dbusdisplay/framecapture.cpp
+             TEST_NAME framecapturetest
+             LINK_LIBRARIES Qt6::Gui Qt6::OpenGL Qt6::Test)
+target_include_directories(framecapturetest PRIVATE ${CMAKE_SOURCE_DIR}/src)

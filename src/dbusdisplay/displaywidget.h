@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <QImage>
 #include <QKeyEvent>
 #include <QList>
 #include <QMouseEvent>
@@ -41,6 +42,7 @@ public:
     ~QemuDisplayWidget() override;
 
     void setScale(float scale);
+    QImage captureGuestFrame();
 
     void setDimmed(bool dimmed);
     bool isDimmed() const
@@ -122,7 +124,7 @@ private:
     void updateSubSurfaceCursor();
 
     bool initEglFunctions();
-    bool importDmaBuf();
+    bool importDmaBuf(const DmaBufScanout &buf);
     bool ensureDmaBufImported();
     void blitImportToPresent();
     void presentDmaBufFrame();
@@ -205,6 +207,7 @@ private:
     bool m_textureReady = false;
     bool m_usingDmaBuf = false;
     bool m_dmaBufPending = false;
+    DmaBufScanout m_lastSubSurfaceScanout;
 
     // GL_BGRA_EXT: Avoids format conversion in the software path
     bool m_hasBGRA = false;

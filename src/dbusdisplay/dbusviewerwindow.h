@@ -88,6 +88,8 @@ public:
                      QWidget *parent = nullptr);
     ~DbusViewerWindow() override;
 
+    void saveScreenshot();
+
     QemuDisplayWidget *displayWidget() const
     {
         return m_display;
@@ -221,6 +223,7 @@ private:
     QAction *m_actShutdownHost = nullptr;
     QAction *m_actSendCAD = nullptr;
     QAction *m_actSnapshots = nullptr;
+    QAction *m_actScreenshot = nullptr;
     QAction *m_actQuit = nullptr;
     QAction *m_actFullscreen = nullptr;
     QAction *m_actFitWindow = nullptr;

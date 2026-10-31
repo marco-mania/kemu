@@ -769,6 +769,8 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                          registerAudioListeners(vmName);
 
                          updateSessionInhibitors();
+                         if (selectedVmName() == vmName)
+                             updateActionStates();
                      });
 }
 
@@ -797,6 +799,8 @@ void MainWindow::stopDbusViewer(const QString &vmName)
         state.ctrl->deleteLater();
 
     updateSessionInhibitors();
+    if (selectedVmName() == vmName)
+        updateActionStates();
 }
 
 void MainWindow::registerAudioListeners(const QString &vmName)
@@ -1205,7 +1209,8 @@ void MainWindow::updateActionStates()
     launcherAction->setEnabled(hasSelection && entry && m_launcher);
     launcherAction->setChecked(hasSelection && m_launcher && m_launcher->has(name));
     actionCollection()->action(u"vm_import"_s)->setEnabled(true);
-    actionCollection()->action(u"vm_screenshot"_s)->setEnabled(hasSelection && isRunning && vmSupportsScreendump());
+    const bool hasDbusViewer = hasSelection && entry && entry->config.displayType() == VMSpecs::DisplayType::Dbus && m_runtimeManager->hasViewer(name);
+    actionCollection()->action(u"vm_screenshot"_s)->setEnabled(hasSelection && isRunning && (hasDbusViewer || vmSupportsScreendump()));
 
     // --- Additional UI states ---
     const bool hasUsbController = hasSelection && entry && entry->config.usbController() != VMSpecs::UsbController::None;
@@ -1904,7 +1909,7 @@ void MainWindow::loadVmList()
 
 bool MainWindow::vmSupportsScreendump() const
 {
-    return !currentConfig.gpu3dAcceleration();
+    return !currentConfig.gpu3dAcceleration() || currentConfig.gpuType() != VMSpecs::GpuType::Virtio;
 }
 
 QString MainWindow::saveStateBlockReason(const VmEntry *entry) const
@@ -3119,13 +3124,14 @@ void MainWindow::saveScreenshot()
     if (vmName.isEmpty() || !veModel->isRunning(vmName))
         return;
 
+    if (auto *viewer = m_runtimeManager->viewerWindow(vmName)) {
+        viewer->saveScreenshot();
+        return;
+    }
+
     if (!vmSupportsScreendump()) {
         KMessageBox::information(this,
-                                 i18n("Screenshots are not available for VMs using VirtIO-GL.\n\n"
-                                      "The GPU renders directly via OpenGL on the host, "
-                                      "so QEMU has no software framebuffer to capture.\n\n"
-                                      "To use this feature, switch the GPU type to "
-                                      "'VGA' or 'VirtIO' in the VM settings."),
+                                 i18n("Open the D-Bus viewer to capture a 3D-accelerated VM."),
                                  i18n("Screenshot Not Available"));
         return;
     }

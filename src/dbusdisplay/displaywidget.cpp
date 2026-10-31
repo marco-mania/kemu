@@ -18,6 +18,7 @@
 #endif
 
 #include "dbusdisplay/dbusdisplayconst.h"
+#include "dbusdisplay/framecapture.h"
 #include "dbusdisplay/linuxtoqnum.h"
 #include "kemu_dbusdisplay_debug.h"
 
@@ -203,6 +204,7 @@ void QemuDisplayWidget::disableSubSurface(const char *reason)
         return;
     m_subsurfaceFailed = true;
     m_subsurfaceActive = false;
+    m_lastSubSurfaceScanout = {};
     if (m_subsurface) {
         m_subsurface->detach();
         m_subsurface->deleteLater();
@@ -264,6 +266,7 @@ bool QemuDisplayWidget::presentViaSubSurface()
         disableSubSurface("compositor rejected the guest's buffer format");
         return false;
     }
+    m_lastSubSurfaceScanout = std::move(buf);
 
     // Keep the rest of the widget's state coherent: the software upload path
     // must not run, and paintGL has nothing left to import.
@@ -561,13 +564,8 @@ bool QemuDisplayWidget::initEglFunctions()
 // DMA-BUF Import
 // =============================================================================
 
-bool QemuDisplayWidget::importDmaBuf()
+bool QemuDisplayWidget::importDmaBuf(const DmaBufScanout &buf)
 {
-    // buf owns the fds; EGL dups what it needs, so they close on return.
-    DmaBufScanout buf;
-    if (!m_listener->takeDmaBufScanout(buf))
-        return false;
-
     makeCurrent();
     destroyEglImage();
 
@@ -663,7 +661,8 @@ bool QemuDisplayWidget::ensureDmaBufImported()
 {
     if (m_dmaBufPending) {
         m_dmaBufPending = false;
-        if (!importDmaBuf()) {
+        DmaBufScanout buf;
+        if (!m_listener->takeDmaBufScanout(buf) || !importDmaBuf(buf)) {
             m_usingDmaBuf = false;
             m_textureReady = false;
         }
@@ -736,6 +735,44 @@ void QemuDisplayWidget::destroyEglImage()
         m_eglDestroyImageKHR(m_eglDisplay, m_eglImage);
         m_eglImage = EGL_NO_IMAGE_KHR;
     }
+}
+
+QImage QemuDisplayWidget::captureGuestFrame()
+{
+    if (m_fbSize.isEmpty())
+        return {};
+
+    if (!m_subsurfaceActive && !m_usingDmaBuf && !m_dmaBufPending)
+        return m_listener->currentImage().copy();
+
+    if (!isValid())
+        return {};
+
+    makeCurrent();
+    if (m_subsurfaceActive) {
+        if (!m_eglAvailable || m_lastSubSurfaceScanout.numFds == 0 || !importDmaBuf(m_lastSubSurfaceScanout)) {
+            doneCurrent();
+            return {};
+        }
+        blitImportToPresent();
+    } else if (m_dmaBufPending) {
+        if (!m_eglAvailable || !ensureDmaBufImported()) {
+            doneCurrent();
+            return {};
+        }
+        blitImportToPresent();
+        m_listener->ackPendingFrame();
+    }
+
+    const QImage image = m_textureReady && m_texAllocSize == m_fbSize ? readDisplayTexture(this, m_textureId, m_fbSize, m_flipY) : QImage();
+    if (m_subsurfaceActive) {
+        destroyEglImage();
+        glDeleteTextures(1, &m_importTexture);
+        m_importTexture = 0;
+        m_textureReady = false;
+    }
+    doneCurrent();
+    return image;
 }
 
 void QemuDisplayWidget::uploadSoftwareFrame()
@@ -1054,6 +1091,7 @@ void QemuDisplayWidget::onScanoutChanged(int w, int h)
     qCDebug(KEMU_DBUSDISPLAY) << "QemuDisplayWidget::onScanoutChanged" << w << h;
     m_dmaBufPending = false;
     m_usingDmaBuf = false;
+    m_lastSubSurfaceScanout = {};
     m_texAllocSize = QSize(); // present texture was blit-allocated; force realloc
 
     // The guest dropped back to a software scanout, so the sub-surface would
