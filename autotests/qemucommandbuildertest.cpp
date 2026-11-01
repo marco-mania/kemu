@@ -5,6 +5,7 @@
  */
 
 #include <QFile>
+#include <QJsonObject>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QTemporaryDir>
@@ -371,6 +372,30 @@ private Q_SLOTS:
             QCOMPARE(qemuSecret.readAll(), password.toUtf8());
             QCOMPARE(tpmSecret.readAll(), password.toUtf8());
         }
+    }
+
+    void monitorCountConfiguration()
+    {
+        VMConfig config;
+        QCOMPARE(config.monitorCount(), 1);
+
+        QJsonObject legacy = config.toJson();
+        legacy.remove(u"monitor_count"_s);
+        QCOMPARE(VMConfig::fromJson(legacy).monitorCount(), 1);
+
+        config.setMonitorCount(2);
+        QCOMPARE(config.toJson().value(u"monitor_count"_s).toInt(), 2);
+        QCOMPARE(VMConfig::fromJson(config.toJson()).monitorCount(), 2);
+
+        config.setMonitorCount(0);
+        QCOMPARE(config.monitorCount(), 1);
+        config.setMonitorCount(42);
+        QCOMPARE(config.monitorCount(), KEMUConst::MaxMonitorCount);
+        QJsonObject invalid = config.toJson();
+        invalid[u"monitor_count"_s] = -1;
+        QCOMPARE(VMConfig::fromJson(invalid).monitorCount(), 1);
+        invalid[u"monitor_count"_s] = 99;
+        QCOMPARE(VMConfig::fromJson(invalid).monitorCount(), KEMUConst::MaxMonitorCount);
     }
 };
 

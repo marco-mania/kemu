@@ -15,6 +15,7 @@
 #include <QPixmap>
 #include <QSize>
 #include <QString>
+#include <QtGlobal>
 #include <QUuid>
 
 #include <KLocalizedString>
@@ -174,6 +175,7 @@ struct Defaults {
     MachineType machineType = MachineType::Q35;
     GpuType gpuType = GpuType::Virtio;
     int gpuMemMb = 64;
+    int monitorCount = 1;
     bool gpu3dAcceleration = true;
     AudioDevice audioDevice = AudioDevice::Hda;
     DiskInterface diskInterface = DiskInterface::Virtio;
@@ -417,6 +419,10 @@ public:
     [[nodiscard]] int gpuMemMb() const
     {
         return m_gpuMemMb;
+    }
+    [[nodiscard]] int monitorCount() const
+    {
+        return m_monitorCount;
     }
     [[nodiscard]] QSize displayResolution() const
     {
@@ -701,6 +707,10 @@ public:
     void setGpuMemMb(const int mb)
     {
         m_gpuMemMb = mb;
+    }
+    void setMonitorCount(int count)
+    {
+        m_monitorCount = qBound(1, count, KEMUConst::MaxMonitorCount);
     }
     void setDisplayResolution(const QSize &res)
     {
@@ -1024,6 +1034,7 @@ private:
     VMSpecs::GpuType m_gpuType = GlobalDefaults.gpuType;
     bool m_gpu3dAcceleration = GlobalDefaults.gpu3dAcceleration;
     int m_gpuMemMb = GlobalDefaults.gpuMemMb;
+    int m_monitorCount = GlobalDefaults.monitorCount;
     QSize m_displayResolution = GlobalDefaults.displayResolution;
     VMSpecs::AudioDevice m_audioDevice = GlobalDefaults.audioDevice;
     Sb16Config m_sb16Config;

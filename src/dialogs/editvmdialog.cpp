@@ -495,10 +495,11 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
              "script, or if your QEMU build lacks dbus-display support."));
     displayLayout->addRow(i18n("Viewer:"), displayCombo);
 
-    // Placeholder until multiple monitors are implemented.
+    // Shows the stored value; this version always starts the VM with one.
     monitorCountSpin = new QSpinBox();
-    monitorCountSpin->setRange(1, 1);
-    monitorCountSpin->setToolTip(i18n("Multiple monitors are not supported yet."));
+    monitorCountSpin->setRange(1, KEMUConst::MaxMonitorCount);
+    monitorCountSpin->setValue(GlobalDefaults.monitorCount);
+    monitorCountSpin->setToolTip(i18n("Multiple monitors are not supported yet. The VM starts with one monitor."));
     displayLayout->addRow(i18n("Monitors:"), monitorCountSpin);
     monitorCountLabel = qobject_cast<QLabel *>(displayLayout->labelForField(monitorCountSpin));
     monitorCountSpin->setEnabled(false);
@@ -1137,6 +1138,7 @@ void EditVmDialog::setConfig(const VMConfig &config)
     }
 
     setCombo(gpuCombo, config.gpuType());
+    monitorCountSpin->setValue(config.monitorCount());
     accel3dCheck->setChecked(config.gpu3dAcceleration());
     setCombo(audioCombo, config.audioDevice());
     m_sb16Config = config.sb16Config();
@@ -1508,6 +1510,7 @@ VMConfig EditVmDialog::getResult() const
     c.setSharedName(sharedNameEdit->text());
     c.setDisplayType(static_cast<VMSpecs::DisplayType>(displayCombo->currentData().toInt()));
     c.setGpuType(static_cast<VMSpecs::GpuType>(gpuCombo->currentData().toInt()));
+    c.setMonitorCount(monitorCountSpin->value());
     c.setGpu3dAcceleration(accel3dCheck->isChecked());
     c.setGpuMemMb(gpuMemSpin->value());
     c.setDisplayResolution(resolutionCombo->currentData().toSize());
@@ -2370,6 +2373,7 @@ void EditVmDialog::resetToFactoryDefaults()
     kvmCheck->setChecked(GlobalDefaults.useKvm);
     setCombo(machineCombo, GlobalDefaults.machineType);
     setCombo(gpuCombo, GlobalDefaults.gpuType);
+    monitorCountSpin->setValue(GlobalDefaults.monitorCount);
     gpuMemSpin->setValue(GlobalDefaults.gpuMemMb);
     setCombo(audioCombo, GlobalDefaults.audioDevice);
     setCombo(diskInterfaceCombo, GlobalDefaults.diskInterface);
