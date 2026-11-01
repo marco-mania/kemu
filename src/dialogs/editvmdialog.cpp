@@ -427,20 +427,180 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     tabs->addTab(sysTab, QIcon::fromTheme(u"preferences-system"_s), i18n("System"));
 
     // --- Hardware Tab ---
+    // Graphics and display sit side by side: the number of monitors
+    // depends on both. Storage spans the full width for the disk list.
     auto *hwTab = new QWidget();
-    auto *hwLayout = new QFormLayout(hwTab);
-    hwLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    auto *hwMainLayout = new QVBoxLayout(hwTab);
+    auto *hwColumns = new QHBoxLayout();
+    auto *hwLeftColumn = new QVBoxLayout();
+    auto *hwRightColumn = new QVBoxLayout();
+    hwColumns->addLayout(hwLeftColumn, 1);
+    hwColumns->addLayout(hwRightColumn, 1);
+    hwMainLayout->addLayout(hwColumns);
+
+    const auto createFormGroup = [](const QString &title) {
+        auto *group = new QGroupBox(title);
+        auto *layout = new QFormLayout(group);
+        layout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+        return std::pair{group, layout};
+    };
+
+    // Graphics
+    const auto [graphicsGroup, graphicsLayout] = createFormGroup(i18n("Graphics"));
+
+    gpuCombo = new QComboBox();
+    gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::Vga), static_cast<int>(VMSpecs::GpuType::Vga));
+    gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::Virtio), static_cast<int>(VMSpecs::GpuType::Virtio));
+    gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::Qxl), static_cast<int>(VMSpecs::GpuType::Qxl));
+    gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::CirrusGD5446), static_cast<int>(VMSpecs::GpuType::CirrusGD5446));
+    gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::CirrusGD5430), static_cast<int>(VMSpecs::GpuType::CirrusGD5430));
+    gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::VgaISA), static_cast<int>(VMSpecs::GpuType::VgaISA));
+    graphicsLayout->addRow(i18n("Adapter:"), gpuCombo);
+
+    gpuMemSpin = new QSpinBox();
+    gpuMemSpin->setValue(64);
+    gpuMemSpin->setSuffix(i18n(" MiB"));
+    vgaMemLabel = new QLabel(i18n("Memory:"));
+    graphicsLayout->addRow(vgaMemLabel, gpuMemSpin);
+
+    accel3dCheck = new QCheckBox(i18n("3D acceleration (GL)"));
+    accel3dCheck->setToolTip(
+        i18n("Enables GPU-accelerated 3D rendering via virtio-vga-gl.\n"
+             "Requires VirtIO GPU with the SDL display or the integrated viewer.\n"
+             "Not available with Standard VGA/QXL."));
+    accel3dCheck->setChecked(false);
+    graphicsLayout->addRow({}, accel3dCheck);
+
+    gpuHintLabel = new QLabel();
+    gpuHintLabel->setStyleSheet(infoStyle(KColorScheme::NeutralText));
+    gpuHintLabel->setVisible(false);
+    graphicsLayout->addRow({}, gpuHintLabel);
+
+    hwLeftColumn->addWidget(graphicsGroup);
+
+    // Display
+    const auto [displayGroup, displayLayout] = createFormGroup(i18n("Display"));
+
+    displayCombo = new QComboBox();
+    // Integrated Viewer first: it is the recommended default, SDL is the
+    // fallback for a QEMU build without dbus-display support, or for running
+    // the exported qemu.sh script standalone, without KEMU as its peer.
+    for (const auto type : {VMSpecs::DisplayType::Dbus, VMSpecs::DisplayType::Sdl}) {
+        if (VMConfig::isDisplayTypeAvailable(type))
+            displayCombo->addItem(VMConfig::toUIString(type), static_cast<int>(type));
+    }
+    displayCombo->setToolTip(
+        i18n("The integrated viewer is recommended for everyday use. SDL opens "
+             "a native QEMU window outside KEMU - useful for the standalone qemu.sh "
+             "script, or if your QEMU build lacks dbus-display support."));
+    displayLayout->addRow(i18n("Viewer:"), displayCombo);
+
+    // Placeholder until multiple monitors are implemented.
+    monitorCountSpin = new QSpinBox();
+    monitorCountSpin->setRange(1, 1);
+    monitorCountSpin->setToolTip(i18n("Multiple monitors are not supported yet."));
+    displayLayout->addRow(i18n("Monitors:"), monitorCountSpin);
+    monitorCountLabel = qobject_cast<QLabel *>(displayLayout->labelForField(monitorCountSpin));
+    monitorCountSpin->setEnabled(false);
+    monitorCountLabel->setEnabled(false);
+
+    resolutionCombo = new QComboBox();
+    resolutionCombo->addItem(u"1280 × 800"_s, QSize(1280, 800));
+    resolutionCombo->addItem(u"1280 × 720 (HD)"_s, QSize(1280, 720));
+    resolutionCombo->addItem(u"1366 × 768"_s, QSize(1366, 768));
+    resolutionCombo->addItem(u"1440 × 900"_s, QSize(1440, 900));
+    resolutionCombo->addItem(u"1600 × 900"_s, QSize(1600, 900));
+    resolutionCombo->addItem(u"1920 × 1080 (Full HD)"_s, QSize(1920, 1080));
+    resolutionCombo->addItem(u"2560 × 1440 (QHD)"_s, QSize(2560, 1440));
+    resolutionCombo->addItem(u"3840 × 2160 (4K)"_s, QSize(3840, 2160));
+    const QSize defaultRes = SettingsDialog::getDefaultResolution();
+    for (int i = 0; i < resolutionCombo->count(); ++i) {
+        if (resolutionCombo->itemData(i).toSize() == defaultRes) {
+            resolutionCombo->setCurrentIndex(i);
+            break;
+        }
+    }
+    displayLayout->addRow(i18n("Initial Resolution:"), resolutionCombo);
+    resolutionLabel = qobject_cast<QLabel *>(displayLayout->labelForField(resolutionCombo));
+
+    hwRightColumn->addWidget(displayGroup);
+
+    // Input and USB: mouse and keyboard depend on the USB controller.
+    const auto [inputGroup, inputLayout] = createFormGroup(i18n("Input and USB"));
+
+    usbCombo = new QComboBox();
+    usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Xhci), static_cast<int>(VMSpecs::UsbController::Xhci));
+    usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Ehci), static_cast<int>(VMSpecs::UsbController::Ehci));
+    usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Default), static_cast<int>(VMSpecs::UsbController::Default));
+    usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::None), static_cast<int>(VMSpecs::UsbController::None));
+    inputLayout->addRow(i18n("USB Controller:"), usbCombo);
+    usbControllerLabel = qobject_cast<QLabel *>(inputLayout->labelForField(usbCombo));
+
+    mouseCombo = new QComboBox();
+    mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::Ps2), static_cast<int>(VMSpecs::PointerDevice::Ps2));
+    mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::UsbMouse), static_cast<int>(VMSpecs::PointerDevice::UsbMouse));
+    mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::UsbTablet), static_cast<int>(VMSpecs::PointerDevice::UsbTablet));
+    mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::VirtioTablet), static_cast<int>(VMSpecs::PointerDevice::VirtioTablet));
+    mouseCombo->setToolTip(
+        i18n("PS/2 and USB mouse are relative pointers; tablets give absolute "
+             "positioning (seamless, no grab). USB options need a USB controller, "
+             "VirtIO needs PCI and a virtio input driver in the guest."));
+    setCombo(mouseCombo, GlobalDefaults.pointerDevice);
+    inputLayout->addRow(i18n("Mouse:"), mouseCombo);
+
+    keyboardCombo = new QComboBox();
+    keyboardCombo->addItem(VMConfig::toUIString(VMSpecs::KeyboardDevice::Ps2), static_cast<int>(VMSpecs::KeyboardDevice::Ps2));
+    keyboardCombo->addItem(VMConfig::toUIString(VMSpecs::KeyboardDevice::Usb), static_cast<int>(VMSpecs::KeyboardDevice::Usb));
+    keyboardCombo->setToolTip(i18n("USB keyboard needs a USB controller. Legacy guests require PS/2."));
+    setCombo(keyboardCombo, GlobalDefaults.keyboardDevice);
+    inputLayout->addRow(i18n("Keyboard:"), keyboardCombo);
+
+    hwLeftColumn->addWidget(inputGroup);
+
+    // Audio
+    const auto [audioGroup, audioLayout] = createFormGroup(i18n("Audio"));
+
+    audioCombo = new QComboBox();
+    {
+        const QMetaEnum metaEnum = QMetaEnum::fromType<VMSpecs::AudioDevice>();
+        for (int i = 0; i < metaEnum.keyCount(); ++i) {
+            auto model = static_cast<VMSpecs::AudioDevice>(metaEnum.value(i));
+            audioCombo->addItem(VMConfig::toUIString(model), static_cast<int>(model));
+        }
+    }
+    audioCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    audioCombo->setCurrentIndex(1);
+
+    sb16ConfigButton = new QPushButton(QIcon::fromTheme(u"configure"_s), {});
+    sb16ConfigButton->setToolTip(i18n("Configure SB16 ISA resources"));
+    sb16ConfigButton->setFixedWidth(sb16ConfigButton->sizeHint().height());
+    sb16ConfigButton->setEnabled(false);
+
+    auto *audioRow = new QHBoxLayout();
+    audioRow->addWidget(audioCombo);
+    audioRow->addWidget(sb16ConfigButton);
+    audioRow->addStretch();
+
+    audioLayout->addRow(i18n("Device:"), audioRow);
+
+    hwRightColumn->addWidget(audioGroup);
+
+    hwLeftColumn->addStretch();
+    hwRightColumn->addStretch();
+
+    // Storage
+    const auto [storageGroup, storageLayout] = createFormGroup(i18n("Storage"));
 
     diskInterfaceCombo = new QComboBox();
     diskInterfaceCombo->addItem(VMConfig::toUIString(VMSpecs::DiskInterface::Virtio), static_cast<int>(VMSpecs::DiskInterface::Virtio));
     diskInterfaceCombo->addItem(VMConfig::toUIString(VMSpecs::DiskInterface::Nvme), static_cast<int>(VMSpecs::DiskInterface::Nvme));
     diskInterfaceCombo->addItem(VMConfig::toUIString(VMSpecs::DiskInterface::SataIde), static_cast<int>(VMSpecs::DiskInterface::SataIde));
     diskInterfaceCombo->setToolTip(i18n("This is the disc controller of the system disk."));
-    hwLayout->addRow(i18n("Disk Controller:"), diskInterfaceCombo);
+    storageLayout->addRow(i18n("Disk Controller:"), diskInterfaceCombo);
 
     diskHintLabel = new QLabel();
     diskHintLabel->setStyleSheet(infoStyle(KColorScheme::NeutralText));
-    hwLayout->addRow({}, diskHintLabel);
+    storageLayout->addRow({}, diskHintLabel);
 
     diskHintLabel->setVisible(false);
 
@@ -472,9 +632,9 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     storageWarningMessage = createInlineMessage(KMessageWidget::Error);
     extraDisksLayout->addWidget(storageWarningMessage);
 
-    hwLayout->addRow(i18n("Additional Disks:"), extraDisksWidget);
+    storageLayout->addRow(i18n("Additional Disks:"), extraDisksWidget);
     // A VM that does not exist yet has no folder to put further disks into.
-    hwLayout->setRowVisible(extraDisksWidget, m_mode == Mode::Edit);
+    storageLayout->setRowVisible(extraDisksWidget, m_mode == Mode::Edit);
 
     connect(addDiskButton, &QPushButton::clicked, this, &EditVmDialog::addDisk);
     connect(editDiskButton, &QPushButton::clicked, this, &EditVmDialog::editSelectedDisk);
@@ -482,115 +642,8 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     connect(diskTree, &QTreeWidget::itemSelectionChanged, this, &EditVmDialog::updateDiskButtons);
     connect(diskTree, &QTreeWidget::itemDoubleClicked, this, &EditVmDialog::editSelectedDisk);
 
-    usbCombo = new QComboBox();
-    usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Xhci), static_cast<int>(VMSpecs::UsbController::Xhci));
-    usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Ehci), static_cast<int>(VMSpecs::UsbController::Ehci));
-    usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Default), static_cast<int>(VMSpecs::UsbController::Default));
-    usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::None), static_cast<int>(VMSpecs::UsbController::None));
-    hwLayout->addRow(i18n("USB Controller:"), usbCombo);
-    usbControllerLabel = qobject_cast<QLabel *>(hwLayout->labelForField(usbCombo));
-
-    mouseCombo = new QComboBox();
-    mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::Ps2), static_cast<int>(VMSpecs::PointerDevice::Ps2));
-    mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::UsbMouse), static_cast<int>(VMSpecs::PointerDevice::UsbMouse));
-    mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::UsbTablet), static_cast<int>(VMSpecs::PointerDevice::UsbTablet));
-    mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::VirtioTablet), static_cast<int>(VMSpecs::PointerDevice::VirtioTablet));
-    mouseCombo->setToolTip(
-        i18n("PS/2 and USB mouse are relative pointers; tablets give absolute "
-             "positioning (seamless, no grab). USB options need a USB controller, "
-             "VirtIO needs PCI and a virtio input driver in the guest."));
-    setCombo(mouseCombo, GlobalDefaults.pointerDevice);
-    hwLayout->addRow(i18n("Mouse:"), mouseCombo);
-
-    keyboardCombo = new QComboBox();
-    keyboardCombo->addItem(VMConfig::toUIString(VMSpecs::KeyboardDevice::Ps2), static_cast<int>(VMSpecs::KeyboardDevice::Ps2));
-    keyboardCombo->addItem(VMConfig::toUIString(VMSpecs::KeyboardDevice::Usb), static_cast<int>(VMSpecs::KeyboardDevice::Usb));
-    keyboardCombo->setToolTip(i18n("USB keyboard needs a USB controller. Legacy guests require PS/2."));
-    setCombo(keyboardCombo, GlobalDefaults.keyboardDevice);
-    hwLayout->addRow(i18n("Keyboard:"), keyboardCombo);
-
-    displayCombo = new QComboBox();
-    // Integrated Viewer first: it is the recommended default, SDL is the
-    // fallback for a QEMU build without dbus-display support, or for running
-    // the exported qemu.sh script standalone, without KEMU as its peer.
-    for (const auto type : {VMSpecs::DisplayType::Dbus, VMSpecs::DisplayType::Sdl}) {
-        if (VMConfig::isDisplayTypeAvailable(type))
-            displayCombo->addItem(VMConfig::toUIString(type), static_cast<int>(type));
-    }
-    displayCombo->setToolTip(
-        i18n("The integrated viewer is recommended for everyday use. SDL opens "
-             "a native QEMU window outside KEMU - useful for the standalone qemu.sh "
-             "script, or if your QEMU build lacks dbus-display support."));
-    hwLayout->addRow(i18n("Display:"), displayCombo);
-
-    gpuCombo = new QComboBox();
-    gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::Vga), static_cast<int>(VMSpecs::GpuType::Vga));
-    gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::Virtio), static_cast<int>(VMSpecs::GpuType::Virtio));
-    gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::Qxl), static_cast<int>(VMSpecs::GpuType::Qxl));
-    gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::CirrusGD5446), static_cast<int>(VMSpecs::GpuType::CirrusGD5446));
-    gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::CirrusGD5430), static_cast<int>(VMSpecs::GpuType::CirrusGD5430));
-    gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::VgaISA), static_cast<int>(VMSpecs::GpuType::VgaISA));
-    hwLayout->addRow(i18n("Graphics:"), gpuCombo);
-
-    gpuMemSpin = new QSpinBox();
-    gpuMemSpin->setValue(64);
-    gpuMemSpin->setSuffix(i18n(" MiB"));
-    vgaMemLabel = new QLabel(i18n("GPU Memory:"));
-    hwLayout->addRow(vgaMemLabel, gpuMemSpin);
-
-    accel3dCheck = new QCheckBox(i18n("3D acceleration (GL)"));
-    accel3dCheck->setToolTip(
-        i18n("Enables GPU-accelerated 3D rendering via virtio-vga-gl.\n"
-             "Requires VirtIO GPU with the SDL display or the integrated viewer.\n"
-             "Not available with Standard VGA/QXL."));
-    accel3dCheck->setChecked(false);
-    hwLayout->addRow(u""_s, accel3dCheck);
-
-    gpuHintLabel = new QLabel();
-    gpuHintLabel->setStyleSheet(infoStyle(KColorScheme::NeutralText));
-    hwLayout->addRow(gpuHintLabel);
-
-    resolutionCombo = new QComboBox();
-    resolutionCombo->addItem(u"1280 × 800"_s, QSize(1280, 800));
-    resolutionCombo->addItem(u"1280 × 720 (HD)"_s, QSize(1280, 720));
-    resolutionCombo->addItem(u"1366 × 768"_s, QSize(1366, 768));
-    resolutionCombo->addItem(u"1440 × 900"_s, QSize(1440, 900));
-    resolutionCombo->addItem(u"1600 × 900"_s, QSize(1600, 900));
-    resolutionCombo->addItem(u"1920 × 1080 (Full HD)"_s, QSize(1920, 1080));
-    resolutionCombo->addItem(u"2560 × 1440 (QHD)"_s, QSize(2560, 1440));
-    resolutionCombo->addItem(u"3840 × 2160 (4K)"_s, QSize(3840, 2160));
-    const QSize defaultRes = SettingsDialog::getDefaultResolution();
-    for (int i = 0; i < resolutionCombo->count(); ++i) {
-        if (resolutionCombo->itemData(i).toSize() == defaultRes) {
-            resolutionCombo->setCurrentIndex(i);
-            break;
-        }
-    }
-    hwLayout->addRow(i18n("Initial Resolution:"), resolutionCombo);
-    resolutionLabel = qobject_cast<QLabel *>(hwLayout->labelForField(resolutionCombo));
-
-    audioCombo = new QComboBox();
-    {
-        const QMetaEnum metaEnum = QMetaEnum::fromType<VMSpecs::AudioDevice>();
-        for (int i = 0; i < metaEnum.keyCount(); ++i) {
-            auto model = static_cast<VMSpecs::AudioDevice>(metaEnum.value(i));
-            audioCombo->addItem(VMConfig::toUIString(model), static_cast<int>(model));
-        }
-    }
-    audioCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-    audioCombo->setCurrentIndex(1);
-
-    sb16ConfigButton = new QPushButton(QIcon::fromTheme(u"configure"_s), {});
-    sb16ConfigButton->setToolTip(i18n("Configure SB16 ISA resources"));
-    sb16ConfigButton->setFixedWidth(sb16ConfigButton->sizeHint().height());
-    sb16ConfigButton->setEnabled(false);
-
-    auto *audioRow = new QHBoxLayout();
-    audioRow->addWidget(audioCombo);
-    audioRow->addWidget(sb16ConfigButton);
-    audioRow->addStretch();
-
-    hwLayout->addRow(i18n("Audio:"), audioRow);
+    hwMainLayout->addWidget(storageGroup);
+    hwMainLayout->addStretch();
 
     tabs->addTab(hwTab, QIcon::fromTheme(u"preferences-desktop-peripherals"_s), i18n("Hardware"));
 
@@ -1241,11 +1294,13 @@ void EditVmDialog::onGpuDisplayChanged()
     if (!can3d)
         accel3dCheck->setChecked(false);
 
+    // Sits right below the 3D checkbox, so it can stay short.
     if (can3d && isWindows && accel3dCheck->isChecked()) {
-        gpuHintLabel->setText(u"<i>"_s + i18n("Note: VirtIO 3D acceleration is not supported on Windows guests.") + u"</i>"_s);
+        gpuHintLabel->setText(u"<i>"_s + i18n("Not supported on Windows guests.") + u"</i>"_s);
     } else {
         gpuHintLabel->clear();
     }
+    gpuHintLabel->setVisible(!gpuHintLabel->text().isEmpty());
 }
 
 void EditVmDialog::onNameChanged(const QString &text)
