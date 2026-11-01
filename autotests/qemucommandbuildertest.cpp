@@ -174,6 +174,78 @@ private Q_SLOTS:
         QCOMPARE(graphicsDevices.constFirst().section(u',', 0, 0), expectedDevice);
     }
 
+    void runtimeChannelsAndNetwork_data()
+    {
+        QTest::addColumn<bool>("virtualNetwork");
+        QTest::addColumn<bool>("windowsSharedFolder");
+        QTest::newRow("isolated-network-linux") << true << false;
+        QTest::newRow("isolated-network-windows") << true << true;
+        QTest::newRow("user-mode-linux") << false << false;
+        QTest::newRow("user-mode-windows") << false << true;
+    }
+
+    void runtimeChannelsAndNetwork()
+    {
+        QFETCH(bool, virtualNetwork);
+        QFETCH(bool, windowsSharedFolder);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QDir vmDir(dir.path());
+        VMConfig config = testConfig(vmDir);
+        config.setNetworkCard(VMSpecs::NetworkCard::Virtio);
+        config.setNetworkMode(virtualNetwork ? VMSpecs::NetworkMode::VirtualNetwork : VMSpecs::NetworkMode::UserMode);
+        config.setUseGuestAgent(true);
+        config.setUseTpm(true);
+        config.setSharedPath(dir.filePath(u"shared,folder"_s));
+        config.setOsFamily(windowsSharedFolder ? VMSpecs::OsFamily::Windows : VMSpecs::OsFamily::Linux);
+
+        QemuNetworkContext context;
+        context.switchFd = 51;
+        context.userNetFd = 52;
+        context.monitorFd = 53;
+        context.guestAgentFd = 54;
+        const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s), context);
+
+        const QString networkArg = virtualNetwork ? u"stream,id=%1,server=off,addr.type=fd,addr.str=51"_s.arg(KEMUConst::NetdevId)
+                                                   : u"stream,id=%1,server=off,addr.type=fd,addr.str=52"_s.arg(KEMUConst::NetdevId);
+        QVERIFY(args.contains(networkArg));
+        QVERIFY(args.contains(u"socket,id=%1,fd=53"_s.arg(KEMUConst::QmpChardevId)));
+        QVERIFY(args.contains(u"socket,id=%1,fd=54"_s.arg(KEMUConst::GuestAgentChardevId)));
+        QVERIFY(!args.contains(u"-qmp"_s));
+        QVERIFY(args.contains(u"socket,id=chrtpm,path=%1"_s.arg(Utils::escapeQemuOptionValue(vmDir.filePath(KEMUConst::SwtpmSocketFileName)))));
+        QVERIFY(args.contains(u"emulator,id=tpm0,chardev=chrtpm"_s));
+
+        if (windowsSharedFolder) {
+            QVERIFY(args.contains(u"socket,id=char_virtiofs,path=%1"_s.arg(Utils::escapeQemuOptionValue(vmDir.filePath(KEMUConst::VirtiofsdSocketFileName)))));
+            QVERIFY(args.contains(u"memory-backend-file,id=mem,size=%1M,mem-path=/dev/shm,share=on"_s.arg(config.ramMb())));
+            QVERIFY(args.contains(u"node,memdev=mem"_s));
+            QVERIFY(!args.contains(u"-virtfs"_s));
+        } else {
+            QVERIFY(args.contains(u"-virtfs"_s));
+            QVERIFY(!args.contains(u"socket,id=char_virtiofs,path=%1"_s.arg(vmDir.filePath(KEMUConst::VirtiofsdSocketFileName))));
+        }
+    }
+
+    void scriptNetworksStayIndependent()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QDir vmDir(dir.path());
+        VMConfig config = testConfig(vmDir);
+        config.setNetworkCard(VMSpecs::NetworkCard::Virtio);
+        config.setNetworkMode(VMSpecs::NetworkMode::VirtualNetwork);
+        VirtualNetwork first;
+        first.name = u"isolated-a"_s;
+        VirtualNetwork second;
+        second.name = u"isolated-b"_s;
+
+        const QString a = QemuCommandBuilder::buildShellScript(config, vmDir, dir.filePath(u"monitor.sock"_s), {}, first, true);
+        const QString b = QemuCommandBuilder::buildShellScript(config, vmDir, dir.filePath(u"monitor.sock"_s), {}, second, true);
+        QVERIFY(a.contains(u"localaddr=127.0.0.1"_s));
+        QVERIFY(b.contains(u"localaddr=127.0.0.1"_s));
+        QVERIFY(a != b);
+    }
+
     void exportedScript_data()
     {
         QTest::addColumn<bool>("relativePaths");

@@ -96,6 +96,7 @@ target_sources(
           mainwindow.h
           const.h
           runtime/vmruntimeinfo.h
+          runtime/vmexitoutcome.h
           runtime/vmruntimemanager.cpp
           runtime/vmruntimemanager.h
           utils/utils.cpp

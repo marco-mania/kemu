@@ -5,6 +5,7 @@
  */
 
 #include "vmruntimemanager.h"
+#include "vmexitoutcome.h"
 
 #include "dialogs/settingsdialog.h"
 #include "models/virtualenvironmentmodel.h"
@@ -720,11 +721,12 @@ void VmRuntimeManager::onQemuExit(const QString &vmName, int exitCode, KProcess:
     info.vmName = vmName;
     info.exitCode = exitCode;
     info.exitStatus = exitStatus;
-    info.abnormal = (exitStatus != KProcess::NormalExit) || (exitCode != 0);
     info.userInitiated = rt.userInitiatedShutdown;
     info.startupFailureAlreadyShown = rt.startupFailureShown;
     info.wasDeploying = entry->state == VmEntry::State::Deploying;
     info.savestatePresent = SaveStateManager::hasSavestate(vmPath(vmName), vmName);
+    const VmExitOutcome outcome = VmExitOutcome::fromProcess(exitCode, exitStatus, info.wasDeploying, info.savestatePresent);
+    info.abnormal = outcome.abnormal;
     info.guestPoweredOff = rt.guestPoweredOff && !rt.userInitiatedShutdown;
     info.shutdownHostWithGuest = rt.shutdownHostWithGuest;
 
@@ -736,7 +738,7 @@ void VmRuntimeManager::onQemuExit(const QString &vmName, int exitCode, KProcess:
 
     // clearRuntimeState() has just set Stopped; a completed save-state is the
     // only outcome that needs a different one.
-    if (!info.wasDeploying && info.savestatePresent && !info.abnormal)
+    if (outcome.markSaved)
         m_model->setVmState(vmName, VmEntry::State::Saved);
 
     rt.startupFailureShown = false;

@@ -87,3 +87,40 @@ ecm_add_test(framecapturetest.cpp
              TEST_NAME framecapturetest
              LINK_LIBRARIES Qt6::Gui Qt6::OpenGL Qt6::Test)
 target_include_directories(framecapturetest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# VM start orchestration and process exit decisions, without launching QEMU.
+ecm_add_test(startupchaintest.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/startupchain.cpp
+             TEST_NAME startupchaintest
+             LINK_LIBRARIES Qt6::Core Qt6::Test)
+target_include_directories(startupchaintest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+ecm_add_test(vmexitoutcometest.cpp
+             TEST_NAME vmexitoutcometest
+             LINK_LIBRARIES Qt6::Core Qt6::Gui Qt6::Network Qt6::Test KF6::CoreAddons KF6::I18n)
+target_include_directories(vmexitoutcometest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# Stand-in helpers exercise the real KProcess/socket-readiness lifecycle.
+ecm_add_test(asynchelperprocesstest.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/asynchelperprocess.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/utils.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/diskencryption.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/3rdparty/crypt_sha512.c
+             TEST_NAME asynchelperprocesstest
+             LINK_LIBRARIES Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Test KF6::CoreAddons KF6::I18n KF6::ConfigCore)
+target_include_directories(asynchelperprocesstest PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR})
+ecm_qt_declare_logging_category(asynchelperprocesstest
+                                HEADER "kemu_debug.h"
+                                IDENTIFIER "KEMU"
+                                CATEGORY_NAME "org.kde.kemu")
+
+# In-memory Ethernet framing, MAC binding, and isolation between networks.
+ecm_add_test(virtualswitchtest.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/virtualswitch.cpp
+             TEST_NAME virtualswitchtest
+             LINK_LIBRARIES Qt6::Core Qt6::Network Qt6::Test)
+target_include_directories(virtualswitchtest PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR})
+ecm_qt_declare_logging_category(virtualswitchtest
+                                HEADER "kemu_debug.h"
+                                IDENTIFIER "KEMU"
+                                CATEGORY_NAME "org.kde.kemu")
