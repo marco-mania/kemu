@@ -10,6 +10,9 @@
 #include <QGuiApplication>
 #include <QStandardPaths>
 
+#include <KStandardAction>
+#include <KToggleAction>
+
 #include "const.h"
 #include "kemu_dbusdisplay_debug.h"
 
@@ -130,8 +133,13 @@ void DbusViewerWindow::saveScreenshot()
         return;
 
     const QByteArray format = filePath.endsWith(u".jpg"_s, Qt::CaseInsensitive) || filePath.endsWith(u".jpeg"_s, Qt::CaseInsensitive) ? "JPEG" : "PNG";
-    if (image.save(filePath, format.constData()))
-        statusBar()->showMessage(i18n("Screenshot saved to %1", filePath));
+    if (image.save(filePath, format.constData())) {
+        const QString message = i18n("Screenshot saved to %1", filePath);
+        if (statusBar()->isVisible())
+            statusBar()->showMessage(message);
+        else
+            showOsd(message, 3000);
+    }
     else
         QMessageBox::warning(this, i18n("Error"), i18n("Failed to save screenshot to %1", filePath));
 }
@@ -194,6 +202,9 @@ void DbusViewerWindow::createActions()
     m_actFullscreen->setCheckable(true);
     m_actFullscreen->setStatusTip(i18n("Toggle fullscreen mode"));
     connect(m_actFullscreen, &QAction::toggled, this, &DbusViewerWindow::onToggleFullscreen);
+
+    m_actShowStatusBar = KStandardAction::showStatusbar(this, &DbusViewerWindow::onToggleStatusBar, this);
+    m_actShowStatusBar->setChecked(m_statusBarShown);
 
     m_actFitWindow = new QAction(QIcon::fromTheme(u"zoom-fit-best"_s), i18n("&Fit Window to Display"), this);
     m_actFitWindow->setShortcut(QKeySequence(u"Ctrl+Shift+R"_s));
@@ -348,6 +359,7 @@ void DbusViewerWindow::createMenus()
     // View
     QMenu *viewMenu = menuBar()->addMenu(i18n("&View"));
     viewMenu->addAction(m_actFullscreen);
+    viewMenu->addAction(m_actShowStatusBar);
     viewMenu->addSeparator();
     viewMenu->addAction(m_actScaleToWindow);
     viewMenu->addAction(m_actResizeWindow);
@@ -642,6 +654,27 @@ void DbusViewerWindow::onToggleFullscreen(bool checked)
         showNormal();
     }
     Q_EMIT inhibitStateChanged();
+}
+
+void DbusViewerWindow::onToggleStatusBar(bool shown)
+{
+    setStatusBarShown(shown);
+    Q_EMIT statusBarShownChanged(shown);
+}
+
+void DbusViewerWindow::setStatusBarShown(bool shown)
+{
+    m_statusBarShown = shown;
+    {
+        QSignalBlocker blocker(m_actShowStatusBar);
+        m_actShowStatusBar->setChecked(shown);
+    }
+    // Fullscreen hides it either way and restores this choice on leaving.
+    if (isFullScreen())
+        return;
+    statusBar()->setVisible(shown);
+    if (isVisible())
+        updateWindowAndDisplaySize();
 }
 
 void DbusViewerWindow::onZoomIn()
@@ -1030,7 +1063,7 @@ void DbusViewerWindow::changeEvent(QEvent *event)
             QTimer::singleShot(100, this, doResize); // context object: cancels on destruction
         } else {
             menuBar()->show();
-            statusBar()->show();
+            statusBar()->setVisible(m_statusBarShown);
             {
                 QSignalBlocker block(m_actFullscreen);
                 m_actFullscreen->setChecked(false);

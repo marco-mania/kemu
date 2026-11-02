@@ -89,6 +89,7 @@ public:
     ~DbusViewerWindow() override;
 
     void saveScreenshot();
+    void setStatusBarShown(bool shown);
 
     QemuDisplayWidget *displayWidget() const
     {
@@ -154,6 +155,7 @@ Q_SIGNALS:
     void inhibitStateChanged(); // fullscreen or pointer capture changed
 
     void devicePrefsChanged(const ViewerDevicePrefs &prefs);
+    void statusBarShownChanged(bool shown);
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -162,6 +164,7 @@ protected:
 
 private Q_SLOTS:
     void onToggleFullscreen(bool checked);
+    void onToggleStatusBar(bool shown);
     void onToggleScaleToWindow(bool checked);
     void onToggleResizeWindow(bool checked);
     void onFitWindowToDisplay();
@@ -228,6 +231,8 @@ private:
     QAction *m_actScreenshot = nullptr;
     QAction *m_actQuit = nullptr;
     QAction *m_actFullscreen = nullptr;
+    QAction *m_actShowStatusBar = nullptr;
+    bool m_statusBarShown = true;
     QAction *m_actFitWindow = nullptr;
     QAction *m_actScaleToWindow = nullptr;
     QAction *m_actResizeWindow = nullptr;

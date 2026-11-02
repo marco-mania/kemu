@@ -638,6 +638,8 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                                                              nullptr);
                          state.window->setWindowTitle(vmName);
                          state.window->setAttribute(Qt::WA_DeleteOnClose, false);
+                         state.window->setStatusBarShown(viewerStatusBarShown());
+                         connect(state.window, &DbusViewerWindow::statusBarShownChanged, this, &MainWindow::setViewerStatusBarShown);
                          state.window->show();
 
                          // --- Teardown triggers ---
@@ -5258,6 +5260,22 @@ void MainWindow::saveViewerPrefs(const QString &vmName, const ViewerDevicePrefs 
     grp.writeEntry(u"NetworkLinkUp"_s, prefs.networkLinkUp);
 
     config->sync();
+}
+
+// One choice for the viewer windows of all VMs.
+bool MainWindow::viewerStatusBarShown() const
+{
+    return KSharedConfig::openConfig(u"kemurc"_s)->group(u"ViewerState"_s).readEntry(u"ShowStatusBar"_s, true);
+}
+
+void MainWindow::setViewerStatusBarShown(bool shown)
+{
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    config->group(u"ViewerState"_s).writeEntry(u"ShowStatusBar"_s, shown);
+    config->sync();
+    const QList<DbusViewerWindow *> windows = m_runtimeManager->viewerWindows();
+    for (DbusViewerWindow *window : windows)
+        window->setStatusBarShown(shown);
 }
 
 void MainWindow::removeViewerPrefs(const QString &vmName) const

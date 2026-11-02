@@ -296,6 +296,8 @@ private:
 
     ViewerDevicePrefs loadViewerPrefs(const QString &vmName) const;
     void saveViewerPrefs(const QString &vmName, const ViewerDevicePrefs &prefs) const;
+    bool viewerStatusBarShown() const;
+    void setViewerStatusBarShown(bool shown);
     void removeViewerPrefs(const QString &vmName) const;
 
     QMap<QString, QDir> m_lastMediaDir;
