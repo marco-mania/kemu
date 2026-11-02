@@ -1431,7 +1431,9 @@ void MainWindow::updateDetails()
 
     const QString usbVal = VMConfig::toUIString(currentConfig.usbController());
     QString displayVal = VMConfig::toUIString(currentConfig.displayType());
-    const QString resolutionVal = u"%1×%2"_s.arg(currentConfig.displayResolution().width()).arg(currentConfig.displayResolution().height());
+    QString resolutionVal = u"%1×%2"_s.arg(currentConfig.displayResolution().width()).arg(currentConfig.displayResolution().height());
+    if (currentConfig.monitorCount() > 1)
+        resolutionVal = i18ncp("@info resolution, number of monitors", "%2, %1 monitor", "%2, %1 monitors", currentConfig.monitorCount(), resolutionVal);
     QString firmwareVal = VMConfig::firmwareToUIString(currentConfig.useUefi(), currentConfig.useSecureBoot());
     QString chipsetVal = VMConfig::toUIString(currentConfig.machineType());
 
