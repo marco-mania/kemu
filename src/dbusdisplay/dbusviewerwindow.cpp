@@ -343,8 +343,6 @@ void DbusViewerWindow::createMenus()
     machineMenu->addSeparator();
     machineMenu->addAction(m_actSnapshots);
     machineMenu->addSeparator();
-    machineMenu->addAction(m_actScreenshot);
-    machineMenu->addSeparator();
     machineMenu->addAction(m_actQuit);
 
     // View
@@ -359,6 +357,8 @@ void DbusViewerWindow::createMenus()
     viewMenu->addAction(m_actZoomIn);
     viewMenu->addAction(m_actZoomOut);
     viewMenu->addAction(m_actZoomReset);
+    viewMenu->addSeparator();
+    viewMenu->addAction(m_actScreenshot);
 
     // Devices
     QMenu *devicesMenu = menuBar()->addMenu(i18n("&Devices"));
