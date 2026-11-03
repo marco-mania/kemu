@@ -118,6 +118,7 @@ private:
     void setupGeneralPage();
     void setupSystemPage();
     QWidget *createFirmwareTab();
+    void updateFirmwareStatus();
     QWidget *createExecutablesTab();
     QWidget *createSandboxTab();
     QWidget *createCapabilitiesTab();
@@ -139,6 +140,7 @@ private:
 
     QLineEdit *pathEdit = nullptr;
     QLineEdit *ovmfEdit = nullptr;
+    QLabel *m_firmwareStatus = nullptr;
 
     struct ToolWidgets {
         ExternalTools::Tool tool;

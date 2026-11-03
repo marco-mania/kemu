@@ -885,12 +885,14 @@ bool MainWindow::requireUefiFirmware(const QString &vmPath, const VMConfig &conf
         return true;
     case Utils::OvmfVarsResult::Status::Created:
         if (result.keysMissing) {
+            // Arch's edk2-ovmf, for one, ships no template with keys.
             KMessageBox::information(parent,
-                                     i18n("The OVMF VARS template found does not appear to contain "
-                                          "pre-enrolled Microsoft keys. Secure Boot may require "
-                                          "manual key enrollment in the UEFI firmware setup.\n\n"
-                                          "For pre-enrolled keys, install the appropriate package "
-                                          "(e.g. 'edk2-ovmf' on Arch, 'ovmf' on Debian/Ubuntu)."),
+                                     i18n("The UEFI variable template found has no Microsoft keys enrolled. "
+                                          "Secure Boot therefore stays in setup mode: the VM boots, but nothing is "
+                                          "verified, and Windows reports Secure Boot as off.\n\n"
+                                          "Some distributions ship a template with the keys, for example the "
+                                          "'ovmf' package on Debian and Ubuntu. Settings → System → UEFI Firmware "
+                                          "shows which template KEMU uses."),
                                      i18n("Note"));
         }
         return true;

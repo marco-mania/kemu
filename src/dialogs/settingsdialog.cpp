@@ -178,8 +178,62 @@ QWidget *SettingsDialog::createFirmwareTab()
     row->addWidget(btn);
     layout->addLayout(row);
 
+    // What VMs will boot with, as the path is typed.
+    m_firmwareStatus = new QLabel;
+    m_firmwareStatus->setWordWrap(true);
+    m_firmwareStatus->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    layout->addSpacing(8);
+    layout->addWidget(m_firmwareStatus);
+    connect(ovmfEdit, &QLineEdit::textChanged, this, &SettingsDialog::updateFirmwareStatus);
+    updateFirmwareStatus();
+
     layout->addStretch();
     return page;
+}
+
+void SettingsDialog::updateFirmwareStatus()
+{
+    const KColorScheme scheme(QPalette::Active, KColorScheme::View);
+    const auto colored = [&scheme](KColorScheme::ForegroundRole role, const QString &text) {
+        return u"<font color='%1'>%2</font>"_s.arg(scheme.foreground(role).color().name(), text);
+    };
+    const auto describe = [](const Utils::OvmfPaths &firmware) {
+        return i18n("Code: %1<br/>Variables: %2<br/>Found through: %3",
+                    firmware.codePath.toHtmlEscaped(),
+                    firmware.varsPath.toHtmlEscaped(),
+                    firmware.source.toHtmlEscaped());
+    };
+
+    QStringList parts;
+    const QString customDir = ovmfEdit->text().trimmed();
+    if (!customDir.isEmpty() && !Ovmf::fromFileNames({customDir}, false).isValid() && !Ovmf::fromFileNames({customDir}, true).isValid())
+        parts << colored(KColorScheme::NeutralText, i18n("This directory holds no firmware KEMU can use, so it keeps looking elsewhere."));
+
+    const Utils::OvmfPaths plain = Utils::findOvmfPaths(false, customDir);
+    if (!plain.isValid()) {
+        parts << colored(KColorScheme::NegativeText,
+                         i18n("<b>No UEFI firmware found.</b> Install your distribution's OVMF package, for example ovmf or edk2-ovmf, "
+                              "or enter its directory above."));
+        m_firmwareStatus->setText(parts.join(u"<br/><br/>"_s));
+        return;
+    }
+    parts << colored(KColorScheme::PositiveText, i18n("<b>UEFI firmware found</b>")) + u"<br/>"_s + describe(plain);
+
+    // Secure Boot falls back to the plain firmware.
+    const Utils::OvmfPaths secure = Utils::findOvmfPaths(true, customDir);
+    if (!secure.secureBoot) {
+        parts << colored(KColorScheme::NeutralText,
+                         i18n("<b>No Secure Boot firmware found.</b> VMs with Secure Boot start with the firmware above, without Secure Boot."));
+    } else if (!secure.keysEnrolled) {
+        // Without keys the firmware stays in setup mode. Guests boot, Windows 11
+        // included, but nothing is verified.
+        parts << colored(KColorScheme::PositiveText, i18n("<b>Secure Boot firmware found</b>")) + u"<br/>"_s
+                + i18n("It comes without Microsoft keys, so Secure Boot stays in setup mode: it is not enforced, and Windows reports it as off.")
+                + u"<br/>"_s + describe(secure);
+    } else {
+        parts << colored(KColorScheme::PositiveText, i18n("<b>Secure Boot firmware found</b>, with Microsoft keys")) + u"<br/>"_s + describe(secure);
+    }
+    m_firmwareStatus->setText(parts.join(u"<br/><br/>"_s));
 }
 
 QWidget *SettingsDialog::createExecutablesTab()
@@ -504,6 +558,21 @@ QWidget *SettingsDialog::buildCapabilityList() const
            fromQemu(qemu.hasSeccompSandbox()),
            i18n("This QEMU was built without seccomp support.")}}},
     };
+
+    const QString firmwareDir = ovmfEdit ? ovmfEdit->text().trimmed() : QString();
+    const Utils::OvmfPaths uefi = Utils::findOvmfPaths(false, firmwareDir);
+    const Utils::OvmfPaths secure = Utils::findOvmfPaths(true, firmwareDir);
+    sections.append({i18n("Firmware"),
+                     {{i18n("UEFI"),
+                       i18n("Lets VMs boot with UEFI instead of a BIOS."),
+                       uefi.isValid() ? State::Available : State::Missing,
+                       i18n("No UEFI firmware was found. Install your distribution's OVMF package, for example ovmf or edk2-ovmf, "
+                            "or set its directory on the UEFI Firmware tab.")},
+                      {i18n("Secure Boot"),
+                       secure.keysEnrolled ? i18n("UEFI with Secure Boot and the Microsoft keys.")
+                                           : i18n("UEFI with Secure Boot. Without Microsoft keys it stays in setup mode and is not enforced."),
+                       secure.secureBoot ? State::Available : State::Missing,
+                       i18n("No Secure Boot firmware was found. It usually comes with the OVMF package.")}}});
 
     // Tools this build does not use are no feature that could be missing.
     Section toolSection{i18n("Programs"), {}};
