@@ -123,6 +123,8 @@ target_sources(
           utils/diskkeystore.h
           utils/tpmstate.cpp
           utils/tpmstate.h
+          utils/uefifirmware.cpp
+          utils/uefifirmware.h
           utils/imagedatabase.cpp
           utils/imagedatabase.h
           utils/linkedclones.cpp

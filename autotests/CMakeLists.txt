@@ -66,6 +66,7 @@ ecm_add_test(qemucommandbuildertest.cpp
              ${CMAKE_SOURCE_DIR}/src/utils/qemucommandbuilder.cpp
              ${CMAKE_SOURCE_DIR}/src/utils/vmconfig.cpp
              ${CMAKE_SOURCE_DIR}/src/utils/utils.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/uefifirmware.cpp
              ${CMAKE_SOURCE_DIR}/src/utils/externaltools.cpp
              ${CMAKE_SOURCE_DIR}/src/utils/qemucapabilities.cpp
              ${CMAKE_SOURCE_DIR}/src/utils/sandboxcapabilities.cpp
@@ -104,6 +105,7 @@ target_include_directories(vmexitoutcometest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 ecm_add_test(asynchelperprocesstest.cpp
              ${CMAKE_SOURCE_DIR}/src/utils/asynchelperprocess.cpp
              ${CMAKE_SOURCE_DIR}/src/utils/utils.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/uefifirmware.cpp
              ${CMAKE_SOURCE_DIR}/src/utils/diskencryption.cpp
              ${CMAKE_SOURCE_DIR}/src/utils/3rdparty/crypt_sha512.c
              TEST_NAME asynchelperprocesstest
@@ -124,3 +126,9 @@ ecm_qt_declare_logging_category(virtualswitchtest
                                 HEADER "kemu_debug.h"
                                 IDENTIFIER "KEMU"
                                 CATEGORY_NAME "org.kde.kemu")
+
+# QEMU firmware descriptors and the file names distributions use for OVMF.
+ecm_add_test(uefifirmwaretest.cpp ${CMAKE_SOURCE_DIR}/src/utils/uefifirmware.cpp
+             TEST_NAME uefifirmwaretest
+             LINK_LIBRARIES Qt6::Core Qt6::Test)
+target_include_directories(uefifirmwaretest PRIVATE ${CMAKE_SOURCE_DIR}/src)

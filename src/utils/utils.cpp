@@ -16,6 +16,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QRandomGenerator>
+#include <QStandardPaths>
 
 #include "kemu_debug.h"
 
@@ -68,97 +69,63 @@ QString generateCloudInitPasswordHash(const QString &password)
 namespace
 {
 
-QStringList ovmfSearchDirs(const QString &customDir)
+OvmfPaths findFirmware(bool secureBoot, const QString &customDir)
 {
+    if (!customDir.isEmpty()) {
+        const OvmfPaths custom = Ovmf::fromFileNames({customDir}, secureBoot);
+        if (custom.isValid())
+            return custom;
+    }
+
+    // Firmware shipped next to our own binaries always wins.
+    const QDir prefix(QCoreApplication::applicationDirPath() + u"/.."_s);
+    OvmfPaths firmware = Ovmf::fromDescriptors({prefix.absoluteFilePath(u"share/qemu/firmware"_s)}, secureBoot);
+    if (firmware.isValid())
+        return firmware;
+    firmware = Ovmf::fromFileNames({prefix.absoluteFilePath(u"share/qemu"_s), prefix.absoluteFilePath(u"share/kemu/ovmf"_s)}, secureBoot);
+    if (firmware.isValid())
+        return firmware;
+
+    // Where QEMU and libvirt look, the user's own descriptors first.
+    const QString userDescriptors = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + u"/qemu/firmware"_s;
+    const QStringList descriptorDirs = {u"/etc/qemu/firmware"_s, u"/usr/share/qemu/firmware"_s};
     static const QStringList systemDirs = {u"/usr/share/edk2/x64"_s,
                                            u"/usr/share/edk2/ovmf"_s,
                                            u"/usr/share/OVMF"_s,
                                            u"/usr/share/ovmf"_s,
                                            u"/usr/share/qemu"_s};
 
-    QStringList dirs;
-    if (!customDir.isEmpty())
-        dirs << customDir;
-
-    // Firmware shipped next to our own binaries always wins.
-    const QDir prefix(QCoreApplication::applicationDirPath() + u"/.."_s);
-    dirs << prefix.absoluteFilePath(u"share/qemu"_s) << prefix.absoluteFilePath(u"share/kemu/ovmf"_s);
-
-    dirs << systemDirs;
+    firmware = Ovmf::fromDescriptors(QStringList{userDescriptors} + descriptorDirs, secureBoot);
+    if (firmware.isValid())
+        return firmware;
+    firmware = Ovmf::fromFileNames(systemDirs, secureBoot);
+    if (firmware.isValid())
+        return firmware;
 
     // Only present when a host OS is mounted into the namespace.
-    if (QFileInfo::exists(u"/run/host/usr"_s)) {
-        for (const QString &d : systemDirs)
-            dirs << u"/run/host"_s + d;
-    }
-
-    return dirs;
-}
-
-QString firstExisting(const QDir &dir, const QStringList &names)
-{
-    for (const QString &n : names)
-        if (dir.exists(n))
-            return dir.filePath(n);
-    return {};
-}
-
-OvmfPaths searchDirs(const QString &customDir, const QStringList &codeNames, const QStringList &varsNames)
-{
-    for (const QString &d : ovmfSearchDirs(customDir)) {
-        const QDir dir(d);
-        const QString code = firstExisting(dir, codeNames);
-        if (code.isEmpty())
-            continue;
-
-        // A 4MB code image needs 4MB vars - mixing the two bricks the boot,
-        // so prefer candidates of the same size family.
-        const bool is4m = code.contains("4m"_L1, Qt::CaseInsensitive);
-        QStringList vars = varsNames;
-        std::stable_partition(vars.begin(), vars.end(), [is4m](const QString &n) {
-            return n.contains("4m"_L1, Qt::CaseInsensitive) == is4m;
-        });
-
-        return {code, firstExisting(dir, vars)};
-    }
-    return {};
+    const QString host = u"/run/host"_s;
+    if (!QFileInfo::exists(host + u"/usr"_s))
+        return {};
+    firmware = Ovmf::fromDescriptors(descriptorDirs, secureBoot, host);
+    if (firmware.isValid())
+        return firmware;
+    QStringList hostDirs;
+    for (const QString &dir : systemDirs)
+        hostDirs << host + dir;
+    return Ovmf::fromFileNames(hostDirs, secureBoot);
 }
 
 } // namespace
 
 OvmfPaths findOvmfPaths(bool secureBoot, const QString &customDir)
 {
-    static const QStringList sbCode = {u"OVMF_CODE.secboot.4m.fd"_s,
-                                       u"OVMF_CODE_4M.secboot.fd"_s,
-                                       u"OVMF_CODE.secboot.fd"_s,
-                                       u"edk2-x86_64-secure-code.fd"_s,
-                                       u"ovmf-x86_64-smm-ms-code.bin"_s,
-                                       u"ovmf-x86_64-smm-code.bin"_s};
-
-    static const QStringList sbVars = {u"OVMF_VARS.4m.ms.fd"_s,
-                                       u"OVMF_VARS_4M.ms.fd"_s,
-                                       u"OVMF_VARS.ms.fd"_s,
-                                       u"OVMF_VARS.secboot.fd"_s,
-                                       u"ovmf-x86_64-smm-ms-vars.bin"_s,
-                                       u"ovmf-x86_64-smm-vars.bin"_s,
-                                       u"OVMF_VARS_4M.fd"_s,
-                                       u"OVMF_VARS.4m.fd"_s,
-                                       u"OVMF_VARS.fd"_s,
-                                       u"edk2-i386-vars.fd"_s};
-
-    static const QStringList code =
-        {u"OVMF_CODE.4m.fd"_s, u"OVMF_CODE_4M.fd"_s, u"OVMF_CODE.fd"_s, u"OVMF.4m.fd"_s, u"OVMF.fd"_s, u"edk2-x86_64-code.fd"_s, u"ovmf-x86_64-code.bin"_s};
-
-    static const QStringList vars = {u"OVMF_VARS.4m.fd"_s, u"OVMF_VARS_4M.fd"_s, u"OVMF_VARS.fd"_s, u"edk2-i386-vars.fd"_s, u"ovmf-x86_64-vars.bin"_s};
-
     if (secureBoot) {
-        const OvmfPaths sb = searchDirs(customDir, sbCode, sbVars);
-        if (!sb.codePath.isEmpty())
+        const OvmfPaths sb = findFirmware(true, customDir);
+        if (sb.isValid())
             return sb;
         // Fall through to plain OVMF, as before.
     }
-
-    return searchDirs(customDir, code, vars);
+    return findFirmware(false, customDir);
 }
 
 QString configuredOvmfDir()
@@ -183,8 +150,7 @@ OvmfVarsResult ensureOvmfVars(const QDir &vmDir, bool secureBoot)
         return result;
 
     result.templatePath = ovmf.varsPath;
-    const QString name = QFileInfo(ovmf.varsPath).fileName();
-    result.keysMissing = secureBoot && !name.contains(".ms."_L1) && !name.contains("-ms-"_L1) && !name.contains("secboot"_L1);
+    result.keysMissing = secureBoot && !ovmf.keysEnrolled;
 
     // Templates are read-only; QEMU writes the NVRAM into this copy.
     if (!QFile::copy(ovmf.varsPath, target) || !QFile::setPermissions(target, QFile::ReadOwner | QFile::WriteOwner)) {

@@ -16,6 +16,8 @@
 #include <QString>
 #include <QStringView>
 
+#include "utils/uefifirmware.h"
+
 using namespace Qt::StringLiterals;
 
 namespace Utils
@@ -82,21 +84,16 @@ QString generateCloudInitPasswordHash(const QString &password);
  */
 // bool waitForSocket(const QString &sockPath, int timeoutMs = 5000);
 
-struct OvmfPaths {
-    QString codePath;
-    QString varsPath;
-};
+using OvmfPaths = Ovmf::Firmware;
 
 /**
- * @brief Locates the appropriate OVMF firmware (UEFI) files for the virtual
- * machine.
- * @param secureBoot If true, searches specifically for Secure Boot compatible
- * firmware (e.g., files containing Microsoft certificates/keys).
- * @param customDir  An optional custom directory path to search first. Can be
- * empty.
- * @return OvmfPaths A struct containing the absolute paths to the code file
- * (.fd) and the vars template. If the firmware cannot be found, the paths will
- * be empty.
+ * @brief Locates the OVMF firmware (UEFI) for a virtual machine.
+ *
+ * Looks in @p customDir first, then at firmware shipped with KEMU, then at the
+ * firmware descriptors QEMU installs, and last for the usual file names.
+ * Without Secure Boot firmware, Secure Boot falls back to plain OVMF.
+ * @return Paths to the code and the variable template, both empty if nothing
+ * was found.
  */
 OvmfPaths findOvmfPaths(bool secureBoot = false, const QString &customDir = {});
 
