@@ -58,6 +58,8 @@
         "ram": 8192,
         "cpu_cores": 4,
         "disk_size_gb": 160,
+        "gpu_type": "qxl",
+        "gpu_3d_acceleration": false,
         "disk_interface": "nvme",
         "net_card": "e1000",
         "usb_controller": "xhci",

@@ -30,7 +30,7 @@
         "ram": 4096,
         "cpu_cores": 2,
         "disk_size_gb": 100,
-        "gpu_type": "virtio",
+        "gpu_type": "qxl",
         "gpu_3d_acceleration": false,
         "disk_interface": "sataide",
         "net_card": "e1000",

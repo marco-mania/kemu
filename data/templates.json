@@ -15,6 +15,7 @@
     "display_type": "dbus",
     "display_width": 1280,
     "display_height": 720,
+    "monitor_count": 1,
     "audio_device": "hda",
     "disk_interface": "virtio",
     "net_card": "virtio",
