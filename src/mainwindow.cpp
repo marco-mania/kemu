@@ -1939,6 +1939,13 @@ QString MainWindow::saveStateBlockReason(const VmEntry *entry) const
         }))
         return i18n("an NVMe disk is attached");
 
+    // virtio-gpu cannot migrate its virgl state. A headless VM without the
+    // D-Bus display runs without 3D.
+    const bool virgl = entry->config.gpu3dAcceleration() && entry->config.gpuType() == VMSpecs::GpuType::Virtio
+        && (!entry->isHeadless || entry->config.displayType() == VMSpecs::DisplayType::Dbus);
+    if (virgl)
+        return i18n("3D acceleration is enabled");
+
     return {};
 }
 
@@ -4367,6 +4374,7 @@ void MainWindow::manageSnapshotsForVm(const QString &vmName)
                                    entry ? entry->qmpClient.data() : nullptr,
                                    imageInUse,
                                    dialogParentFor(vmName));
+    dlg->setLiveStateBlockReason(saveStateBlockReason(entry));
     if (cfg.isEncrypted()) {
         dlg->setEncryptedSystemDisk(
             [this, vmName](SnapshotDialog::KeyCallback done) {

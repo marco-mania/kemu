@@ -23,6 +23,7 @@
 #include <KFormat>
 #include <KLocalizedString>
 #include <KMessageBox>
+#include <KMessageWidget>
 
 #include "utils/snapshotmanager.h"
 
@@ -41,6 +42,9 @@ public:
     // ask @p requestKey for the password once; @p wrongKey is told when it
     // does not open the disk.
     void setEncryptedSystemDisk(std::function<void(KeyCallback)> requestKey, std::function<void(const QString &error)> wrongKey);
+    // QEMU cannot save the running state, for example with 3D acceleration.
+    // While the VM runs, snapshots can then only be deleted.
+    void setLiveStateBlockReason(const QString &reason);
 
 Q_SIGNALS:
     // The running guest was put back to a snapshot: its clock is behind.
@@ -74,12 +78,19 @@ private:
         return m_encrypted && m_imageInUse;
     }
 
+    [[nodiscard]] bool liveStateBlocked() const
+    {
+        return m_imageInUse && !m_liveStateBlockReason.isEmpty();
+    }
+
+    QString m_liveStateBlockReason;
     bool m_encrypted = false;
     bool m_haveKey = false;
     std::function<void(KeyCallback)> m_requestKey;
     std::function<void(const QString &)> m_wrongKey;
 
     void updateHint(const QString &listError);
+    void showHint(KMessageWidget::MessageType type, const QString &text);
 
     // Names of the currently listed snapshots, for the uniqueness check.
     QStringList m_snapshotNames;
@@ -97,6 +108,6 @@ private:
     QPushButton *m_revertBtn = nullptr;
     QPushButton *m_deleteBtn = nullptr;
     QPushButton *m_closeBtn = nullptr;
-    QLabel *m_hintLabel = nullptr;
+    KMessageWidget *m_hint = nullptr;
     QProgressBar *m_progressBar = nullptr;
 };

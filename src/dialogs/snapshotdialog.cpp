@@ -82,10 +82,12 @@ SnapshotDialog::SnapshotDialog(const QString &vmName, const QStringList &diskPat
     btnLayout->addStretch();
     btnLayout->addWidget(m_closeBtn);
 
-    m_hintLabel = new QLabel;
-    m_hintLabel->setWordWrap(true);
-    m_hintLabel->hide();
-    mainLayout->addWidget(m_hintLabel);
+    // Above the content, where KDE applications show inline messages.
+    m_hint = new KMessageWidget(this);
+    m_hint->setWordWrap(true);
+    m_hint->setCloseButtonVisible(false);
+    m_hint->hide();
+    mainLayout->insertWidget(0, m_hint);
 
     mainLayout->addLayout(btnLayout);
 
@@ -104,12 +106,7 @@ SnapshotDialog::SnapshotDialog(const QString &vmName, const QStringList &diskPat
         });
     }
 
-    if (m_imageInUse && !(m_qmp && m_qmp->isConnected())) {
-        m_hintLabel->setText(
-            i18n("This VM is busy and its QEMU monitor is not reachable. "
-                 "Snapshots are read-only until it has stopped."));
-        m_hintLabel->show();
-    }
+    updateHint({});
 }
 
 namespace
@@ -128,6 +125,13 @@ void SnapshotDialog::setEncryptedSystemDisk(std::function<void(KeyCallback)> req
     m_requestKey = std::move(requestKey);
     m_wrongKey = std::move(wrongKey);
     m_manager.setLiveSnapshotBlocker(encryptedLiveText());
+    updateHint({});
+    updateButtonStates();
+}
+
+void SnapshotDialog::setLiveStateBlockReason(const QString &reason)
+{
+    m_liveStateBlockReason = reason;
     updateHint({});
     updateButtonStates();
 }
@@ -428,8 +432,8 @@ void SnapshotDialog::updateButtonStates()
     // A busy image can only be snapshotted through the QEMU monitor.
     const bool writable = (!m_imageInUse || (m_qmp && m_qmp->isConnected())) && !liveBlocked();
 
-    m_takeBtn->setEnabled(writable);
-    m_revertBtn->setEnabled(isSnap && writable);
+    m_takeBtn->setEnabled(writable && !liveStateBlocked());
+    m_revertBtn->setEnabled(isSnap && writable && !liveStateBlocked());
     m_deleteBtn->setEnabled(isSnap && writable);
 }
 
@@ -452,24 +456,36 @@ void SnapshotDialog::setBusy(bool busy)
 void SnapshotDialog::updateHint(const QString &listError)
 {
     if (!listError.isEmpty()) {
-        m_hintLabel->setText(listError);
-        m_hintLabel->show();
+        showHint(KMessageWidget::Error, listError);
         return;
     }
 
     if (liveBlocked()) {
-        m_hintLabel->setText(encryptedLiveText());
-        m_hintLabel->show();
+        showHint(KMessageWidget::Information, encryptedLiveText());
+        return;
+    }
+
+    if (liveStateBlocked()) {
+        showHint(KMessageWidget::Information,
+                 i18n("QEMU cannot save the running state while %1. "
+                      "Shut the virtual machine down to take or revert snapshots.",
+                      m_liveStateBlockReason));
         return;
     }
 
     if (m_imageInUse && !(m_qmp && m_qmp->isConnected())) {
-        m_hintLabel->setText(
-            i18n("This VM is busy and its QEMU monitor is not reachable. "
-                 "Snapshots are read-only until it has stopped."));
-        m_hintLabel->show();
+        showHint(KMessageWidget::Warning,
+                 i18n("This VM is busy and its QEMU monitor is not reachable. "
+                      "Snapshots are read-only until it has stopped."));
         return;
     }
 
-    m_hintLabel->hide();
+    m_hint->hide();
+}
+
+void SnapshotDialog::showHint(KMessageWidget::MessageType type, const QString &text)
+{
+    m_hint->setMessageType(type);
+    m_hint->setText(text);
+    m_hint->show();
 }
