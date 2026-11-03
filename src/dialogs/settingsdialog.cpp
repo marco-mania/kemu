@@ -12,6 +12,7 @@
 #include <QApplication>
 #include <QHostAddress>
 #include <QSizePolicy>
+#include <QStyle>
 #include <QTimer>
 
 #include <KMessageWidget>
@@ -50,7 +51,7 @@ void SettingsDialog::setPage(Page page)
     if (m_pages.contains(page))
         setCurrentPage(m_pages.value(page));
 
-    static const QMap<Page, int> systemTabs{{Firmware, 0}, {Executables, 1}, {QemuSandbox, 2}};
+    static const QMap<Page, int> systemTabs{{Firmware, 0}, {Executables, 1}, {QemuSandbox, 2}, {Capabilities, 3}};
     if (m_systemTabs && systemTabs.contains(page))
         m_systemTabs->setCurrentIndex(systemTabs.value(page));
 }
@@ -358,12 +359,205 @@ void SettingsDialog::setupSystemPage()
     m_systemTabs->addTab(createFirmwareTab(), i18n("UEFI Firmware"));
     m_systemTabs->addTab(createExecutablesTab(), i18n("Executables"));
     m_systemTabs->addTab(createSandboxTab(), i18n("QEMU Sandbox"));
+    m_systemTabs->addTab(createCapabilitiesTab(), i18n("Capabilities"));
 
     auto *item = addPage(m_systemTabs, i18n("System"));
     item->setIcon(QIcon::fromTheme(u"preferences-system"_s));
     m_pages[Firmware] = item;
     m_pages[Executables] = item;
     m_pages[QemuSandbox] = item;
+    m_pages[Capabilities] = item;
+}
+
+QWidget *SettingsDialog::createCapabilitiesTab()
+{
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
+
+    auto *intro = new QLabel(i18n("Shows which of KEMU's features the QEMU in use provides. "
+                                  "The VM settings grey out what is missing."));
+    intro->setWordWrap(true);
+    layout->addWidget(intro);
+
+    auto *headerRow = new QHBoxLayout;
+    m_qemuInfoLabel = new QLabel;
+    m_qemuInfoLabel->setWordWrap(true);
+    m_qemuInfoLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    headerRow->addWidget(m_qemuInfoLabel, 1);
+    auto *checkButton = new QPushButton(QIcon::fromTheme(u"view-refresh"_s), i18n("Check Again"));
+    checkButton->setToolTip(i18n("Look for the programs and ask QEMU again, for example after installing a package."));
+    connect(checkButton, &QPushButton::clicked, this, [this] {
+        ExternalTools::instance().refresh();
+        QemuCapabilities::instance().refresh();
+        refreshCapabilities();
+    });
+    headerRow->addWidget(checkButton, 0, Qt::AlignTop);
+    layout->addLayout(headerRow);
+
+    m_capabilityWarning = new KMessageWidget(i18n("KEMU could not determine what this QEMU provides, so it offers every feature."));
+    m_capabilityWarning->setMessageType(KMessageWidget::Warning);
+    m_capabilityWarning->setWordWrap(true);
+    m_capabilityWarning->setCloseButtonVisible(false);
+    layout->addWidget(m_capabilityWarning);
+
+    m_capabilityScroll = new QScrollArea;
+    m_capabilityScroll->setWidgetResizable(true);
+    m_capabilityScroll->setFrameShape(QFrame::NoFrame);
+    layout->addWidget(m_capabilityScroll, 1);
+
+    refreshCapabilities();
+    return page;
+}
+
+void SettingsDialog::refreshCapabilities()
+{
+    const QString qemuPath = ExternalTools::instance().path(ExternalTools::QemuSystem);
+    if (qemuPath.isEmpty()) {
+        m_qemuInfoLabel->setText(i18n("No QEMU was found. Set its path on the Executables tab."));
+    } else {
+        const QString version = ExternalTools::probeVersionString(ExternalTools::QemuSystem, qemuPath);
+        m_qemuInfoLabel->setText(i18n("<b>QEMU:</b> %1<br/>%2",
+                                      qemuPath.toHtmlEscaped(),
+                                      version.isEmpty() ? i18n("Version unknown") : version.toHtmlEscaped()));
+    }
+    m_capabilityWarning->setVisible(!qemuPath.isEmpty() && !QemuCapabilities::instance().probeSucceeded());
+    m_capabilityScroll->setWidget(buildCapabilityList());
+}
+
+QWidget *SettingsDialog::buildCapabilityList() const
+{
+    enum class State {
+        Available,
+        Missing,
+        Unknown
+    };
+    struct Capability {
+        QString name;
+        QString purpose;
+        State state;
+        QString missing;
+    };
+    struct Section {
+        QString title;
+        QList<Capability> items;
+    };
+
+    const auto &qemu = QemuCapabilities::instance();
+    const auto &tools = ExternalTools::instance();
+    // Without a listing, QEMU's answers are guesses.
+    const auto fromQemu = [known = qemu.probeSucceeded()](bool has) {
+        return !known ? State::Unknown : has ? State::Available : State::Missing;
+    };
+    const auto fromTool = [&tools](ExternalTools::Tool tool) {
+        return tools.isAvailable(tool) ? State::Available : State::Missing;
+    };
+    const auto toolMissing = [](ExternalTools::Tool tool) {
+        return i18n("%1 was not found. Install it, or set its path on the Executables tab.", ExternalTools::displayName(tool));
+    };
+
+    QList<Section> sections = {
+        {i18n("Display"),
+         {{i18n("Integrated viewer"),
+           i18n("Shows VMs in KEMU's own window, with sound and a shared clipboard."),
+           fromQemu(qemu.hasDisplay(u"dbus"_s)),
+           i18n("This QEMU was built without the D-Bus display.")},
+          {i18n("SDL window"),
+           i18n("Shows a VM in a separate QEMU window, for example from the exported qemu.sh script."),
+           fromQemu(qemu.hasDisplay(u"sdl"_s)),
+           i18n("This QEMU was built without SDL.")}}},
+        {i18n("Graphics"),
+         {{i18n("VirtIO graphics"),
+           i18n("The recommended graphics adapter for current Linux guests."),
+           fromQemu(qemu.hasDevice(u"virtio-vga"_s)),
+           i18n("This QEMU lacks the virtio-vga device.")},
+          {i18n("3D acceleration"),
+           i18n("OpenGL for Linux guests with VirtIO graphics."),
+           fromQemu(qemu.hasDevice(u"virtio-vga-gl"_s)),
+           i18n("This QEMU lacks the virtio-vga-gl device. Some distributions ship it in a package of its own, "
+                "for example qemu-system-modules-opengl on Debian and Ubuntu.")},
+          {i18n("QXL graphics"),
+           i18n("Recommended for Windows guests with the SPICE guest tools."),
+           fromQemu(qemu.hasDevice(u"qxl-vga"_s)),
+           i18n("This QEMU was built without SPICE, or ships it in a package of its own, "
+                "for example qemu-system-modules-spice on Debian and Ubuntu.")},
+          {i18n("Graphics for older guests"),
+           i18n("Cirrus Logic and ISA VGA, for guests such as DOS or early Windows."),
+           fromQemu(qemu.hasDevice(u"cirrus-vga"_s) && qemu.hasDevice(u"isa-cirrus-vga"_s) && qemu.hasDevice(u"isa-vga"_s)),
+           i18n("This QEMU lacks some of the cirrus-vga, isa-cirrus-vga and isa-vga devices.")}}},
+        {i18n("Guest Integration"),
+         {{i18n("spice-vdagent channel"),
+           i18n("Lets spice-vdagent in the guest work with KEMU, for example to share the clipboard."),
+           fromQemu(qemu.hasChardev(u"qemu-vdagent"_s)),
+           i18n("This QEMU was built without the qemu-vdagent backend.")}}},
+        {i18n("Audio"),
+         {{i18n("Sound in the integrated viewer"),
+           i18n("Plays and records the sound of VMs shown in KEMU's own window."),
+           fromQemu(qemu.hasAudiodev(u"dbus"_s)),
+           i18n("This QEMU was built without the D-Bus audio backend.")},
+          {i18n("PipeWire"),
+           i18n("Plays the sound of VMs shown in an SDL window."),
+           fromQemu(qemu.hasAudiodev(u"pipewire"_s)),
+           i18n("This QEMU was built without the PipeWire audio backend.")}}},
+        {i18n("Security"),
+         {{i18n("seccomp sandbox"),
+           i18n("Confines QEMU, see the QEMU Sandbox tab."),
+           fromQemu(qemu.hasSeccompSandbox()),
+           i18n("This QEMU was built without seccomp support.")}}},
+    };
+
+    // Tools this build does not use are no feature that could be missing.
+    Section toolSection{i18n("Programs"), {}};
+    const QList<std::pair<ExternalTools::Tool, QString>> toolFeatures = {
+        {ExternalTools::QemuImg, i18n("Creates, converts and snapshots disk images.")},
+        {ExternalTools::Swtpm, i18n("Emulates a TPM, which Windows 11 requires.")},
+        {ExternalTools::Virtiofsd, i18n("Shares folders with Windows guests.")},
+    };
+    for (const auto &[tool, purpose] : toolFeatures) {
+        if (!tools.unusedTools().contains(tool))
+            toolSection.items.append({ExternalTools::displayName(tool), purpose, fromTool(tool), toolMissing(tool)});
+    }
+    if (!toolSection.items.isEmpty())
+        sections.append(toolSection);
+
+    auto *list = new QWidget;
+    auto *listLayout = new QVBoxLayout(list);
+    listLayout->setContentsMargins(0, 0, 0, 0);
+    const int iconSize = style()->pixelMetric(QStyle::PM_SmallIconSize);
+    const KColorScheme scheme(QPalette::Active, KColorScheme::View);
+    const QString missingColor = scheme.foreground(KColorScheme::NeutralText).color().name();
+
+    for (const Section &section : std::as_const(sections)) {
+        auto *box = new QGroupBox(section.title);
+        auto *grid = new QGridLayout(box);
+        grid->setColumnStretch(1, 1);
+        for (int row = 0; row < section.items.size(); ++row) {
+            const Capability &capability = section.items.at(row);
+            QString iconName = u"dialog-ok-apply"_s;
+            QString stateText = i18nc("@info:status", "Available");
+            if (capability.state == State::Missing) {
+                iconName = u"dialog-warning"_s;
+                stateText = i18nc("@info:status", "Not available");
+            } else if (capability.state == State::Unknown) {
+                iconName = u"dialog-question"_s;
+                stateText = i18nc("@info:status", "Unknown");
+            }
+            auto *icon = new QLabel;
+            icon->setPixmap(QIcon::fromTheme(iconName).pixmap(iconSize, iconSize));
+            icon->setToolTip(stateText);
+            icon->setAccessibleName(stateText);
+            grid->addWidget(icon, row, 0, Qt::AlignTop);
+
+            QString text = u"<b>%1</b><br/>%2"_s.arg(capability.name.toHtmlEscaped(), capability.purpose.toHtmlEscaped());
+            if (capability.state == State::Missing)
+                text += u"<br/><font color='%1'>%2</font>"_s.arg(missingColor, capability.missing.toHtmlEscaped());
+            auto *label = new QLabel(text);
+            label->setWordWrap(true);
+            grid->addWidget(label, row, 1);
+        }
+        listLayout->addWidget(box);
+    }
+    listLayout->addStretch();
+    return list;
 }
 
 void SettingsDialog::setupDisplayPage()

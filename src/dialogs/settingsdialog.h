@@ -46,6 +46,7 @@
 using namespace Qt::StringLiterals;
 
 class ImageDatabase;
+class KMessageWidget;
 class TemplatesSettingsPage;
 
 class SettingsDialog : public KPageDialog
@@ -65,7 +66,8 @@ public:
         // Tabs of the System page
         Firmware,
         Executables,
-        QemuSandbox
+        QemuSandbox,
+        Capabilities
     };
     void setPage(Page page);
     // Shows the Templates page and imports the package there once shown.
@@ -118,6 +120,9 @@ private:
     QWidget *createFirmwareTab();
     QWidget *createExecutablesTab();
     QWidget *createSandboxTab();
+    QWidget *createCapabilitiesTab();
+    QWidget *buildCapabilityList() const;
+    void refreshCapabilities();
     void setupDisplayPage();
     void setupAutomatedDeployPage();
 
@@ -127,6 +132,9 @@ private:
 
     QMap<Page, KPageWidgetItem *> m_pages;
     QTabWidget *m_systemTabs = nullptr;
+    QLabel *m_qemuInfoLabel = nullptr;
+    KMessageWidget *m_capabilityWarning = nullptr;
+    QScrollArea *m_capabilityScroll = nullptr;
     TemplatesSettingsPage *m_templatesPage = nullptr;
 
     QLineEdit *pathEdit = nullptr;
