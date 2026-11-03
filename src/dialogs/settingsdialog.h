@@ -47,6 +47,7 @@ using namespace Qt::StringLiterals;
 
 class ImageDatabase;
 class KMessageWidget;
+class StatusList;
 class TemplatesSettingsPage;
 
 class SettingsDialog : public KPageDialog
@@ -122,8 +123,8 @@ private:
     QWidget *createExecutablesTab();
     QWidget *createSandboxTab();
     QWidget *createCapabilitiesTab();
-    QWidget *buildCapabilityList() const;
     void refreshCapabilities();
+    void listCapabilities();
     void setupDisplayPage();
     void setupAutomatedDeployPage();
 
@@ -133,14 +134,13 @@ private:
 
     QMap<Page, KPageWidgetItem *> m_pages;
     QTabWidget *m_systemTabs = nullptr;
-    QLabel *m_qemuInfoLabel = nullptr;
     KMessageWidget *m_capabilityWarning = nullptr;
-    QScrollArea *m_capabilityScroll = nullptr;
+    StatusList *m_capabilityList = nullptr;
     TemplatesSettingsPage *m_templatesPage = nullptr;
 
     QLineEdit *pathEdit = nullptr;
     QLineEdit *ovmfEdit = nullptr;
-    QLabel *m_firmwareStatus = nullptr;
+    StatusList *m_firmwareList = nullptr;
 
     struct ToolWidgets {
         ExternalTools::Tool tool;

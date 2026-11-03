@@ -24,6 +24,7 @@
 #include "utils/sandboxcapabilities.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
+#include "widgets/statuslist.h"
 
 SettingsDialog::SettingsDialog(QWidget *parent)
     : KPageDialog(parent)
@@ -179,61 +180,61 @@ QWidget *SettingsDialog::createFirmwareTab()
     layout->addLayout(row);
 
     // What VMs will boot with, as the path is typed.
-    m_firmwareStatus = new QLabel;
-    m_firmwareStatus->setWordWrap(true);
-    m_firmwareStatus->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    layout->addSpacing(8);
-    layout->addWidget(m_firmwareStatus);
+    m_firmwareList = new StatusList;
+    m_firmwareList->setExpandedByDefault(true);
+    layout->addWidget(m_firmwareList, 1);
     connect(ovmfEdit, &QLineEdit::textChanged, this, &SettingsDialog::updateFirmwareStatus);
     updateFirmwareStatus();
 
-    layout->addStretch();
     return page;
 }
 
 void SettingsDialog::updateFirmwareStatus()
 {
-    const KColorScheme scheme(QPalette::Active, KColorScheme::View);
-    const auto colored = [&scheme](KColorScheme::ForegroundRole role, const QString &text) {
-        return u"<font color='%1'>%2</font>"_s.arg(scheme.foreground(role).color().name(), text);
+    using Status = StatusList::Status;
+    const auto withPaths = [](StatusList::Item item, const Utils::OvmfPaths &firmware) {
+        item.details = {{i18nc("@label UEFI firmware image", "code"), firmware.codePath},
+                        {i18nc("@label UEFI variable store template", "vars"), firmware.varsPath},
+                        {i18nc("@label descriptor or directory the firmware was found through", "via"), firmware.source}};
+        return item;
     };
-    const auto describe = [](const Utils::OvmfPaths &firmware) {
-        return i18n("Code: %1<br/>Variables: %2<br/>Found through: %3",
-                    firmware.codePath.toHtmlEscaped(),
-                    firmware.varsPath.toHtmlEscaped(),
-                    firmware.source.toHtmlEscaped());
-    };
+    m_firmwareList->clear();
 
-    QStringList parts;
     const QString customDir = ovmfEdit->text().trimmed();
-    if (!customDir.isEmpty() && !Ovmf::fromFileNames({customDir}, false).isValid() && !Ovmf::fromFileNames({customDir}, true).isValid())
-        parts << colored(KColorScheme::NeutralText, i18n("This directory holds no firmware KEMU can use, so it keeps looking elsewhere."));
+    if (!customDir.isEmpty() && !Ovmf::fromFileNames({customDir}, false).isValid() && !Ovmf::fromFileNames({customDir}, true).isValid()) {
+        StatusList::Item directory(Status::Warning, i18n("Firmware directory"));
+        directory.statusText = i18nc("@info:status", "Not usable");
+        directory.hint = i18n("It holds no firmware KEMU can use, so KEMU keeps looking in the usual places.");
+        directory.details = {{{}, customDir}};
+        m_firmwareList->addItem(directory);
+    }
 
+    StatusList::Item uefi(Status::Ok, i18n("UEFI firmware"));
     const Utils::OvmfPaths plain = Utils::findOvmfPaths(false, customDir);
     if (!plain.isValid()) {
-        parts << colored(KColorScheme::NegativeText,
-                         i18n("<b>No UEFI firmware found.</b> Install your distribution's OVMF package, for example ovmf or edk2-ovmf, "
-                              "or enter its directory above."));
-        m_firmwareStatus->setText(parts.join(u"<br/><br/>"_s));
+        uefi.status = Status::Missing;
+        uefi.hint = i18n("Install your distribution's OVMF package, for example ovmf or edk2-ovmf, or enter its directory above.");
+        m_firmwareList->addItem(uefi);
         return;
     }
-    parts << colored(KColorScheme::PositiveText, i18n("<b>UEFI firmware found</b>")) + u"<br/>"_s + describe(plain);
+    uefi.description = i18n("VMs set to UEFI boot with this firmware.");
+    m_firmwareList->addItem(withPaths(uefi, plain));
 
     // Secure Boot falls back to the plain firmware.
+    StatusList::Item secureBoot(Status::Ok, i18n("Secure Boot"));
     const Utils::OvmfPaths secure = Utils::findOvmfPaths(true, customDir);
     if (!secure.secureBoot) {
-        parts << colored(KColorScheme::NeutralText,
-                         i18n("<b>No Secure Boot firmware found.</b> VMs with Secure Boot start with the firmware above, without Secure Boot."));
-    } else if (!secure.keysEnrolled) {
-        // Without keys the firmware stays in setup mode. Guests boot, Windows 11
-        // included, but nothing is verified.
-        parts << colored(KColorScheme::PositiveText, i18n("<b>Secure Boot firmware found</b>")) + u"<br/>"_s
-                + i18n("It comes without Microsoft keys, so Secure Boot stays in setup mode: it is not enforced, and Windows reports it as off.")
-                + u"<br/>"_s + describe(secure);
-    } else {
-        parts << colored(KColorScheme::PositiveText, i18n("<b>Secure Boot firmware found</b>, with Microsoft keys")) + u"<br/>"_s + describe(secure);
+        secureBoot.status = Status::Missing;
+        secureBoot.hint = i18n("VMs with Secure Boot start with the firmware above, without Secure Boot.");
+        m_firmwareList->addItem(secureBoot);
+        return;
     }
-    m_firmwareStatus->setText(parts.join(u"<br/><br/>"_s));
+    // Without keys the firmware stays in setup mode. Guests boot, Windows 11
+    // included, but nothing is verified.
+    secureBoot.description = secure.keysEnrolled
+        ? i18n("With the Microsoft keys, as Windows expects.")
+        : i18n("Without Microsoft keys, so Secure Boot stays in setup mode: it is not enforced, and Windows reports it as off.");
+    m_firmwareList->addItem(withPaths(secureBoot, secure));
 }
 
 QWidget *SettingsDialog::createExecutablesTab()
@@ -428,16 +429,11 @@ QWidget *SettingsDialog::createCapabilitiesTab()
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
 
+    auto *headerRow = new QHBoxLayout;
     auto *intro = new QLabel(i18n("Shows which of KEMU's features the QEMU in use provides. "
                                   "The VM settings grey out what is missing."));
     intro->setWordWrap(true);
-    layout->addWidget(intro);
-
-    auto *headerRow = new QHBoxLayout;
-    m_qemuInfoLabel = new QLabel;
-    m_qemuInfoLabel->setWordWrap(true);
-    m_qemuInfoLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    headerRow->addWidget(m_qemuInfoLabel, 1);
+    headerRow->addWidget(intro, 1);
     auto *checkButton = new QPushButton(QIcon::fromTheme(u"view-refresh"_s), i18n("Check Again"));
     checkButton->setToolTip(i18n("Look for the programs and ask QEMU again, for example after installing a package."));
     connect(checkButton, &QPushButton::clicked, this, [this] {
@@ -454,10 +450,9 @@ QWidget *SettingsDialog::createCapabilitiesTab()
     m_capabilityWarning->setCloseButtonVisible(false);
     layout->addWidget(m_capabilityWarning);
 
-    m_capabilityScroll = new QScrollArea;
-    m_capabilityScroll->setWidgetResizable(true);
-    m_capabilityScroll->setFrameShape(QFrame::NoFrame);
-    layout->addWidget(m_capabilityScroll, 1);
+    m_capabilityList = new StatusList;
+    m_capabilityList->setSummaryVisible(true);
+    layout->addWidget(m_capabilityList, 1);
 
     refreshCapabilities();
     return page;
@@ -465,30 +460,35 @@ QWidget *SettingsDialog::createCapabilitiesTab()
 
 void SettingsDialog::refreshCapabilities()
 {
+    using Status = StatusList::Status;
+    m_capabilityList->clear();
+
+    // QEMU itself first: everything else depends on it.
     const QString qemuPath = ExternalTools::instance().path(ExternalTools::QemuSystem);
+    StatusList::Item qemu(Status::Ok, i18n("QEMU"));
     if (qemuPath.isEmpty()) {
-        m_qemuInfoLabel->setText(i18n("No QEMU was found. Set its path on the Executables tab."));
+        qemu.status = Status::Missing;
+        qemu.hint = i18n("No QEMU was found. Set its path on the Executables tab.");
     } else {
         const QString version = ExternalTools::probeVersionString(ExternalTools::QemuSystem, qemuPath);
-        m_qemuInfoLabel->setText(i18n("<b>QEMU:</b> %1<br/>%2",
-                                      qemuPath.toHtmlEscaped(),
-                                      version.isEmpty() ? i18n("Version unknown") : version.toHtmlEscaped()));
+        qemu.description = i18n("Runs the virtual machines.");
+        qemu.details = {{i18nc("@label file path", "path"), qemuPath}, {i18nc("@label", "version"), version.isEmpty() ? i18n("unknown") : version}};
     }
+    m_capabilityList->addSection(i18n("Emulator"));
+    m_capabilityList->addItem(qemu);
+
     m_capabilityWarning->setVisible(!qemuPath.isEmpty() && !QemuCapabilities::instance().probeSucceeded());
-    m_capabilityScroll->setWidget(buildCapabilityList());
+    listCapabilities();
 }
 
-QWidget *SettingsDialog::buildCapabilityList() const
+void SettingsDialog::listCapabilities()
 {
-    enum class State {
-        Available,
-        Missing,
-        Unknown
-    };
+    using Status = StatusList::Status;
     struct Capability {
         QString name;
+        QString option;
         QString purpose;
-        State state;
+        Status state;
         QString missing;
     };
     struct Section {
@@ -500,10 +500,7 @@ QWidget *SettingsDialog::buildCapabilityList() const
     const auto &tools = ExternalTools::instance();
     // Without a listing, QEMU's answers are guesses.
     const auto fromQemu = [known = qemu.probeSucceeded()](bool has) {
-        return !known ? State::Unknown : has ? State::Available : State::Missing;
-    };
-    const auto fromTool = [&tools](ExternalTools::Tool tool) {
-        return tools.isAvailable(tool) ? State::Available : State::Missing;
+        return !known ? Status::Unknown : has ? Status::Ok : Status::Missing;
     };
     const auto toolMissing = [](ExternalTools::Tool tool) {
         return i18n("%1 was not found. Install it, or set its path on the Executables tab.", ExternalTools::displayName(tool));
@@ -512,48 +509,58 @@ QWidget *SettingsDialog::buildCapabilityList() const
     QList<Section> sections = {
         {i18n("Display"),
          {{i18n("Integrated viewer"),
+           u"-display dbus"_s,
            i18n("Shows VMs in KEMU's own window, with sound and a shared clipboard."),
            fromQemu(qemu.hasDisplay(u"dbus"_s)),
            i18n("This QEMU was built without the D-Bus display.")},
           {i18n("SDL window"),
+           u"-display sdl"_s,
            i18n("Shows a VM in a separate QEMU window, for example from the exported qemu.sh script."),
            fromQemu(qemu.hasDisplay(u"sdl"_s)),
            i18n("This QEMU was built without SDL.")}}},
         {i18n("Graphics"),
          {{i18n("VirtIO graphics"),
+           u"-device virtio-vga"_s,
            i18n("The recommended graphics adapter for current Linux guests."),
            fromQemu(qemu.hasDevice(u"virtio-vga"_s)),
            i18n("This QEMU lacks the virtio-vga device.")},
           {i18n("3D acceleration"),
+           u"-device virtio-vga-gl"_s,
            i18n("OpenGL for Linux guests with VirtIO graphics."),
            fromQemu(qemu.hasDevice(u"virtio-vga-gl"_s)),
            i18n("This QEMU lacks the virtio-vga-gl device. Some distributions ship it in a package of its own, "
                 "for example qemu-system-modules-opengl on Debian and Ubuntu.")},
           {i18n("QXL graphics"),
+           u"-device qxl-vga"_s,
            i18n("Recommended for Windows guests with the SPICE guest tools."),
            fromQemu(qemu.hasDevice(u"qxl-vga"_s)),
            i18n("This QEMU was built without SPICE, or ships it in a package of its own, "
                 "for example qemu-system-modules-spice on Debian and Ubuntu.")},
           {i18n("Graphics for older guests"),
+           u"-device cirrus-vga, isa-cirrus-vga, isa-vga"_s,
            i18n("Cirrus Logic and ISA VGA, for guests such as DOS or early Windows."),
            fromQemu(qemu.hasDevice(u"cirrus-vga"_s) && qemu.hasDevice(u"isa-cirrus-vga"_s) && qemu.hasDevice(u"isa-vga"_s)),
            i18n("This QEMU lacks some of the cirrus-vga, isa-cirrus-vga and isa-vga devices.")}}},
         {i18n("Guest Integration"),
          {{i18n("spice-vdagent channel"),
+           u"-chardev qemu-vdagent"_s,
            i18n("Lets spice-vdagent in the guest work with KEMU, for example to share the clipboard."),
            fromQemu(qemu.hasChardev(u"qemu-vdagent"_s)),
            i18n("This QEMU was built without the qemu-vdagent backend.")}}},
         {i18n("Audio"),
          {{i18n("Sound in the integrated viewer"),
+           u"-audiodev dbus"_s,
            i18n("Plays and records the sound of VMs shown in KEMU's own window."),
            fromQemu(qemu.hasAudiodev(u"dbus"_s)),
            i18n("This QEMU was built without the D-Bus audio backend.")},
           {i18n("PipeWire"),
+           u"-audiodev pipewire"_s,
            i18n("Plays the sound of VMs shown in an SDL window."),
            fromQemu(qemu.hasAudiodev(u"pipewire"_s)),
            i18n("This QEMU was built without the PipeWire audio backend.")}}},
         {i18n("Security"),
          {{i18n("seccomp sandbox"),
+           u"-sandbox on"_s,
            i18n("Confines QEMU, see the QEMU Sandbox tab."),
            fromQemu(qemu.hasSeccompSandbox()),
            i18n("This QEMU was built without seccomp support.")}}},
@@ -564,14 +571,16 @@ QWidget *SettingsDialog::buildCapabilityList() const
     const Utils::OvmfPaths secure = Utils::findOvmfPaths(true, firmwareDir);
     sections.append({i18n("Firmware"),
                      {{i18n("UEFI"),
+                       uefi.codePath,
                        i18n("Lets VMs boot with UEFI instead of a BIOS."),
-                       uefi.isValid() ? State::Available : State::Missing,
+                       uefi.isValid() ? Status::Ok : Status::Missing,
                        i18n("No UEFI firmware was found. Install your distribution's OVMF package, for example ovmf or edk2-ovmf, "
                             "or set its directory on the UEFI Firmware tab.")},
                       {i18n("Secure Boot"),
+                       secure.secureBoot ? secure.codePath : QString(),
                        secure.keysEnrolled ? i18n("UEFI with Secure Boot and the Microsoft keys.")
                                            : i18n("UEFI with Secure Boot. Without Microsoft keys it stays in setup mode and is not enforced."),
-                       secure.secureBoot ? State::Available : State::Missing,
+                       secure.secureBoot ? Status::Ok : Status::Missing,
                        i18n("No Secure Boot firmware was found. It usually comes with the OVMF package.")}}});
 
     // Tools this build does not use are no feature that could be missing.
@@ -583,50 +592,24 @@ QWidget *SettingsDialog::buildCapabilityList() const
     };
     for (const auto &[tool, purpose] : toolFeatures) {
         if (!tools.unusedTools().contains(tool))
-            toolSection.items.append({ExternalTools::displayName(tool), purpose, fromTool(tool), toolMissing(tool)});
+            toolSection.items.append(
+                {ExternalTools::displayName(tool), tools.path(tool), purpose, tools.isAvailable(tool) ? Status::Ok : Status::Missing, toolMissing(tool)});
     }
     if (!toolSection.items.isEmpty())
         sections.append(toolSection);
 
-    auto *list = new QWidget;
-    auto *listLayout = new QVBoxLayout(list);
-    listLayout->setContentsMargins(0, 0, 0, 0);
-    const int iconSize = style()->pixelMetric(QStyle::PM_SmallIconSize);
-    const KColorScheme scheme(QPalette::Active, KColorScheme::View);
-    const QString missingColor = scheme.foreground(KColorScheme::NeutralText).color().name();
-
     for (const Section &section : std::as_const(sections)) {
-        auto *box = new QGroupBox(section.title);
-        auto *grid = new QGridLayout(box);
-        grid->setColumnStretch(1, 1);
-        for (int row = 0; row < section.items.size(); ++row) {
-            const Capability &capability = section.items.at(row);
-            QString iconName = u"dialog-ok-apply"_s;
-            QString stateText = i18nc("@info:status", "Available");
-            if (capability.state == State::Missing) {
-                iconName = u"dialog-warning"_s;
-                stateText = i18nc("@info:status", "Not available");
-            } else if (capability.state == State::Unknown) {
-                iconName = u"dialog-question"_s;
-                stateText = i18nc("@info:status", "Unknown");
-            }
-            auto *icon = new QLabel;
-            icon->setPixmap(QIcon::fromTheme(iconName).pixmap(iconSize, iconSize));
-            icon->setToolTip(stateText);
-            icon->setAccessibleName(stateText);
-            grid->addWidget(icon, row, 0, Qt::AlignTop);
-
-            QString text = u"<b>%1</b><br/>%2"_s.arg(capability.name.toHtmlEscaped(), capability.purpose.toHtmlEscaped());
-            if (capability.state == State::Missing)
-                text += u"<br/><font color='%1'>%2</font>"_s.arg(missingColor, capability.missing.toHtmlEscaped());
-            auto *label = new QLabel(text);
-            label->setWordWrap(true);
-            grid->addWidget(label, row, 1);
+        m_capabilityList->addSection(section.title);
+        for (const Capability &capability : section.items) {
+            StatusList::Item item(capability.state, capability.name);
+            item.description = capability.purpose;
+            if (capability.state == Status::Missing)
+                item.hint = capability.missing;
+            if (!capability.option.isEmpty())
+                item.details = {{{}, capability.option}};
+            m_capabilityList->addItem(item);
         }
-        listLayout->addWidget(box);
     }
-    listLayout->addStretch();
-    return list;
 }
 
 void SettingsDialog::setupDisplayPage()

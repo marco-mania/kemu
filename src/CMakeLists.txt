@@ -256,6 +256,8 @@ target_sources(
           widgets/trayicon.h
           widgets/vmiconselector.h
           widgets/vmiconselector.cpp
+          widgets/statuslist.cpp
+          widgets/statuslist.h
           widgets/ramspinbox.h
           widgets/steppedspinbox.h
           dbusdisplay/dbusviewerwindow.cpp
