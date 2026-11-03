@@ -199,7 +199,6 @@ QWidget *SettingsDialog::createFirmwareTab()
 
     // What VMs will boot with, as the path is typed.
     m_firmwareList = new StatusList;
-    m_firmwareList->setExpandedByDefault(true);
     layout->addWidget(m_firmwareList, 1);
     connect(ovmfEdit, &QLineEdit::textChanged, this, &SettingsDialog::updateFirmwareStatus);
     connect(ovmfAutoCheck, &QCheckBox::toggled, this, &SettingsDialog::updateFirmwareStatus);

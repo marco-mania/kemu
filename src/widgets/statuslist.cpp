@@ -340,12 +340,6 @@ void StatusList::setSummaryVisible(bool visible)
     updateSummary();
 }
 
-void StatusList::setExpandedByDefault(bool expanded)
-{
-    m_expandedByDefault = expanded;
-    rebuild();
-}
-
 QString StatusList::toReport() const
 {
     QStringList report;
@@ -405,7 +399,7 @@ void StatusList::appendWidget(const Entry &entry, bool separator)
         widget = label;
     } else {
         const QString title = entry.item->title;
-        const bool expanded = m_expanded.value(title, m_expandedByDefault || needsAttention(entry.item->status));
+        const bool expanded = m_expanded.value(title, needsAttention(entry.item->status));
         widget = new StatusRow(*entry.item, expanded, separator, [this, title](bool expanded) {
             m_expanded.insert(title, expanded);
         });

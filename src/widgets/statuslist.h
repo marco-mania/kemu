@@ -61,8 +61,6 @@ public:
 
     /// Shows above the list how many items are available.
     void setSummaryVisible(bool visible);
-    /// Expands every item, not only those that need attention.
-    void setExpandedByDefault(bool expanded);
 
     /// The items as plain text, for example for a bug report.
     [[nodiscard]] QString toReport() const;
@@ -89,6 +87,5 @@ private:
     StatusSummaryBar *m_summaryBar = nullptr;
     QVBoxLayout *m_layout = nullptr;
     bool m_summaryVisible = false;
-    bool m_expandedByDefault = false;
     bool m_rebuildQueued = false;
 };
