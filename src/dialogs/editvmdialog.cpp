@@ -98,6 +98,19 @@ void updateInlineMessage(KMessageWidget *message, const QString &text, KMessageW
     if (message->isHidden() || message->isHideAnimationRunning())
         message->animatedShow();
 }
+
+QString accel3dToolTip()
+{
+    return i18n(
+        "Enables GPU-accelerated 3D rendering via virtio-vga-gl.\n"
+        "Requires VirtIO GPU with the SDL display or the integrated viewer.\n"
+        "Not available with Standard VGA/QXL.");
+}
+
+QString missingInQemuText()
+{
+    return i18n("The QEMU in use does not provide this. Settings → System → Capabilities lists what it lacks.");
+}
 } // namespace
 
 EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
@@ -464,10 +477,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     graphicsLayout->addRow(vgaMemLabel, gpuMemSpin);
 
     accel3dCheck = new QCheckBox(i18n("3D acceleration (GL)"));
-    accel3dCheck->setToolTip(
-        i18n("Enables GPU-accelerated 3D rendering via virtio-vga-gl.\n"
-             "Requires VirtIO GPU with the SDL display or the integrated viewer.\n"
-             "Not available with Standard VGA/QXL."));
+    accel3dCheck->setToolTip(accel3dToolTip());
     accel3dCheck->setChecked(false);
     graphicsLayout->addRow({}, accel3dCheck);
 
@@ -1139,7 +1149,18 @@ void EditVmDialog::setConfig(const VMConfig &config)
         setCombo(displayCombo, config.displayType());
     }
 
-    setCombo(gpuCombo, config.gpuType());
+    if (!VMConfig::isGpuTypeAvailable(config.gpuType())) {
+        const auto fallbackGpu = VMConfig::fallbackGpuType();
+        KMessageBox::information(this,
+                                 i18n("The configured graphics adapter '%1' is not available in this QEMU.\n"
+                                      "KEMU will use '%2' instead.",
+                                      VMConfig::toUIString(config.gpuType()),
+                                      VMConfig::toUIString(fallbackGpu)),
+                                 i18n("Graphics Adapter Unavailable"));
+        setCombo(gpuCombo, fallbackGpu);
+    } else {
+        setCombo(gpuCombo, config.gpuType());
+    }
     monitorCountSpin->setValue(config.monitorCount());
     accel3dCheck->setChecked(config.gpu3dAcceleration());
     setCombo(audioCombo, config.audioDevice());
@@ -1293,8 +1314,9 @@ void EditVmDialog::onGpuDisplayChanged()
     resolutionCombo->setEnabled(isVirtio);
     resolutionLabel->setEnabled(isVirtio);
 
-    const bool can3d = isVirtio;
+    const bool can3d = isVirtio && VMConfig::isGpu3dAvailable();
     accel3dCheck->setEnabled(can3d);
+    accel3dCheck->setToolTip(VMConfig::isGpu3dAvailable() ? accel3dToolTip() : missingInQemuText());
     if (!can3d)
         accel3dCheck->setChecked(false);
 
@@ -1695,6 +1717,22 @@ void EditVmDialog::updateDeviceAvailability()
     updateCombo(gpuCombo, [](int val) {
         return VMConfig::isIsaDevice(static_cast<VMSpecs::GpuType>(val));
     });
+
+    // An adapter this QEMU lacks stays listed, greyed out with the reason.
+    if (auto *gpuModel = qobject_cast<QStandardItemModel *>(gpuCombo->model())) {
+        int firstUsable = -1;
+        for (int i = 0; i < gpuCombo->count(); ++i) {
+            if (!VMConfig::isGpuTypeAvailable(static_cast<VMSpecs::GpuType>(gpuCombo->itemData(i).toInt()))) {
+                gpuModel->item(i)->setEnabled(false);
+                gpuCombo->setItemData(i, missingInQemuText(), Qt::ToolTipRole);
+            } else if (firstUsable == -1 && gpuModel->item(i)->isEnabled()) {
+                firstUsable = i;
+            }
+        }
+        const int current = gpuCombo->currentIndex();
+        if (current >= 0 && !gpuModel->item(current)->isEnabled() && firstUsable != -1)
+            gpuCombo->setCurrentIndex(firstUsable);
+    }
 
     updateCombo(audioCombo, [](int val) {
         return VMConfig::isIsaDevice(static_cast<VMSpecs::AudioDevice>(val));

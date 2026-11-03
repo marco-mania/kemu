@@ -788,6 +788,16 @@ bool VMConfig::isGpuTypeAvailable(VMSpecs::GpuType type)
     return false;
 }
 
+VMSpecs::GpuType VMConfig::fallbackGpuType()
+{
+    return isGpuTypeAvailable(VMSpecs::GpuType::Virtio) ? VMSpecs::GpuType::Virtio : VMSpecs::GpuType::Vga;
+}
+
+bool VMConfig::isGpu3dAvailable()
+{
+    return QemuCapabilities::instance().hasDevice(u"virtio-vga-gl"_s);
+}
+
 // --- QEMU Strings ---
 
 QString VMConfig::toQemuString(VMSpecs::CpuModel model)

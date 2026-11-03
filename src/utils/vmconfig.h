@@ -925,6 +925,10 @@ public:
     [[nodiscard]] static bool isDisplayTypeAvailable(VMSpecs::DisplayType type);
     /// True if the QEMU binary has the device behind this graphics adapter.
     [[nodiscard]] static bool isGpuTypeAvailable(VMSpecs::GpuType type);
+    /// What to use instead of an unavailable graphics adapter.
+    [[nodiscard]] static VMSpecs::GpuType fallbackGpuType();
+    /// True if the QEMU binary has 3D for VirtIO graphics (virtio-vga-gl).
+    [[nodiscard]] static bool isGpu3dAvailable();
 
     // --- QEMU Strings ---
     [[nodiscard]] static QString toQemuString(VMSpecs::CpuModel model);

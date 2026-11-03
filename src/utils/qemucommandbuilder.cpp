@@ -323,8 +323,9 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
 
     // --- Graphics ---
     // D-Bus keeps its GL backend active even when no viewer is attached.
+    // Some distributions ship virtio-vga-gl in a package of its own.
     const bool effective3d = config.gpu3dAcceleration() && config.gpuType() == VMSpecs::GpuType::Virtio
-        && (!headless || config.displayType() == VMSpecs::DisplayType::Dbus);
+        && (!headless || config.displayType() == VMSpecs::DisplayType::Dbus) && QemuCapabilities::instance().hasDevice(u"virtio-vga-gl"_s);
 
     const int mem = qBound(VMConfig::vgaMemMbLowerLimit(config.gpuType()), config.gpuMemMb(), VMConfig::vgaMemMbUpperLimit(config.gpuType()));
 
@@ -369,7 +370,8 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         // NB: The port name "com.redhat.spice.0" is hardcoded in the
         // spice-vdagent daemon only for historical reasons.
         // virtio-serial needs PCI; without it (isapc) QEMU would not start.
-        if (VMConfig::supportsPciBus(config.machineType())) {
+        // Not every QEMU build includes the qemu-vdagent backend.
+        if (VMConfig::supportsPciBus(config.machineType()) && QemuCapabilities::instance().hasChardev(u"qemu-vdagent"_s)) {
             args << u"-device"_s << u"virtio-serial-pci"_s;
             virtioSerial = true;
             args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,clipboard=on,mouse=off"_s;

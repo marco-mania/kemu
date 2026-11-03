@@ -3605,6 +3605,23 @@ void MainWindow::continueStartVM(bool headless, const QByteArray &diskKey)
         saveVmConfig(vmDirPath, currentConfig);
     }
 
+    if (!VMConfig::isGpuTypeAvailable(currentConfig.gpuType())) {
+        const auto fallback = VMConfig::fallbackGpuType();
+        const auto answer = KMessageBox::questionTwoActions(this,
+                                                            i18n("The graphics adapter configured for '%1' is not available in this QEMU. "
+                                                                 "Switch this VM to '%2'?",
+                                                                 vmName,
+                                                                 VMConfig::toUIString(fallback)),
+                                                            i18n("Graphics Adapter Unavailable"),
+                                                            KGuiItem(i18n("Switch and Start"), u"video-display"_s),
+                                                            KStandardGuiItem::cancel());
+        if (answer != KMessageBox::PrimaryAction)
+            return;
+
+        currentConfig.setGpuType(fallback);
+        saveVmConfig(vmDirPath, currentConfig);
+    }
+
     // Pre-flight: a missing tool must not leave half-started helpers behind.
     if (currentConfig.useTpm() && !requireTool(ExternalTools::Swtpm))
         return;
