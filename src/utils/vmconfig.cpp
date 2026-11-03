@@ -767,6 +767,27 @@ bool VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType type)
     return false;
 }
 
+bool VMConfig::isGpuTypeAvailable(VMSpecs::GpuType type)
+{
+    // The names QemuCommandBuilder uses. QXL needs a QEMU built with SPICE.
+    const auto &qemu = QemuCapabilities::instance();
+    switch (type) {
+    case VMSpecs::GpuType::Vga:
+        return qemu.hasDevice(u"VGA"_s);
+    case VMSpecs::GpuType::VgaISA:
+        return qemu.hasDevice(u"isa-vga"_s);
+    case VMSpecs::GpuType::CirrusGD5446:
+        return qemu.hasDevice(u"cirrus-vga"_s);
+    case VMSpecs::GpuType::CirrusGD5430:
+        return qemu.hasDevice(u"isa-cirrus-vga"_s);
+    case VMSpecs::GpuType::Virtio:
+        return qemu.hasDevice(u"virtio-vga"_s);
+    case VMSpecs::GpuType::Qxl:
+        return qemu.hasDevice(u"qxl-vga"_s);
+    }
+    return false;
+}
+
 // --- QEMU Strings ---
 
 QString VMConfig::toQemuString(VMSpecs::CpuModel model)

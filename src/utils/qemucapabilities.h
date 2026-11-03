@@ -28,6 +28,9 @@ public:
 
     bool hasDisplay(const QString &name) const;
     bool hasAudiodev(const QString &name) const;
+    // Device names as for -device, e.g. "qxl-vga", which needs SPICE.
+    bool hasDevice(const QString &name) const;
+    bool hasChardev(const QString &name) const;
 
     // Whether the binary was built with seccomp support. Unlike the lists
     // above this defaults to false: -sandbox on a QEMU without it is fatal.
@@ -61,11 +64,15 @@ private:
     bool runProbes(const QString &qemuPath, int timeoutMs);
     void seedSelfContainedDefaults();
     static void startProbe(KProcess &process, const QString &qemuPath, const QStringList &arguments);
+    static QString collectOutput(KProcess &process, int remainingMs);
     static QSet<QString> collectProbe(KProcess &process, int remainingMs);
+    static QSet<QString> collectDeviceProbe(KProcess &process, int remainingMs);
     static bool collectExitStatus(KProcess &process, int remainingMs);
 
     QSet<QString> m_displays;
     QSet<QString> m_audiodevs;
+    QSet<QString> m_devices;
+    QSet<QString> m_chardevs;
     bool m_seccompSandbox = false;
     bool m_monitorObject = false;
     bool m_probeSucceeded = false;

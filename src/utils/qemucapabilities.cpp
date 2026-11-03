@@ -22,6 +22,8 @@ void QemuCapabilities::refresh()
 {
     m_displays.clear();
     m_audiodevs.clear();
+    m_devices.clear();
+    m_chardevs.clear();
     m_seccompSandbox = false;
     m_monitorObject = false;
     m_probeSucceeded = false;
@@ -60,6 +62,17 @@ bool QemuCapabilities::hasAudiodev(const QString &name) const
     return m_audiodevs.isEmpty() || m_audiodevs.contains(name.toLower());
 }
 
+bool QemuCapabilities::hasDevice(const QString &name) const
+{
+    // Device names are case-sensitive ("VGA").
+    return m_devices.isEmpty() || m_devices.contains(name);
+}
+
+bool QemuCapabilities::hasChardev(const QString &name) const
+{
+    return m_chardevs.isEmpty() || m_chardevs.contains(name.toLower());
+}
+
 bool QemuCapabilities::runProbes(const QString &qemuPath, int timeoutMs)
 {
     // Start all probes before awaiting any, so a refresh costs one timeout
@@ -68,8 +81,12 @@ bool QemuCapabilities::runProbes(const QString &qemuPath, int timeoutMs)
     KProcess audiodevProbe;
     KProcess sandboxProbe;
     KProcess monitorProbe;
+    KProcess deviceProbe;
+    KProcess chardevProbe;
     startProbe(displayProbe, qemuPath, {u"-display"_s, u"help"_s});
     startProbe(audiodevProbe, qemuPath, {u"-audiodev"_s, u"help"_s});
+    startProbe(deviceProbe, qemuPath, {u"-device"_s, u"help"_s});
+    startProbe(chardevProbe, qemuPath, {u"-chardev"_s, u"help"_s});
     // Options are parsed in order, so -sandbox is checked before -version
     // exits. A QEMU without seccomp support fails right there.
     startProbe(sandboxProbe, qemuPath, {u"-sandbox"_s, KEMUConst::QemuSandboxOptions, u"-version"_s});
@@ -84,6 +101,8 @@ bool QemuCapabilities::runProbes(const QString &qemuPath, int timeoutMs)
     m_audiodevs = collectProbe(audiodevProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
     m_seccompSandbox = collectExitStatus(sandboxProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
     m_monitorObject = collectExitStatus(monitorProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
+    m_devices = collectDeviceProbe(deviceProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
+    m_chardevs = collectProbe(chardevProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
 
     return !m_displays.isEmpty() && !m_audiodevs.isEmpty();
 }
@@ -122,23 +141,43 @@ bool QemuCapabilities::collectExitStatus(KProcess &process, int remainingMs)
     return process.error() != QProcess::FailedToStart && process.exitStatus() == KProcess::NormalExit && process.exitCode() == 0;
 }
 
-QSet<QString> QemuCapabilities::collectProbe(KProcess &process, int remainingMs)
+QString QemuCapabilities::collectOutput(KProcess &process, int remainingMs)
 {
-    QSet<QString> result;
-
     if (process.state() != KProcess::NotRunning && !process.waitForFinished(qMax(0, remainingMs))) {
         // Never leave a running process behind: ~KProcess would block and warn.
         process.kill();
         process.waitForFinished(200);
-        return result;
+        return {};
     }
 
     // The exit code is deliberately ignored; what matters is the listing.
     QString output = QString::fromLocal8Bit(process.readAllStandardOutput());
     if (output.trimmed().isEmpty())
         output = QString::fromLocal8Bit(process.readAllStandardError());
+    return output;
+}
 
-    const QStringList lines = output.split(u'\n', Qt::SkipEmptyParts);
+QSet<QString> QemuCapabilities::collectDeviceProbe(KProcess &process, int remainingMs)
+{
+    // Lines read: name "qxl-vga", bus PCI, desc "…"
+    static constexpr QStringView prefix = u"name \"";
+    QSet<QString> result;
+    const QStringList lines = collectOutput(process, remainingMs).split(u'\n', Qt::SkipEmptyParts);
+    for (const QString &line : lines) {
+        const QStringView trimmed = QStringView(line).trimmed();
+        if (!trimmed.startsWith(prefix))
+            continue;
+        const qsizetype end = trimmed.indexOf(u'"', prefix.size());
+        if (end > prefix.size())
+            result.insert(trimmed.sliced(prefix.size(), end - prefix.size()).toString());
+    }
+    return result;
+}
+
+QSet<QString> QemuCapabilities::collectProbe(KProcess &process, int remainingMs)
+{
+    QSet<QString> result;
+    const QStringList lines = collectOutput(process, remainingMs).split(u'\n', Qt::SkipEmptyParts);
     for (const QString &line : lines) {
         const QString trimmed = line.trimmed();
         if (trimmed.isEmpty() || trimmed.endsWith(u':')) // "Available …:" header

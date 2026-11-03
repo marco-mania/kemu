@@ -923,6 +923,8 @@ public:
 
     /// True if this build can actually provide the given display type.
     [[nodiscard]] static bool isDisplayTypeAvailable(VMSpecs::DisplayType type);
+    /// True if the QEMU binary has the device behind this graphics adapter.
+    [[nodiscard]] static bool isGpuTypeAvailable(VMSpecs::GpuType type);
 
     // --- QEMU Strings ---
     [[nodiscard]] static QString toQemuString(VMSpecs::CpuModel model);
