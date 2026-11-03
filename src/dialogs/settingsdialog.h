@@ -76,6 +76,7 @@ public:
 
     static QString getVmBasePath();
     static QString defaultVmBasePath();
+    // The directory entered, also while unused. VMs boot with Utils::configuredOvmfDir().
     static QString getOvmfPath();
     static bool isPerformanceMonitorEnabled();
     static QSize getDefaultResolution();
@@ -120,6 +121,8 @@ private:
     void setupSystemPage();
     QWidget *createFirmwareTab();
     void updateFirmwareStatus();
+    // Empty while searching automatically.
+    QString selectedFirmwareDir() const;
     QWidget *createExecutablesTab();
     QWidget *createSandboxTab();
     QWidget *createCapabilitiesTab();
@@ -139,6 +142,7 @@ private:
     TemplatesSettingsPage *m_templatesPage = nullptr;
 
     QLineEdit *pathEdit = nullptr;
+    QCheckBox *ovmfAutoCheck = nullptr;
     QLineEdit *ovmfEdit = nullptr;
     StatusList *m_firmwareList = nullptr;
 

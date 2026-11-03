@@ -97,7 +97,7 @@ using OvmfPaths = Ovmf::Firmware;
  */
 OvmfPaths findOvmfPaths(bool secureBoot = false, const QString &customDir = {});
 
-/// Firmware directory from the settings; empty means auto-detect.
+/// Firmware directory from the settings; empty while KEMU searches automatically.
 QString configuredOvmfDir();
 
 struct OvmfVarsResult {

@@ -131,7 +131,10 @@ OvmfPaths findOvmfPaths(bool secureBoot, const QString &customDir)
 QString configuredOvmfDir()
 {
     const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
-    return config->group(u"General"_s).readEntry("OvmfPath", QString());
+    const KConfigGroup general = config->group(u"General"_s);
+    const QString dir = general.readEntry("OvmfPath", QString());
+    // Older settings have no box: an empty path meant searching automatically.
+    return general.readEntry("OvmfSearchAutomatically", dir.isEmpty()) ? QString() : dir;
 }
 
 OvmfVarsResult ensureOvmfVars(const QDir &vmDir, bool secureBoot)

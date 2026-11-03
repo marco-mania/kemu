@@ -168,22 +168,41 @@ QWidget *SettingsDialog::createFirmwareTab()
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
 
-    layout->addWidget(new QLabel(i18n("Custom firmware directory (leave empty for auto-detect):")));
+    ovmfAutoCheck = new QCheckBox(i18n("Search for UEFI firmware automatically"));
+    ovmfAutoCheck->setToolTip(i18n("Uses the firmware your distribution describes for QEMU, or looks in the usual OVMF locations."));
+    ovmfAutoCheck->setChecked(Utils::configuredOvmfDir().isEmpty());
+    layout->addWidget(ovmfAutoCheck);
 
+    // Indented under the box it depends on, aligned with its label.
     auto *row = new QHBoxLayout;
+    row->addSpacing(style()->pixelMetric(QStyle::PM_IndicatorWidth) + style()->pixelMetric(QStyle::PM_CheckBoxLabelSpacing));
+    auto *dirLabel = new QLabel(i18n("Firmware directory:"));
     ovmfEdit = new QLineEdit;
     ovmfEdit->setText(getOvmfPath());
+    dirLabel->setBuddy(ovmfEdit);
     auto *btn = new QPushButton(QIcon::fromTheme(u"document-open"_s), {});
     connect(btn, &QPushButton::clicked, this, &SettingsDialog::browseOvmfDir);
+    row->addWidget(dirLabel);
     row->addWidget(ovmfEdit);
     row->addWidget(btn);
     layout->addLayout(row);
+
+    // Greyed out, the directory stays, so unticking the box brings it back.
+    const auto updateDirRow = [this, dirLabel, btn]() {
+        const bool custom = !ovmfAutoCheck->isChecked();
+        dirLabel->setEnabled(custom);
+        ovmfEdit->setEnabled(custom);
+        btn->setEnabled(custom);
+    };
+    connect(ovmfAutoCheck, &QCheckBox::toggled, this, updateDirRow);
+    updateDirRow();
 
     // What VMs will boot with, as the path is typed.
     m_firmwareList = new StatusList;
     m_firmwareList->setExpandedByDefault(true);
     layout->addWidget(m_firmwareList, 1);
     connect(ovmfEdit, &QLineEdit::textChanged, this, &SettingsDialog::updateFirmwareStatus);
+    connect(ovmfAutoCheck, &QCheckBox::toggled, this, &SettingsDialog::updateFirmwareStatus);
     updateFirmwareStatus();
 
     return page;
@@ -200,8 +219,13 @@ void SettingsDialog::updateFirmwareStatus()
     };
     m_firmwareList->clear();
 
-    const QString customDir = ovmfEdit->text().trimmed();
-    if (!customDir.isEmpty() && !Ovmf::fromFileNames({customDir}, false).isValid() && !Ovmf::fromFileNames({customDir}, true).isValid()) {
+    const QString customDir = selectedFirmwareDir();
+    if (!ovmfAutoCheck->isChecked() && customDir.isEmpty()) {
+        StatusList::Item directory(Status::Warning, i18n("Firmware directory"));
+        directory.statusText = i18nc("@info:status", "Not chosen");
+        directory.hint = i18n("KEMU searches automatically until you choose one.");
+        m_firmwareList->addItem(directory);
+    } else if (!customDir.isEmpty() && !Ovmf::fromFileNames({customDir}, false).isValid() && !Ovmf::fromFileNames({customDir}, true).isValid()) {
         StatusList::Item directory(Status::Warning, i18n("Firmware directory"));
         directory.statusText = i18nc("@info:status", "Not usable");
         directory.hint = i18n("It holds no firmware KEMU can use, so KEMU keeps looking in the usual places.");
@@ -213,7 +237,7 @@ void SettingsDialog::updateFirmwareStatus()
     const Utils::OvmfPaths plain = Utils::findOvmfPaths(false, customDir);
     if (!plain.isValid()) {
         uefi.status = Status::Missing;
-        uefi.hint = i18n("Install your distribution's OVMF package, for example ovmf or edk2-ovmf, or enter its directory above.");
+        uefi.hint = i18n("Install your distribution's OVMF package, for example ovmf or edk2-ovmf, or choose its directory above.");
         m_firmwareList->addItem(uefi);
         return;
     }
@@ -566,7 +590,7 @@ void SettingsDialog::listCapabilities()
            i18n("This QEMU was built without seccomp support.")}}},
     };
 
-    const QString firmwareDir = ovmfEdit ? ovmfEdit->text().trimmed() : QString();
+    const QString firmwareDir = selectedFirmwareDir();
     const Utils::OvmfPaths uefi = Utils::findOvmfPaths(false, firmwareDir);
     const Utils::OvmfPaths secure = Utils::findOvmfPaths(true, firmwareDir);
     sections.append({i18n("Firmware"),
@@ -851,6 +875,7 @@ void SettingsDialog::saveSettings()
     else
         general.writeEntry("VmBasePath", pathEdit->text());
     general.writeEntry("OvmfPath", ovmfEdit->text());
+    general.writeEntry("OvmfSearchAutomatically", ovmfAutoCheck->isChecked());
     // Never persist sandbox paths as user overrides; an empty entry means
     // auto-detection stays in charge.
     if (SandboxCapabilities::instance().has(SandboxCapabilities::ExternalToolPaths)) {
@@ -914,7 +939,14 @@ QString SettingsDialog::defaultVmBasePath()
 
 QString SettingsDialog::getOvmfPath()
 {
-    return Utils::configuredOvmfDir();
+    // Also while KEMU searches automatically, see Utils::configuredOvmfDir().
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    return config->group(u"General"_s).readEntry("OvmfPath", QString());
+}
+
+QString SettingsDialog::selectedFirmwareDir() const
+{
+    return ovmfAutoCheck && !ovmfAutoCheck->isChecked() ? ovmfEdit->text().trimmed() : QString();
 }
 
 bool SettingsDialog::isPerformanceMonitorEnabled()
