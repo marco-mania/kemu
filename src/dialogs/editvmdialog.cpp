@@ -203,20 +203,6 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 
     osNameLabel = qobject_cast<QLabel *>(genLayout->labelForField(nameLayout));
 
-    diskSpin = new QSpinBox();
-    diskSpin->setRange(KEMUConst::DefaultMinDiskSizeGB, 32000);
-    diskSpin->setValue(40);
-    diskSpin->setSuffix(i18n(" GB"));
-    // Changed in the properties of the system disk, next to the other disks.
-    diskSpin->setReadOnly(true);
-    diskSpin->setButtonSymbols(QAbstractSpinBox::NoButtons);
-    diskSpin->setToolTip(i18n("The size of the system disk. Change it under Hardware, in the properties of the system disk."));
-    auto *diskLayout = new QHBoxLayout();
-    diskLayout->addWidget(diskSpin);
-    diskLayout->addStretch();
-    genLayout->addRow(i18n("System Disk:"), diskLayout);
-    diskLabel = qobject_cast<QLabel *>(genLayout->labelForField(diskLayout));
-
     isoPathRequester = new KUrlRequester();
     isoPathRequester->lineEdit()->setPlaceholderText(i18n("Leave empty for HDD boot"));
     isoPathRequester->lineEdit()->setClearButtonEnabled(true);
@@ -1003,7 +989,7 @@ void EditVmDialog::setConfig(const VMConfig &config)
 
     nameEdit->setText(config.name());
 
-    diskSpin->setValue(config.diskSizeGb());
+    m_newSystemDiskGb = config.diskSizeGb();
 
     commentEdit->setPlainText(config.comment());
 
@@ -1458,7 +1444,7 @@ VMConfig EditVmDialog::getResult() const
     c.setUsePrealloc(preallocCheck->isChecked());
     c.setCpuCoreCount(cpuSpin->value());
     // A larger, not yet applied value is not the size of the disk.
-    c.setDiskSizeGb(m_mode == Mode::Edit && m_systemDiskGb > 0 ? m_systemDiskGb : diskSpin->value());
+    c.setDiskSizeGb(m_mode == Mode::Edit && m_systemDiskGb > 0 ? m_systemDiskGb : m_newSystemDiskGb);
     c.setISOPath(isoPathRequester->text());
     c.setBootFromIso(bootFromIsoCheck->isChecked());
     c.setFloppyPath(floppyPathRequester->text());
@@ -1944,7 +1930,7 @@ void EditVmDialog::refreshDiskList()
     diskTree->clear();
 
     // Always the first row; the further disks follow in m_disks order.
-    QString systemSize = i18n("%1 GB, new", diskSpin->value());
+    QString systemSize = i18n("%1 GB, new", m_newSystemDiskGb);
     if (m_mode == Mode::Edit) {
         const QemuImgProcess::ImageInfo info = systemDiskPath().isEmpty() ? QemuImgProcess::ImageInfo{} : QemuImgProcess::inspect(systemDiskPath());
         systemSize = info.isValid ? i18n("%1 GB", QString::number(info.virtualSizeGb(), 'f', 1)) : i18n("Missing");
@@ -2116,7 +2102,7 @@ void EditVmDialog::editSystemDisk()
         m_openDiskDialog = &dlg;
         m_openDiskPath = diskPath;
     } else if (m_mode == Mode::PreCreate) {
-        dlg.setNewDiskSize(diskSpin->value(), KEMUConst::DefaultMinDiskSizeGB);
+        dlg.setNewDiskSize(m_newSystemDiskGb, KEMUConst::DefaultMinDiskSizeGB);
     }
     const auto closed = qScopeGuard([this] {
         m_openDiskDialog = nullptr;
@@ -2126,7 +2112,7 @@ void EditVmDialog::editSystemDisk()
         return;
 
     if (m_mode == Mode::PreCreate)
-        diskSpin->setValue(dlg.sizeGb());
+        m_newSystemDiskGb = dlg.sizeGb();
     m_systemDiskInterface = dlg.diskInterface();
     refreshDiskList();
 }
@@ -2318,11 +2304,8 @@ QString EditVmDialog::systemDiskPath() const
 
 void EditVmDialog::diskExpanded(const QString &diskPath, int sizeGb)
 {
-    if (diskPath == systemDiskPath()) {
+    if (diskPath == systemDiskPath())
         m_systemDiskGb = sizeGb;
-        diskSpin->setMinimum(sizeGb);
-        diskSpin->setValue(sizeGb);
-    }
     if (m_openDiskDialog && m_openDiskPath == diskPath)
         m_openDiskDialog->setCurrentSize(sizeGb);
     refreshDiskList();
@@ -2336,12 +2319,6 @@ void EditVmDialog::applyModeConstraints()
     // The size of the image; it grows through the properties of the system disk.
     const QemuImgProcess::ImageInfo info = systemDiskPath().isEmpty() ? QemuImgProcess::ImageInfo{} : QemuImgProcess::inspect(systemDiskPath());
     m_systemDiskGb = info.isValid ? int((info.virtualSizeBytes + (1LL << 30) - 1) >> 30) : 0;
-    if (m_systemDiskGb > 0) {
-        diskSpin->setMinimum(m_systemDiskGb);
-        diskSpin->setValue(m_systemDiskGb);
-    } else {
-        diskSpin->setEnabled(false);
-    }
 
     // Changing these on an installed guest usually makes it unbootable.
     const QString warning = i18n("Changing this on an installed guest can make it unbootable.");
@@ -2367,7 +2344,7 @@ void EditVmDialog::resetToFactoryDefaults()
     ramSpin->setValue(GlobalDefaults.ramMb);
     cpuSpin->setValue(GlobalDefaults.cpuCoreCount);
     if (m_mode != Mode::Edit)
-        diskSpin->setValue(GlobalDefaults.diskSizeGb);
+        m_newSystemDiskGb = GlobalDefaults.diskSizeGb;
 
     setCombo(cpuCombo, GlobalDefaults.cpuModel);
     kvmCheck->setChecked(GlobalDefaults.useKvm);
@@ -2377,6 +2354,7 @@ void EditVmDialog::resetToFactoryDefaults()
     gpuMemSpin->setValue(GlobalDefaults.gpuMemMb);
     setCombo(audioCombo, GlobalDefaults.audioDevice);
     setSystemDiskInterface(GlobalDefaults.diskInterface);
+    refreshDiskList(); // the size of a new system disk, too
     setCombo(netCombo, GlobalDefaults.networkCard);
     setCombo(displayCombo, GlobalDefaults.displayType);
     setCombo(usbCombo, GlobalDefaults.usbController);

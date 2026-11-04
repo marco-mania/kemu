@@ -183,8 +183,6 @@ private:
     QCheckBox *balloonCheck = nullptr;
     QCheckBox *preallocCheck = nullptr;
     QSpinBox *cpuSpin = nullptr;
-    QSpinBox *diskSpin = nullptr;
-    QLabel *diskLabel = nullptr;
     KUrlRequester *isoPathRequester = nullptr;
     QLabel *isoPathLabel = nullptr;
     QCheckBox *bootFromIsoCheck = nullptr;
@@ -227,6 +225,7 @@ private:
     QComboBox *exitActionCombo = nullptr;
 
     int m_systemDiskGb = 0; // current size, rounded up; 0 if unknown
+    int m_newSystemDiskGb = GlobalDefaults.diskSizeGb; // to create; the configured size otherwise
     QPointer<DiskDialog> m_openDiskDialog; // properties of m_openDiskPath
     QString m_openDiskPath;
     QComboBox *guestShutdownActionCombo = nullptr;
