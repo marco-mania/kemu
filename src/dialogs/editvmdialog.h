@@ -71,6 +71,8 @@ public:
     // Show the configuration without allowing changes. Call after setConfig().
     // frozen: linked clones depend on the VM rather than it running.
     void setReadOnly(bool readOnly, bool frozen = false);
+    // Opens on the shared folder, on the General tab.
+    void showSharedFolder();
     [[nodiscard]] bool isReadOnly() const
     {
         return m_readOnly;
@@ -262,6 +264,7 @@ private:
 
     Mode m_mode = Mode::Edit;
     bool m_readOnly = false;
+    QTabWidget *m_tabs = nullptr;
     VMConfig m_original;
     QString m_lastAutoHostname;
 

@@ -36,6 +36,7 @@
 #include "utils/diskencryption.h"
 #include "utils/diskimagecheck.h"
 #include "utils/diskkeystore.h"
+#include "utils/keyspecs.h"
 #include "utils/linkedclones.h"
 #include "utils/qemucapabilities.h"
 #include "utils/qemucommandbuilder.h"
@@ -48,6 +49,7 @@
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
 #include "widgets/trayicon.h"
+#include "widgets/vmoverview.h"
 
 #include "kemu_debug.h"
 
@@ -57,7 +59,6 @@
 #include <KNotifyConfigWidget>
 #include <KWindowSystem>
 
-#include <QBuffer>
 #include <QToolButton>
 #include <QProgressDialog>
 #include <QScopeGuard>
@@ -327,11 +328,6 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
             qCDebug(KEMU) << "Theme/palette change detected" << t;
 
             QTimer::singleShot(0, this, [this]() {
-                if (detailsBrowser) {
-                    const QString ss = detailsBrowser->styleSheet();
-                    detailsBrowser->setStyleSheet(QString());
-                    detailsBrowser->setStyleSheet(ss);
-                }
                 updateDetails();
             });
         }
@@ -449,28 +445,45 @@ void MainWindow::setupUi()
     vmActionBar->setIconSize(QSize(22, 22));
     vmActionBar->setMovable(false);
 
-    detailsBrowser = new QTextBrowser();
-    detailsBrowser->setFrameShape(QFrame::NoFrame);
-    detailsBrowser->setStyleSheet(u"QTextBrowser { background: palette(window); padding: 12px; }"_s);
-    detailsBrowser->setOpenLinks(false);
-    connect(detailsBrowser, &QTextBrowser::anchorClicked, this, [this](const QUrl &url) {
-        Q_UNUSED(this);
+    vmOverview = new VmOverview();
+    connect(vmOverview, &VmOverview::linkActivated, this, [this](const QString &link) {
+        const QUrl url(link);
         if (url.scheme() == "copy-pid"_L1) {
             const QString pidString = url.path();
             QGuiApplication::clipboard()->setText(pidString);
-            QToolTip::showText(QCursor::pos(), i18n("PID %1 copied to clipboard", pidString), detailsBrowser, QRect(), 2000);
+            QToolTip::showText(QCursor::pos(), i18n("PID %1 copied to clipboard", pidString), vmOverview, QRect(), 2000);
         } else if (url.scheme() == "copy-ip"_L1) {
             const QString address = url.path();
             QGuiApplication::clipboard()->setText(address);
-            QToolTip::showText(QCursor::pos(), i18n("%1 copied to clipboard", address), detailsBrowser, QRect(), 2000);
-        } else if (url.scheme() == "http"_L1 || url.scheme() == "https"_L1) {
-            QDesktopServices::openUrl(url);
+            QToolTip::showText(QCursor::pos(), i18n("%1 copied to clipboard", address), vmOverview, QRect(), 2000);
         }
+    });
+
+    // The media cards offer what the media icons in the list do, the shared
+    // folder leads to its settings.
+    connect(vmOverview, &VmOverview::cardActivated, this, [this](const QString &id, const QPoint &anchor) {
+        if (id == u"shared-folder"_s) {
+            editVmSettings(true);
+            return;
+        }
+        const bool cd = id == u"cdrom"_s;
+        if (!cd && id != u"floppy"_s)
+            return;
+        QMenu menu(this);
+        menu.addAction(actionCollection()->action(cd ? u"vm_change_iso"_s : u"vm_change_floppy"_s));
+        menu.addAction(actionCollection()->action(cd ? u"vm_eject_iso"_s : u"vm_eject_floppy"_s));
+        menu.exec(anchor);
+    });
+    connect(vmOverview, &VmOverview::fileDropped, this, [this](const QString &id, const QString &path) {
+        if (id == u"cdrom"_s)
+            changeISOForVm(currentConfig.name(), path);
+        else if (id == u"floppy"_s)
+            changeFloppyForVm(currentConfig.name(), path);
     });
 
     rightLayout->addWidget(vmActionBar);
 
-    rightLayout->addWidget(detailsBrowser);
+    rightLayout->addWidget(vmOverview);
 
     perfMonitor = new PerformanceMonitorWidget();
     perfMonitor->setActive(false);
@@ -1249,27 +1262,6 @@ VmRuntimeManager::HelperResult MainWindow::reportingDone(const QString &vmName, 
     };
 }
 
-QString MainWindow::encodeThemeIcon(const QString &name, int sizePx) const
-{
-    // Absolute paths are bundled assets, anything else comes from the theme.
-    const QIcon icon = QDir::isAbsolutePath(name) ? QIcon(name) : QIcon::fromTheme(name);
-    if (icon.isNull() || !detailsBrowser)
-        return {};
-
-    const qreal dpr = detailsBrowser->devicePixelRatioF();
-    const QPixmap pix = icon.pixmap(QSize(sizePx, sizePx) * dpr);
-    if (pix.isNull())
-        return {};
-
-    QByteArray ba;
-    QBuffer buf(&ba);
-    buf.open(QIODevice::WriteOnly);
-    pix.save(&buf, "PNG");
-    return u"<img src='data:image/png;base64,%1' width='%2' height='%2' "
-           "style='vertical-align: middle;'/>"_s.arg(QString::fromLatin1(ba.toBase64()))
-               .arg(sizePx);
-}
-
 QStringList MainWindow::existingVmNames() const
 {
     const QDir dir = getVmBaseDir();
@@ -1284,36 +1276,8 @@ QStringList MainWindow::existingVmNames() const
 
 void MainWindow::updateDetails()
 {
-    const QPalette pal = detailsBrowser->palette();
-    const KColorScheme scheme(QPalette::Active, KColorScheme::Window);
-
-    const QString colNormal = pal.color(QPalette::Active, QPalette::WindowText).name();
-    const QString colInactive = pal.color(QPalette::Disabled, QPalette::WindowText).name();
-    const QString colLink = pal.color(QPalette::Active, QPalette::Link).name();
-    const QString colVisited = pal.color(QPalette::Active, QPalette::LinkVisited).name();
-    const QString colPositive = scheme.foreground(KColorScheme::PositiveText).color().name();
-    const QString colNegative = scheme.foreground(KColorScheme::NegativeText).color().name();
-    const QString colNeutral = scheme.foreground(KColorScheme::NeutralText).color().name();
-    const QString colTrack = scheme.shade(KColorScheme::MidShade).name();
-
-    QColor borderColor = pal.color(QPalette::Disabled, QPalette::WindowText);
-    borderColor.setAlphaF(0.3);
-    const QString colBorder = borderColor.name(QColor::HexArgb);
-
-    // System font: respects the user's KDE font settings
-    const QFont sysFont = QApplication::font();
-    const QString fontFamily = sysFont.family();
-    const int basePtSize = sysFont.pointSize() > 0 ? sysFont.pointSize() : qMax(8, QFontInfo(sysFont).pixelSize() * 72 / 96);
-
     if (currentConfig.name().isEmpty()) {
-        detailsBrowser->setHtml(
-            u"<div style='padding: 60px 40px; text-align: center; "
-            "font-family: \"%1\"; font-size: %2pt; color: %3;'>"
-            "<div style='font-size: 3em;'>&#x1F5A5;</div>"
-            "<div style='margin-top: 0.8em;'>"_s.arg(fontFamily)
-                .arg(basePtSize)
-                .arg(colInactive)
-            + i18n("Select a virtual machine from the list or create a new one.") + u"</div></div>"_s);
+        vmOverview->showPlaceholder(i18n("Select a virtual machine from the list or create a new one."));
         return;
     }
 
@@ -1334,221 +1298,62 @@ void MainWindow::updateDetails()
         perfMonitor->setActive(vmLive);
     }
 
-    // A padlock after the label of an encrypted disk; the image header says
-    // so, whatever the configuration.
-    const auto encryptionIcon = [this](const QString &diskPath) -> QString {
-        if (!DiskImageCheck::qcow2IsEncrypted(diskPath))
-            return {};
-        // As large as the row icons, so the row keeps its height.
-        constexpr int size = 14;
-        QByteArray png;
-        QBuffer buffer(&png);
-        buffer.open(QIODevice::WriteOnly);
-        VMConfig::padlockPixmap(size, detailsBrowser->devicePixelRatioF()).save(&buffer, "PNG");
-        return u"&nbsp;<img src='data:image/png;base64,%1' width='%2' height='%2' style='vertical-align: middle;'/>"_s.arg(QString::fromLatin1(png.toBase64()))
-            .arg(size);
-    };
-    const auto diskValueFor = [&](const QString &diskPath, VMSpecs::DiskInterface diskInterface) -> QString {
-        const QemuImgProcess::ImageInfo dInfo = diskInfoFor(diskPath);
-        QString diskVal;
-        if (dInfo.isValid) {
-            const QString diskInterfaceStr = VMConfig::toUIString(diskInterface);
+    using Tone = VmOverview::Tone;
+    VmOverview::Content content;
+    content.name = currentConfig.name();
 
-            double usagePercent = 0.0;
-            if (dInfo.virtualSizeBytes > 0.0)
-                usagePercent = (static_cast<double>(dInfo.actualSizeBytes) / static_cast<double>(dInfo.virtualSizeBytes)) * 100.0;
-            usagePercent = qBound(0.0, usagePercent, 100.0);
-            const int filledPct = qRound(usagePercent);
-
-            QString barColor;
-            if (usagePercent < 80.0)
-                barColor = colPositive;
-            else if (usagePercent < 90.0)
-                barColor = colNeutral;
-            else
-                barColor = colNegative;
-
-            const QString bgColor = colTrack;
-
-            const int barWidthPx = 140;
-            const int barHeightPx = 6;
-            const int filledPx = qBound(0, (barWidthPx * filledPct) / 100, barWidthPx);
-
-            const QString svg =
-                u"<svg xmlns='http://www.w3.org/2000/svg' width='%1' height='%2' "
-                "shape-rendering='crispEdges'>"
-                "<rect width='%1' height='%2' fill='%3'/>"
-                "<rect width='%4' height='%2' fill='%5'/>"
-                "</svg>"_s.arg(barWidthPx)
-                    .arg(barHeightPx)
-                    .arg(bgColor)
-                    .arg(filledPx)
-                    .arg(barColor);
-
-            const QByteArray svgB64 = svg.toUtf8().toBase64();
-            const QString barHtml =
-                u"<img src='data:image/svg+xml;base64,%1' width='%2' height='%3' "
-                "style='vertical-align:middle;'/>"_s.arg(QString::fromLatin1(svgB64))
-                    .arg(barWidthPx)
-                    .arg(barHeightPx);
-
-            diskVal = u"<span style='white-space:nowrap;'>%1&nbsp;&nbsp;%2&nbsp;&nbsp;%3</span>"_s
-                          .arg(i18n("%1 GB, %2", QString::number(dInfo.virtualSizeGb(), 'f', 1), diskInterfaceStr))
-                          .arg(barHtml)
-                          .arg(i18n("%1 GB used (%2%)", QString::number(dInfo.actualSizeGb(), 'f', 1), QString::number(usagePercent, 'f', 0)));
-        } else {
-            diskVal = i18n("Not available");
-        }
-        return diskVal;
-    };
-    const QString diskVal = diskValueFor(currentConfig.diskPath(), currentConfig.diskInterface());
-
-    QString gpuVal = VMConfig::toUIString(currentConfig.gpuType());
-    if (currentConfig.gpu3dAcceleration())
-        gpuVal += i18n(" (3D)");
-    QString audioVal = VMConfig::toUIString(currentConfig.audioDevice());
-    if (currentConfig.audioDevice() == VMSpecs::AudioDevice::Sb16) {
-        const auto &sb = currentConfig.sb16Config();
-        audioVal += u" (IRQ %1, DMA %2/%3, I/O 0x%4)"_s.arg(sb.irq).arg(sb.dma).arg(sb.dma16).arg(sb.iobase, 0, 16);
-    }
-    QString netVal;
-    if (currentConfig.networkCard() == VMSpecs::NetworkCard::None) {
-        netVal = VMConfig::toUIString(VMSpecs::NetworkCard::None);
-    } else {
-        netVal = VMConfig::toUIString(currentConfig.networkCard());
-        netVal += u" (%1)"_s.arg(VMConfig::toUIString(currentConfig.networkMode()));
-        if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !currentConfig.virtualNetworkName().isEmpty()) {
-            netVal += u" [%1]"_s.arg(currentConfig.virtualNetworkName());
-        }
-    }
-
-    QString portFwdVal;
-    const auto &portForwards = currentConfig.portForwards();
-    if (!portForwards.isEmpty()) {
-        netVal += u"  [%1 port(s) forwarded]"_s.arg(portForwards.size());
-        QStringList portLines;
-        for (const auto &rule : portForwards) {
-            portLines << u"%1 %2 → %3"_s.arg(VMConfig::toString(rule.protocol).toUpper()).arg(rule.hostPort).arg(rule.guestPort);
-        }
-        portFwdVal = portLines.join(u", "_s);
-    }
-
-    const QString usbVal = VMConfig::toUIString(currentConfig.usbController());
-    QString displayVal = VMConfig::toUIString(currentConfig.displayType());
-    QString resolutionVal = u"%1×%2"_s.arg(currentConfig.displayResolution().width()).arg(currentConfig.displayResolution().height());
-    if (currentConfig.monitorCount() > 1)
-        resolutionVal = i18ncp("@info resolution, number of monitors", "%2, %1 monitor", "%2, %1 monitors", currentConfig.monitorCount(), resolutionVal);
-    QString firmwareVal = VMConfig::firmwareToUIString(currentConfig.useUefi(), currentConfig.useSecureBoot());
-    QString chipsetVal = VMConfig::toUIString(currentConfig.machineType());
-
-    QString osVal = VMConfig::toUIString(currentConfig.osFamily());
-    if (!currentConfig.distroId().isEmpty() && currentConfig.distroId() != u"other"_s) {
-        osVal += u" / "_s + m_imageDatabase.displayName(currentConfig.distroId());
-    }
-    const QString archVal = VMConfig::toUIString(currentConfig.architecture());
-
-    QString memVal = i18n("%1 MB", currentConfig.ramMb());
-    QStringList memFlags;
-    if (currentConfig.useMemoryBallooning())
-        memFlags << i18n("Balloon");
-    if (currentConfig.preallocMemory())
-        memFlags << i18n("Prealloc");
-    if (!memFlags.isEmpty())
-        memVal += i18n("  [%1]", memFlags.join(u", "));
-
-    QString cpuVal = i18n("%1, %2 core(s), %3",
-                          VMConfig::toUIString(currentConfig.cpuModel()),
-                          currentConfig.cpuCoreCount(),
-                          currentConfig.useKvm() ? i18n("KVM") : i18n("TCG"));
-
-    QString cdVal = currentConfig.isoPath().isEmpty() ? i18n("No disc inserted") : QFileInfo(currentConfig.isoPath()).fileName();
-    QString floppyVal = currentConfig.floppyPath().isEmpty() ? i18n("No disk inserted") : QFileInfo(currentConfig.floppyPath()).fileName();
-
-    QString sharedVal;
-    if (currentConfig.sharedPath().isEmpty()) {
-        sharedVal = i18n("Disabled");
-    } else {
-        const QString protocol = (currentConfig.osFamily() == VMSpecs::OsFamily::Windows) ? i18n("virtio-fs") : i18n("9p (VirtFS)");
-        const QString tag = currentConfig.sharedName().isEmpty() ? u"share"_s : currentConfig.sharedName();
-        sharedVal = i18n("%1  [%2, Tag: %3]", currentConfig.sharedPath(), protocol, tag);
-    }
-
-    QString statusDot, statusText, statusColor;
     if (isRunning) {
-        auto pid = entry->qemuProcess ? entry->qemuProcess->processId() : 0;
-        statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Running");
-        if (isHeadless)
-            statusText += i18n(" <b>Headless</b>");
-        statusText += u"  <span class='pid'>[<a href='copy-pid:%1' title='%2'>PID %1</a>]</span>"_s.arg(QString::number(pid), i18n("Click to copy PID"));
-        statusColor = colPositive;
+        const auto pid = entry->qemuProcess ? entry->qemuProcess->processId() : 0;
+        content.status = isHeadless ? i18n("Running headless") : i18n("Running");
+        content.tone = Tone::Positive;
+        content.statusLinks = u"<a href='copy-pid:%1' style='text-decoration: none;'>PID %1</a>"_s.arg(QString::number(pid));
+        content.statusLinksToolTip = i18n("Click to copy PID");
     } else if (isShrinking) {
-        statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Compacting Disk…");
-        statusColor = colNeutral;
+        content.status = i18n("Compacting Disk…");
+        content.tone = Tone::Neutral;
     } else if (isFlattening) {
-        statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Making Independent…");
-        statusColor = colNeutral;
+        content.status = i18n("Making Independent…");
+        content.tone = Tone::Neutral;
     } else if (entry && (entry->state == VmEntry::State::Encrypting || entry->state == VmEntry::State::Decrypting)) {
-        statusDot = u"&#x25CF;"_s;
-        statusText = entry->state == VmEntry::State::Encrypting ? i18n("Encrypting…") : i18n("Decrypting…");
-        statusColor = colNeutral;
+        content.status = entry->state == VmEntry::State::Encrypting ? i18n("Encrypting…") : i18n("Decrypting…");
+        content.tone = Tone::Neutral;
     } else if (isExporting) {
-        statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Exporting…");
-        statusColor = colNeutral;
+        content.status = i18n("Exporting…");
+        content.tone = Tone::Neutral;
     } else if (isDeploying) {
-        statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Deploying…");
-        statusColor = colNeutral;
+        content.status = i18n("Deploying…");
+        content.tone = Tone::Neutral;
     } else if (isCloning) {
-        statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Cloning…");
-        statusColor = colNeutral;
+        content.status = i18n("Cloning…");
+        content.tone = Tone::Neutral;
     } else if (entry && entry->isFrozen()) {
-        statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Frozen");
-        statusColor = colInactive;
+        content.status = i18n("Frozen");
     } else if (entry && entry->linkedSourceMissing) {
-        statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Source Missing");
-        statusColor = colNegative;
+        content.status = i18n("Source Missing");
+        content.tone = Tone::Negative;
     } else {
-        statusDot = u"&#x25CF;"_s;
-        statusText = i18n("Stopped");
-        statusColor = colInactive;
+        content.status = i18n("Stopped");
     }
-
-    QColor badgeBg = QColor(statusColor);
-    badgeBg.setAlphaF(0.15);
-    const QString colBadgeBg = badgeBg.name(QColor::HexArgb);
 
     // VM header icon
-    QString iconImgTag;
     {
         const int targetSize = KEMUConst::DetailViewIconSize;
-        const qreal dpr = detailsBrowser->devicePixelRatioF();
+        const qreal dpr = vmOverview->devicePixelRatioF();
         const int devPx = qRound(targetSize * dpr);
 
-        auto pixmapToImgTag = [&](const QPixmap &src) -> QString {
+        // Centered on a square canvas, whatever the aspect ratio.
+        const auto squared = [devPx, dpr](const QPixmap &src) {
             QImage srcImg = src.toImage();
             srcImg.setDevicePixelRatio(1.0);
-
             const QImage scaled = srcImg.scaled(devPx, devPx, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 
-            QImage canvas(devPx, devPx, QImage::Format_ARGB32_Premultiplied);
-            canvas.setDevicePixelRatio(1.0);
+            QPixmap canvas(devPx, devPx);
             canvas.fill(Qt::transparent);
             QPainter p(&canvas);
             p.drawImage((devPx - scaled.width()) / 2, (devPx - scaled.height()) / 2, scaled);
             p.end();
-
-            QByteArray ba;
-            QBuffer buf(&ba);
-            buf.open(QIODevice::WriteOnly);
-            canvas.save(&buf, "PNG");
-            return u"<img src='data:image/png;base64,%1' width='%2' height='%2'/>"_s.arg(QString::fromLatin1(ba.toBase64())).arg(targetSize);
+            canvas.setDevicePixelRatio(dpr);
+            return canvas;
         };
 
         QString svgPath;
@@ -1564,34 +1369,34 @@ void MainWindow::updateDetails()
                 painter.setRenderHint(QPainter::Antialiasing);
                 renderer.render(&painter);
                 painter.end();
-                iconImgTag = pixmapToImgTag(pix);
+                content.icon = squared(pix);
             }
         }
 
-        if (iconImgTag.isEmpty()) {
-            const QIcon ic = currentConfig.icon(targetSize);
-            const QPixmap pix = ic.pixmap(QSize(devPx, devPx));
+        if (content.icon.isNull()) {
+            const QPixmap pix = currentConfig.icon(targetSize).pixmap(QSize(devPx, devPx));
             if (!pix.isNull()) {
-                iconImgTag = pixmapToImgTag(pix);
+                content.icon = squared(pix);
             } else {
-                QPixmap empty(devPx, devPx);
-                empty.fill(Qt::transparent);
-                iconImgTag = pixmapToImgTag(empty);
+                content.icon = QPixmap(devPx, devPx);
+                content.icon.fill(Qt::transparent);
+                content.icon.setDevicePixelRatio(dpr);
             }
         }
     }
 
+    QString osVal = VMConfig::toUIString(currentConfig.osFamily());
+    if (!currentConfig.distroId().isEmpty() && currentConfig.distroId() != u"other"_s) {
+        osVal += u" / "_s + m_imageDatabase.displayName(currentConfig.distroId());
+    }
+    const QString archVal = VMConfig::toUIString(currentConfig.architecture());
+
     // Below the status: what the guest agent reports while it answers,
     // otherwise the operating system as configured.
-    // The architecture is set off like the values of the guest agent line.
-    QString osLine = osVal.toHtmlEscaped() + u"&nbsp;&nbsp;·&nbsp;&nbsp;"_s + archVal.toHtmlEscaped();
+    content.system = osVal.toHtmlEscaped() + u"&nbsp;&nbsp;·&nbsp;&nbsp;"_s + archVal.toHtmlEscaped();
     if (isRunning || isDeploying) {
         const VmRuntimeInfo *rt = m_runtimeManager ? m_runtimeManager->runtime(currentConfig.name()) : nullptr;
         const GuestAgentClient *agent = rt ? rt->guestAgent.data() : nullptr;
-        // Tooltips come from the title attribute, which takes no entities.
-        const auto attribute = [](QString text) {
-            return text.replace(u'"', u'\'');
-        };
 
         QString agentState;
         if (!agent)
@@ -1605,154 +1410,187 @@ void MainWindow::updateDetails()
 
         const GuestAgentClient::GuestInfo info = agent && agent->isConnected() ? agent->guestInfo() : GuestAgentClient::GuestInfo{};
         if (!agent || !agent->isConnected() || (info.hostName.isEmpty() && info.addresses.isEmpty() && info.osName.isEmpty())) {
-            if (!agentState.isEmpty())
-                osLine = u"<span title=\"%1\">%2</span>"_s.arg(attribute(agentState), osLine);
+            content.systemToolTip = agentState;
         } else {
             QStringList parts;
             if (!info.hostName.isEmpty())
                 parts << info.hostName.toHtmlEscaped();
             if (!info.addresses.isEmpty())
-                parts << u"<a href='copy-ip:%1' title='%2'>%1</a>"_s.arg(info.addresses.first().toHtmlEscaped(), i18n("Click to copy the address"));
+                parts << u"<a href='copy-ip:%1' style='text-decoration: none;'>%1</a>"_s.arg(info.addresses.first().toHtmlEscaped());
             if (!info.osName.isEmpty())
                 parts << info.osName.toHtmlEscaped();
-            parts << VMConfig::toUIString(currentConfig.architecture()).toHtmlEscaped();
+            parts << archVal.toHtmlEscaped();
 
             QStringList tip;
             tip << (agent->version().isEmpty() ? i18n("Reported by the guest agent") : i18n("Reported by the guest agent %1", agent->version()));
+            if (!info.addresses.isEmpty())
+                tip << i18n("Click the address to copy it");
             if (info.addresses.size() > 1)
                 tip << i18n("Addresses: %1", info.addresses.join(u", "_s));
             tip << i18n("Configured: %1", u"%1 · %2"_s.arg(osVal, archVal));
 
-            osLine = u"<span title=\"%1\">%2</span>"_s.arg(attribute(tip.join(u'\n')), parts.join(u"&nbsp;&nbsp;·&nbsp;&nbsp;"_s));
+            content.system = parts.join(u"&nbsp;&nbsp;·&nbsp;&nbsp;"_s);
+            content.systemToolTip = tip.join(u'\n');
         }
     }
 
-    const int nameSize = basePtSize + 3;
+    // Key figures, compared with the host.
+    const int cores = currentConfig.cpuCoreCount();
+    const int ramMb = currentConfig.ramMb();
+    content.cpu = {u"cpu"_s, KeySpecs::coresText(cores), KeySpecs::cpuModelText(currentConfig.cpuModel()), KeySpecs::hostCpusText()};
+    content.cpu.attention = KeySpecs::hostCpuCount() > 0 && cores > KeySpecs::hostCpuCount();
+    content.memory = {u"memory"_s, KeySpecs::memoryText(ramMb), i18nc("@label key figure", "Memory"), KeySpecs::hostMemoryText()};
+    content.memory.attention = KeySpecs::hostMemoryMib() > 0 && ramMb > KeySpecs::hostMemoryMib();
 
-    // Theme-aware CSS: system font, em-relative sizing, palette colors only
-    const QString css =
-        u"* { margin: 0; padding: 0; }"
-        "body { font-family: '%1'; font-size: %2pt; color: %3; background: "
-        "transparent; padding: 1.2em 1.5em; }"
-        ".header { margin-bottom: 24px; }"
-        ".vm-icon { width: 58px; height: 58px; vertical-align: top; "
-        "padding-right: 16px; padding-bottom: 8px; }"
-        ".header-info { vertical-align: top; padding-top: 2px; }"
-        ".vm-name { font-size: %10pt; font-weight: 700; color: %3; "
-        "margin-bottom: 0.15em; letter-spacing: -0.01em; }"
-        ".vm-status { margin-bottom: 0.15em; }"
-        ".vm-status .badge { color: %4; font-weight: 600; padding: 2px 8px; "
-        "background-color: %9; border-radius: 3px; }"
-        ".vm-status .dot { vertical-align: middle; }"
-        ".vm-os { color: %5; }"
-        ".vm-os a { color: %6; text-decoration: none; }"
-        ".vm-os a:hover { text-decoration: underline; color: %7; }"
-        ".pid { color: %5; margin-left: 8px; }"
-        ".pid a { color: %6; text-decoration: none; }"
-        ".pid a:hover { text-decoration: underline; color: %7; }"
-        ".hw-table { width: 100%; border-collapse: collapse; margin-top: 4px; "
-        "line-height: 1.0; }"
-        ".hw-table td { padding: 2px 10px; vertical-align: middle; }"
-        ".hw-icon { width: 22px; text-align: center; }"
-        ".hw-label { color: %3; }"
-        ".hw-value { color: %3; }"
-        ".hw-value.muted { color: %5; font-style: italic; }"
-        ".section-gap td { border-top: 1px solid %8; padding-top: 8px; }"_s.arg(fontFamily)
-            .arg(basePtSize)
-            .arg(colNormal, statusColor, colInactive, colLink, colVisited, colBorder, colBadgeBg)
-            .arg(nameSize);
-
-    QString html = u"<html><head><style>%1</style></head><body>"_s.arg(css);
-
-    html +=
-        u"<table class='header' cellpadding='0' cellspacing='0'><tr>"
-        "<td class='vm-icon'>%1</td>"
-        "<td class='header-info'>"
-        "  <div class='vm-name'>%2</div>"
-        "  <div class='vm-status'>"
-        "    <span class='badge'><span class='dot'>%3</span> %4</span>"
-        "  </div>"
-        "  <div class='vm-os'>%5</div>"
-        "</td></tr></table>"_s.arg(iconImgTag, currentConfig.name(), statusDot, statusText, osLine);
-
-    const QString displayStr = (currentConfig.displayType() == VMSpecs::DisplayType::Dbus)
-        ? QString(gpuVal + u" (%1)"_s.arg(resolutionVal))
-        : QString(gpuVal + u", "_s + displayVal + u" (%1)"_s.arg(resolutionVal));
-
-    struct HwRow {
-        QString iconName; // freedesktop / Breeze theme icon name
-        QString label;
-        QString value;
-        bool sectionStart = false;
-        bool muted = false;
+    // A disk's usage as share and text; the image header tells whether it is encrypted.
+    const auto usageOf = [](const QemuImgProcess::ImageInfo &info) {
+        return info.virtualSizeBytes > 0 ? std::clamp(double(info.actualSizeBytes) / double(info.virtualSizeBytes), 0.0, 1.0) : 0.0;
     };
+    const auto usedText = [&usageOf](const QemuImgProcess::ImageInfo &info) {
+        return i18n("%1 GB used (%2%)", QString::number(info.actualSizeGb(), 'f', 1), QString::number(usageOf(info) * 100, 'f', 0));
+    };
+    {
+        const QString path = currentConfig.diskPath();
+        const QemuImgProcess::ImageInfo info = diskInfoFor(path);
+        const bool encrypted = DiskImageCheck::qcow2IsEncrypted(path);
+        const QString facts = KeySpecs::diskFacts(currentConfig.diskInterface(), encrypted);
+        content.systemDisk = {u"drive-harddisk"_s, i18n("Not available"), i18nc("@label key figure", "System disk"), facts};
+        content.systemDisk.muted = !info.isValid;
+        // A padlock, as the disk rows always had.
+        content.systemDisk.emblemName = encrypted ? u"object-locked"_s : QString();
+        if (info.isValid) {
+            // The ring shows the share; the controller only fits the tool tip.
+            content.systemDisk.value = KeySpecs::diskSizeText(KeySpecs::gibRoundedUp(info.virtualSizeBytes));
+            content.systemDisk.detail = i18n("%1 GB used", QString::number(info.actualSizeGb(), 'f', 1));
+            content.systemDisk.usage = usageOf(info);
+            content.systemDisk.toolTip = i18nc("@info used space, then controller and state", "%1 · %2", usedText(info), facts);
+        }
+    }
 
-    QList<HwRow> rows = {{u"preferences-system"_s, i18n("Firmware"), firmwareVal, false, false},
-                         {u"computer"_s, i18n("Chipset"), chipsetVal, false, false},
-                         {u"security-high"_s, i18n("TPM"), currentConfig.useTpm() ? i18n("TPM 2.0 (swtpm)") : i18n("None"), false, !currentConfig.useTpm()},
-                         {u"clock"_s, i18n("Clock"), currentConfig.useLocalTime() ? i18n("Localtime") : i18n("UTC"), false, false},
-                         {u"media-flash"_s, i18n("Memory"), memVal, true, false},
-                         {u"cpu"_s, i18n("Processors"), cpuVal, false, false},
-                         {u"drive-harddisk"_s, i18n("System Disk") + encryptionIcon(currentConfig.diskPath()), diskVal, true, false},
-                         {u"media-optical"_s, i18n("CD/DVD"), cdVal, false, currentConfig.isoPath().isEmpty()},
-                         {u"media-floppy"_s, i18n("Floppy"), floppyVal, false, currentConfig.floppyPath().isEmpty()},
-                         {u"video-display"_s, i18n("Display"), displayStr, true, false},
-                         {u"audio-card"_s, i18n("Sound Card"), audioVal, true, currentConfig.audioDevice() == VMSpecs::AudioDevice::None},
-                         {u"network-wired"_s, i18n("Network Adapter"), netVal, true, currentConfig.networkCard() == VMSpecs::NetworkCard::None}};
+    // Hardware: what the guest sees, a card each.
+    QString gpuVal = VMConfig::toUIString(currentConfig.gpuType());
+    if (currentConfig.gpu3dAcceleration())
+        gpuVal += i18n(" (3D)");
+    QString resolutionVal = u"%1×%2"_s.arg(currentConfig.displayResolution().width()).arg(currentConfig.displayResolution().height());
+    if (currentConfig.monitorCount() > 1)
+        resolutionVal = i18ncp("@info resolution, number of monitors", "%2, %1 monitor", "%2, %1 monitors", currentConfig.monitorCount(), resolutionVal);
+    const QString screenVal = currentConfig.displayType() == VMSpecs::DisplayType::Dbus
+        ? resolutionVal
+        : u"%1, %2"_s.arg(VMConfig::toUIString(currentConfig.displayType()), resolutionVal);
+    content.hardware << VmOverview::Card{u"video-display"_s, gpuVal, i18n("Display"), screenVal};
 
-    const auto systemDiskRow = std::find_if(rows.cbegin(), rows.cend(), [](const HwRow &row) {
-        return row.iconName == u"drive-harddisk"_s;
-    });
-    qsizetype diskRow = std::distance(rows.cbegin(), systemDiskRow) + 1;
+    const bool hasNetwork = currentConfig.networkCard() != VMSpecs::NetworkCard::None;
+    QStringList netFacts;
+    if (hasNetwork) {
+        netFacts << VMConfig::toUIString(currentConfig.networkMode());
+        const QString vnet = currentConfig.virtualNetworkName();
+        if (currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !vnet.isEmpty()) {
+            netFacts << vnet;
+            if ((isRunning || isDeploying) && m_networkManager && m_networkManager->isRunning(vnet))
+                netFacts << i18np("%1 VM connected", "%1 VMs connected", m_networkManager->connectedVmCount(vnet));
+        }
+        if (!currentConfig.portForwards().isEmpty())
+            netFacts << i18np("%1 port forwarded", "%1 ports forwarded", currentConfig.portForwards().size());
+    }
+    VmOverview::Card network{u"network-wired"_s, VMConfig::toUIString(currentConfig.networkCard()), i18n("Network"), netFacts.join(u" · "_s)};
+    network.muted = !hasNetwork;
+    content.hardware << network;
+
+    VmOverview::Card sound{u"audio-card"_s, VMConfig::toUIString(currentConfig.audioDevice()), i18n("Sound")};
+    sound.muted = currentConfig.audioDevice() == VMSpecs::AudioDevice::None;
+    if (currentConfig.audioDevice() == VMSpecs::AudioDevice::Sb16) {
+        const auto &sb = currentConfig.sb16Config();
+        sound.detail = u"IRQ %1, DMA %2/%3, I/O 0x%4"_s.arg(sb.irq).arg(sb.dma).arg(sb.dma16).arg(sb.iobase, 0, 16);
+    }
+    content.hardware << sound;
+
+    content.hardware << VmOverview::Card{u"security-high"_s,
+                                         VMConfig::firmwareToUIString(currentConfig.useUefi(), currentConfig.useSecureBoot()),
+                                         i18n("Boot and security"),
+                                         currentConfig.useTpm() ? i18n("TPM 2.0") : i18n("No TPM")};
+
+    // Media: the image names, the paths as tool tip. As in the media menu,
+    // they change while the VM is stopped or running.
+    const bool canChangeMedia = entry && !entry->isFrozen() && (entry->state == VmEntry::State::Stopped || entry->state == VmEntry::State::Running);
+    const auto mediaCard = [canChangeMedia](const QString &id, const QString &iconName, const QString &caption, const QString &path, const QString &empty) {
+        VmOverview::Card card{iconName, path.isEmpty() ? empty : QFileInfo(path).fileName(), caption};
+        card.muted = path.isEmpty();
+        QStringList tip{path};
+        if (canChangeMedia) {
+            card.id = id;
+            card.menu = true;
+            tip << i18n("Click to change or eject the image, or drop one here.");
+        }
+        card.toolTip = tip.join(u'\n').trimmed();
+        return card;
+    };
+    VmOverview::Card cdrom = mediaCard(u"cdrom"_s, u"media-optical"_s, i18n("CD/DVD"), currentConfig.isoPath(), i18n("No disc inserted"));
+    cdrom.dropSuffixes = {u"iso"_s};
+    content.media << cdrom;
+    // Only the PC chipsets have a floppy controller.
+    if (currentConfig.machineType() != VMSpecs::MachineType::Q35) {
+        VmOverview::Card floppy = mediaCard(u"floppy"_s, u"media-floppy"_s, i18n("Floppy"), currentConfig.floppyPath(), i18n("No disk inserted"));
+        floppy.dropSuffixes = {u"img"_s, u"ima"_s, u"flp"_s, u"vfd"_s};
+        content.media << floppy;
+    }
+    // The port for devices, next to the drives.
+    VmOverview::Card usb{u"drive-removable-media-usb"_s, VMConfig::toUIString(currentConfig.usbController()), i18n("USB")};
+    usb.muted = currentConfig.usbController() == VMSpecs::UsbController::None;
+    content.media << usb;
+
+    // Wide cards for facts with much text.
     const QList<DiskConfig> extraDisks = currentConfig.extraDisks();
     for (qsizetype i = 0; i < extraDisks.size(); ++i) {
         const DiskConfig &disk = extraDisks.at(i);
-        const QString label = disk.label.isEmpty() ? i18n("Hard Disk %1", i + 2) : disk.label;
         const QString path = getVmDir(currentConfig.name()).absoluteFilePath(disk.fileName);
-        rows.insert(diskRow++, {u"drive-harddisk"_s, label + encryptionIcon(path), diskValueFor(path, disk.diskInterface), false, false});
+        const QemuImgProcess::ImageInfo info = diskInfoFor(path);
+        VmOverview::Card card{u"drive-harddisk"_s, disk.label.isEmpty() ? i18n("Hard Disk %1", i + 2) : disk.label};
+        const bool encrypted = DiskImageCheck::qcow2IsEncrypted(path);
+        card.emblemName = encrypted ? u"object-locked"_s : QString();
+        const QString facts = KeySpecs::diskFacts(disk.diskInterface, encrypted);
+        if (info.isValid) {
+            card.caption = i18n("%1 GB, %2", QString::number(info.virtualSizeGb(), 'f', 1), facts);
+            card.detail = usedText(info);
+            card.usage = usageOf(info);
+        } else {
+            card.caption = facts;
+            card.detail = i18n("Not available");
+            card.attention = true;
+        }
+        content.wide << card;
     }
 
     if (entry && entry->isFrozen()) {
-        rows.insert(diskRow++,
-                    {u"object-locked"_s, i18n("Linked Clones"), i18n("Frozen, used by %1", entry->linkedClones.join(u", "_s).toHtmlEscaped()), false, false});
+        content.wide << VmOverview::Card{u"object-locked"_s, i18n("Linked Clones"), i18n("Frozen, used by %1", entry->linkedClones.join(u", "_s))};
     } else if (currentConfig.isLinkedClone()) {
-        const QString source = currentConfig.linkedSourceName().toHtmlEscaped();
         const bool missing = entry && entry->linkedSourceMissing;
-        rows.insert(diskRow++,
-                    {u"insert-link"_s, i18n("Linked Clone"), missing ? i18n("Based on %1 (missing)", source) : i18n("Based on %1", source), false, missing});
+        VmOverview::Card card{u"insert-link"_s,
+                              i18n("Linked Clone"),
+                              missing ? i18n("Based on %1 (missing)", currentConfig.linkedSourceName())
+                                      : i18n("Based on %1", currentConfig.linkedSourceName())};
+        card.attention = missing;
+        content.wide << card;
     }
 
-    if (!portFwdVal.isEmpty())
-        rows.append({u"network-connect"_s, i18n("Port Forwarding"), portFwdVal, false, false});
-
-    if ((isRunning || isDeploying) && currentConfig.networkMode() == VMSpecs::NetworkMode::VirtualNetwork && !currentConfig.virtualNetworkName().isEmpty()
-        && m_networkManager && m_networkManager->isRunning(currentConfig.virtualNetworkName())) {
-        const int vmCount = m_networkManager->connectedVmCount(currentConfig.virtualNetworkName());
-        const QString vnetVal = u"%1  [%2]"_s.arg(currentConfig.virtualNetworkName(), i18np("%1 VM connected", "%1 VMs connected", vmCount));
-        rows.append({u"network-server"_s, i18n("Virtual Network"), vnetVal, false, false});
+    if (!currentConfig.sharedPath().isEmpty()) {
+        const QString protocol = (currentConfig.osFamily() == VMSpecs::OsFamily::Windows) ? i18n("virtio-fs") : i18n("9p (VirtFS)");
+        const QString tag = currentConfig.sharedName().isEmpty() ? u"share"_s : currentConfig.sharedName();
+        VmOverview::Card card{u"folder-network"_s, currentConfig.sharedPath(), i18n("Shared folder"), i18n("%1, Tag: %2", protocol, tag)};
+        card.id = u"shared-folder"_s;
+        card.toolTip = currentConfig.sharedPath() + u'\n' + i18n("Click to change it in the VM settings.");
+        content.wide << card;
     }
 
-    rows.append({u"drive-removable-media-usb"_s, i18n("USB Controller"), usbVal, true, false});
-    rows.append({u"folder-network"_s, i18n("Shared Folders"), sharedVal, true, currentConfig.sharedPath().isEmpty()});
-
-    const int hwIconPx = 14;
-
-    html += u"<table class='hw-table' cellspacing='0' cellpadding='0'>"_s;
-    for (const auto &row : rows) {
-        const QString trClass = row.sectionStart ? u" class='section-gap'"_s : QString();
-        const QString valClass = row.muted ? u"hw-value muted"_s : u"hw-value"_s;
-        const QString iconImg = encodeThemeIcon(row.iconName, hwIconPx);
-
-        html +=
-            u"<tr%1>"
-            "<td class='hw-icon'>%2</td>"
-            "<td class='hw-label'>%3</td>"
-            "<td class='%4'>%5</td>"
-            "</tr>"_s.arg(trClass, iconImg, row.label, valClass, row.value);
+    if (!currentConfig.portForwards().isEmpty()) {
+        QStringList portLines;
+        for (const auto &rule : currentConfig.portForwards())
+            portLines << u"%1 %2 → %3"_s.arg(VMConfig::toString(rule.protocol).toUpper()).arg(rule.hostPort).arg(rule.guestPort);
+        VmOverview::Card card{u"network-connect"_s, portLines.join(u", "_s), i18n("Port Forwarding")};
+        card.toolTip = portLines.join(u'\n');
+        content.wide << card;
     }
-    html += u"</table></body></html>"_s;
 
-    detailsBrowser->setHtml(html);
+    vmOverview->setContent(content);
 }
 
 void MainWindow::onVmSelectionChanged()
@@ -2376,7 +2214,7 @@ void MainWindow::ejectFloppy()
         ejectFloppyForVm(currentConfig.name());
 }
 
-void MainWindow::changeISOForVm(const QString &vmName)
+void MainWindow::changeISOForVm(const QString &vmName, const QString &imagePath)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || entry->isFrozen())
@@ -2384,8 +2222,11 @@ void MainWindow::changeISOForVm(const QString &vmName)
 
     QWidget *parentW = dialogParentFor(vmName);
 
-    const QDir startDir = m_lastMediaDir.value(vmName, QDir::homePath());
-    const QString isoPath = QFileDialog::getOpenFileName(parentW, i18n("Select ISO Image"), startDir.absolutePath(), i18n("ISO Files (*.iso)"));
+    QString isoPath = imagePath;
+    if (isoPath.isEmpty()) {
+        const QDir startDir = m_lastMediaDir.value(vmName, QDir::homePath());
+        isoPath = QFileDialog::getOpenFileName(parentW, i18n("Select ISO Image"), startDir.absolutePath(), i18n("ISO Files (*.iso)"));
+    }
     if (isoPath.isEmpty())
         return;
 
@@ -2461,7 +2302,7 @@ void MainWindow::ejectISOForVm(const QString &vmName)
     pushMediaStateToViewer(vmName);
 }
 
-void MainWindow::changeFloppyForVm(const QString &vmName)
+void MainWindow::changeFloppyForVm(const QString &vmName, const QString &droppedPath)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || entry->isFrozen())
@@ -2469,11 +2310,14 @@ void MainWindow::changeFloppyForVm(const QString &vmName)
 
     QWidget *parentW = dialogParentFor(vmName);
 
-    const QDir startDir = m_lastMediaDir.value(vmName, QDir::homePath());
-    const QString imagePath = QFileDialog::getOpenFileName(parentW,
-                                                           i18n("Select Floppy Image"),
-                                                           startDir.absolutePath(),
-                                                           i18n("Floppy Images (*.img *.ima *.flp *.vfd);;All Files (*)"));
+    QString imagePath = droppedPath;
+    if (imagePath.isEmpty()) {
+        const QDir startDir = m_lastMediaDir.value(vmName, QDir::homePath());
+        imagePath = QFileDialog::getOpenFileName(parentW,
+                                                 i18n("Select Floppy Image"),
+                                                 startDir.absolutePath(),
+                                                 i18n("Floppy Images (*.img *.ima *.flp *.vfd);;All Files (*)"));
+    }
     if (imagePath.isEmpty())
         return;
 
@@ -4609,6 +4453,11 @@ void MainWindow::showNewVmDialog(const QString &isoPath)
 
 void MainWindow::editVM()
 {
+    editVmSettings(false);
+}
+
+void MainWindow::editVmSettings(bool showSharedFolder)
+{
     // A busy VM cannot be reconfigured, but its specification is still worth
     // looking at, so open the dialog read-only instead of refusing.
     // Renaming or changing a frozen source would break its linked clones.
@@ -4656,6 +4505,9 @@ void MainWindow::editVM()
     connect(&dialog, &EditVmDialog::forgetDiskPasswordRequested, this, [this, editedVm, &dialog](QWidget *parent) {
         forgetDiskPassword(editedVm, &dialog, parent);
     });
+
+    if (showSharedFolder)
+        dialog.showSharedFolder();
 
     if (readOnly) {
         dialog.setReadOnly(true, frozen);

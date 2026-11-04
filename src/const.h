@@ -17,6 +17,7 @@ namespace KEMUConst
 {
 
 inline constexpr auto DetailViewIconSize = 64; // pixel x pixel
+inline constexpr auto DetailTileIconSize = 32; // key figures above the details
 inline constexpr auto ListViewIconSize = 32; // pixel x pixel
 
 inline constexpr auto CustomIconStoreSize = 256; // pixel x pixel

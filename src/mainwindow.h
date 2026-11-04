@@ -30,7 +30,6 @@
 #include <QSet>
 #include <QSplitter>
 #include <QStatusBar>
-#include <QTextBrowser>
 #include <QTextEdit>
 #include <QToolBar>
 #include <QToolTip>
@@ -77,6 +76,7 @@ class EncryptDiskJob;
 class ShrinkJob;
 class TrayIcon;
 class VmLauncher;
+class VmOverview;
 
 class MainWindow : public KXmlGuiWindow
 {
@@ -183,9 +183,10 @@ private:
     void saveStateVMByName(const QString &vmName, bool skipConfirm = false);
     void discardSavedStateForVm(const QString &vmName);
     void manageSnapshotsForVm(const QString &vmName);
-    void changeISOForVm(const QString &vmName);
+    // Asks for the image unless @p imagePath names it.
+    void changeISOForVm(const QString &vmName, const QString &imagePath = {});
     void ejectISOForVm(const QString &vmName);
-    void changeFloppyForVm(const QString &vmName);
+    void changeFloppyForVm(const QString &vmName, const QString &imagePath = {});
     void ejectFloppyForVm(const QString &vmName);
     void pushMediaStateToViewer(const QString &vmName);
     void pushNetworkStateToViewer(const QString &vmName);
@@ -209,9 +210,9 @@ private:
     // shows the failure reason on the way through.
     VmRuntimeManager::HelperResult reportingDone(const QString &vmName, std::function<void(bool)> done);
 
-    QString encodeThemeIcon(const QString &name, int sizePx) const;
-
     QStringList existingVmNames() const;
+    // The VM settings of the selected VM, opened on the shared folder if asked.
+    void editVmSettings(bool showSharedFolder);
 
     void saveVmConfig(const QString &vmPath, const VMConfig &config);
     void generateShellScript(const QString &vmPath, const VMConfig &config);
@@ -306,7 +307,7 @@ private:
     // QEMU failure handling, keyed by VM name
     void showQemuFailureDialog(const QString &vmName, bool startupFailed, int exitCode, KProcess::ExitStatus exitStatus, const QByteArray &stderrTail);
 
-    QTextBrowser *detailsBrowser = nullptr;
+    VmOverview *vmOverview = nullptr;
     PerformanceMonitorWidget *perfMonitor = nullptr;
     QToolBar *vmActionBar = nullptr;
 

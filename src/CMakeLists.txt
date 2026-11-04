@@ -100,6 +100,8 @@ target_sources(
           runtime/vmruntimemanager.cpp
           runtime/vmruntimemanager.h
           utils/utils.cpp
+          utils/keyspecs.cpp
+          utils/keyspecs.h
           utils/vmlauncher.cpp
           utils/vmlauncher.h
           utils/utils.h
@@ -258,6 +260,10 @@ target_sources(
           widgets/vmiconselector.cpp
           widgets/statuslist.cpp
           widgets/statuslist.h
+          widgets/spectile.cpp
+          widgets/spectile.h
+          widgets/vmoverview.cpp
+          widgets/vmoverview.h
           widgets/ramspinbox.h
           widgets/steppedspinbox.h
           dbusdisplay/dbusviewerwindow.cpp

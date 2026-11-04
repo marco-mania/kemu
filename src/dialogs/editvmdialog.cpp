@@ -123,6 +123,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 
     auto *mainLayout = new QVBoxLayout(this);
     auto *tabs = new QTabWidget();
+    m_tabs = tabs;
 
     // --- General Tab ---
     auto *generalTab = new QWidget();
@@ -1142,6 +1143,12 @@ void EditVmDialog::setConfig(const VMConfig &config)
 
     applyModeConstraints();
     refreshDiskList();
+}
+
+void EditVmDialog::showSharedFolder()
+{
+    m_tabs->setCurrentIndex(0);
+    sharedPathEdit->setFocus(Qt::OtherFocusReason);
 }
 
 void EditVmDialog::setReadOnly(bool readOnly, bool frozen)
