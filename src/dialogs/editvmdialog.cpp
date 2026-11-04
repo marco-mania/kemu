@@ -22,6 +22,7 @@
 #include <KMessageWidget>
 
 #include <QScopeGuard>
+#include <QStyle>
 
 namespace
 {
@@ -255,9 +256,14 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     tabs->addTab(generalTab, QIcon::fromTheme(u"computer"_s), i18n("General"));
 
     // --- System Tab ---
+    // Three groups, set apart by space: processor and memory, the platform
+    // as the cards in the details view name it, and what happens around the VM.
     auto *sysTab = new QWidget();
     auto *sysLayout = new QFormLayout(sysTab);
     sysLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    const auto addGroupGap = [sysLayout, this] {
+        sysLayout->addItem(new QSpacerItem(0, fontMetrics().height(), QSizePolicy::Minimum, QSizePolicy::Fixed));
+    };
 
     cpuCombo = new QComboBox();
     {
@@ -281,46 +287,90 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         i18n("Uses KVM for near-native performance. Disable for pure "
              "software emulation (TCG), which is much slower but does "
              "not require KVM and supports all CPU models."));
-    sysLayout->addRow({}, kvmCheck);
+    sysLayout->addRow(i18n("Acceleration:"), kvmCheck);
 
+    // RAM
+    auto *ramContainer = new QVBoxLayout();
+    auto *ramSliderLayout = new QHBoxLayout();
+
+    const QList<int> ramSteps = RamSpinBox::steps();
+
+    ramSlider = new QSlider(Qt::Horizontal);
+    ramSlider->setRange(0, ramSteps.size() - 1);
+    ramSlider->setTickPosition(QSlider::TicksBelow);
+    ramSlider->setTickInterval(1);
+
+    ramSpin = new RamSpinBox();
+    ramSpin->setValue(GlobalDefaults.ramMb);
+    ramSliderLayout->addWidget(ramSlider);
+    ramSliderLayout->addWidget(ramSpin);
+
+    balloonCheck = new QCheckBox(i18n("VirtIO memory ballooning"));
+    balloonCheck->setChecked(true);
+    balloonCheck->setToolTip(
+        i18n("Allows the host system to dynamically adjust the VM's memory based "
+             "on its actual usage.\nEnable this to efficiently share memory "
+             "(RAM) among multiple virtual machines."));
+    preallocCheck = new QCheckBox(i18n("Pre-allocate memory"));
+    preallocCheck->setToolTip(
+        i18n("Allocates the full amount of configured memory (RAM) immediately "
+             "when the VM starts.\nThis improves guest performance but strictly "
+             "reserves the memory on the host."));
+
+    ramContainer->addLayout(ramSliderLayout);
+    ramContainer->addWidget(balloonCheck);
+    ramContainer->addWidget(preallocCheck);
+    sysLayout->addRow(i18n("Memory:"), ramContainer);
+
+    addGroupGap();
+
+    // The chipset, with ACPI, which mostly old guests on old chipsets go without.
+    auto *chipsetLayout = new QVBoxLayout();
     machineCombo = new QComboBox();
     machineCombo->addItem(VMConfig::toUIString(VMSpecs::MachineType::Q35), static_cast<int>(VMSpecs::MachineType::Q35));
     machineCombo->addItem(VMConfig::toUIString(VMSpecs::MachineType::Pc), static_cast<int>(VMSpecs::MachineType::Pc));
     machineCombo->addItem(VMConfig::toUIString(VMSpecs::MachineType::PcISA), static_cast<int>(VMSpecs::MachineType::PcISA));
-    sysLayout->addRow(i18n("Chipset:"), machineCombo);
+    chipsetLayout->addWidget(machineCombo);
 
-    uefiCheck = new QCheckBox(i18n("Use UEFI firmware (OVMF)"));
-    uefiCheck->setToolTip(i18n("Required for Windows 11. Creates a separate VARS file."));
-    sysLayout->addRow({}, uefiCheck);
-
-    localTimeCheck = new QCheckBox(i18n("Use local time"));
-    localTimeCheck->setToolTip(
-        i18n("Sets the hardware clock to local time instead of UTC.\nThis should "
-             "be set for Windows/DOS guests."));
-    sysLayout->addRow({}, localTimeCheck);
-
-    tpmCheck = new QCheckBox(i18n("Emulate TPM 2.0 (swtpm)"));
-    tpmCheck->setToolTip(i18n("Required for Windows 11. Uses swtpm as software TPM emulator."));
-    sysLayout->addRow({}, tpmCheck);
-    tpmToolWarning = createInlineMessage(KMessageWidget::Warning);
-    sysLayout->addRow({}, tpmToolWarning);
-
-    // Secure Boot
-    secureBootCheck = new QCheckBox(i18n("Enable Secure Boot"));
-    secureBootCheck->setToolTip(
-        i18n("Requires UEFI and Q35 chipset. Uses OVMF "
-             "firmware with enrolled Microsoft keys."));
-    secureBootCheck->setEnabled(false); // Initially disabled until UEFI+Q35
-    sysLayout->addRow({}, secureBootCheck);
-
-    // ACPI
     acpiCheck = new QCheckBox(i18n("Enable ACPI"));
     acpiCheck->setChecked(true);
     acpiCheck->setToolTip(
         i18n("Advanced Configuration and Power Interface. Disable for "
              "legacy guest OSes (e.g. Windows NT4, DOS) that do not "
              "support ACPI."));
-    sysLayout->addRow({}, acpiCheck);
+    chipsetLayout->addWidget(acpiCheck);
+    sysLayout->addRow(i18n("Chipset:"), chipsetLayout);
+
+    // Firmware and TPM; Secure Boot sits below UEFI, which it needs.
+    auto *bootLayout = new QVBoxLayout();
+    uefiCheck = new QCheckBox(i18n("Use UEFI firmware (OVMF)"));
+    uefiCheck->setToolTip(i18n("Required for Windows 11. Creates a separate VARS file."));
+    bootLayout->addWidget(uefiCheck);
+
+    secureBootCheck = new QCheckBox(i18n("Enable Secure Boot"));
+    secureBootCheck->setToolTip(
+        i18n("Requires UEFI and Q35 chipset. Uses OVMF "
+             "firmware with enrolled Microsoft keys."));
+    secureBootCheck->setEnabled(false); // Initially disabled until UEFI+Q35
+    auto *secureBootLayout = new QHBoxLayout();
+    secureBootLayout->addSpacing(style()->pixelMetric(QStyle::PM_IndicatorWidth) + style()->pixelMetric(QStyle::PM_CheckBoxLabelSpacing));
+    secureBootLayout->addWidget(secureBootCheck);
+    bootLayout->addLayout(secureBootLayout);
+
+    tpmCheck = new QCheckBox(i18n("Emulate TPM 2.0 (swtpm)"));
+    tpmCheck->setToolTip(i18n("Required for Windows 11. Uses swtpm as software TPM emulator."));
+    bootLayout->addWidget(tpmCheck);
+    tpmToolWarning = createInlineMessage(KMessageWidget::Warning);
+    bootLayout->addWidget(tpmToolWarning);
+    sysLayout->addRow(i18n("Boot and security:"), bootLayout);
+
+    localTimeCheck = new QCheckBox(i18n("Use local time"));
+    localTimeCheck->setToolTip(
+        i18n("Sets the hardware clock to local time instead of UTC.\nThis should "
+             "be set for Windows/DOS guests."));
+    sysLayout->addRow(i18n("Clock:"), localTimeCheck);
+
+    addGroupGap();
 
     exitActionCombo = new QComboBox(this);
     for (const auto action : {VMSpecs::ExitAction::SaveState, VMSpecs::ExitAction::Shutdown, VMSpecs::ExitAction::PowerOff}) {
@@ -346,39 +396,6 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         guestShutdownActionCombo->setToolTip(caps.unavailableReason(SandboxCapabilities::HostPowerOff));
     }
     sysLayout->addRow(i18n("When the guest shuts down:"), guestShutdownActionCombo);
-
-    // RAM
-    auto *ramContainer = new QVBoxLayout();
-    auto *ramSliderLayout = new QHBoxLayout();
-
-    const QList<int> ramSteps = RamSpinBox::steps();
-
-    ramSlider = new QSlider(Qt::Horizontal);
-    ramSlider->setRange(0, ramSteps.size() - 1);
-    ramSlider->setTickPosition(QSlider::TicksBelow);
-    ramSlider->setTickInterval(1);
-
-    ramSpin = new RamSpinBox();
-    ramSpin->setValue(GlobalDefaults.ramMb);
-    ramSliderLayout->addWidget(ramSlider);
-    ramSliderLayout->addWidget(ramSpin);
-
-    balloonCheck = new QCheckBox(i18n("VirtIO Memory Ballooning"));
-    balloonCheck->setChecked(true);
-    balloonCheck->setToolTip(
-        i18n("Allows the host system to dynamically adjust the VM's memory based "
-             "on its actual usage.\nEnable this to efficiently share memory "
-             "(RAM) among multiple virtual machines."));
-    preallocCheck = new QCheckBox(i18n("Pre-allocate Memory"));
-    preallocCheck->setToolTip(
-        i18n("Allocates the full amount of configured memory (RAM) immediately "
-             "when the VM starts.\nThis improves guest performance but strictly "
-             "reserves the memory on the host."));
-
-    ramContainer->addLayout(ramSliderLayout);
-    ramContainer->addWidget(balloonCheck);
-    ramContainer->addWidget(preallocCheck);
-    sysLayout->addRow(i18n("Memory:"), ramContainer);
 
     tabs->addTab(sysTab, QIcon::fromTheme(u"preferences-system"_s), i18n("System"));
 
