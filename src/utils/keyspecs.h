@@ -11,7 +11,7 @@
 #include "utils/vmconfig.h"
 
 /**
- * @brief Texts for the key figures of a VM: CPU cores, memory and system disk.
+ * @brief Short texts for the tiles of a VM, such as its CPU cores, memory and system disk.
  *
  * In one place, so each figure is said the same way and in the same units
  * wherever it is shown.
@@ -21,6 +21,9 @@ namespace KeySpecs
 [[nodiscard]] QString coresText(int cores);
 /// The CPU model in a few words, without the year, such as "Intel Haswell".
 [[nodiscard]] QString cpuModelText(VMSpecs::CpuModel model);
+/// The chipset's generation, "Modern", "Legacy" or "Vintage", and what it is, such as "Q35 + PCIe".
+[[nodiscard]] QString chipsetText(VMSpecs::MachineType type);
+[[nodiscard]] QString chipsetDetail(VMSpecs::MachineType type);
 /// As the memory spin box writes it: MiB below 1 GiB, GiB above, with at least @p digits.
 [[nodiscard]] QString memoryText(double mib, int digits = 3);
 [[nodiscard]] QString diskSizeText(int gb);

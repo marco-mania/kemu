@@ -65,6 +65,32 @@ QString cpuModelText(VMSpecs::CpuModel model)
     return VMConfig::toUIString(model);
 }
 
+QString chipsetText(VMSpecs::MachineType type)
+{
+    switch (type) {
+    case VMSpecs::MachineType::Q35:
+        return i18nc("@label chipset generation", "Modern");
+    case VMSpecs::MachineType::Pc:
+        return i18nc("@label chipset generation", "Legacy");
+    case VMSpecs::MachineType::PcISA:
+        return i18nc("@label chipset generation", "Vintage");
+    }
+    return VMConfig::toUIString(type);
+}
+
+QString chipsetDetail(VMSpecs::MachineType type)
+{
+    switch (type) {
+    case VMSpecs::MachineType::Q35:
+        return i18nc("@info chipset and bus", "Q35 + PCIe");
+    case VMSpecs::MachineType::Pc:
+        return i18nc("@info chipset and bus", "i440FX + PIIX");
+    case VMSpecs::MachineType::PcISA:
+        return i18nc("@info chipset and bus", "IBM PC/AT");
+    }
+    return {};
+}
+
 QString memoryText(double mib, int digits)
 {
     const QLocale locale;

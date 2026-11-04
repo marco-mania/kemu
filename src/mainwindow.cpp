@@ -1467,7 +1467,16 @@ void MainWindow::updateDetails()
         }
     }
 
-    // Hardware: what the guest sees, a card each.
+    // Hardware: what the guest sees, a card each, the platform first.
+    const VMSpecs::MachineType machineType = currentConfig.machineType();
+    VmOverview::Card chipset{u"computer"_s, KeySpecs::chipsetText(machineType), i18n("Chipset"), KeySpecs::chipsetDetail(machineType)};
+    chipset.toolTip = VMConfig::toUIString(machineType);
+    content.hardware << chipset;
+    content.hardware << VmOverview::Card{u"security-high"_s,
+                                         VMConfig::firmwareToUIString(currentConfig.useUefi(), currentConfig.useSecureBoot()),
+                                         i18n("Boot and security"),
+                                         currentConfig.useTpm() ? i18n("TPM 2.0") : i18n("No TPM")};
+
     QString gpuVal = VMConfig::toUIString(currentConfig.gpuType());
     if (currentConfig.gpu3dAcceleration())
         gpuVal += i18n(" (3D)");
@@ -1504,10 +1513,9 @@ void MainWindow::updateDetails()
     }
     content.hardware << sound;
 
-    content.hardware << VmOverview::Card{u"security-high"_s,
-                                         VMConfig::firmwareToUIString(currentConfig.useUefi(), currentConfig.useSecureBoot()),
-                                         i18n("Boot and security"),
-                                         currentConfig.useTpm() ? i18n("TPM 2.0") : i18n("No TPM")};
+    VmOverview::Card usb{u"drive-removable-media-usb"_s, VMConfig::toUIString(currentConfig.usbController()), i18n("USB")};
+    usb.muted = currentConfig.usbController() == VMSpecs::UsbController::None;
+    content.hardware << usb;
 
     // Media: the image names, the paths as tool tip. As in the media menu,
     // they change while the VM is stopped or running.
@@ -1528,15 +1536,11 @@ void MainWindow::updateDetails()
     cdrom.dropSuffixes = {u"iso"_s};
     content.media << cdrom;
     // Only the PC chipsets have a floppy controller.
-    if (currentConfig.machineType() != VMSpecs::MachineType::Q35) {
+    if (machineType != VMSpecs::MachineType::Q35) {
         VmOverview::Card floppy = mediaCard(u"floppy"_s, u"media-floppy"_s, i18n("Floppy"), currentConfig.floppyPath(), i18n("No disk inserted"));
         floppy.dropSuffixes = {u"img"_s, u"ima"_s, u"flp"_s, u"vfd"_s};
         content.media << floppy;
     }
-    // The port for devices, next to the drives.
-    VmOverview::Card usb{u"drive-removable-media-usb"_s, VMConfig::toUIString(currentConfig.usbController()), i18n("USB")};
-    usb.muted = currentConfig.usbController() == VMSpecs::UsbController::None;
-    content.media << usb;
 
     // Wide cards for facts with much text.
     const QList<DiskConfig> extraDisks = currentConfig.extraDisks();
