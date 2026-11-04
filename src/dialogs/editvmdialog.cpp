@@ -400,16 +400,11 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     tabs->addTab(sysTab, QIcon::fromTheme(u"preferences-system"_s), i18n("System"));
 
     // --- Hardware Tab ---
-    // Graphics and display sit side by side: the number of monitors
-    // depends on both. Storage spans the full width for the disk list.
+    // Storage comes first, across the full width for the disk list. Below,
+    // graphics and display sit side by side: the number of monitors depends
+    // on both.
     auto *hwTab = new QWidget();
     auto *hwMainLayout = new QVBoxLayout(hwTab);
-    auto *hwColumns = new QHBoxLayout();
-    auto *hwLeftColumn = new QVBoxLayout();
-    auto *hwRightColumn = new QVBoxLayout();
-    hwColumns->addLayout(hwLeftColumn, 1);
-    hwColumns->addLayout(hwRightColumn, 1);
-    hwMainLayout->addLayout(hwColumns);
 
     const auto createFormGroup = [](const QString &title) {
         auto *group = new QGroupBox(title);
@@ -417,6 +412,55 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         layout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
         return std::pair{group, layout};
     };
+
+    // Storage
+    const auto [storageGroup, storageLayout] = createFormGroup(i18n("Storage"));
+
+    // The system disk first, then the further ones.
+    auto *extraDisksWidget = new QWidget();
+    auto *extraDisksLayout = new QVBoxLayout(extraDisksWidget);
+    extraDisksLayout->setContentsMargins(0, 0, 0, 0);
+
+    diskTree = new QTreeWidget();
+    diskTree->setHeaderLabels({i18n("Name"), i18n("Size"), i18n("Controller")});
+    diskTree->setRootIsDecorated(false);
+    diskTree->setUniformRowHeights(true);
+    diskTree->setSelectionMode(QAbstractItemView::SingleSelection);
+    diskTree->setMaximumHeight(diskTree->fontMetrics().height() * 8);
+    diskTree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    diskTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    diskTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    extraDisksLayout->addWidget(diskTree);
+
+    auto *diskButtonsLayout = new QHBoxLayout();
+    addDiskButton = new QPushButton(QIcon::fromTheme(u"list-add"_s), i18n("Add Disk…"));
+    editDiskButton = new QPushButton(QIcon::fromTheme(u"document-properties"_s), i18n("Properties…"));
+    removeDiskButton = new QPushButton(QIcon::fromTheme(u"list-remove"_s), i18n("Remove"));
+    diskButtonsLayout->addWidget(addDiskButton);
+    diskButtonsLayout->addWidget(editDiskButton);
+    diskButtonsLayout->addWidget(removeDiskButton);
+    diskButtonsLayout->addStretch();
+    extraDisksLayout->addLayout(diskButtonsLayout);
+
+    storageWarningMessage = createInlineMessage(KMessageWidget::Error);
+    extraDisksLayout->addWidget(storageWarningMessage);
+
+    storageLayout->addRow(extraDisksWidget);
+
+    connect(addDiskButton, &QPushButton::clicked, this, &EditVmDialog::addDisk);
+    connect(editDiskButton, &QPushButton::clicked, this, &EditVmDialog::editSelectedDisk);
+    connect(removeDiskButton, &QPushButton::clicked, this, &EditVmDialog::removeSelectedDisk);
+    connect(diskTree, &QTreeWidget::itemSelectionChanged, this, &EditVmDialog::updateDiskButtons);
+    connect(diskTree, &QTreeWidget::itemDoubleClicked, this, &EditVmDialog::editSelectedDisk);
+
+    hwMainLayout->addWidget(storageGroup);
+
+    auto *hwColumns = new QHBoxLayout();
+    auto *hwLeftColumn = new QVBoxLayout();
+    auto *hwRightColumn = new QVBoxLayout();
+    hwColumns->addLayout(hwLeftColumn, 1);
+    hwColumns->addLayout(hwRightColumn, 1);
+    hwMainLayout->addLayout(hwColumns);
 
     // Graphics
     const auto [graphicsGroup, graphicsLayout] = createFormGroup(i18n("Graphics"));
@@ -559,47 +603,6 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     hwLeftColumn->addStretch();
     hwRightColumn->addStretch();
 
-    // Storage
-    const auto [storageGroup, storageLayout] = createFormGroup(i18n("Storage"));
-
-    // The system disk first, then the further ones.
-    auto *extraDisksWidget = new QWidget();
-    auto *extraDisksLayout = new QVBoxLayout(extraDisksWidget);
-    extraDisksLayout->setContentsMargins(0, 0, 0, 0);
-
-    diskTree = new QTreeWidget();
-    diskTree->setHeaderLabels({i18n("Name"), i18n("Size"), i18n("Controller")});
-    diskTree->setRootIsDecorated(false);
-    diskTree->setUniformRowHeights(true);
-    diskTree->setSelectionMode(QAbstractItemView::SingleSelection);
-    diskTree->setMaximumHeight(diskTree->fontMetrics().height() * 8);
-    diskTree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    diskTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    diskTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    extraDisksLayout->addWidget(diskTree);
-
-    auto *diskButtonsLayout = new QHBoxLayout();
-    addDiskButton = new QPushButton(QIcon::fromTheme(u"list-add"_s), i18n("Add Disk…"));
-    editDiskButton = new QPushButton(QIcon::fromTheme(u"document-properties"_s), i18n("Properties…"));
-    removeDiskButton = new QPushButton(QIcon::fromTheme(u"list-remove"_s), i18n("Remove"));
-    diskButtonsLayout->addWidget(addDiskButton);
-    diskButtonsLayout->addWidget(editDiskButton);
-    diskButtonsLayout->addWidget(removeDiskButton);
-    diskButtonsLayout->addStretch();
-    extraDisksLayout->addLayout(diskButtonsLayout);
-
-    storageWarningMessage = createInlineMessage(KMessageWidget::Error);
-    extraDisksLayout->addWidget(storageWarningMessage);
-
-    storageLayout->addRow(extraDisksWidget);
-
-    connect(addDiskButton, &QPushButton::clicked, this, &EditVmDialog::addDisk);
-    connect(editDiskButton, &QPushButton::clicked, this, &EditVmDialog::editSelectedDisk);
-    connect(removeDiskButton, &QPushButton::clicked, this, &EditVmDialog::removeSelectedDisk);
-    connect(diskTree, &QTreeWidget::itemSelectionChanged, this, &EditVmDialog::updateDiskButtons);
-    connect(diskTree, &QTreeWidget::itemDoubleClicked, this, &EditVmDialog::editSelectedDisk);
-
-    hwMainLayout->addWidget(storageGroup);
     hwMainLayout->addStretch();
 
     tabs->addTab(hwTab, QIcon::fromTheme(u"preferences-desktop-peripherals"_s), i18n("Hardware"));
