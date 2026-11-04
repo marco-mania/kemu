@@ -41,6 +41,7 @@
 #include <KLocalizedString>
 #include <KUrlRequester>
 
+#include "dialogs/diskdialog.h"
 #include "utils/imagedatabase.h"
 #include "utils/virtualnetworkmanager.h"
 #include "utils/vmconfig.h"
@@ -49,7 +50,6 @@
 
 using namespace Qt::StringLiterals;
 
-class DiskDialog;
 class KMessageWidget;
 
 class EditVmDialog : public QDialog
@@ -108,12 +108,13 @@ public:
     void diskExpanded(const QString &diskPath, int sizeGb);
 
 Q_SIGNALS:
-    // The disks change at once, independent of OK/Cancel.
-    void encryptSystemDiskRequested();
-    void decryptSystemDiskRequested();
-    void changeDiskPasswordRequested();
-    void storeDiskPasswordRequested();
-    void forgetDiskPasswordRequested();
+    // The disks change at once, independent of OK/Cancel. @p parent asks
+    // and shows the progress.
+    void encryptSystemDiskRequested(QWidget *parent);
+    void decryptSystemDiskRequested(QWidget *parent);
+    void changeDiskPasswordRequested(QWidget *parent);
+    void storeDiskPasswordRequested(QWidget *parent);
+    void forgetDiskPasswordRequested(QWidget *parent);
     // An existing disk; @p parent shows the progress.
     void compactDiskRequested(const QString &diskPath, QWidget *parent);
     // Grow @p diskPath to @p sizeGb; diskExpanded() tells the dialog.
@@ -134,13 +135,14 @@ private Q_SLOTS:
 
 private:
     void applyEncryptionConstraints();
+    [[nodiscard]] DiskDialog::Encryption encryptionState() const;
+    // Its icon tells whether it is encrypted.
+    void updateSystemDiskItem();
     [[nodiscard]] QString systemDiskPath() const;
-    void updateDiskSizeButtons();
     // Marks settings whose helper program is missing.
     void updateToolWarnings();
     void filterOsVariants(VMSpecs::OsFamily osFamily); // e.g. Distributions for Linux
     void updateIconForOs();
-    void updateDiskInterfaceHint();
     void updateDeviceAvailability();
     void updateInputDeviceAvailability();
     void updateNetworkCardDependencies();
@@ -149,7 +151,14 @@ private:
 
     void addDisk();
     void editSelectedDisk();
+    void editSystemDisk();
     void removeSelectedDisk();
+    // Falls back to IDE without a PCI bus.
+    void setSystemDiskInterface(VMSpecs::DiskInterface diskInterface);
+    // Index into m_disks, or one of these.
+    static constexpr int SystemDiskSelected = -1;
+    static constexpr int NoDiskSelected = -2;
+    [[nodiscard]] int selectedDiskIndex() const;
     void refreshDiskList();
     void updateDiskButtons();
     [[nodiscard]] QString nextFreeDiskFileName() const;
@@ -195,8 +204,7 @@ private:
     QLabel *gpuHintLabel = nullptr;
     QComboBox *audioCombo = nullptr;
     QPushButton *sb16ConfigButton = nullptr;
-    QComboBox *diskInterfaceCombo = nullptr;
-    QLabel *diskHintLabel = nullptr;
+    VMSpecs::DiskInterface m_systemDiskInterface = GlobalDefaults.diskInterface;
     QTreeWidget *diskTree = nullptr;
     QPushButton *addDiskButton = nullptr;
     QPushButton *editDiskButton = nullptr;
@@ -216,13 +224,6 @@ private:
     QCheckBox *acpiCheck = nullptr;
     QComboBox *exitActionCombo = nullptr;
 
-    // Next to the system disk size; edit mode only.
-    QToolButton *encryptButton = nullptr;
-    QToolButton *decryptButton = nullptr;
-    QToolButton *changePasswordButton = nullptr;
-    QToolButton *walletButton = nullptr;
-    QToolButton *expandDiskButton = nullptr;
-    QToolButton *compactDiskButton = nullptr;
     int m_systemDiskGb = 0; // current size, rounded up; 0 if unknown
     QPointer<DiskDialog> m_openDiskDialog; // properties of m_openDiskPath
     QString m_openDiskPath;

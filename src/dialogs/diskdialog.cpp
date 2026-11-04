@@ -21,19 +21,57 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
-#include <KColorScheme>
+#include <KIconUtils>
 #include <KLocalizedString>
+#include <KMessageWidget>
 #include <KUrlRequester>
+
+namespace
+{
+KMessageWidget *inlineMessage(KMessageWidget::MessageType type, QWidget *parent)
+{
+    // As in the VM settings: no close button, it goes when its reason does.
+    auto *message = new KMessageWidget(parent);
+    message->setMessageType(type);
+    message->setCloseButtonVisible(false);
+    message->setWordWrap(true);
+    message->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    message->setMinimumWidth(0);
+    message->hide();
+    return message;
+}
+
+void showMessage(KMessageWidget *message, bool visible)
+{
+    if (visible && (message->isHidden() || message->isHideAnimationRunning()))
+        message->animatedShow();
+    else if (!visible && !message->isHidden() && !message->isHideAnimationRunning())
+        message->animatedHide();
+}
+}
 
 DiskDialog::DiskDialog(Mode mode, VMSpecs::MachineType machineType, QWidget *parent)
     : QDialog(parent)
     , m_mode(mode)
+    , m_machineType(machineType)
 {
     setWindowTitle(mode == Mode::Add ? i18n("Add Disk") : i18n("Disk Properties"));
     setMinimumWidth(460);
 
     auto *layout = new QVBoxLayout(this);
+
+    // On top of the form entries, as the KDE HIG places inline messages.
+    m_interfaceHint = inlineMessage(KMessageWidget::Information, this);
+    layout->addWidget(m_interfaceHint);
+    if (mode == Mode::Add) {
+        // Only while an image is chosen.
+        m_sourceHint = inlineMessage(KMessageWidget::Information, this);
+        m_sourceHint->setText(i18n("The image is copied into the VM folder and converted to qcow2. The original file is not changed."));
+        layout->addWidget(m_sourceHint);
+    }
+
     auto *form = new QFormLayout;
+    m_form = form;
     form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     if (mode == Mode::Add) {
@@ -69,12 +107,6 @@ DiskDialog::DiskDialog(Mode mode, VMSpecs::MachineType machineType, QWidget *par
         form->addRow(i18n("Image:"), m_sourceRequester);
         m_sourceLabel = qobject_cast<QLabel *>(form->labelForField(m_sourceRequester));
 
-        const KColorScheme scheme(QPalette::Active, KColorScheme::View);
-        m_sourceHint = new QLabel(i18n("The image is copied into the VM folder and converted to qcow2. The original file is not changed."), this);
-        m_sourceHint->setWordWrap(true);
-        m_sourceHint->setStyleSheet(u"QLabel { color: %1; font-size: 11px; }"_s.arg(scheme.foreground(KColorScheme::InactiveText).color().name()));
-        form->addRow({}, m_sourceHint);
-
         connect(m_newRadio, &QRadioButton::toggled, this, &DiskDialog::updateState);
         connect(m_sourceRequester, &KUrlRequester::textChanged, this, &DiskDialog::updateState);
     }
@@ -84,8 +116,29 @@ DiskDialog::DiskDialog(Mode mode, VMSpecs::MachineType machineType, QWidget *par
         m_sizeSpin->setRange(1, 32000);
         m_sizeSpin->setSuffix(i18n(" GB"));
         m_sizeSpin->setEnabled(false);
-        form->addRow(i18n("Size:"), m_sizeSpin);
-        m_sizeLabel = qobject_cast<QLabel *>(form->labelForField(m_sizeSpin));
+
+        // Next to the size they act on. Both act at once, independent of OK/Cancel.
+        m_expandButton = new QPushButton(QIcon::fromTheme(u"zoom-in"_s, QIcon::fromTheme(u"list-add"_s)), i18nc("@action:button", "Expand…"), this);
+        m_expandButton->setToolTip(i18n("Grows the disk to the size entered. This happens at once."));
+        m_expandButton->hide();
+        m_compactButton = new QPushButton(QIcon::fromTheme(u"edit-clear-history"_s), i18nc("@action:button", "Compact…"), this);
+        m_compactButton->setToolTip(i18n("Frees the unused space in the image file. This happens at once."));
+        m_compactButton->hide();
+        connect(m_expandButton, &QPushButton::clicked, this, [this] {
+            Q_EMIT expandRequested(m_sizeSpin->value());
+        });
+        connect(m_sizeSpin, &QSpinBox::valueChanged, this, [this](int value) {
+            m_expandButton->setEnabled(m_currentSizeGb > 0 && value > m_currentSizeGb);
+        });
+        connect(m_compactButton, &QPushButton::clicked, this, &DiskDialog::compactRequested);
+
+        auto *sizeRow = new QHBoxLayout;
+        sizeRow->addWidget(m_sizeSpin);
+        sizeRow->addWidget(m_expandButton);
+        sizeRow->addWidget(m_compactButton);
+        sizeRow->addStretch();
+        form->addRow(i18n("Size:"), sizeRow);
+        m_sizeLabel = qobject_cast<QLabel *>(form->labelForField(sizeRow));
     }
 
     m_interfaceCombo = new QComboBox(this);
@@ -102,6 +155,7 @@ DiskDialog::DiskDialog(Mode mode, VMSpecs::MachineType machineType, QWidget *par
         setDiskInterface(VMSpecs::DiskInterface::SataIde);
     }
     form->addRow(i18n("Controller:"), m_interfaceCombo);
+    connect(m_interfaceCombo, &QComboBox::currentIndexChanged, this, &DiskDialog::updateInterfaceHint);
 
     layout->addLayout(form);
     layout->addStretch();
@@ -109,38 +163,84 @@ DiskDialog::DiskDialog(Mode mode, VMSpecs::MachineType machineType, QWidget *par
     m_buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     if (mode == Mode::Add)
         m_buttonBox->button(QDialogButtonBox::Ok)->setText(i18n("Add"));
-    // Small buttons in the lower left, as next to the system disk in the
-    // VM settings. They act at once, independent of OK/Cancel.
-    auto *bottom = new QHBoxLayout;
-    if (mode == Mode::Edit) {
-        const auto makeButton = [this](const QIcon &icon, const QString &text) {
-            auto *button = new QToolButton(this);
-            button->setIcon(icon);
-            button->setToolTip(text);
-            button->setAccessibleName(text);
-            button->hide();
-            return button;
-        };
-        m_expandButton = makeButton(QIcon::fromTheme(u"zoom-in"_s, QIcon::fromTheme(u"list-add"_s)), i18n("Expand the disk…"));
-        m_compactButton = makeButton(QIcon::fromTheme(u"edit-clear-history"_s), i18n("Compact the disk…"));
-        bottom->addWidget(m_expandButton);
-        bottom->addWidget(m_compactButton);
-
-        connect(m_expandButton, &QToolButton::clicked, this, [this] {
-            Q_EMIT expandRequested(m_sizeSpin->value());
-        });
-        connect(m_sizeSpin, &QSpinBox::valueChanged, this, [this](int value) {
-            m_expandButton->setEnabled(m_currentSizeGb > 0 && value > m_currentSizeGb);
-        });
-        connect(m_compactButton, &QToolButton::clicked, this, &DiskDialog::compactRequested);
-    }
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    bottom->addStretch();
-    bottom->addWidget(m_buttonBox);
-    layout->addLayout(bottom);
+    layout->addWidget(m_buttonBox);
 
     updateState();
+    updateInterfaceHint();
+}
+
+void DiskDialog::setSystemDisk(VMSpecs::OsFamily osFamily)
+{
+    m_systemOsFamily = osFamily;
+    setWindowTitle(i18n("System Disk Properties"));
+    m_labelEdit->setText(i18nc("@item name of the system disk", "System"));
+    m_labelEdit->setEnabled(false);
+    m_labelEdit->setToolTip(i18n("The disk the guest boots from keeps this name."));
+    updateInterfaceHint();
+}
+
+void DiskDialog::setEncryption(const Encryption &encryption)
+{
+    // Small buttons right after the state; they act at once as well.
+    if (!m_encryptionLabel) {
+        auto *row = new QHBoxLayout;
+        m_encryptionLabel = new QLabel(this);
+        row->addWidget(m_encryptionLabel);
+        const auto makeButton = [this, row](const QIcon &icon, void (DiskDialog::*requested)()) {
+            auto *button = new QToolButton(this);
+            button->setIcon(icon);
+            connect(button, &QToolButton::clicked, this, requested);
+            row->addWidget(button);
+            return button;
+        };
+        m_encryptButton = makeButton(QIcon::fromTheme(u"lock"_s), &DiskDialog::encryptRequested);
+        m_decryptButton = makeButton(QIcon::fromTheme(u"unlock"_s, QIcon::fromTheme(u"object-unlocked"_s)), &DiskDialog::decryptRequested);
+        m_changePasswordButton = makeButton(QIcon::fromTheme(u"dialog-password"_s, QIcon::fromTheme(u"lock"_s)), &DiskDialog::changePasswordRequested);
+        m_walletButton = new QToolButton(this);
+        connect(m_walletButton, &QToolButton::clicked, this, [this] {
+            if (m_passwordStored)
+                Q_EMIT forgetPasswordRequested();
+            else
+                Q_EMIT storePasswordRequested();
+        });
+        row->addWidget(m_walletButton);
+        row->addStretch();
+        m_form->addRow(i18n("Encryption:"), row);
+    }
+
+    m_passwordStored = encryption.encrypted && encryption.passwordStored;
+    m_encryptionLabel->setText(!encryption.encrypted ? i18n("Not encrypted")
+                                   : m_passwordStored ? i18n("Encrypted, password in KWallet")
+                                                      : i18n("Encrypted, password asked at start"));
+
+    // Which buttons are shown tells the state.
+    m_encryptButton->setVisible(!encryption.encrypted);
+    m_decryptButton->setVisible(encryption.encrypted);
+    m_changePasswordButton->setVisible(encryption.encrypted);
+    m_walletButton->setVisible(encryption.encrypted);
+
+    const bool blocked = !encryption.blockedReason.isEmpty();
+    const auto offer = [&encryption, blocked](QToolButton *button, const QString &text) {
+        button->setEnabled(!blocked);
+        button->setToolTip(blocked ? encryption.blockedReason : text);
+        button->setAccessibleName(text);
+    };
+    offer(m_encryptButton, i18n("Encrypt the system disk…"));
+    offer(m_decryptButton, i18n("Decrypt the system disk…"));
+    offer(m_changePasswordButton, i18n("Change the password…"));
+
+    // KWallet's icon with a plus or minus.
+    const QString walletText = !encryption.walletAvailable ? i18n("KWallet is not available")
+        : m_passwordStored                                 ? i18n("Remove the password from KWallet")
+                                                           : i18n("Store the password in KWallet…");
+    m_walletButton->setIcon(KIconUtils::addOverlay(QIcon::fromTheme(u"kwalletmanager"_s, QIcon::fromTheme(u"wallet-open"_s)),
+                                                   QIcon::fromTheme(m_passwordStored ? u"list-remove"_s : u"list-add"_s),
+                                                   Qt::BottomRightCorner));
+    m_walletButton->setToolTip(walletText);
+    m_walletButton->setAccessibleName(walletText);
+    m_walletButton->setEnabled(encryption.walletAvailable);
 }
 
 void DiskDialog::setCompactAvailable(bool available)
@@ -163,10 +263,11 @@ void DiskDialog::setCurrentSize(int sizeGb)
     m_expandButton->setEnabled(false);
 }
 
-void DiskDialog::setNewDiskSize(int sizeGb)
+void DiskDialog::setNewDiskSize(int sizeGb, int minimumGb)
 {
     if (!m_sizeSpin || m_mode != Mode::Edit)
         return;
+    m_sizeSpin->setMinimum(minimumGb);
     m_sizeSpin->setValue(sizeGb);
     m_sizeSpin->setEnabled(true);
 }
@@ -215,8 +316,29 @@ void DiskDialog::updateState()
     m_sizeLabel->setEnabled(!useExisting);
     m_sourceRequester->setEnabled(useExisting);
     m_sourceLabel->setEnabled(useExisting);
-    m_sourceHint->setEnabled(useExisting);
+    showMessage(m_sourceHint, useExisting);
 
     const bool valid = !useExisting || QFileInfo(sourcePath()).isFile();
     m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(valid);
+}
+
+void DiskDialog::updateInterfaceHint()
+{
+    QString hint;
+    auto type = KMessageWidget::Information;
+    if (diskInterface() == VMSpecs::DiskInterface::SataIde) {
+        if (m_machineType == VMSpecs::MachineType::Q35)
+            hint = i18n("Q35 chipset: disk attached via AHCI (SATA).");
+        else if (m_machineType == VMSpecs::MachineType::PcISA)
+            hint = i18n("ISA-only PC: disk attached via legacy ISA IDE.");
+        else
+            hint = i18n("PC (i440FX) chipset: disk attached via PIIX3 (IDE).");
+    } else if (diskInterface() == VMSpecs::DiskInterface::Virtio && m_systemOsFamily == VMSpecs::OsFamily::Windows) {
+        hint = i18n("Windows needs the VirtIO driver ISO during installation, or its installer finds no disk.");
+        type = KMessageWidget::Warning;
+    }
+    m_interfaceHint->setMessageType(type);
+    if (!hint.isEmpty())
+        m_interfaceHint->setText(hint);
+    showMessage(m_interfaceHint, !hint.isEmpty());
 }

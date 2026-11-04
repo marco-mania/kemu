@@ -18,7 +18,6 @@
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
 
-#include <KIconUtils>
 #include <KMessageBox>
 #include <KMessageWidget>
 
@@ -207,55 +206,12 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     diskSpin->setRange(KEMUConst::DefaultMinDiskSizeGB, 32000);
     diskSpin->setValue(40);
     diskSpin->setSuffix(i18n(" GB"));
-    diskSpin->setToolTip(i18n("This is the size of the system disk. You can add additional disks under Hardware."));
+    // Changed in the properties of the system disk, next to the other disks.
+    diskSpin->setReadOnly(true);
+    diskSpin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    diskSpin->setToolTip(i18n("The size of the system disk. Change it under Hardware, in the properties of the system disk."));
     auto *diskLayout = new QHBoxLayout();
     diskLayout->addWidget(diskSpin);
-    if (m_mode == Mode::Edit) {
-        // Encryption, as small buttons; which ones are shown tells the state.
-        // They change the disk at once, so a new VM chooses it elsewhere.
-        const auto makeButton = [](const QIcon &icon, const QString &text) {
-            auto *button = new QToolButton();
-            button->setIcon(icon);
-            button->setToolTip(text);
-            button->setAccessibleName(text);
-            return button;
-        };
-        encryptButton = makeButton(QIcon::fromTheme(u"lock"_s), i18n("Encrypt the system disk…"));
-        decryptButton = makeButton(QIcon::fromTheme(u"unlock"_s, QIcon::fromTheme(u"object-unlocked"_s)), i18n("Decrypt the system disk…"));
-        changePasswordButton = makeButton(QIcon::fromTheme(u"dialog-password"_s, QIcon::fromTheme(u"lock"_s)), i18n("Change the password…"));
-        walletButton = new QToolButton();
-
-        // Resizing and compacting act at once as well. A larger value in the
-        // spin box only takes effect through the expand button.
-        expandDiskButton = makeButton(QIcon::fromTheme(u"zoom-in"_s, QIcon::fromTheme(u"list-add"_s)), i18n("Expand the system disk…"));
-        compactDiskButton = makeButton(QIcon::fromTheme(u"edit-clear-history"_s), i18n("Compact the system disk…"));
-        expandDiskButton->setEnabled(false);
-        diskLayout->addWidget(expandDiskButton);
-        diskLayout->addWidget(compactDiskButton);
-        connect(diskSpin, &QSpinBox::valueChanged, this, &EditVmDialog::updateDiskSizeButtons);
-        connect(expandDiskButton, &QToolButton::clicked, this, [this] {
-            Q_EMIT expandDiskRequested(systemDiskPath(), diskSpin->value(), this);
-        });
-        connect(compactDiskButton, &QToolButton::clicked, this, [this] {
-            Q_EMIT compactDiskRequested(systemDiskPath(), this);
-        });
-
-        diskLayout->addSpacing(diskLayout->spacing());
-        diskLayout->addWidget(encryptButton);
-        diskLayout->addWidget(decryptButton);
-        diskLayout->addWidget(changePasswordButton);
-        diskLayout->addWidget(walletButton);
-
-        connect(encryptButton, &QToolButton::clicked, this, &EditVmDialog::encryptSystemDiskRequested);
-        connect(decryptButton, &QToolButton::clicked, this, &EditVmDialog::decryptSystemDiskRequested);
-        connect(changePasswordButton, &QToolButton::clicked, this, &EditVmDialog::changeDiskPasswordRequested);
-        connect(walletButton, &QToolButton::clicked, this, [this] {
-            if (DiskKeyStore::hasKey(m_original.diskKeyId()))
-                Q_EMIT forgetDiskPasswordRequested();
-            else
-                Q_EMIT storeDiskPasswordRequested();
-        });
-    }
     diskLayout->addStretch();
     genLayout->addRow(i18n("System Disk:"), diskLayout);
     diskLabel = qobject_cast<QLabel *>(genLayout->labelForField(diskLayout));
@@ -602,19 +558,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     // Storage
     const auto [storageGroup, storageLayout] = createFormGroup(i18n("Storage"));
 
-    diskInterfaceCombo = new QComboBox();
-    diskInterfaceCombo->addItem(VMConfig::toUIString(VMSpecs::DiskInterface::Virtio), static_cast<int>(VMSpecs::DiskInterface::Virtio));
-    diskInterfaceCombo->addItem(VMConfig::toUIString(VMSpecs::DiskInterface::Nvme), static_cast<int>(VMSpecs::DiskInterface::Nvme));
-    diskInterfaceCombo->addItem(VMConfig::toUIString(VMSpecs::DiskInterface::SataIde), static_cast<int>(VMSpecs::DiskInterface::SataIde));
-    diskInterfaceCombo->setToolTip(i18n("This is the disc controller of the system disk."));
-    storageLayout->addRow(i18n("Disk Controller:"), diskInterfaceCombo);
-
-    diskHintLabel = new QLabel();
-    diskHintLabel->setStyleSheet(infoStyle(KColorScheme::NeutralText));
-    storageLayout->addRow({}, diskHintLabel);
-
-    diskHintLabel->setVisible(false);
-
+    // The system disk first, then the further ones.
     auto *extraDisksWidget = new QWidget();
     auto *extraDisksLayout = new QVBoxLayout(extraDisksWidget);
     extraDisksLayout->setContentsMargins(0, 0, 0, 0);
@@ -643,9 +587,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     storageWarningMessage = createInlineMessage(KMessageWidget::Error);
     extraDisksLayout->addWidget(storageWarningMessage);
 
-    storageLayout->addRow(i18n("Additional Disks:"), extraDisksWidget);
-    // A VM that does not exist yet has no folder to put further disks into.
-    storageLayout->setRowVisible(extraDisksWidget, m_mode == Mode::Edit);
+    storageLayout->addRow(extraDisksWidget);
 
     connect(addDiskButton, &QPushButton::clicked, this, &EditVmDialog::addDisk);
     connect(editDiskButton, &QPushButton::clicked, this, &EditVmDialog::editSelectedDisk);
@@ -927,12 +869,8 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     };
     connect(ramSpin, &RamSpinBox::valueChanged, this, updateRamSlider);
 
-    connect(diskInterfaceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::updateDiskInterfaceHint);
-
-    connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::updateDiskInterfaceHint);
     connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::onMachineTypeChanged);
     connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::validateForm);
-    connect(diskInterfaceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditVmDialog::validateForm);
 
     connect(usbCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
         updateInputDeviceAvailability();
@@ -1045,7 +983,6 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     updateNetworkCardDependencies();
 
     onGpuDisplayChanged();
-    updateDiskInterfaceHint();
     updateDeviceAvailability();
 
     updateRamSlider(GlobalDefaults.ramMb);
@@ -1175,7 +1112,7 @@ void EditVmDialog::setConfig(const VMConfig &config)
     }
     m_lastAutoHostname = Utils::vmNameToHostname(config.name());
     hostnameEdit->setText(config.dnsHostname().isEmpty() ? m_lastAutoHostname : config.dnsHostname());
-    setCombo(diskInterfaceCombo, config.diskInterface());
+    setSystemDiskInterface(config.diskInterface());
     setCombo(usbCombo, config.usbController());
     setCombo(mouseCombo, config.pointerDevice());
     setCombo(keyboardCombo, config.keyboardDevice());
@@ -1274,7 +1211,6 @@ void EditVmDialog::onOsFamilyChanged(int /*index*/)
 
     updateIconForOs();
     validateForm();
-    updateDiskInterfaceHint();
 }
 
 void EditVmDialog::onOsNameChanged(int /*index*/)
@@ -1574,7 +1510,7 @@ VMConfig EditVmDialog::getResult() const
         smbios.*member = edit->text().trimmed();
     c.setSmbiosSystemInfo(smbios);
 
-    c.setDiskInterface(static_cast<VMSpecs::DiskInterface>(diskInterfaceCombo->currentData().toInt()));
+    c.setDiskInterface(m_systemDiskInterface);
 
     // Imported images join the configuration once their conversion is done.
     QList<DiskConfig> extraDisks;
@@ -1590,36 +1526,6 @@ VMConfig EditVmDialog::getResult() const
 
     return c;
 }
-
-void EditVmDialog::updateDiskInterfaceHint()
-{
-    const auto updateVisibility = qScopeGuard([this] {
-        diskHintLabel->setVisible(!diskHintLabel->text().isEmpty());
-    });
-
-    const auto disk = static_cast<VMSpecs::DiskInterface>(diskInterfaceCombo->currentData().toInt());
-    const auto machine = static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt());
-    const auto os = static_cast<VMSpecs::OsFamily>(osFamilyCombo->currentData().toInt());
-    if (disk == VMSpecs::DiskInterface::SataIde) {
-        if (machine == VMSpecs::MachineType::Q35) {
-            diskHintLabel->setText(u"<i>"_s + i18n("Q35 chipset: disk attached via AHCI (SATA).") + u"</i>"_s);
-        } else if (machine == VMSpecs::MachineType::PcISA) {
-            // Explicitly handle the ISA-only machine type
-            diskHintLabel->setText(u"<i>"_s + i18n("ISA-only PC: disk attached via legacy ISA IDE.") + u"</i>"_s);
-        } else {
-            diskHintLabel->setText(u"<i>"_s + i18n("PC (i440FX) chipset: disk attached via PIIX3 (IDE).") + u"</i>"_s);
-        }
-        return;
-    }
-    if (disk == VMSpecs::DiskInterface::Virtio && os == VMSpecs::OsFamily::Windows) {
-        diskHintLabel->setText(u"<i>"_s
-                               + i18n("Note: Windows requires the VirtIO driver ISO "
-                                      "during installation.")
-                               + u"</i>"_s);
-        return;
-    }
-    diskHintLabel->clear();
-};
 
 void EditVmDialog::updateDeviceAvailability()
 {
@@ -1773,30 +1679,7 @@ void EditVmDialog::updateDeviceAvailability()
     updateInputDeviceAvailability(); // keep mouse/keyboard combos in sync
 
     // --- Disk Interface ---
-    if (auto *diskModel = qobject_cast<QStandardItemModel *>(diskInterfaceCombo->model())) {
-        bool currentDiskValid = false;
-        int firstValidDiskIdx = -1;
-
-        for (int i = 0; i < diskInterfaceCombo->count(); ++i) {
-            auto diskIf = static_cast<VMSpecs::DiskInterface>(diskInterfaceCombo->itemData(i).toInt());
-            // Assume SataIde is always available, others require PCI
-            const bool shouldShow = (diskIf == VMSpecs::DiskInterface::SataIde) || supportsPci;
-
-            diskModel->item(i)->setEnabled(shouldShow);
-            diskInterfaceCombo->setItemData(i, shouldShow ? QString() : pciReqMsg, Qt::ToolTipRole);
-
-            if (shouldShow) {
-                if (firstValidDiskIdx == -1)
-                    firstValidDiskIdx = i;
-                if (i == diskInterfaceCombo->currentIndex())
-                    currentDiskValid = true;
-            }
-        }
-
-        if (!currentDiskValid && firstValidDiskIdx != -1) {
-            diskInterfaceCombo->setCurrentIndex(firstValidDiskIdx);
-        }
-    }
+    setSystemDiskInterface(m_systemDiskInterface);
 
     // --- UEFI / TPM / Misc ---
     const bool canUseUefi = (machine == VMSpecs::MachineType::Q35);
@@ -1829,7 +1712,6 @@ void EditVmDialog::updateDeviceAvailability()
         bootFromFloppyCheck->setChecked(false);
     }
 
-    updateDiskInterfaceHint();
     onGpuDisplayChanged();
 }
 
@@ -2022,7 +1904,7 @@ QString EditVmDialog::storageLayoutError() const
 {
     VMConfig layout;
     layout.setMachineType(static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt()));
-    layout.setDiskInterface(static_cast<VMSpecs::DiskInterface>(diskInterfaceCombo->currentData().toInt()));
+    layout.setDiskInterface(m_systemDiskInterface);
 
     QList<DiskConfig> disks;
     for (const DiskEntry &entry : m_disks)
@@ -2054,6 +1936,18 @@ void EditVmDialog::refreshDiskList()
 
     diskTree->clear();
 
+    // Always the first row; the further disks follow in m_disks order.
+    QString systemSize = i18n("%1 GB, new", diskSpin->value());
+    if (m_mode == Mode::Edit) {
+        const QemuImgProcess::ImageInfo info = systemDiskPath().isEmpty() ? QemuImgProcess::ImageInfo{} : QemuImgProcess::inspect(systemDiskPath());
+        systemSize = info.isValid ? i18n("%1 GB", QString::number(info.virtualSizeGb(), 'f', 1)) : i18n("Missing");
+    }
+    auto *system = new QTreeWidgetItem(diskTree);
+    system->setText(0, i18nc("@item name of the system disk", "System"));
+    system->setText(1, systemSize);
+    system->setText(2, VMConfig::toUIString(m_systemDiskInterface));
+    updateSystemDiskItem();
+
     for (const DiskEntry &entry : std::as_const(m_disks)) {
         QString size;
         if (entry.exists && !m_vmDir.isEmpty()) {
@@ -2074,9 +1968,18 @@ void EditVmDialog::refreshDiskList()
         item->setText(2, VMConfig::toUIString(entry.disk.diskInterface));
     }
 
-    diskTree->setVisible(!m_disks.isEmpty());
     updateDiskButtons();
     validateForm();
+}
+
+int EditVmDialog::selectedDiskIndex() const
+{
+    QTreeWidgetItem *item = diskTree->currentItem();
+    if (!item || !item->isSelected())
+        return NoDiskSelected;
+    // Row 0 is the system disk.
+    const int row = diskTree->indexOfTopLevelItem(item);
+    return row == 0 ? SystemDiskSelected : row - 1 < m_disks.size() ? row - 1 : NoDiskSelected;
 }
 
 void EditVmDialog::updateDiskButtons()
@@ -2084,15 +1987,14 @@ void EditVmDialog::updateDiskButtons()
     if (!diskTree)
         return;
 
-    const bool hasDisks = !m_disks.isEmpty();
-    const bool hasSelection = diskTree->currentItem() && diskTree->currentItem()->isSelected();
+    const int selected = selectedDiskIndex();
 
-    editDiskButton->setVisible(hasDisks);
-    removeDiskButton->setVisible(hasDisks);
-
-    addDiskButton->setEnabled(!m_readOnly && m_disks.size() < KEMUConst::MaxExtraDisks);
-    editDiskButton->setEnabled(!m_readOnly && hasSelection);
-    removeDiskButton->setEnabled(!m_readOnly && hasSelection);
+    // A VM that does not exist yet has no folder to put further disks into.
+    addDiskButton->setEnabled(!m_readOnly && m_mode == Mode::Edit && m_disks.size() < KEMUConst::MaxExtraDisks);
+    addDiskButton->setToolTip(m_mode == Mode::Edit ? QString() : i18n("Further disks can be added once the virtual machine exists."));
+    editDiskButton->setEnabled(!m_readOnly && selected != NoDiskSelected);
+    removeDiskButton->setEnabled(!m_readOnly && selected >= 0);
+    removeDiskButton->setToolTip(selected == SystemDiskSelected ? i18n("The system disk cannot be removed.") : QString());
 }
 
 void EditVmDialog::addDisk()
@@ -2101,7 +2003,7 @@ void EditVmDialog::addDisk()
         return;
 
     DiskDialog dlg(DiskDialog::Mode::Add, static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt()), this);
-    dlg.setDiskInterface(static_cast<VMSpecs::DiskInterface>(diskInterfaceCombo->currentData().toInt()));
+    dlg.setDiskInterface(m_systemDiskInterface);
     if (dlg.exec() != QDialog::Accepted)
         return;
 
@@ -2123,9 +2025,13 @@ void EditVmDialog::addDisk()
 
 void EditVmDialog::editSelectedDisk()
 {
-    const int row = diskTree->indexOfTopLevelItem(diskTree->currentItem());
-    if (m_readOnly || row < 0 || row >= m_disks.size())
+    const int row = selectedDiskIndex();
+    if (m_readOnly || row == NoDiskSelected)
         return;
+    if (row == SystemDiskSelected) {
+        editSystemDisk();
+        return;
+    }
 
     DiskEntry &entry = m_disks[row];
 
@@ -2164,10 +2070,75 @@ void EditVmDialog::editSelectedDisk()
     refreshDiskList();
 }
 
+void EditVmDialog::editSystemDisk()
+{
+    const auto machine = static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt());
+    DiskDialog dlg(DiskDialog::Mode::Edit, machine, this);
+    dlg.setSystemDisk(static_cast<VMSpecs::OsFamily>(osFamilyCombo->currentData().toInt()));
+    dlg.setDiskInterface(m_systemDiskInterface);
+
+    const QString diskPath = systemDiskPath();
+    if (m_mode == Mode::Edit && !diskPath.isEmpty()) {
+        // Expanding and compacting act at once, as for the other disks.
+        dlg.setCurrentSize(m_systemDiskGb);
+        dlg.setCompactAvailable(m_systemDiskGb > 0);
+        connect(&dlg, &DiskDialog::compactRequested, this, [this, diskPath, &dlg] {
+            Q_EMIT compactDiskRequested(diskPath, &dlg);
+        });
+        connect(&dlg, &DiskDialog::expandRequested, this, [this, diskPath, &dlg](int sizeGb) {
+            Q_EMIT expandDiskRequested(diskPath, sizeGb, &dlg);
+        });
+
+        // A new VM chooses encryption when it is created.
+        dlg.setEncryption(encryptionState());
+        connect(&dlg, &DiskDialog::encryptRequested, this, [this, &dlg] {
+            Q_EMIT encryptSystemDiskRequested(&dlg);
+        });
+        connect(&dlg, &DiskDialog::decryptRequested, this, [this, &dlg] {
+            Q_EMIT decryptSystemDiskRequested(&dlg);
+        });
+        connect(&dlg, &DiskDialog::changePasswordRequested, this, [this, &dlg] {
+            Q_EMIT changeDiskPasswordRequested(&dlg);
+        });
+        connect(&dlg, &DiskDialog::storePasswordRequested, this, [this, &dlg] {
+            Q_EMIT storeDiskPasswordRequested(&dlg);
+        });
+        connect(&dlg, &DiskDialog::forgetPasswordRequested, this, [this, &dlg] {
+            Q_EMIT forgetDiskPasswordRequested(&dlg);
+        });
+        m_openDiskDialog = &dlg;
+        m_openDiskPath = diskPath;
+    } else if (m_mode == Mode::PreCreate) {
+        dlg.setNewDiskSize(diskSpin->value(), KEMUConst::DefaultMinDiskSizeGB);
+    }
+    const auto closed = qScopeGuard([this] {
+        m_openDiskDialog = nullptr;
+        m_openDiskPath.clear();
+    });
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    if (m_mode == Mode::PreCreate)
+        diskSpin->setValue(dlg.sizeGb());
+    m_systemDiskInterface = dlg.diskInterface();
+    refreshDiskList();
+}
+
+void EditVmDialog::setSystemDiskInterface(VMSpecs::DiskInterface diskInterface)
+{
+    // Without a PCI bus, only the IDE controller of the chipset is left.
+    if (machineCombo && !VMConfig::supportsPciBus(static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt())))
+        diskInterface = VMSpecs::DiskInterface::SataIde;
+    if (diskInterface == m_systemDiskInterface)
+        return;
+    m_systemDiskInterface = diskInterface;
+    refreshDiskList();
+}
+
 void EditVmDialog::removeSelectedDisk()
 {
-    const int row = diskTree->indexOfTopLevelItem(diskTree->currentItem());
-    if (m_readOnly || row < 0 || row >= m_disks.size())
+    const int row = selectedDiskIndex();
+    if (m_readOnly || row < 0)
         return;
 
     const DiskEntry entry = m_disks.at(row);
@@ -2278,42 +2249,38 @@ void EditVmDialog::applyEncryptionConstraints()
 
 void EditVmDialog::refreshEncryptionState()
 {
-    if (!encryptButton)
-        return;
+    updateSystemDiskItem();
+    if (m_openDiskDialog && !m_openDiskPath.isEmpty() && m_openDiskPath == systemDiskPath())
+        m_openDiskDialog->setEncryption(encryptionState());
+}
 
-    // Which buttons are shown tells whether the disk is encrypted.
-    const bool encrypted = m_original.isEncrypted();
-    const bool walletAvailable = DiskKeyStore::isAvailable();
-    const bool stored = encrypted && DiskKeyStore::hasKey(m_original.diskKeyId());
+DiskDialog::Encryption EditVmDialog::encryptionState() const
+{
+    DiskDialog::Encryption state;
+    state.encrypted = m_original.isEncrypted();
+    state.walletAvailable = DiskKeyStore::isAvailable();
+    state.passwordStored = state.encrypted && DiskKeyStore::hasKey(m_original.diskKeyId());
 
-    encryptButton->setVisible(!encrypted);
-    decryptButton->setVisible(encrypted);
-    changePasswordButton->setVisible(encrypted);
-    walletButton->setVisible(encrypted);
-
-    // These act at once and move an existing TPM state to the new password.
+    // Changes move an existing TPM state to the new password.
     const bool tpmToolsMissing = !m_vmDir.isEmpty() && TpmState::encryptionOf(QDir(m_vmDir)) != TpmState::Encryption::NoState
         && !ExternalTools::instance().isAvailable({ExternalTools::Swtpm, ExternalTools::SwtpmIoctl});
-    const QString toolsMissing = i18n(
-        "Not available: Changing the TPM password requires 'swtpm' and 'swtpm_ioctl', which were not found. Install them or set their paths under Settings > "
-        "Executables.");
-    encryptButton->setEnabled(!m_readOnly && !tpmToolsMissing);
-    decryptButton->setEnabled(!m_readOnly && !tpmToolsMissing);
-    changePasswordButton->setEnabled(!m_readOnly && !tpmToolsMissing);
-    encryptButton->setToolTip(tpmToolsMissing ? toolsMissing : i18n("Encrypt the system disk…"));
-    decryptButton->setToolTip(tpmToolsMissing ? toolsMissing : i18n("Decrypt the system disk…"));
-    changePasswordButton->setToolTip(tpmToolsMissing ? toolsMissing : i18n("Change the password…"));
+    if (tpmToolsMissing)
+        state.blockedReason = i18n(
+            "Not available: Changing the TPM password requires 'swtpm' and 'swtpm_ioctl', which were not found. Install them or set their paths under "
+            "Settings > Executables.");
+    return state;
+}
 
-    // KWallet's icon with a plus or minus.
-    const QString walletText = !walletAvailable ? i18n("KWallet is not available")
-        : stored                                ? i18n("Remove the password from KWallet")
-                                                : i18n("Store the password in KWallet…");
-    walletButton->setIcon(KIconUtils::addOverlay(QIcon::fromTheme(u"kwalletmanager"_s, QIcon::fromTheme(u"wallet-open"_s)),
-                                                 QIcon::fromTheme(stored ? u"list-remove"_s : u"list-add"_s),
-                                                 Qt::BottomRightCorner));
-    walletButton->setToolTip(walletText);
-    walletButton->setAccessibleName(walletText);
-    walletButton->setEnabled(!m_readOnly && walletAvailable);
+void EditVmDialog::updateSystemDiskItem()
+{
+    QTreeWidgetItem *system = diskTree ? diskTree->topLevelItem(0) : nullptr;
+    if (!system)
+        return;
+    const bool encrypted = m_original.isEncrypted();
+    const QIcon plain = QIcon::fromTheme(u"drive-harddisk"_s);
+    system->setIcon(0, encrypted ? QIcon::fromTheme(u"drive-harddisk-encrypted"_s, plain) : plain);
+    const QString tip = i18n("The disk the guest boots from. It cannot be removed.");
+    system->setToolTip(0, encrypted ? tip + u'\n' + i18n("Encrypted") : tip);
 }
 
 void EditVmDialog::updateToolWarnings()
@@ -2342,22 +2309,12 @@ QString EditVmDialog::systemDiskPath() const
     return m_original.diskPaths(QDir(m_vmDir)).value(0);
 }
 
-void EditVmDialog::updateDiskSizeButtons()
-{
-    if (!expandDiskButton)
-        return;
-    expandDiskButton->setEnabled(!m_readOnly && m_systemDiskGb > 0 && diskSpin->value() > m_systemDiskGb);
-    compactDiskButton->setEnabled(!m_readOnly && m_systemDiskGb > 0);
-}
-
 void EditVmDialog::diskExpanded(const QString &diskPath, int sizeGb)
 {
     if (diskPath == systemDiskPath()) {
         m_systemDiskGb = sizeGb;
         diskSpin->setMinimum(sizeGb);
         diskSpin->setValue(sizeGb);
-        updateDiskSizeButtons();
-        return;
     }
     if (m_openDiskDialog && m_openDiskPath == diskPath)
         m_openDiskDialog->setCurrentSize(sizeGb);
@@ -2369,19 +2326,15 @@ void EditVmDialog::applyModeConstraints()
     if (m_mode != Mode::Edit)
         return;
 
-    // The spin box offers sizes from the current one up; the image grows
-    // through the expand button only.
+    // The size of the image; it grows through the properties of the system disk.
     const QemuImgProcess::ImageInfo info = systemDiskPath().isEmpty() ? QemuImgProcess::ImageInfo{} : QemuImgProcess::inspect(systemDiskPath());
     m_systemDiskGb = info.isValid ? int((info.virtualSizeBytes + (1LL << 30) - 1) >> 30) : 0;
     if (m_systemDiskGb > 0) {
         diskSpin->setMinimum(m_systemDiskGb);
         diskSpin->setValue(m_systemDiskGb);
-        diskSpin->setToolTip(i18n("The size of the system disk. Enter a larger size and expand the disk with the button next to it."));
     } else {
         diskSpin->setEnabled(false);
-        compactDiskButton->setEnabled(false);
     }
-    updateDiskSizeButtons();
 
     // Changing these on an installed guest usually makes it unbootable.
     const QString warning = i18n("Changing this on an installed guest can make it unbootable.");
@@ -2416,7 +2369,7 @@ void EditVmDialog::resetToFactoryDefaults()
     monitorCountSpin->setValue(GlobalDefaults.monitorCount);
     gpuMemSpin->setValue(GlobalDefaults.gpuMemMb);
     setCombo(audioCombo, GlobalDefaults.audioDevice);
-    setCombo(diskInterfaceCombo, GlobalDefaults.diskInterface);
+    setSystemDiskInterface(GlobalDefaults.diskInterface);
     setCombo(netCombo, GlobalDefaults.networkCard);
     setCombo(displayCombo, GlobalDefaults.displayType);
     setCombo(usbCombo, GlobalDefaults.usbController);

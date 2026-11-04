@@ -2019,14 +2019,14 @@ void MainWindow::storeDiskKeyInWallet(const QString &vmName, const QString &keyI
     });
 }
 
-void MainWindow::storeDiskPassword(const QString &vmName, EditVmDialog *dialog)
+void MainWindow::storeDiskPassword(const QString &vmName, EditVmDialog *dialog, QWidget *parent)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || !entry->config.isEncrypted())
         return;
 
     const QString keyId = entry->config.diskKeyId();
-    const QPointer<DiskPasswordDialog> prompt = new DiskPasswordDialog(entry->config.diskPaths(getVmDir(vmName)).value(0), false, dialog);
+    const QPointer<DiskPasswordDialog> prompt = new DiskPasswordDialog(entry->config.diskPaths(getVmDir(vmName)).value(0), false, parent);
     prompt->setPrompt(i18n("Enter the password of the system disk of '%1' to store it in KWallet.", vmName));
     const bool accepted = prompt->exec() == QDialog::Accepted;
     if (!prompt)
@@ -2037,20 +2037,20 @@ void MainWindow::storeDiskPassword(const QString &vmName, EditVmDialog *dialog)
         return;
 
     const QPointer<EditVmDialog> target(dialog);
-    storeDiskKeyInWallet(vmName, keyId, password, dialog, [this, target](bool) {
+    storeDiskKeyInWallet(vmName, keyId, password, parent, [this, target](bool) {
         if (target)
             target->refreshEncryptionState();
         updateDetails();
     });
 }
 
-void MainWindow::forgetDiskPassword(const QString &vmName, EditVmDialog *dialog)
+void MainWindow::forgetDiskPassword(const QString &vmName, EditVmDialog *dialog, QWidget *parent)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || !entry->config.isEncrypted())
         return;
 
-    const auto answer = KMessageBox::warningContinueCancel(dialog,
+    const auto answer = KMessageBox::warningContinueCancel(parent,
                                                            i18n("Remove the password of '%1' from KWallet?\n\n"
                                                                 "KEMU then asks for it whenever the virtual machine starts. If you forget it, "
                                                                 "the content of the disks is lost.",
@@ -2068,7 +2068,7 @@ void MainWindow::forgetDiskPassword(const QString &vmName, EditVmDialog *dialog)
     });
 }
 
-void MainWindow::encryptSystemDisk(const QString &vmName, EditVmDialog *dialog)
+void MainWindow::encryptSystemDisk(const QString &vmName, EditVmDialog *dialog, QWidget *parent)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || entry->config.isEncrypted() || veModel->isBusy(vmName))
@@ -2076,17 +2076,17 @@ void MainWindow::encryptSystemDisk(const QString &vmName, EditVmDialog *dialog)
 
     const QString title = i18nc("@title:window", "Encrypt System Disk");
     if (entry->config.isLinkedClone()) {
-        KMessageBox::error(dialog, i18n("A linked clone shares its disk with its source and cannot be encrypted. Make it independent first."), title);
+        KMessageBox::error(parent, i18n("A linked clone shares its disk with its source and cannot be encrypted. Make it independent first."), title);
         return;
     }
     if (entry->hasSavestateFile) {
-        KMessageBox::error(dialog,
+        KMessageBox::error(parent,
                            i18n("'%1' has a saved state, which would stay unencrypted. Resume and shut it down, or discard the state first.", vmName),
                            title);
         return;
     }
 
-    if (!requireTpmRekeyTools(vmName, dialog))
+    if (!requireTpmRekeyTools(vmName, parent))
         return;
 
     const QDir vmDir = getVmDir(vmName);
@@ -2101,11 +2101,12 @@ void MainWindow::encryptSystemDisk(const QString &vmName, EditVmDialog *dialog)
         vmName);
     if (!snapshots.isEmpty())
         text += u"\n\n"_s + i18np("The snapshot (%2) is deleted.", "All %1 snapshots (%2) are deleted.", snapshots.size(), snapshots.join(u", "_s));
-    if (KMessageBox::warningContinueCancel(dialog, text, title, KGuiItem(i18n("Continue"), u"lock"_s)) != KMessageBox::Continue)
+    if (KMessageBox::warningContinueCancel(parent, text, title, KGuiItem(i18n("Continue"), u"lock"_s)) != KMessageBox::Continue)
         return;
 
     const QPointer<EditVmDialog> target(dialog);
-    const QPointer<NewDiskPasswordDialog> prompt = new NewDiskPasswordDialog(dialog);
+    const QPointer<QWidget> view(parent);
+    const QPointer<NewDiskPasswordDialog> prompt = new NewDiskPasswordDialog(parent);
     prompt->setPrompt(i18n("Choose the password that encrypts the system disk of '%1'.", vmName));
     const bool accepted = prompt->exec() == QDialog::Accepted;
     if (!prompt)
@@ -2117,7 +2118,7 @@ void MainWindow::encryptSystemDisk(const QString &vmName, EditVmDialog *dialog)
         return;
 
     auto *job = new EncryptDiskJob(EncryptDiskJob::Mode::Encrypt, vmName, vmDir, diskPaths.value(0), diskPaths.mid(1), snapshots, password.toUtf8(), this);
-    runEncryptionJob(job, target, [this, vmName, target, password, store] {
+    runEncryptionJob(job, target, view, [this, vmName, target, view, password, store] {
         const QString vmPath = getVmDir(vmName).absolutePath();
         VMConfig config = loadVmConfig(vmPath);
         config.setDiskKeyId(QUuid::createUuid().toString(QUuid::WithoutBraces));
@@ -2128,7 +2129,7 @@ void MainWindow::encryptSystemDisk(const QString &vmName, EditVmDialog *dialog)
         if (currentConfig.name() == vmName)
             currentConfig = config;
         if (store)
-            storeDiskKeyInWallet(vmName, config.diskKeyId(), password, target, [this, target](bool) {
+            storeDiskKeyInWallet(vmName, config.diskKeyId(), password, view ? view.data() : target.data(), [this, target](bool) {
                 if (target)
                     target->refreshEncryptionState();
                 updateDetails();
@@ -2139,12 +2140,12 @@ void MainWindow::encryptSystemDisk(const QString &vmName, EditVmDialog *dialog)
     });
 }
 
-void MainWindow::decryptSystemDisk(const QString &vmName, EditVmDialog *dialog)
+void MainWindow::decryptSystemDisk(const QString &vmName, EditVmDialog *dialog, QWidget *parent)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || !entry->config.isEncrypted() || veModel->isBusy(vmName))
         return;
-    if (!requireTpmRekeyTools(vmName, dialog))
+    if (!requireTpmRekeyTools(vmName, parent))
         return;
 
     const QDir vmDir = getVmDir(vmName);
@@ -2158,21 +2159,22 @@ void MainWindow::decryptSystemDisk(const QString &vmName, EditVmDialog *dialog)
         vmName);
     if (!snapshots.isEmpty())
         text += u"\n\n"_s + i18np("The snapshot (%2) is deleted.", "All %1 snapshots (%2) are deleted.", snapshots.size(), snapshots.join(u", "_s));
-    if (KMessageBox::warningContinueCancel(dialog, text, i18nc("@title:window", "Decrypt System Disk"), KGuiItem(i18n("Continue"), u"unlock"_s))
+    if (KMessageBox::warningContinueCancel(parent, text, i18nc("@title:window", "Decrypt System Disk"), KGuiItem(i18n("Continue"), u"unlock"_s))
         != KMessageBox::Continue)
         return;
 
     const QPointer<EditVmDialog> target(dialog);
+    const QPointer<QWidget> view(parent);
     const QString keyId = entry->config.diskKeyId();
     requestDiskKey(
         vmName,
         i18n("Enter the password of the system disk of '%1' to decrypt it.", vmName),
-        [this, vmName, vmDir, diskPaths, snapshots, target, keyId](std::optional<QByteArray> key) {
+        [this, vmName, vmDir, diskPaths, snapshots, target, view, keyId](std::optional<QByteArray> key) {
             if (!key || !target || veModel->isBusy(vmName))
                 return;
 
             auto *job = new EncryptDiskJob(EncryptDiskJob::Mode::Decrypt, vmName, vmDir, diskPaths.value(0), diskPaths.mid(1), snapshots, *key, this);
-            runEncryptionJob(job, target, [this, vmName, target, keyId] {
+            runEncryptionJob(job, target, view, [this, vmName, target, keyId] {
                 const QString vmPath = getVmDir(vmName).absolutePath();
                 VMConfig config = loadVmConfig(vmPath);
                 config.setDiskKeyId({});
@@ -2191,24 +2193,24 @@ void MainWindow::decryptSystemDisk(const QString &vmName, EditVmDialog *dialog)
         false);
 }
 
-void MainWindow::runEncryptionJob(EncryptDiskJob *job, EditVmDialog *dialog, std::function<void()> succeeded)
+void MainWindow::runEncryptionJob(EncryptDiskJob *job, EditVmDialog *dialog, QWidget *parent, std::function<void()> succeeded)
 {
     const bool encrypt = job->mode() == EncryptDiskJob::Mode::Encrypt;
     const QString vmName = job->vmName();
     const QString title = encrypt ? i18nc("@title:window", "Encrypt System Disk") : i18nc("@title:window", "Decrypt System Disk");
-    const QPointer<EditVmDialog> target(dialog);
+    const QPointer<QWidget> target(parent ? parent : dialog);
 
     if (jobTracker)
         jobTracker->registerJob(job);
     veModel->setVmState(vmName, encrypt ? VmEntry::State::Encrypting : VmEntry::State::Decrypting);
 
-    // Modal over the edit dialog, so nothing else touches the VM meanwhile.
+    // Modal over the dialog that asked, so nothing else touches the VM meanwhile.
     auto *progress =
         new QProgressDialog(encrypt ? i18n("Encrypting the system disk of '%1'…", vmName) : i18n("Decrypting the system disk of '%1'…", vmName),
                             i18n("Cancel"),
                             0,
                             1000,
-                            dialog);
+                            target);
     progress->setWindowModality(Qt::WindowModal);
     progress->setMinimumDuration(0);
     progress->setAttribute(Qt::WA_DeleteOnClose);
@@ -2244,18 +2246,22 @@ void MainWindow::runEncryptionJob(EncryptDiskJob *job, EditVmDialog *dialog, std
     job->start();
 }
 
-void MainWindow::changeDiskPassword(const QString &vmName, EditVmDialog *dialog)
+void MainWindow::changeDiskPassword(const QString &vmName, EditVmDialog *dialog, QWidget *parent)
 {
-    if (!requireTpmRekeyTools(vmName, dialog))
+    if (!requireTpmRekeyTools(vmName, parent))
         return;
     const QPointer<EditVmDialog> target(dialog);
+    const QPointer<QWidget> view(parent);
 
-    requestDiskKey(vmName, i18n("Enter the current password of the system disk of '%1'.", vmName), [this, vmName, target](std::optional<QByteArray> oldKey) {
+    const QString question = i18n("Enter the current password of the system disk of '%1'.", vmName);
+    requestDiskKey(vmName, question, [this, vmName, target, view](std::optional<QByteArray> oldKey) {
         const VmEntry *entry = veModel->entryByName(vmName);
         if (!oldKey || !target || !entry || veModel->isBusy(vmName))
             return;
 
-        const QPointer<KNewPasswordDialog> prompt = new KNewPasswordDialog(target);
+        // The disk properties may be closed meanwhile, the edit dialog stays.
+        QWidget *const asking = view ? view.data() : target.data();
+        const QPointer<KNewPasswordDialog> prompt = new KNewPasswordDialog(asking);
         prompt->setWindowTitle(i18nc("@title:window", "Change Disk Password"));
         prompt->setPrompt(i18n("Enter the new password for the system disk of '%1'.", vmName));
         prompt->setMinimumPasswordLength(8);
@@ -2272,21 +2278,22 @@ void MainWindow::changeDiskPassword(const QString &vmName, EditVmDialog *dialog)
         auto *job = new DiskPasswordJob(vmName, {entry->config.diskPaths(getVmDir(vmName)).value(0)}, *oldKey, newPassword.toUtf8(), this);
         job->setTpmStateDir(getVmDir(vmName).absolutePath());
 
-        // Modal over the edit dialog, so the VM cannot start meanwhile.
-        auto *progress = new QProgressDialog(i18n("Changing the password of the system disk…"), {}, 0, 0, target);
+        // Modal over the dialog that asked, so the VM cannot start meanwhile.
+        auto *progress = new QProgressDialog(i18n("Changing the password of the system disk…"), {}, 0, 0, asking);
         progress->setWindowModality(Qt::WindowModal);
         progress->setMinimumDuration(0);
         progress->setAttribute(Qt::WA_DeleteOnClose);
         progress->show();
 
-        connect(job, &KJob::result, this, [this, vmName, target, progress, keyId, wasStored, newPassword](KJob *kjob) {
+        const QPointer<QWidget> messageParent(asking);
+        connect(job, &KJob::result, this, [this, vmName, target, messageParent, progress, keyId, wasStored, newPassword](KJob *kjob) {
             progress->close();
             if (kjob->error()) {
-                KMessageBox::error(target, kjob->errorText(), i18nc("@title:window", "Change Disk Password"));
+                KMessageBox::error(messageParent, kjob->errorText(), i18nc("@title:window", "Change Disk Password"));
                 return;
             }
             if (wasStored) {
-                storeDiskKeyInWallet(vmName, keyId, newPassword, target, [target](bool) {
+                storeDiskKeyInWallet(vmName, keyId, newPassword, messageParent, [target](bool) {
                     if (target)
                         target->refreshEncryptionState();
                 });
@@ -4628,8 +4635,8 @@ void MainWindow::editVM()
     dialog.setConfig(currentConfig);
 
     const QString editedVm = currentConfig.name();
-    connect(&dialog, &EditVmDialog::encryptSystemDiskRequested, this, [this, editedVm, &dialog] {
-        encryptSystemDisk(editedVm, &dialog);
+    connect(&dialog, &EditVmDialog::encryptSystemDiskRequested, this, [this, editedVm, &dialog](QWidget *parent) {
+        encryptSystemDisk(editedVm, &dialog, parent);
     });
     connect(&dialog, &EditVmDialog::compactDiskRequested, this, [this, editedVm](const QString &diskPath, QWidget *parent) {
         compactDisk(editedVm, diskPath, parent);
@@ -4637,17 +4644,17 @@ void MainWindow::editVM()
     connect(&dialog, &EditVmDialog::expandDiskRequested, this, [this, editedVm, &dialog](const QString &diskPath, int sizeGb, QWidget *parent) {
         expandDisk(editedVm, diskPath, sizeGb, &dialog, parent);
     });
-    connect(&dialog, &EditVmDialog::decryptSystemDiskRequested, this, [this, editedVm, &dialog] {
-        decryptSystemDisk(editedVm, &dialog);
+    connect(&dialog, &EditVmDialog::decryptSystemDiskRequested, this, [this, editedVm, &dialog](QWidget *parent) {
+        decryptSystemDisk(editedVm, &dialog, parent);
     });
-    connect(&dialog, &EditVmDialog::changeDiskPasswordRequested, this, [this, editedVm, &dialog] {
-        changeDiskPassword(editedVm, &dialog);
+    connect(&dialog, &EditVmDialog::changeDiskPasswordRequested, this, [this, editedVm, &dialog](QWidget *parent) {
+        changeDiskPassword(editedVm, &dialog, parent);
     });
-    connect(&dialog, &EditVmDialog::storeDiskPasswordRequested, this, [this, editedVm, &dialog] {
-        storeDiskPassword(editedVm, &dialog);
+    connect(&dialog, &EditVmDialog::storeDiskPasswordRequested, this, [this, editedVm, &dialog](QWidget *parent) {
+        storeDiskPassword(editedVm, &dialog, parent);
     });
-    connect(&dialog, &EditVmDialog::forgetDiskPasswordRequested, this, [this, editedVm, &dialog] {
-        forgetDiskPassword(editedVm, &dialog);
+    connect(&dialog, &EditVmDialog::forgetDiskPasswordRequested, this, [this, editedVm, &dialog](QWidget *parent) {
+        forgetDiskPassword(editedVm, &dialog, parent);
     });
 
     if (readOnly) {

@@ -234,14 +234,15 @@ private:
     // without encryption. @p offerStore shows "Store the password in KWallet".
     void requestDiskKey(const QString &vmName, const QString &prompt, std::function<void(std::optional<QByteArray> key)> done, bool offerStore = true);
     void continueStartVM(bool headless, const QByteArray &diskKey);
-    // Encryption actions of the VM settings; @p dialog is refreshed when they are done.
-    void encryptSystemDisk(const QString &vmName, EditVmDialog *dialog);
-    void decryptSystemDisk(const QString &vmName, EditVmDialog *dialog);
-    // Shows the progress over @p dialog; @p succeeded runs before warnings are shown.
-    void runEncryptionJob(EncryptDiskJob *job, EditVmDialog *dialog, std::function<void()> succeeded);
-    void changeDiskPassword(const QString &vmName, EditVmDialog *dialog);
-    void storeDiskPassword(const QString &vmName, EditVmDialog *dialog);
-    void forgetDiskPassword(const QString &vmName, EditVmDialog *dialog);
+    // Encryption actions of the VM settings; @p dialog is refreshed when they are done,
+    // @p parent asks and shows the progress.
+    void encryptSystemDisk(const QString &vmName, EditVmDialog *dialog, QWidget *parent);
+    void decryptSystemDisk(const QString &vmName, EditVmDialog *dialog, QWidget *parent);
+    // Shows the progress over @p parent, else @p dialog; @p succeeded runs before warnings are shown.
+    void runEncryptionJob(EncryptDiskJob *job, EditVmDialog *dialog, QWidget *parent, std::function<void()> succeeded);
+    void changeDiskPassword(const QString &vmName, EditVmDialog *dialog, QWidget *parent);
+    void storeDiskPassword(const QString &vmName, EditVmDialog *dialog, QWidget *parent);
+    void forgetDiskPassword(const QString &vmName, EditVmDialog *dialog, QWidget *parent);
     // Stores in KWallet and tells the user (over @p parent) if that failed.
     void storeDiskKeyInWallet(const QString &vmName, const QString &keyId, const QString &password, QWidget *parent, std::function<void(bool ok)> done = {});
     void continueDeployment(const QString &vmName, const QByteArray &diskKey);
