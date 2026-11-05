@@ -1151,10 +1151,57 @@ void EditVmDialog::setConfig(const VMConfig &config)
     refreshDiskList();
 }
 
-void EditVmDialog::showSharedFolder()
+void EditVmDialog::showSetting(Setting setting, int diskIndex)
 {
-    m_tabs->setCurrentIndex(0);
-    sharedPathEdit->setFocus(Qt::OtherFocusReason);
+    QWidget *field = nullptr;
+    switch (setting) {
+    case Setting::Cores:
+        field = cpuSpin;
+        break;
+    case Setting::Memory:
+        field = ramSpin;
+        break;
+    case Setting::Chipset:
+        field = machineCombo;
+        break;
+    case Setting::Firmware:
+        field = uefiCheck;
+        break;
+    case Setting::Disk:
+        field = diskTree;
+        if (QTreeWidgetItem *item = diskTree->topLevelItem(diskIndex))
+            diskTree->setCurrentItem(item);
+        break;
+    case Setting::Display:
+        field = gpuCombo;
+        break;
+    case Setting::Sound:
+        field = audioCombo;
+        break;
+    case Setting::Usb:
+        field = usbCombo;
+        break;
+    case Setting::Network:
+        field = netCombo;
+        break;
+    case Setting::PortForwarding:
+        field = portForwardTable;
+        break;
+    case Setting::SharedFolder:
+        field = sharedPathEdit;
+        break;
+    }
+    if (!field)
+        return;
+
+    for (int i = 0; i < m_tabs->count(); ++i) {
+        if (m_tabs->widget(i)->isAncestorOf(field)) {
+            m_tabs->setCurrentIndex(i);
+            break;
+        }
+    }
+    // Takes effect when the dialog shows; a read-only field shows without it.
+    field->setFocus(Qt::OtherFocusReason);
 }
 
 void EditVmDialog::setReadOnly(bool readOnly, bool frozen)

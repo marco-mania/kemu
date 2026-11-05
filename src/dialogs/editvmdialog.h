@@ -71,8 +71,23 @@ public:
     // Show the configuration without allowing changes. Call after setConfig().
     // frozen: linked clones depend on the VM rather than it running.
     void setReadOnly(bool readOnly, bool frozen = false);
-    // Opens on the shared folder, on the General tab.
-    void showSharedFolder();
+    // Where a card in the details view of the main window leads.
+    enum class Setting {
+        Cores,
+        Memory,
+        Chipset,
+        Firmware,
+        Disk,
+        Display,
+        Sound,
+        Usb,
+        Network,
+        PortForwarding,
+        SharedFolder
+    };
+    // Opens on the tab of @p setting, with the focus in its field. For a disk,
+    // @p diskIndex is its row: 0 for the system disk, then the further disks.
+    void showSetting(Setting setting, int diskIndex = 0);
     [[nodiscard]] bool isReadOnly() const
     {
         return m_readOnly;

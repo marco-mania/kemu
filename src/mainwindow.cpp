@@ -459,20 +459,43 @@ void MainWindow::setupUi()
         }
     });
 
-    // The media cards offer what the media icons in the list do, the shared
-    // folder leads to its settings.
+    // The media cards offer what the media icons in the list do; every other
+    // card leads to its setting in the VM settings.
     connect(vmOverview, &VmOverview::cardActivated, this, [this](const QString &id, const QPoint &anchor) {
-        if (id == u"shared-folder"_s) {
-            editVmSettings(true);
+        const bool cd = id == u"cdrom"_s;
+        if (cd || id == u"floppy"_s) {
+            QMenu menu(this);
+            menu.addAction(actionCollection()->action(cd ? u"vm_change_iso"_s : u"vm_change_floppy"_s));
+            menu.addAction(actionCollection()->action(cd ? u"vm_eject_iso"_s : u"vm_eject_floppy"_s));
+            menu.exec(anchor);
             return;
         }
-        const bool cd = id == u"cdrom"_s;
-        if (!cd && id != u"floppy"_s)
-            return;
-        QMenu menu(this);
-        menu.addAction(actionCollection()->action(cd ? u"vm_change_iso"_s : u"vm_change_floppy"_s));
-        menu.addAction(actionCollection()->action(cd ? u"vm_eject_iso"_s : u"vm_eject_floppy"_s));
-        menu.exec(anchor);
+
+        using Setting = EditVmDialog::Setting;
+        static const QHash<QString, Setting> settings{
+            {u"cpu"_s, Setting::Cores},
+            {u"memory"_s, Setting::Memory},
+            {u"chipset"_s, Setting::Chipset},
+            {u"boot"_s, Setting::Firmware},
+            {u"display"_s, Setting::Display},
+            {u"sound"_s, Setting::Sound},
+            {u"usb"_s, Setting::Usb},
+            {u"network"_s, Setting::Network},
+            {u"port-forwarding"_s, Setting::PortForwarding},
+            {u"shared-folder"_s, Setting::SharedFolder},
+        };
+        // Disks are "disk:" and their row in the disk list.
+        if (id.startsWith(u"disk:"_s)) {
+            const int row = id.mid(5).toInt();
+            editVmSettings([row](EditVmDialog &dialog) {
+                dialog.showSetting(Setting::Disk, row);
+            });
+        } else if (const auto it = settings.constFind(id); it != settings.cend()) {
+            const Setting setting = it.value();
+            editVmSettings([setting](EditVmDialog &dialog) {
+                dialog.showSetting(setting);
+            });
+        }
     });
     connect(vmOverview, &VmOverview::fileDropped, this, [this](const QString &id, const QString &path) {
         if (id == u"cdrom"_s)
@@ -1441,6 +1464,8 @@ void MainWindow::updateDetails()
     content.cpu.attention = KeySpecs::hostCpuCount() > 0 && cores > KeySpecs::hostCpuCount();
     content.memory = {u"memory"_s, KeySpecs::memoryText(ramMb), i18nc("@label key figure", "Memory"), KeySpecs::hostMemoryText()};
     content.memory.attention = KeySpecs::hostMemoryMib() > 0 && ramMb > KeySpecs::hostMemoryMib();
+    content.cpu.id = u"cpu"_s;
+    content.memory.id = u"memory"_s;
 
     // A disk's usage as share and text; the image header tells whether it is encrypted.
     const auto usageOf = [](const QemuImgProcess::ImageInfo &info) {
@@ -1465,17 +1490,21 @@ void MainWindow::updateDetails()
             content.systemDisk.usage = usageOf(info);
             content.systemDisk.toolTip = i18nc("@info used space, then controller and state", "%1 · %2", usedText(info), facts);
         }
+        content.systemDisk.id = u"disk:0"_s;
     }
 
     // Hardware: what the guest sees, a card each, the platform first.
     const VMSpecs::MachineType machineType = currentConfig.machineType();
     VmOverview::Card chipset{u"computer"_s, KeySpecs::chipsetText(machineType), i18n("Chipset"), KeySpecs::chipsetDetail(machineType)};
     chipset.toolTip = VMConfig::toUIString(machineType);
+    chipset.id = u"chipset"_s;
     content.hardware << chipset;
-    content.hardware << VmOverview::Card{u"security-high"_s,
-                                         VMConfig::firmwareToUIString(currentConfig.useUefi(), currentConfig.useSecureBoot()),
-                                         i18n("Boot and security"),
-                                         currentConfig.useTpm() ? i18n("TPM 2.0") : i18n("No TPM")};
+    VmOverview::Card boot{u"security-high"_s,
+                          VMConfig::firmwareToUIString(currentConfig.useUefi(), currentConfig.useSecureBoot()),
+                          i18n("Boot and security"),
+                          currentConfig.useTpm() ? i18n("TPM 2.0") : i18n("No TPM")};
+    boot.id = u"boot"_s;
+    content.hardware << boot;
 
     QString gpuVal = VMConfig::toUIString(currentConfig.gpuType());
     if (currentConfig.gpu3dAcceleration())
@@ -1486,7 +1515,9 @@ void MainWindow::updateDetails()
     const QString screenVal = currentConfig.displayType() == VMSpecs::DisplayType::Dbus
         ? resolutionVal
         : u"%1, %2"_s.arg(VMConfig::toUIString(currentConfig.displayType()), resolutionVal);
-    content.hardware << VmOverview::Card{u"video-display"_s, gpuVal, i18n("Display"), screenVal};
+    VmOverview::Card display{u"video-display"_s, gpuVal, i18n("Display"), screenVal};
+    display.id = u"display"_s;
+    content.hardware << display;
 
     const bool hasNetwork = currentConfig.networkCard() != VMSpecs::NetworkCard::None;
     QStringList netFacts;
@@ -1503,6 +1534,7 @@ void MainWindow::updateDetails()
     }
     VmOverview::Card network{u"network-wired"_s, VMConfig::toUIString(currentConfig.networkCard()), i18n("Network"), netFacts.join(u" · "_s)};
     network.muted = !hasNetwork;
+    network.id = u"network"_s;
     content.hardware << network;
 
     VmOverview::Card sound{u"audio-card"_s, VMConfig::toUIString(currentConfig.audioDevice()), i18n("Sound")};
@@ -1511,10 +1543,12 @@ void MainWindow::updateDetails()
         const auto &sb = currentConfig.sb16Config();
         sound.detail = u"IRQ %1, DMA %2/%3, I/O 0x%4"_s.arg(sb.irq).arg(sb.dma).arg(sb.dma16).arg(sb.iobase, 0, 16);
     }
+    sound.id = u"sound"_s;
     content.hardware << sound;
 
     VmOverview::Card usb{u"drive-removable-media-usb"_s, VMConfig::toUIString(currentConfig.usbController()), i18n("USB")};
     usb.muted = currentConfig.usbController() == VMSpecs::UsbController::None;
+    usb.id = u"usb"_s;
     content.hardware << usb;
 
     // Media: the image names, the paths as tool tip. As in the media menu,
@@ -1561,6 +1595,7 @@ void MainWindow::updateDetails()
             card.detail = i18n("Not available");
             card.attention = true;
         }
+        card.id = u"disk:%1"_s.arg(i + 1);
         content.wide << card;
     }
 
@@ -1581,7 +1616,7 @@ void MainWindow::updateDetails()
         const QString tag = currentConfig.sharedName().isEmpty() ? u"share"_s : currentConfig.sharedName();
         VmOverview::Card card{u"folder-network"_s, currentConfig.sharedPath(), i18n("Shared folder"), i18n("%1, Tag: %2", protocol, tag)};
         card.id = u"shared-folder"_s;
-        card.toolTip = currentConfig.sharedPath() + u'\n' + i18n("Click to change it in the VM settings.");
+        card.toolTip = currentConfig.sharedPath();
         content.wide << card;
     }
 
@@ -1591,7 +1626,24 @@ void MainWindow::updateDetails()
             portLines << u"%1 %2 → %3"_s.arg(VMConfig::toString(rule.protocol).toUpper()).arg(rule.hostPort).arg(rule.guestPort);
         VmOverview::Card card{u"network-connect"_s, portLines.join(u", "_s), i18n("Port Forwarding")};
         card.toolTip = portLines.join(u'\n');
+        card.id = u"port-forwarding"_s;
         content.wide << card;
+    }
+
+    // A card with an id and no menu leads to its setting. A busy or frozen VM
+    // shows the settings read-only, so the hint says so.
+    const bool settingsReadOnly = entry && (entry->isFrozen() || entry->state != VmEntry::State::Stopped);
+    const QString settingsHint = settingsReadOnly ? i18n("Click to show it in the VM settings.") : i18n("Click to change it in the VM settings.");
+    const auto addSettingsHint = [&settingsHint](VmOverview::Card &card) {
+        if (card.id.isEmpty() || card.menu)
+            return;
+        card.toolTip = card.toolTip.isEmpty() ? settingsHint : card.toolTip + u'\n' + settingsHint;
+    };
+    for (VmOverview::Card *card : {&content.cpu, &content.memory, &content.systemDisk})
+        addSettingsHint(*card);
+    for (QList<VmOverview::Card> *cards : {&content.hardware, &content.media, &content.wide}) {
+        for (VmOverview::Card &card : *cards)
+            addSettingsHint(card);
     }
 
     vmOverview->setContent(content);
@@ -4457,10 +4509,10 @@ void MainWindow::showNewVmDialog(const QString &isoPath)
 
 void MainWindow::editVM()
 {
-    editVmSettings(false);
+    editVmSettings();
 }
 
-void MainWindow::editVmSettings(bool showSharedFolder)
+void MainWindow::editVmSettings(const std::function<void(EditVmDialog &)> &prepare)
 {
     // A busy VM cannot be reconfigured, but its specification is still worth
     // looking at, so open the dialog read-only instead of refusing.
@@ -4510,8 +4562,8 @@ void MainWindow::editVmSettings(bool showSharedFolder)
         forgetDiskPassword(editedVm, &dialog, parent);
     });
 
-    if (showSharedFolder)
-        dialog.showSharedFolder();
+    if (prepare)
+        prepare(dialog);
 
     if (readOnly) {
         dialog.setReadOnly(true, frozen);

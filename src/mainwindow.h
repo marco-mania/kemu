@@ -211,8 +211,9 @@ private:
     VmRuntimeManager::HelperResult reportingDone(const QString &vmName, std::function<void(bool)> done);
 
     QStringList existingVmNames() const;
-    // The VM settings of the selected VM, opened on the shared folder if asked.
-    void editVmSettings(bool showSharedFolder);
+    // The VM settings of the selected VM; @p prepare runs before they show,
+    // such as to open them on a setting.
+    void editVmSettings(const std::function<void(EditVmDialog &)> &prepare = {});
 
     void saveVmConfig(const QString &vmPath, const VMConfig &config);
     void generateShellScript(const QString &vmPath, const VMConfig &config);
