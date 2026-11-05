@@ -104,27 +104,12 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     args << u"-cpu"_s << cpuArg;
 
     // -- SMP Topology --
-    // Always 1 socket; 2 threads/core for even vCPU counts.
-    const int sockets = 1;
-    int cores = 1;
-    int threads = 1;
-    const int totalCpuCores = config.cpuCoreCount();
-
-    if (totalCpuCores == 1) {
-        cores = 1;
-        threads = 1;
-    } else if (totalCpuCores % 2 == 0) {
-        threads = 2;
-        cores = totalCpuCores / 2;
-    } else {
-        // Odd vCPU count - SMT cannot be distributed evenly, fall back to 1 thread
-        // per core.
-        threads = 1;
-        cores = totalCpuCores;
-    }
-
-    // Pass the total number of CPUs (%1) as the first argument!
-    args << u"-smp"_s << u"cpus=%1,cores=%2,threads=%3,sockets=%4"_s.arg(totalCpuCores).arg(cores).arg(threads).arg(sockets);
+    // One socket with a core per vCPU and no SMT: Windows editions limit the
+    // sockets, not the cores, and without pinning, threads of a core would
+    // only mislead the guest's scheduler. Spelled out, since machine types
+    // before 6.2 fill in sockets first.
+    const int cpus = config.cpuCoreCount();
+    args << u"-smp"_s << u"cpus=%1,sockets=1,cores=%1,threads=1"_s.arg(cpus);
 
     if (config.useKvm())
         args << u"-global"_s << u"kvm-pit.lost_tick_policy=discard"_s;
