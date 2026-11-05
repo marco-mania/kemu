@@ -3788,17 +3788,31 @@ void MainWindow::onUsbActionTriggered()
             return;
         }
 
+        // QEMU writes the reason to stderr before it answers, such as libusb's
+        // "requires write access" or a speed the controller lacks.
+        const VmRuntimeInfo *runtimeBefore = m_runtimeManager->runtime(vmName);
+        const QByteArray stderrBefore = runtimeBefore ? runtimeBefore->stderrTail : QByteArray();
+
         const QMPResult r = entry->qmpClient->attachUsbDevice(busNum, devAddr, qemuId);
         if (r.success) {
             entry->attachedUsb.insert(busKey, qemuId);
         } else {
             action->setChecked(false);
-            KMessageBox::error(this,
-                               i18n("Could not attach USB device.\n\n%1\n\n"
-                                    "Make sure QEMU was started with a USB controller "
-                                    "and has permission to access /dev/bus/usb/.",
-                                    r.errorMessage),
-                               i18n("USB Passthrough"));
+            // Let the pipe deliver what QEMU wrote along with the reply.
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 50);
+            const VmRuntimeInfo *runtimeAfter = m_runtimeManager->runtime(vmName);
+            const QByteArray stderrAfter = runtimeAfter ? runtimeAfter->stderrTail : QByteArray();
+            const QString qemuSays = stderrAfter.startsWith(stderrBefore) ? QString::fromLocal8Bit(stderrAfter.mid(stderrBefore.size())).trimmed() : QString();
+
+            const QString text = i18n(
+                "Could not attach USB device.\n\n%1\n\n"
+                "Make sure QEMU was started with a USB controller "
+                "and has permission to access /dev/bus/usb/.",
+                r.errorMessage);
+            if (qemuSays.isEmpty())
+                KMessageBox::error(this, text, i18n("USB Passthrough"));
+            else
+                KMessageBox::detailedError(this, text, qemuSays, i18n("USB Passthrough"));
         }
     } else {
         // Detach
