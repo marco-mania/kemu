@@ -720,6 +720,13 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     auto *identityLayout = new QFormLayout(identityGroup);
     identityLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
+    // On top of all fields it is about: -uuid ends up in the SMBIOS as well.
+    auto *identityHint = createInlineMessage(KMessageWidget::Information);
+    identityHint->setText(i18n(
+        "These values define the guest's hardware identity; modifying them on an existing setup may trigger Windows reactivation or break software licenses."));
+    identityHint->show();
+    identityLayout->addRow(identityHint);
+
     auto *uuidLayout = new QHBoxLayout();
     uuidEdit = new QLineEdit();
     uuidEdit->setPlaceholderText(m_mode == Mode::Edit ? i18n("Not set (all zeros)") : i18n("Assigned when the VM is created"));
@@ -753,13 +760,6 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         identityLayout->addRow(label, edit);
         m_smbiosEdits.append({member, edit});
     }
-
-    auto *identityHint =
-        new QLabel(i18n("The guest sees these values as its hardware identity. Changing them on an installed system can affect software licensing and "
-                        "Windows activation."));
-    identityHint->setWordWrap(true);
-    identityHint->setStyleSheet(infoStyle(KColorScheme::InactiveText));
-    identityLayout->addRow(identityHint);
 
     advMainLayout->addWidget(identityGroup);
     advMainLayout->addStretch();
