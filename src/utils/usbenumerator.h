@@ -28,4 +28,10 @@ using namespace Qt::StringLiterals;
 namespace UsbEnumerator
 {
 QList<UsbDeviceInfo> enumerate();
+
+// The node usb-host opens, such as /dev/bus/usb/003/025.
+QString devicePath(int busNum, int devAddr);
+// 0 if this process may open the node for reading and writing, the errno
+// otherwise. QEMU runs with the same rights, in the same sandbox.
+int accessError(int busNum, int devAddr);
 }

@@ -5,6 +5,9 @@
 #include "usbenumerator.h"
 #include <libudev.h>
 
+#include <cerrno>
+#include <unistd.h>
+
 QString UsbDeviceInfo::displayName() const
 {
     if (!manufacturer.isEmpty() && !name.contains(manufacturer))
@@ -84,4 +87,16 @@ QList<UsbDeviceInfo> UsbEnumerator::enumerate()
     });
 
     return devices;
+}
+
+QString UsbEnumerator::devicePath(int busNum, int devAddr)
+{
+    return u"/dev/bus/usb/%1/%2"_s.arg(busNum, 3, 10, QLatin1Char('0')).arg(devAddr, 3, 10, QLatin1Char('0'));
+}
+
+int UsbEnumerator::accessError(int busNum, int devAddr)
+{
+    // access() honours the ACLs logind sets, and checks the real IDs, as
+    // QEMU's open() later will.
+    return ::access(devicePath(busNum, devAddr).toLocal8Bit().constData(), R_OK | W_OK) == 0 ? 0 : errno;
 }

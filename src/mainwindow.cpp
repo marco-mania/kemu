@@ -72,6 +72,7 @@ extern "C" {
 #include <unistd.h>
 }
 
+#include <cerrno>
 #include <utility>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -3767,7 +3768,26 @@ void MainWindow::onUsbActionTriggered()
         return;
 
     if (action->isChecked()) {
-        // Attach
+        // Attach. What KEMU may not open, QEMU may not either: say which node
+        // and why, instead of QEMU's bare "failed to open".
+        const QString node = UsbEnumerator::devicePath(busNum, devAddr);
+        if (const int error = UsbEnumerator::accessError(busNum, devAddr)) {
+            action->setChecked(false);
+            QString text;
+            if (error == ENOENT)
+                text = i18n("Could not attach USB device: %1 does not exist. The device may have been unplugged or reconnected under a new address.", node);
+            else if (error == EACCES || error == EPERM)
+                text = i18n(
+                    "Could not attach USB device: you may not open %1 for reading and writing, and so QEMU may not either.\n\n"
+                    "The udev rule in the README grants this to the kvm group. Check that the rule covers this device and that you are in the group; "
+                    "a new group membership only takes effect after logging in again.",
+                    node);
+            else
+                text = i18n("Could not attach USB device: %1 cannot be opened (%2).", node, QString::fromLocal8Bit(strerror(error)));
+            KMessageBox::error(this, text, i18n("USB Passthrough"));
+            return;
+        }
+
         const QMPResult r = entry->qmpClient->attachUsbDevice(busNum, devAddr, qemuId);
         if (r.success) {
             entry->attachedUsb.insert(busKey, qemuId);
@@ -5819,11 +5839,19 @@ void MainWindow::populateUsbMenuFor(const QString &vmName, QMenu *target)
         return;
     }
 
+    target->setToolTipsVisible(true);
     for (const auto &dev : devices) {
-        const QString label = QStringLiteral("%1  [%2]").arg(dev.displayName(), dev.idString());
+        QString label = QStringLiteral("%1  [%2]").arg(dev.displayName(), dev.idString());
+        const bool attached = entry->attachedUsb.contains(dev.busKey());
+        // Attaching would fail; a click still explains why.
+        const bool noAccess = !attached && UsbEnumerator::accessError(dev.busNum, dev.devAddr) != 0;
+        if (noAccess)
+            label = i18nc("@item:inmenu USB device KEMU may not open", "%1 (no access)", label);
         QAction *action = target->addAction(label);
         action->setCheckable(true);
-        action->setChecked(entry->attachedUsb.contains(dev.busKey()));
+        action->setChecked(attached);
+        if (noAccess)
+            action->setToolTip(i18n("No read and write access to %1", UsbEnumerator::devicePath(dev.busNum, dev.devAddr)));
         action->setData(QVariantList{dev.busNum, dev.devAddr, dev.busKey(), dev.qemuId(), vmName}); // carry vmName
         connect(action, &QAction::triggered, this, &MainWindow::onUsbActionTriggered);
     }
