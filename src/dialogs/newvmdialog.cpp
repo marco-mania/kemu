@@ -486,6 +486,9 @@ void NewVmDialog::openCustomiseDialog()
     if (preset.uuid().isNull())
         preset.regenerateUuid(m_vmUuids.values());
     editor.setConfig(preset);
+    // As the disk size field here: the template's minimum, not the project's.
+    if (m_imageDatabase)
+        editor.setMinimumSystemDiskGb(m_imageDatabase->minDiskGbFor(selectedTemplateId(), selectedVersion()));
 
     if (editor.exec() != QDialog::Accepted)
         return;

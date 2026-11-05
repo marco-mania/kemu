@@ -1204,6 +1204,11 @@ void EditVmDialog::showSetting(Setting setting, int diskIndex)
     field->setFocus(Qt::OtherFocusReason);
 }
 
+void EditVmDialog::setMinimumSystemDiskGb(int sizeGb)
+{
+    m_minSystemDiskGb = sizeGb;
+}
+
 void EditVmDialog::setReadOnly(bool readOnly, bool frozen)
 {
     m_readOnly = readOnly;
@@ -2169,7 +2174,7 @@ void EditVmDialog::editSystemDisk()
         m_openDiskDialog = &dlg;
         m_openDiskPath = diskPath;
     } else if (m_mode == Mode::PreCreate) {
-        dlg.setNewDiskSize(m_newSystemDiskGb, KEMUConst::DefaultMinDiskSizeGB);
+        dlg.setNewDiskSize(m_newSystemDiskGb, m_minSystemDiskGb);
     }
     const auto closed = qScopeGuard([this] {
         m_openDiskDialog = nullptr;
@@ -2411,7 +2416,7 @@ void EditVmDialog::resetToFactoryDefaults()
     ramSpin->setValue(GlobalDefaults.ramMb);
     cpuSpin->setValue(GlobalDefaults.cpuCoreCount);
     if (m_mode != Mode::Edit)
-        m_newSystemDiskGb = GlobalDefaults.diskSizeGb;
+        m_newSystemDiskGb = qMax(GlobalDefaults.diskSizeGb, m_minSystemDiskGb);
 
     setCombo(cpuCombo, GlobalDefaults.cpuModel);
     kvmCheck->setChecked(GlobalDefaults.useKvm);

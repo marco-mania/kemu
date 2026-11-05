@@ -211,7 +211,7 @@ void DiskDialog::setEncryption(const Encryption &encryption)
     }
 
     m_passwordStored = encryption.encrypted && encryption.passwordStored;
-    m_encryptionLabel->setText(!encryption.encrypted ? i18n("Not encrypted")
+    m_encryptionLabel->setText(!encryption.encrypted  ? i18n("Not encrypted")
                                    : m_passwordStored ? i18n("Encrypted, password in KWallet")
                                                       : i18n("Encrypted, password asked at start"));
 
@@ -334,7 +334,7 @@ void DiskDialog::updateInterfaceHint()
         else
             hint = i18n("PC (i440FX) chipset: disk attached via PIIX3 (IDE).");
     } else if (diskInterface() == VMSpecs::DiskInterface::Virtio && m_systemOsFamily == VMSpecs::OsFamily::Windows) {
-        hint = i18n("Windows needs the VirtIO driver ISO during installation, or its installer finds no disk.");
+        hint = i18n("Windows requires the VirtIO driver ISO during setup. Otherwise, the installer won't detect any drives.");
         type = KMessageWidget::Warning;
     }
     m_interfaceHint->setMessageType(type);

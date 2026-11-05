@@ -67,6 +67,8 @@ public:
     VMConfig getResult() const;
 
     void setConfig(const VMConfig &config);
+    // The smallest size for a new system disk, such as the template asks for.
+    void setMinimumSystemDiskGb(int sizeGb);
 
     // Show the configuration without allowing changes. Call after setConfig().
     // frozen: linked clones depend on the VM rather than it running.
@@ -241,6 +243,7 @@ private:
 
     int m_systemDiskGb = 0; // current size, rounded up; 0 if unknown
     int m_newSystemDiskGb = GlobalDefaults.diskSizeGb; // to create; the configured size otherwise
+    int m_minSystemDiskGb = KEMUConst::DefaultMinDiskSizeGB; // for m_newSystemDiskGb
     QPointer<DiskDialog> m_openDiskDialog; // properties of m_openDiskPath
     QString m_openDiskPath;
     QComboBox *guestShutdownActionCombo = nullptr;
