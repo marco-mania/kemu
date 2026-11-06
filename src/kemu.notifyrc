@@ -51,3 +51,13 @@ Action=Popup
 Name=Host shutting down
 Comment=A virtual machine has shut down and the host follows
 Action=Popup
+
+[Event/taskFinished]
+Name=Task finished
+Comment=An export, import or clone has finished
+Action=Popup
+
+[Event/taskFailed]
+Name=Task failed
+Comment=An export, import, clone or making a clone independent has failed
+Action=Popup

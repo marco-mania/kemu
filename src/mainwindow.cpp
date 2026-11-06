@@ -2905,10 +2905,13 @@ void MainWindow::exportVM()
             if (exportJob->error() == KJob::KilledJobError) {
                 statusBar()->showMessage(i18n("Operation cancelled."));
             } else if (exportJob->error()) {
-                statusBar()->showMessage(i18n("Export of VM '%1' failed: %2", vmName, exportJob->errorText()));
-                KMessageBox::error(this, i18n("Failed to export VM '%1':\n%2", vmName, exportJob->errorText()), i18n("Export Failed"));
+                const QString message = i18n("Export of VM '%1' failed: %2", vmName, exportJob->errorText());
+                statusBar()->showMessage(message);
+                notifyEvent(u"taskFailed"_s, vmName, message, true);
             } else {
-                statusBar()->showMessage(i18n("VM '%1' exported successfully.", vmName));
+                const QString message = i18n("VM '%1' exported successfully.", vmName);
+                statusBar()->showMessage(message);
+                notifyEvent(u"taskFinished"_s, vmName, message);
             }
 
             if (currentConfig.name() == vmName) {
@@ -2989,8 +2992,9 @@ void MainWindow::importFromPath(const QString &filePath)
         if (importJob->error() == KJob::KilledJobError) {
             statusBar()->showMessage(i18n("Operation cancelled."));
         } else if (importJob->error()) {
-            statusBar()->showMessage(i18n("Import failed: %1", importJob->errorText()));
-            KMessageBox::error(this, i18n("Failed to import VM:\n%1", importJob->errorText()), i18n("Import Failed"));
+            const QString message = i18n("Import failed: %1", importJob->errorText());
+            statusBar()->showMessage(message);
+            notifyEvent(u"taskFailed"_s, QString(), message, true);
 
         } else {
             const QString vmDir = getVmDir(importJob->vmName()).absolutePath();
@@ -3018,7 +3022,9 @@ void MainWindow::importFromPath(const QString &filePath)
             // of the archive because it contains host paths.
             saveVmConfig(vmDir, config);
 
-            statusBar()->showMessage(i18n("VM '%1' imported successfully.", importJob->vmName()));
+            const QString message = i18n("VM '%1' imported successfully.", importJob->vmName());
+            statusBar()->showMessage(message);
+            notifyEvent(u"taskFinished"_s, importJob->vmName(), message);
             loadVmList();
             selectVmByName(importJob->vmName());
 
@@ -3678,7 +3684,7 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
         // path surfaces the real reason.
         if (isSaving)
             return;
-        KMessageBox::error(this, i18n("The virtual machine '%1' has crashed.", vmName), i18n("VM Crashed"));
+        notifyEvent(u"vmCrashed"_s, vmName, i18n("The virtual machine '%1' has crashed.", vmName), true);
         return;
     }
 
@@ -3853,8 +3859,9 @@ void MainWindow::importOVA(const QString &filePath)
         activeImports.removeOne(importJob);
 
         if (importJob->error()) {
-            statusBar()->showMessage(i18n("OVA import failed: %1", importJob->errorText()));
-            KMessageBox::error(this, i18n("Failed to import OVA:\n%1", importJob->errorText()), i18n("Import Failed"));
+            const QString message = i18n("OVA import failed: %1", importJob->errorText());
+            statusBar()->showMessage(message);
+            notifyEvent(u"taskFailed"_s, QString(), message, true);
 
         } else {
             VMConfig config = importJob->importedConfig();
@@ -3868,7 +3875,9 @@ void MainWindow::importOVA(const QString &filePath)
             if (config.useUefi())
                 requireUefiFirmware(vmPath, config, this);
 
-            statusBar()->showMessage(i18n("VM '%1' imported from OVA.", config.name()));
+            const QString message = i18n("VM '%1' imported from OVA.", config.name());
+            statusBar()->showMessage(message);
+            notifyEvent(u"taskFinished"_s, config.name(), message);
             loadVmList();
 
             selectVmByName(config.name());
@@ -3915,10 +3924,13 @@ void MainWindow::exportOVA(const QString &filePath)
         if (exportJob->error() == KJob::KilledJobError) {
             statusBar()->showMessage(i18n("Operation cancelled."));
         } else if (exportJob->error()) {
-            statusBar()->showMessage(i18n("OVA export of VM '%1' failed: %2", vmName, exportJob->errorText()));
-            KMessageBox::error(this, i18n("Failed to export VM '%1' as OVA:\n%2", vmName, exportJob->errorText()), i18n("Export Failed"));
+            const QString message = i18n("OVA export of VM '%1' failed: %2", vmName, exportJob->errorText());
+            statusBar()->showMessage(message);
+            notifyEvent(u"taskFailed"_s, vmName, message, true);
         } else {
-            statusBar()->showMessage(i18n("VM '%1' exported as OVA.", vmName));
+            const QString message = i18n("VM '%1' exported as OVA.", vmName);
+            statusBar()->showMessage(message);
+            notifyEvent(u"taskFinished"_s, vmName, message);
         }
 
         if (currentConfig.name() == vmName) {
@@ -4497,8 +4509,11 @@ void MainWindow::showNewVmDialog(const QString &isoPath)
                     return;
 
                 if (dlJob->error()) {
-                    statusBar()->showMessage(i18n("Image download for '%1' failed: %2", vmName, dlJob->errorText()));
-                    KMessageBox::error(this, i18n("Image download failed:\n%1", dlJob->errorText()));
+                    const QString message = i18n("Image download for '%1' failed: %2", vmName, dlJob->errorText());
+                    statusBar()->showMessage(message);
+                    // A failure, not a cancellation: the abort says nothing more.
+                    m_failedDeployments.insert(vmName);
+                    notifyEvent(u"deploymentFailed"_s, vmName, message, true);
                     abortDeployment(vmName, false);
                 } else {
                     QTimer::singleShot(0, this, [this, vmName]() {
@@ -4922,9 +4937,11 @@ void MainWindow::startClone(const QString &srcName,
         veModel->setVmState(srcName, VmEntry::State::Stopped);
 
         if (cloneJob->error()) {
-            statusBar()->showMessage(i18n("Cloning of VM '%1' failed: %2", srcName, cloneJob->errorText()));
+            const QString message = i18n("Cloning of VM '%1' failed: %2", srcName, cloneJob->errorText());
+            statusBar()->showMessage(message);
+            // A wrong password asks for the right one; anything else is news.
             if (!handleWrongDiskPassword(srcName, cloneJob->errorText().toUtf8()))
-                KMessageBox::error(this, i18n("Failed to clone VM '%1':\n%2", srcName, cloneJob->errorText()), i18n("Clone Failed"));
+                notifyEvent(u"taskFailed"_s, srcName, message, true);
         } else {
             // collect used macs to exclude random generation matches
             const QStringList usedMacs = veModel->usedMacAddresses();
@@ -4988,8 +5005,10 @@ void MainWindow::startClone(const QString &srcName,
             saveVmConfig(dstPath, cloneConfig);
             loadVmList();
             selectVmByName(cloneName);
-            statusBar()->showMessage(cloneJob->isLinked() ? i18n("Linked clone '%2' of VM '%1' created.", srcName, cloneName)
-                                                          : i18n("VM '%1' cloned as '%2'.", srcName, cloneName));
+            const QString message = cloneJob->isLinked() ? i18n("Linked clone '%2' of VM '%1' created.", srcName, cloneName)
+                                                         : i18n("VM '%1' cloned as '%2'.", srcName, cloneName);
+            statusBar()->showMessage(message);
+            notifyEvent(u"taskFinished"_s, cloneName, message);
         }
 
         if (currentConfig.name() == srcName)
@@ -5071,9 +5090,7 @@ void MainWindow::makeIndependent()
         } else if (flattenJob->error()) {
             // Disks done so far stand alone already; the link stays until all are.
             statusBar()->showMessage(i18n("Making VM '%1' independent failed.", name));
-            KMessageBox::error(this,
-                               i18n("Failed to make VM '%1' independent:\n%2", name, flattenJob->errorText()),
-                               i18nc("@title:window", "Make Independent"));
+            notifyEvent(u"taskFailed"_s, name, i18n("Failed to make VM '%1' independent:\n%2", name, flattenJob->errorText()), true);
         } else {
             const QString vmPath = getVmDir(name).absolutePath();
             VMConfig config = loadVmConfig(vmPath);
@@ -5811,7 +5828,6 @@ void MainWindow::deployCloudImage(const QString &vmName)
             statusBar()->showMessage(i18n("Deployment of '%1' failed.", name));
             m_failedDeployments.insert(name);
             notifyEvent(u"deploymentFailed"_s, name, i18n("The deployment failed: %1", errorText), true);
-            KMessageBox::error(this, i18n("Cloud image deployment failed:\n%1", errorText));
             abortDeployment(name, /*deleteVm=*/true);
             return;
         }
