@@ -16,6 +16,22 @@
 
 namespace
 {
+// The state the list shows by color and icon, in words. Transient states
+// already speak for themselves in the subtitle.
+QString accessibleState(const VmEntry &vm)
+{
+    switch (vm.state) {
+    case VmEntry::State::Running:
+        return i18nc("@info:accessible state of a VM", "running");
+    case VmEntry::State::Saved:
+        return i18nc("@info:accessible state of a VM", "saved state");
+    case VmEntry::State::Stopped:
+        return i18nc("@info:accessible state of a VM", "stopped");
+    default:
+        return {};
+    }
+}
+
 QString formatUptime(const QDateTime &since)
 {
     if (!since.isValid())
@@ -137,6 +153,9 @@ QVariant VirtualEnvironmentModel::data(const QModelIndex &index, int role) const
             return QIcon::fromTheme(u"folder"_s);
         case ItemTypeRole:
             return Folder;
+        case Qt::AccessibleTextRole:
+            // A screen reader cannot tell it from a VM by the icon.
+            return i18nc("@info:accessible", "%1, folder", folder.name);
         default:
             return {};
         }
@@ -227,6 +246,17 @@ QVariant VirtualEnvironmentModel::data(const QModelIndex &index, int role) const
 
             return lines.join(u'\n');
         }
+        case Qt::AccessibleTextRole: {
+            // The name alone says nothing about the state the delegate paints.
+            const QString state = accessibleState(vm);
+            const QString subtitle = data(index, SubtitleRole).toString();
+            if (!state.isEmpty())
+                return i18nc("@info:accessible VM name, then its state", "%1, %2", vm.name, state);
+            return subtitle.isEmpty() ? vm.name : i18nc("@info:accessible VM name, then its state", "%1, %2", vm.name, subtitle);
+        }
+        case Qt::AccessibleDescriptionRole:
+            // Uptime, address, saved time or links; transient states are in the text.
+            return accessibleState(vm).isEmpty() ? QString() : data(index, SubtitleRole).toString();
         case VmStateRole:
             return static_cast<int>(vm.state);
         case MediaCdRole:
