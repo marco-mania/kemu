@@ -180,4 +180,9 @@ QProcessEnvironment environmentWithoutDbusAutolaunch();
 // Appends to a rolling tail, discarding the oldest bytes beyond maxBytes.
 void appendTail(QByteArray &tail, const QByteArray &data, int maxBytes);
 
+// Colors a label's text through its palette rather than a style sheet,
+// which would override the style and the user's fonts. Text as well as
+// WindowText: on a Base background, labels draw with it.
+void setTextColor(QWidget *widget, const QColor &color);
+
 } // namespace Utils

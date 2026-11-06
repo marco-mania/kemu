@@ -15,8 +15,10 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QPalette>
 #include <QRandomGenerator>
 #include <QStandardPaths>
+#include <QWidget>
 
 #include "kemu_debug.h"
 
@@ -366,6 +368,14 @@ void appendTail(QByteArray &tail, const QByteArray &data, int maxBytes)
     tail.append(data);
     if (tail.size() > maxBytes)
         tail.remove(0, tail.size() - maxBytes);
+}
+
+void setTextColor(QWidget *widget, const QColor &color)
+{
+    QPalette palette = widget->palette();
+    palette.setColor(QPalette::WindowText, color);
+    palette.setColor(QPalette::Text, color);
+    widget->setPalette(palette);
 }
 
 } // namespace Utils

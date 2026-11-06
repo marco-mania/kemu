@@ -6,6 +6,8 @@
 
 #include "statuslist.h"
 
+#include "utils/utils.h"
+
 #include <algorithm>
 #include <functional>
 #include <memory>
@@ -88,22 +90,13 @@ QColor schemeColor(KColorScheme::ForegroundRole role)
     return KColorScheme(QPalette::Active, KColorScheme::View).foreground(role).color();
 }
 
-// Text as well: on the Base background, labels draw with it.
-void setTextColor(QWidget *widget, const QColor &color)
-{
-    QPalette palette = widget->palette();
-    palette.setColor(QPalette::WindowText, color);
-    palette.setColor(QPalette::Text, color);
-    widget->setPalette(palette);
-}
-
 QLabel *wrappingLabel(const QString &text, const QColor &color)
 {
     auto *label = new QLabel(text);
     label->setWordWrap(true);
     label->setTextFormat(Qt::PlainText);
     label->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    setTextColor(label, color);
+    Utils::setTextColor(label, color);
     return label;
 }
 
@@ -121,7 +114,7 @@ public:
         const int vertical = fontMetrics().height() / 8;
         const int horizontal = fontMetrics().averageCharWidth();
         setContentsMargins(horizontal, vertical, horizontal, vertical);
-        setTextColor(this, schemeColor(statusForeground(status)));
+        Utils::setTextColor(this, schemeColor(statusForeground(status)));
     }
 
 protected:
@@ -393,7 +386,7 @@ void StatusList::appendWidget(const Entry &entry, bool separator)
         QFont font = label->font();
         font.setBold(true);
         label->setFont(font);
-        setTextColor(label, schemeColor(KColorScheme::InactiveText));
+        Utils::setTextColor(label, schemeColor(KColorScheme::InactiveText));
         const int margin = style()->pixelMetric(QStyle::PM_LayoutLeftMargin);
         label->setContentsMargins(margin, fontMetrics().height() / 2, margin, 0);
         widget = label;

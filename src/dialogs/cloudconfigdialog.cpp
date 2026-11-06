@@ -15,6 +15,7 @@
 #include <QCompleter>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include <QFontDatabase>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
@@ -63,7 +64,8 @@ CloudConfigDialog::CloudConfigDialog(QWidget *parent)
 
     const KColorScheme scheme(QPalette::Active, KColorScheme::View);
     passwordMismatchLabel = new QLabel();
-    passwordMismatchLabel->setStyleSheet(u"color: %1; font-size: 11px;"_s.arg(scheme.foreground(KColorScheme::NegativeText).color().name()));
+    Utils::setTextColor(passwordMismatchLabel, scheme.foreground(KColorScheme::NegativeText).color());
+    passwordMismatchLabel->setFont(QFontDatabase::systemFont(QFontDatabase::SmallestReadableFont));
     passwordMismatchLabel->setFixedHeight(passwordMismatchLabel->fontMetrics().height() + 2);
     form->addRow({}, passwordMismatchLabel);
 

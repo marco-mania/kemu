@@ -15,6 +15,7 @@
 #include <QStyle>
 #include <QTimer>
 
+#include <KColorScheme>
 #include <KMessageWidget>
 
 #include "const.h"
@@ -1124,7 +1125,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     form->addRow(i18n("Prefix length:"), prefixSpin);
 
     auto *subnetInfoLabel = new QLabel;
-    subnetInfoLabel->setStyleSheet(u"color: palette(mid);"_s);
+    Utils::setTextColor(subnetInfoLabel, KColorScheme(QPalette::Active, KColorScheme::Window).foreground(KColorScheme::InactiveText).color());
     form->addRow(u""_s, subnetInfoLabel);
 
     auto updateSubnetLabel = [subnetInfoLabel, gatewayEdit, prefixSpin]() {
@@ -1180,7 +1181,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
 
     auto *domainHint = new QLabel;
     domainHint->setWordWrap(true);
-    domainHint->setStyleSheet(u"color: palette(mid);"_s);
+    Utils::setTextColor(domainHint, KColorScheme(QPalette::Active, KColorScheme::Window).foreground(KColorScheme::InactiveText).color());
     form->addRow(u""_s, domainHint);
 
     auto updateDhcpWidgets = [=](bool checked) {

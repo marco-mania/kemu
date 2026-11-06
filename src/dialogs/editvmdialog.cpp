@@ -21,6 +21,7 @@
 #include <KMessageBox>
 #include <KMessageWidget>
 
+#include <QFontDatabase>
 #include <QScopeGuard>
 #include <QStyle>
 
@@ -146,10 +147,6 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     nameEdit->setValidator(new QRegularExpressionValidator(QRegularExpression(u"^[a-zA-Z0-9_\\-. ]*$"_s), this));
 
     topFormLayout->addRow(i18n("Name:"), nameEdit);
-
-    auto infoStyle = [&](KColorScheme::ForegroundRole role) {
-        return u"QLabel { color: %1; font-size: 11px; }"_s.arg(scheme.foreground(role).color().name());
-    };
 
     nameWarningMessage = createInlineMessage(KMessageWidget::Error);
     topFormLayout->addRow({}, nameWarningMessage);
@@ -481,7 +478,8 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     graphicsLayout->addRow({}, accel3dCheck);
 
     gpuHintLabel = new QLabel();
-    gpuHintLabel->setStyleSheet(infoStyle(KColorScheme::NeutralText));
+    Utils::setTextColor(gpuHintLabel, scheme.foreground(KColorScheme::NeutralText).color());
+    gpuHintLabel->setFont(QFontDatabase::systemFont(QFontDatabase::SmallestReadableFont));
     gpuHintLabel->setVisible(false);
     graphicsLayout->addRow({}, gpuHintLabel);
 

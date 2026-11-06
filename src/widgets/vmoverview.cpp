@@ -19,20 +19,13 @@
 
 #include <KColorScheme>
 
+#include "utils/utils.h"
 #include "widgets/spectile.h"
 
 using namespace Qt::StringLiterals;
 
 namespace
 {
-void setTextColor(QWidget *widget, const QColor &color)
-{
-    QPalette palette = widget->palette();
-    palette.setColor(QPalette::WindowText, color);
-    palette.setColor(QPalette::Text, color);
-    widget->setPalette(palette);
-}
-
 QColor toneColor(VmOverview::Tone tone)
 {
     const KColorScheme scheme(QPalette::Active, KColorScheme::Window);
@@ -74,7 +67,7 @@ public:
     void setTone(VmOverview::Tone tone)
     {
         m_tone = tone;
-        setTextColor(this, toneColor(tone));
+        Utils::setTextColor(this, toneColor(tone));
         update();
     }
 
@@ -335,6 +328,6 @@ void VmOverview::applyColors()
     // Colors are set on the labels, so they follow a new color scheme here.
     const QColor inactive = toneColor(Tone::Inactive);
     for (QLabel *label : {m_placeholderText, m_system, m_statusLinks})
-        setTextColor(label, inactive);
+        Utils::setTextColor(label, inactive);
     m_status->setTone(m_status->tone());
 }

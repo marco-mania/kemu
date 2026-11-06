@@ -6,7 +6,10 @@
 
 #include "takesnapshotdialog.h"
 
+#include "utils/utils.h"
+
 #include <QDialogButtonBox>
+#include <QFontDatabase>
 #include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -41,10 +44,11 @@ TakeSnapshotDialog::TakeSnapshotDialog(const QString &vmName, const QStringList 
     form->addRow(i18n("Name:"), m_nameEdit);
 
     m_nameHintLabel = new QLabel(this);
+    m_nameHintLabel->setFont(QFontDatabase::systemFont(QFontDatabase::SmallestReadableFont));
     {
         const KColorScheme scheme(QPalette::Active, KColorScheme::View);
-        m_hintColor = scheme.foreground(KColorScheme::InactiveText).color().name();
-        m_errorColor = scheme.foreground(KColorScheme::NegativeText).color().name();
+        m_hintColor = scheme.foreground(KColorScheme::InactiveText).color();
+        m_errorColor = scheme.foreground(KColorScheme::NegativeText).color();
     }
     setHint(i18n("Spaces will be replaced by underscores."), false);
     form->addRow({}, m_nameHintLabel);
@@ -122,6 +126,6 @@ void TakeSnapshotDialog::onNameChanged()
 
 void TakeSnapshotDialog::setHint(const QString &text, bool isError)
 {
-    m_nameHintLabel->setStyleSheet(u"color: %1; font-size: 11px;"_s.arg(isError ? m_errorColor : m_hintColor));
+    Utils::setTextColor(m_nameHintLabel, isError ? m_errorColor : m_hintColor);
     m_nameHintLabel->setText(text);
 }

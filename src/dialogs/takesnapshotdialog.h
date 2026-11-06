@@ -7,6 +7,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QColor>
 #include <QString>
 #include <QStringList>
 #include <qdialogbuttonbox.h>
@@ -35,8 +36,8 @@ private:
     void setHint(const QString &text, bool isError);
 
     QStringList m_existingNames;
-    QString m_hintColor;
-    QString m_errorColor;
+    QColor m_hintColor;
+    QColor m_errorColor;
 
     QLineEdit *m_nameEdit = nullptr;
     QTextEdit *m_descriptionEdit = nullptr;
