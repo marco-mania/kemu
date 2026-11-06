@@ -178,6 +178,8 @@ private:
     static constexpr int SystemDiskSelected = -1;
     static constexpr int NoDiskSelected = -2;
     [[nodiscard]] int selectedDiskIndex() const;
+    // The OS family the combo holds, as int; -1 while none is chosen.
+    [[nodiscard]] int osFamilyValue() const;
     void refreshDiskList();
     void updateDiskButtons();
     [[nodiscard]] QString nextFreeDiskFileName() const;

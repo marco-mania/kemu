@@ -177,15 +177,10 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     osFamilyCombo->addItem(i18n("BSD"), static_cast<int>(VMSpecs::OsFamily::BSD));
     osFamilyCombo->addItem(i18n("DOS"), static_cast<int>(VMSpecs::OsFamily::DOS));
     osFamilyCombo->addItem(i18n("Other"), static_cast<int>(VMSpecs::OsFamily::Other));
-    osFamilyCombo->insertItem(0, i18n("-- Please select --"), -1);
-    osFamilyCombo->setCurrentIndex(0);
+    // Shown while nothing is chosen; no item, so it cannot be chosen again.
+    osFamilyCombo->setPlaceholderText(i18nc("@info:placeholder", "Select an OS family"));
+    osFamilyCombo->setCurrentIndex(-1);
     genLayout->addRow(i18n("OS family:"), osFamilyCombo);
-
-    auto *osFamilyModel = qobject_cast<QStandardItemModel *>(osFamilyCombo->model());
-    if (osFamilyModel) {
-        QStandardItem *item = osFamilyModel->item(0);
-        item->setEnabled(false); // Disabled and non-reselectable once selected
-    }
 
     osNameCombo = new QComboBox();
     osNameCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
@@ -1249,13 +1244,11 @@ void EditVmDialog::browseSharedDir()
 
 void EditVmDialog::onOsFamilyChanged(int /*index*/)
 {
-    const int familyVal = osFamilyCombo->currentData().toInt();
+    const int familyVal = osFamilyValue();
 
     if (familyVal == -1) {
-        // Placeholder
+        // No family yet: nothing to choose from.
         osNameCombo->clear();
-        osNameCombo->addItem(i18n("-- Please select --"), {});
-        osNameCombo->setCurrentIndex(0);
         osNameCombo->setEnabled(false);
         osNameLabel->setEnabled(false);
 
@@ -1290,7 +1283,7 @@ void EditVmDialog::onOsNameChanged(int /*index*/)
 void EditVmDialog::onGpuDisplayChanged()
 {
     const auto gpu = static_cast<VMSpecs::GpuType>(gpuCombo->currentData().toInt());
-    const auto osFamily = static_cast<VMSpecs::OsFamily>(osFamilyCombo->currentData().toInt());
+    const auto osFamily = static_cast<VMSpecs::OsFamily>(osFamilyValue());
 
     const bool isVirtio = (gpu == VMSpecs::GpuType::Virtio);
     const bool isWindows = (osFamily == VMSpecs::OsFamily::Windows);
@@ -1417,13 +1410,18 @@ void EditVmDialog::filterOsVariants(VMSpecs::OsFamily osFamily)
     osNameCombo->setCurrentIndex(-1);
 }
 
+int EditVmDialog::osFamilyValue() const
+{
+    return osFamilyCombo->currentIndex() < 0 ? -1 : osFamilyCombo->currentData().toInt();
+}
+
 void EditVmDialog::updateIconForOs()
 {
     QString distroId = osNameCombo->currentData().toString();
     if (distroId.isEmpty())
         distroId = osNameCombo->currentText().trimmed();
 
-    iconSelector->followOs(static_cast<VMSpecs::OsFamily>(osFamilyCombo->currentData().toInt()), distroId);
+    iconSelector->followOs(static_cast<VMSpecs::OsFamily>(osFamilyValue()), distroId);
 }
 
 void EditVmDialog::setExistingVmNames(const QStringList &names)
@@ -1446,7 +1444,7 @@ void EditVmDialog::setImageDatabase(ImageDatabase *db)
 {
     m_imageDatabase = db;
 
-    const int familyVal = osFamilyCombo->currentData().toInt();
+    const int familyVal = osFamilyValue();
     if (familyVal >= 0 && static_cast<VMSpecs::OsFamily>(familyVal) != VMSpecs::OsFamily::Other)
         filterOsVariants(static_cast<VMSpecs::OsFamily>(familyVal));
 }
@@ -1493,7 +1491,7 @@ VMConfig EditVmDialog::getResult() const
     VMConfig c = m_original;
     c.setName(nameEdit->text().trimmed());
     c.setComment(commentEdit->toPlainText());
-    c.setOsFamily(static_cast<VMSpecs::OsFamily>(osFamilyCombo->currentData().toInt()));
+    c.setOsFamily(static_cast<VMSpecs::OsFamily>(osFamilyValue()));
     QString distroId = osNameCombo->currentData().toString();
     if (distroId.isEmpty())
         distroId = osNameCombo->currentText().trimmed();
@@ -1829,8 +1827,8 @@ void EditVmDialog::validateForm()
         valid = false;
     }
 
-    // OS family placeholder?
-    if (osFamilyCombo->currentData().toInt() == -1)
+    // No OS family chosen yet?
+    if (osFamilyValue() == -1)
         valid = false;
 
     // OS variant: accept combo selection OR free text (min. 2 chars)
@@ -2139,7 +2137,7 @@ void EditVmDialog::editSystemDisk()
 {
     const auto machine = static_cast<VMSpecs::MachineType>(machineCombo->currentData().toInt());
     DiskDialog dlg(DiskDialog::Mode::Edit, machine, this);
-    dlg.setSystemDisk(static_cast<VMSpecs::OsFamily>(osFamilyCombo->currentData().toInt()));
+    dlg.setSystemDisk(static_cast<VMSpecs::OsFamily>(osFamilyValue()));
     dlg.setDiskInterface(m_systemDiskInterface);
 
     const QString diskPath = systemDiskPath();
@@ -2361,7 +2359,7 @@ void EditVmDialog::updateToolWarnings()
          tpmCheck->isChecked() && !tools.isAvailable(ExternalTools::Swtpm),
          i18n("swtpm was not found. The virtual machine does not start until it is available."));
 
-    const bool windows = static_cast<VMSpecs::OsFamily>(osFamilyCombo->currentData().toInt()) == VMSpecs::OsFamily::Windows;
+    const bool windows = static_cast<VMSpecs::OsFamily>(osFamilyValue()) == VMSpecs::OsFamily::Windows;
     show(shareToolWarning,
          windows && !sharedPathEdit->text().trimmed().isEmpty() && !tools.isAvailable(ExternalTools::Virtiofsd),
          i18n("virtiofsd was not found. Windows guests need it for shared folders. The virtual machine does not start until it is available."));
