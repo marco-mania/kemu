@@ -117,7 +117,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     : QDialog(parent)
     , m_mode(mode)
 {
-    setWindowTitle(mode == Mode::Edit ? i18n("Edit Virtual Machine") : i18n("Customise Virtual Machine"));
+    setWindowTitle(mode == Mode::Edit ? i18n("Edit Virtual Machine") : i18n("Customize Virtual Machine"));
     resize(640, 560);
 
     KColorScheme scheme(QPalette::Active, KColorScheme::View);

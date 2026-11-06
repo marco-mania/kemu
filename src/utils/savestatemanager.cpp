@@ -132,7 +132,7 @@ void SaveStateManager::save(QMPClient *qmp, const QString &vmDir, const QString 
             // Publishing step. QEMU may still hold the fd; renaming by inode
             // is safe on POSIX and any trailing write lands in the same file.
             if (!QFile::rename(path, finalPath)) {
-                finalize(false, i18n("Could not finalise the savestate file"));
+                finalize(false, i18n("Could not finalize the savestate file"));
                 return;
             }
             finalize(true, {});

@@ -273,7 +273,7 @@ void NewVmDialog::buildUi()
     buttonBox->button(QDialogButtonBox::Ok)->setText(i18n("Create"));
     buttonBox->button(QDialogButtonBox::Ok)->setIcon(QIcon::fromTheme(u"list-add"_s));
 
-    customiseButton = buttonBox->addButton(i18n("Customise…"), QDialogButtonBox::ActionRole);
+    customiseButton = buttonBox->addButton(i18n("Customize…"), QDialogButtonBox::ActionRole);
     customiseButton->setIcon(QIcon::fromTheme(u"configure"_s));
     customiseButton->setToolTip(i18n("Review and change the full hardware configuration before the machine is created."));
 
@@ -523,8 +523,8 @@ void NewVmDialog::openCustomiseDialog()
         cpuSlider->setValue(cpuSpin->value());
     }
 
-    customiseButton->setText(i18n("Customised"));
-    customiseButton->setToolTip(i18n("Hardware settings have been customised. Changing the operating system discards them."));
+    customiseButton->setText(i18n("Customized"));
+    customiseButton->setToolTip(i18n("Hardware settings have been customized. Changing the operating system discards them."));
 
     iconSelector->loadFrom(m_customConfig, editor.iconManuallySet());
 
@@ -834,7 +834,7 @@ void NewVmDialog::clearCustomisation()
     m_hasCustomConfig = false;
     m_customConfig = {};
 
-    customiseButton->setText(i18n("Customise…"));
+    customiseButton->setText(i18n("Customize…"));
     customiseButton->setToolTip(i18n("Review and change the full hardware configuration before the machine is created."));
 }
 

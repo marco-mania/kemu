@@ -454,7 +454,7 @@ QWidget *SettingsDialog::createCapabilitiesTab()
 
     auto *headerRow = new QHBoxLayout;
     auto *intro = new QLabel(i18n("Shows which of KEMU's features the QEMU in use provides. "
-                                  "The VM settings grey out what is missing."));
+                                  "The VM settings gray out what is missing."));
     intro->setWordWrap(true);
     headerRow->addWidget(intro, 1);
     auto *checkButton = new QPushButton(QIcon::fromTheme(u"view-refresh"_s), i18n("Check Again"));
@@ -711,7 +711,7 @@ void SettingsDialog::setupAutomatedDeployPage()
     auto *layout = new QVBoxLayout(page);
 
     // --- Behaviour ---
-    auto *behaviourGroup = new QGroupBox(i18n("Behaviour"));
+    auto *behaviourGroup = new QGroupBox(i18n("Behavior"));
     auto *behaviourLayout = new QFormLayout(behaviourGroup);
 
     auto *archInfoLabel = new QLabel(i18n("Detected host architecture: <b>%1</b>", QSysInfo::currentCpuArchitecture()));
