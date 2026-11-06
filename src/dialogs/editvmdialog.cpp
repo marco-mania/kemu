@@ -17,7 +17,9 @@
 #include "utils/tpmstate.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
+#include "widgets/contextualhelp.h"
 
+#include <KContextualHelpButton>
 #include <KMessageBox>
 #include <KMessageWidget>
 
@@ -61,6 +63,8 @@ void makeReadOnly(QWidget *widget)
         view->setEditTriggers(QAbstractItemView::NoEditTriggers);
         return;
     }
+    if (qobject_cast<KContextualHelpButton *>(widget))
+        return; // explains, changes nothing
     if (qobject_cast<QAbstractButton *>(widget) || qobject_cast<QAbstractSlider *>(widget)) {
         widget->setEnabled(false);
         return;
@@ -275,11 +279,12 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 
     kvmCheck = new QCheckBox(i18n("Enable KVM hardware acceleration"));
     kvmCheck->setChecked(true);
-    kvmCheck->setToolTip(
-        i18n("Uses KVM for near-native performance. Disable for pure "
-             "software emulation (TCG), which is much slower but does "
-             "not require KVM and supports all CPU models."));
-    sysLayout->addRow(i18n("Acceleration:"), kvmCheck);
+    ContextualHelp::addRow(sysLayout,
+                           i18n("Acceleration:"),
+                           kvmCheck,
+                           i18n("Uses KVM for near-native performance. Disable for pure "
+                                "software emulation (TCG), which is much slower but does "
+                                "not require KVM and supports all CPU models."));
 
     // RAM
     auto *ramContainer = new QVBoxLayout();
@@ -299,19 +304,17 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 
     balloonCheck = new QCheckBox(i18n("VirtIO memory ballooning"));
     balloonCheck->setChecked(true);
-    balloonCheck->setToolTip(
-        i18n("Allows the host system to dynamically adjust the VM's memory based "
-             "on its actual usage.\nEnable this to efficiently share memory "
-             "(RAM) among multiple virtual machines."));
     preallocCheck = new QCheckBox(i18n("Pre-allocate memory"));
-    preallocCheck->setToolTip(
-        i18n("Allocates the full amount of configured memory (RAM) immediately "
-             "when the VM starts.\nThis improves guest performance but strictly "
-             "reserves the memory on the host."));
 
     ramContainer->addLayout(ramSliderLayout);
-    ramContainer->addWidget(balloonCheck);
-    ramContainer->addWidget(preallocCheck);
+    ramContainer->addLayout(ContextualHelp::beside(balloonCheck,
+                                                   i18n("Allows the host system to dynamically adjust the VM's memory based "
+                                                        "on its actual usage.\nEnable this to efficiently share memory "
+                                                        "(RAM) among multiple virtual machines.")));
+    ramContainer->addLayout(ContextualHelp::beside(preallocCheck,
+                                                   i18n("Allocates the full amount of configured memory (RAM) immediately "
+                                                        "when the VM starts.\nThis improves guest performance but strictly "
+                                                        "reserves the memory on the host.")));
     sysLayout->addRow(i18n("Memory:"), ramContainer);
 
     addGroupGap();
@@ -496,11 +499,12 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         if (VMConfig::isDisplayTypeAvailable(type))
             displayCombo->addItem(VMConfig::toUIString(type), static_cast<int>(type));
     }
-    displayCombo->setToolTip(
-        i18n("The integrated viewer is recommended for everyday use. SDL opens "
-             "a native QEMU window outside KEMU - useful for the standalone qemu.sh "
-             "script, or if your QEMU build lacks dbus-display support."));
-    displayLayout->addRow(i18n("Viewer:"), displayCombo);
+    ContextualHelp::addRow(displayLayout,
+                           i18n("Viewer:"),
+                           displayCombo,
+                           i18n("The integrated viewer is recommended for everyday use. SDL opens "
+                                "a native QEMU window outside KEMU - useful for the standalone qemu.sh "
+                                "script, or if your QEMU build lacks dbus-display support."));
 
     // Shows the stored value; this version always starts the VM with one.
     monitorCountSpin = new QSpinBox();
@@ -549,12 +553,13 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::UsbMouse), static_cast<int>(VMSpecs::PointerDevice::UsbMouse));
     mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::UsbTablet), static_cast<int>(VMSpecs::PointerDevice::UsbTablet));
     mouseCombo->addItem(VMConfig::toUIString(VMSpecs::PointerDevice::VirtioTablet), static_cast<int>(VMSpecs::PointerDevice::VirtioTablet));
-    mouseCombo->setToolTip(
-        i18n("PS/2 and USB mouse are relative pointers; tablets give absolute "
-             "positioning (seamless, no grab). USB options need a USB controller, "
-             "VirtIO needs PCI and a virtio input driver in the guest."));
     setCombo(mouseCombo, GlobalDefaults.pointerDevice);
-    inputLayout->addRow(i18n("Mouse:"), mouseCombo);
+    ContextualHelp::addRow(inputLayout,
+                           i18n("Mouse:"),
+                           mouseCombo,
+                           i18n("PS/2 and USB mouse are relative pointers; tablets give absolute "
+                                "positioning (seamless, no grab). USB options need a USB controller, "
+                                "VirtIO needs PCI and a virtio input driver in the guest."));
 
     keyboardCombo = new QComboBox();
     keyboardCombo->addItem(VMConfig::toUIString(VMSpecs::KeyboardDevice::Ps2), static_cast<int>(VMSpecs::KeyboardDevice::Ps2));
@@ -703,10 +708,10 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     advLayout->addRow(i18n("Extra arguments:"), extraArgsEdit);
 
     guestAgentCheck = new QCheckBox(i18n("Connect the QEMU guest agent"));
-    guestAgentCheck->setToolTip(
-        i18n("Adds a channel for the QEMU guest agent, so KEMU can see whether it runs in the guest. Linux guests need the package "
-             "qemu-guest-agent, Windows guests get it with the virtio-win guest tools."));
-    advLayout->addRow({}, guestAgentCheck);
+    advLayout->addRow({},
+                      ContextualHelp::beside(guestAgentCheck,
+                                             i18n("Adds a channel for the QEMU guest agent, so KEMU can see whether it runs in the guest. "
+                                                  "Linux guests need the package qemu-guest-agent, Windows guests get it with the virtio-win guest tools.")));
     advMainLayout->addLayout(advLayout);
 
     auto *identityGroup = new QGroupBox(i18n("System Identity (SMBIOS)"));

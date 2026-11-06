@@ -264,6 +264,8 @@ target_sources(
           widgets/spectile.h
           widgets/vmoverview.cpp
           widgets/vmoverview.h
+          widgets/contextualhelp.cpp
+          widgets/contextualhelp.h
           widgets/ramspinbox.h
           widgets/steppedspinbox.h
           dbusdisplay/dbusviewerwindow.cpp

@@ -29,6 +29,7 @@
 #include <KMessageWidget>
 
 #include "utils/templatestore.h"
+#include "widgets/contextualhelp.h"
 
 using namespace Qt::StringLiterals;
 
@@ -101,13 +102,14 @@ CloudInitEditDialog::CloudInitEditDialog(Mode mode,
     m_typeCombo->addItem(i18n("Network configuration"), true);
     m_typeCombo->setCurrentIndex(TemplateStore::isNetworkTemplate(id) ? 1 : 0);
     m_typeCombo->setEnabled(mode != Mode::Customize);
-    m_typeCombo->setToolTip(
-        i18n("User data sets up the guest, a network configuration its network interfaces. "
-             "Network configurations have ids starting with \"network-\"."));
 
     auto *form = new QFormLayout;
     form->addRow(i18n("ID:"), m_idEdit);
-    form->addRow(i18n("Type:"), m_typeCombo);
+    ContextualHelp::addRow(form,
+                           i18n("Type:"),
+                           m_typeCombo,
+                           i18n("User data sets up the guest, a network configuration its network interfaces. "
+                                "Network configurations have ids starting with \"network-\"."));
 
     const QFont fixed = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     m_editor = new QPlainTextEdit(this);

@@ -9,8 +9,11 @@
 #include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
+#include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QStyle>
 #include <QVBoxLayout>
 
 #include <KLocalizedString>
@@ -24,10 +27,13 @@ CloneVmDialog::CloneVmDialog(const QString &sourceName, const QString &suggested
     m_nameEdit->selectAll();
 
     m_linkedCheck = new QCheckBox(i18nc("@option:check", "Create linked clone"), this);
-    m_linkedCheck->setToolTip(
-        i18n("Linked clones share disks with '%1' and store only changes. "
-             "While linked clones exist, '%1' cannot be started or modified.",
-             sourceName));
+    // What it does to the source matters before the click, so it is shown,
+    // not hidden in a tool tip.
+    m_linkedHint = new QLabel(i18n("Linked clones share disks with '%1' and store only changes. "
+                                   "While linked clones exist, '%1' cannot be started or modified.",
+                                   sourceName),
+                              this);
+    m_linkedHint->setWordWrap(true);
 
     m_buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     m_buttons->button(QDialogButtonBox::Ok)->setText(i18nc("@action:button", "Clone"));
@@ -45,6 +51,11 @@ CloneVmDialog::CloneVmDialog(const QString &sourceName, const QString &suggested
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(form);
     layout->addWidget(m_linkedCheck);
+    // Aligned with the check box's text.
+    auto *hintRow = new QHBoxLayout;
+    hintRow->addSpacing(style()->pixelMetric(QStyle::PM_IndicatorWidth) + style()->pixelMetric(QStyle::PM_CheckBoxLabelSpacing));
+    hintRow->addWidget(m_linkedHint);
+    layout->addLayout(hintRow);
     layout->addStretch();
     layout->addWidget(m_buttons);
 
@@ -57,7 +68,8 @@ void CloneVmDialog::setLinkedCloneBlocker(const QString &reason)
         return;
     m_linkedCheck->setChecked(false);
     m_linkedCheck->setEnabled(false);
-    m_linkedCheck->setToolTip(reason);
+    // Why not, where the explanation was.
+    m_linkedHint->setText(reason);
 }
 
 QString CloneVmDialog::cloneName() const

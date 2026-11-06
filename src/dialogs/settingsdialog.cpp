@@ -25,6 +25,7 @@
 #include "utils/sandboxcapabilities.h"
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
+#include "widgets/contextualhelp.h"
 #include "widgets/statuslist.h"
 
 SettingsDialog::SettingsDialog(QWidget *parent)
@@ -73,11 +74,10 @@ void SettingsDialog::setupAppearancePage()
     auto *layout = new QVBoxLayout(page);
 
     trayIconCheck = new QCheckBox(i18n("Enable system tray icon"));
-    trayIconCheck->setToolTip(
-        i18n("Shows KEMU in the system tray, with the running virtual machines and the ones to start. "
-             "Closing the main window then keeps KEMU running in the tray; <b>Quit</b> ends it."));
     trayIconCheck->setChecked(systemTrayIconEnabled());
-    layout->addWidget(trayIconCheck);
+    layout->addLayout(ContextualHelp::beside(trayIconCheck,
+                                             i18n("Shows KEMU in the system tray, with the running virtual machines and the ones to start. "
+                                                  "Closing the main window then keeps KEMU running in the tray; <b>Quit</b> ends it.")));
 
     startMinimizedCheck = new QCheckBox(i18n("Start minimized to tray"));
     startMinimizedCheck->setToolTip(i18n("KEMU starts with only its tray icon, without showing the main window."));
@@ -139,23 +139,21 @@ void SettingsDialog::setupGeneralPage()
     layout->addWidget(line);
 
     cloneRegenerateMacCheck = new QCheckBox(i18n("Regenerate MAC address when cloning a VM"));
-    cloneRegenerateMacCheck->setToolTip(
-        i18n("When <b>enabled</b>, a cloned VM always receives a new random MAC "
-             "address. "
-             "If the source VM has an explicit MAC, a dialog lets you choose a "
-             "replacement. When <b>disabled</b>, the MAC is copied as-is."));
     cloneRegenerateMacCheck->setChecked(cloneRegenerateMac());
-    layout->addWidget(cloneRegenerateMacCheck);
+    layout->addLayout(ContextualHelp::beside(cloneRegenerateMacCheck,
+                                             i18n("When <b>enabled</b>, a cloned VM always receives a new random MAC "
+                                                  "address. "
+                                                  "If the source VM has an explicit MAC, a dialog lets you choose a "
+                                                  "replacement. When <b>disabled</b>, the MAC is copied as-is.")));
 
     importRegenerateMacCheck = new QCheckBox(i18n("Regenerate MAC address when importing a VM"));
-    importRegenerateMacCheck->setToolTip(
-        i18n("When <b>enabled</b>, imported VMs always receive a new MAC address. "
-             "This prevents address conflicts when running the original and "
-             "the imported copy on the same network.\n"
-             "When <b>disabled</b>, the original MAC address is preserved, which "
-             "maintains DHCP leases and static IP assignments."));
     importRegenerateMacCheck->setChecked(importRegenerateMac());
-    layout->addWidget(importRegenerateMacCheck);
+    layout->addLayout(ContextualHelp::beside(importRegenerateMacCheck,
+                                             i18n("When <b>enabled</b>, imported VMs always receive a new MAC address. "
+                                                  "This prevents address conflicts when running the original and "
+                                                  "the imported copy on the same network.\n"
+                                                  "When <b>disabled</b>, the original MAC address is preserved, which "
+                                                  "maintains DHCP leases and static IP assignments.")));
 
     layout->addStretch();
 
@@ -402,18 +400,6 @@ QWidget *SettingsDialog::createSandboxTab()
     auto *layout = new QVBoxLayout(page);
 
     seccompSandboxCheck = new QCheckBox(i18n("Confine QEMU with its seccomp sandbox"));
-    seccompSandboxCheck->setToolTip(
-        i18n("When <b>enabled</b>, QEMU is started with "
-             "<tt>-sandbox on,obsolete=deny,elevateprivileges=deny,spawn=deny,"
-             "resourcecontrol=deny</tt>. The seccomp filter limits what a guest "
-             "could reach if it broke out of QEMU: it may neither start other "
-             "programs nor change its privileges.\n"
-             "The filter applies to QEMU itself, so a feature that needs one of "
-             "those calls kills QEMU with SIGSYS, without a message on why. That "
-             "makes a sandboxed QEMU harder to diagnose.\n"
-             "When <b>disabled</b> (the default), QEMU runs unconfined. A VM whose "
-             "extra arguments carry their own <tt>-sandbox</tt> is never changed by "
-             "this setting."));
     seccompSandboxCheck->setChecked(qemuSeccompSandbox());
 
     // A -sandbox on a QEMU built without seccomp is fatal, so do not offer it.
@@ -424,7 +410,14 @@ QWidget *SettingsDialog::createSandboxTab()
                                             ? i18n("The QEMU binary in use was built without seccomp support.")
                                             : i18n("KEMU could not probe the QEMU binary in use for seccomp support."));
     }
-    layout->addWidget(seccompSandboxCheck);
+    // Off by default: what it costs in diagnosis is the larger part.
+    layout->addLayout(ContextualHelp::beside(seccompSandboxCheck,
+                                             i18n("<p>QEMU starts with <tt>-sandbox on,obsolete=deny,elevateprivileges=deny,"
+                                                  "spawn=deny,resourcecontrol=deny</tt>. A guest that broke out of QEMU could "
+                                                  "then neither start programs nor change its privileges.</p>"
+                                                  "<p>A feature that needs one of these calls ends QEMU with SIGSYS, without "
+                                                  "a message, which makes problems harder to find. VMs whose extra arguments "
+                                                  "have their own <tt>-sandbox</tt> keep it.</p>")));
 
     layout->addStretch();
     return page;
@@ -719,12 +712,11 @@ void SettingsDialog::setupAutomatedDeployPage()
     behaviourLayout->addRow(archInfoLabel);
 
     allArchCheck = new QCheckBox(i18n("Show all CPU architectures in edition list"));
-    allArchCheck->setToolTip(
-        i18n("By default only editions matching your host architecture are shown. "
-             "Enable this to see all architectures (note: non-native architectures "
-             "use slow TCG emulation instead of KVM)."));
     allArchCheck->setChecked(showAllArchitectures());
-    behaviourLayout->addRow(allArchCheck);
+    behaviourLayout->addRow(ContextualHelp::beside(allArchCheck,
+                                                   i18n("By default only editions matching your host architecture are shown. "
+                                                        "Enable this to see all architectures (note: non-native architectures "
+                                                        "use slow TCG emulation instead of KVM).")));
 
     layout->addWidget(behaviourGroup);
 
@@ -1161,11 +1153,10 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     // --- DNS ---
     auto *dnsCheck = new QCheckBox(i18n("Enable DNS server"));
     dnsCheck->setChecked(net.enableDns);
-    dnsCheck->setToolTip(
-        i18n("Resolves the VMs' hostnames inside this network "
-             "(\"<hostname>.<DNS domain>\"). Other queries are forwarded "
-             "to the host resolver only if NAT is enabled. Requires DHCP."));
-    form->addRow(dnsCheck);
+    form->addRow(ContextualHelp::beside(dnsCheck,
+                                        i18n("Resolves the VMs' hostnames inside this network "
+                                             "(\"<hostname>.<DNS domain>\"). Other queries are forwarded "
+                                             "to the host resolver only if NAT is enabled. Requires DHCP.")));
 
     auto *domainEdit = new QLineEdit(net.dnsDomain);
     auto *domainLabel = new QLabel(i18n("DNS domain:"));
