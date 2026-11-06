@@ -75,6 +75,16 @@ extern "C" {
 #include <cerrno>
 #include <utility>
 
+namespace
+{
+// For the ways in that bypass the action states, such as the tray or a
+// click right after the start.
+QString monitorNotReadyText(const QString &vmName)
+{
+    return i18n("QEMU does not answer for '%1' yet. If the virtual machine has just started, try again in a moment.", vmName);
+}
+} // namespace
+
 MainWindow::MainWindow(QWidget *parent)
     : KXmlGuiWindow(parent)
 {
@@ -758,7 +768,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                              const VmEntry *entry = veModel->entryByName(vmName);
                              if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
                                  viewer->setNetworkLinkState(!up, false); // revert, keep the stored pref
-                                 KMessageBox::error(viewer, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+                                 KMessageBox::error(viewer, monitorNotReadyText(vmName));
                                  return;
                              }
 
@@ -1162,7 +1172,10 @@ void MainWindow::updateActionStates()
     const bool isOrphan = entry && entry->linkedSourceMissing;
     const bool isLinkedClone = entry && entry->config.isLinkedClone();
     const QString linkBlocker = linkBlockReason(entry);
-    const bool canChangeMedia = hasSelection && entry && !isFrozen && (entry->state == VmEntry::State::Stopped || entry->state == VmEntry::State::Running);
+    // QEMU opens its monitor a moment after the start; what goes through it
+    // waits until then, instead of failing with a message box.
+    const bool monitorReady = isRunning && entry->qmpClient && entry->qmpClient->isConnected();
+    const bool canChangeMedia = hasSelection && entry && !isFrozen && (entry->state == VmEntry::State::Stopped || monitorReady);
 
     // --- Configure action states ---
     // Always available: read-only while the VM is busy.
@@ -1199,8 +1212,8 @@ void MainWindow::updateActionStates()
                                                             "window, none can be attached later. Switch to the integrated "
                                                             "viewer in the VM's settings to use this."));
 
-    actionCollection()->action(u"vm_shutdown"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
-    actionCollection()->action(u"vm_reset"_s)->setEnabled(hasSelection && isRunning);
+    actionCollection()->action(u"vm_shutdown"_s)->setEnabled(hasSelection && (monitorReady || isDeploying));
+    actionCollection()->action(u"vm_reset"_s)->setEnabled(hasSelection && monitorReady);
     actionCollection()->action(u"vm_poweroff"_s)->setEnabled(hasSelection && (isRunning || isDeploying));
 
     const auto &caps = SandboxCapabilities::instance();
@@ -1251,11 +1264,12 @@ void MainWindow::updateActionStates()
     launcherAction->setChecked(hasSelection && m_launcher && m_launcher->has(name));
     actionCollection()->action(u"vm_import"_s)->setEnabled(true);
     const bool hasDbusViewer = hasSelection && entry && entry->config.displayType() == VMSpecs::DisplayType::Dbus && m_runtimeManager->hasViewer(name);
-    actionCollection()->action(u"vm_screenshot"_s)->setEnabled(hasSelection && isRunning && (hasDbusViewer || vmSupportsScreendump()));
+    // The viewer captures its own picture; screendump needs the monitor.
+    actionCollection()->action(u"vm_screenshot"_s)->setEnabled(hasSelection && isRunning && (hasDbusViewer || (vmSupportsScreendump() && monitorReady)));
 
     // --- Additional UI states ---
     const bool hasUsbController = hasSelection && entry && entry->config.usbController() != VMSpecs::UsbController::None;
-    usbActionMenu->setEnabled(hasUsbController && isRunning);
+    usbActionMenu->setEnabled(hasUsbController && monitorReady);
 
     const bool canReconnect =
         (isRunning || isDeploying) && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !m_runtimeManager->hasViewer(entry->config.name());
@@ -1554,7 +1568,8 @@ void MainWindow::updateDetails()
 
     // Media: the image names, the paths as tool tip. As in the media menu,
     // they change while the VM is stopped or running.
-    const bool canChangeMedia = entry && !entry->isFrozen() && (entry->state == VmEntry::State::Stopped || entry->state == VmEntry::State::Running);
+    const bool monitorReady = entry && entry->state == VmEntry::State::Running && entry->qmpClient && entry->qmpClient->isConnected();
+    const bool canChangeMedia = entry && !entry->isFrozen() && (entry->state == VmEntry::State::Stopped || monitorReady);
     const auto mediaCard = [canChangeMedia](const QString &id, const QString &iconName, const QString &caption, const QString &path, const QString &empty) {
         VmOverview::Card card{iconName, path.isEmpty() ? empty : QFileInfo(path).fileName(), caption};
         card.muted = path.isEmpty();
@@ -2291,7 +2306,7 @@ void MainWindow::changeISOForVm(const QString &vmName, const QString &imagePath)
 
     if (veModel->isRunning(vmName)) {
         if (!entry->qmpClient || !entry->qmpClient->isConnected()) {
-            KMessageBox::error(parentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+            KMessageBox::error(parentW, monitorNotReadyText(vmName));
             return;
         }
 
@@ -2330,7 +2345,7 @@ void MainWindow::ejectISOForVm(const QString &vmName)
 
     if (veModel->isRunning(vmName)) {
         if (!entry->qmpClient || !entry->qmpClient->isConnected()) {
-            KMessageBox::error(parentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+            KMessageBox::error(parentW, monitorNotReadyText(vmName));
             return;
         }
 
@@ -2382,7 +2397,7 @@ void MainWindow::changeFloppyForVm(const QString &vmName, const QString &dropped
 
     if (veModel->isRunning(vmName)) {
         if (!entry->qmpClient || !entry->qmpClient->isConnected()) {
-            KMessageBox::error(parentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+            KMessageBox::error(parentW, monitorNotReadyText(vmName));
             return;
         }
 
@@ -2420,7 +2435,7 @@ void MainWindow::ejectFloppyForVm(const QString &vmName)
 
     if (veModel->isRunning(vmName)) {
         if (!entry->qmpClient || !entry->qmpClient->isConnected()) {
-            KMessageBox::error(parentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+            KMessageBox::error(parentW, monitorNotReadyText(vmName));
             return;
         }
 
@@ -3065,7 +3080,7 @@ void MainWindow::saveScreenshot()
 
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
-        KMessageBox::error(this, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+        KMessageBox::error(this, monitorNotReadyText(vmName));
         return;
     }
 
@@ -3749,6 +3764,12 @@ void MainWindow::onQmpReady(const QString &vmName)
     // QEMU always starts with the link up; restore a persisted "cable out".
     if (e->config.networkCard() != VMSpecs::NetworkCard::None && !loadViewerPrefs(vmName).networkLinkUp)
         e->qmpClient->setNetworkLink(KEMUConst::NetdevId, false);
+
+    // What goes through the monitor is possible from now on.
+    if (currentConfig.name() == vmName) {
+        updateActionStates();
+        updateDetails();
+    }
 }
 
 void MainWindow::onUsbMenuAboutToShow()
@@ -4017,7 +4038,7 @@ void MainWindow::shutdownVMByName(const QString &vmName)
 
     const QPointer<QMPClient> client = entry->qmpClient;
     if (!client || !client->isConnected()) {
-        KMessageBox::error(parentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+        KMessageBox::error(parentW, monitorNotReadyText(vmName));
         return;
     }
 
@@ -4067,7 +4088,7 @@ void MainWindow::resetVMByName(const QString &vmName)
 
     const QPointer<QMPClient> client = entry->qmpClient;
     if (!client || !client->isConnected()) {
-        KMessageBox::error(safeParentW, i18n("Could not connect to QEMU monitor. Is the VM running?"));
+        KMessageBox::error(safeParentW, monitorNotReadyText(vmName));
         return;
     }
 
