@@ -246,7 +246,7 @@ void SnapshotDialog::onSelectionChanged()
                           snap.name.toHtmlEscaped(),
                           i18n("Created:"),
                           Utils::formatTimestamp(snap.dateTime),
-                          i18n("VM State:"),
+                          i18n("VM state:"),
                           snap.vmStateSizeBytes > 0 ? m_format.formatByteSize(snap.vmStateSizeBytes) : i18n("Offline snapshot (no RAM state)"));
 
     if (!snap.description.isEmpty())

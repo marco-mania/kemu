@@ -56,7 +56,7 @@ CloudConfigDialog::CloudConfigDialog(QWidget *parent)
 
     passwordConfirmEdit = new QLineEdit();
     passwordConfirmEdit->setEchoMode(QLineEdit::Password);
-    form->addRow(i18n("Confirm Password:"), passwordConfirmEdit);
+    form->addRow(i18n("Confirm password:"), passwordConfirmEdit);
 
     passwordLoginCheck = new QCheckBox(i18n("Allow password login over SSH"));
     form->addRow({}, passwordLoginCheck);
@@ -93,7 +93,7 @@ CloudConfigDialog::CloudConfigDialog(QWidget *parent)
     else
         localeCombo->setCurrentText(sysLocaleCode);
 
-    form->addRow(i18n("Language (Locale):"), localeCombo);
+    form->addRow(i18n("Language (locale):"), localeCombo);
 
     // Keyboard Layout
     kbLayoutCombo = new QComboBox();
@@ -120,13 +120,13 @@ CloudConfigDialog::CloudConfigDialog(QWidget *parent)
         }
     }
 
-    form->addRow(i18n("Keyboard Layout:"), kbLayoutCombo);
+    form->addRow(i18n("Keyboard layout:"), kbLayoutCombo);
 
     // SSH Keys
     sshKeysEdit = new QPlainTextEdit();
     sshKeysEdit->setPlaceholderText(i18n("One key per line (ssh-ed25519 AAAA…)"));
     sshKeysEdit->setMaximumHeight(80);
-    form->addRow(i18n("SSH Keys:"), sshKeysEdit);
+    form->addRow(i18n("SSH keys:"), sshKeysEdit);
 
     auto *sshButtonLayout = new QHBoxLayout();
     auto *addKeyButton = new QPushButton(i18n("Import from File…"));
@@ -142,7 +142,7 @@ CloudConfigDialog::CloudConfigDialog(QWidget *parent)
     // Extra packages (generic, not tied to desktop checkbox)
     extraPackagesEdit = new QLineEdit();
     extraPackagesEdit->setPlaceholderText(i18n("e.g. htop, vim, git (comma-separated)"));
-    form->addRow(i18n("Extra Packages:"), extraPackagesEdit);
+    form->addRow(i18n("Extra packages:"), extraPackagesEdit);
 
     // The first entry, the template of the OS, is labelled in setConfig().
     cloudInitCombo = new QComboBox();
@@ -152,7 +152,7 @@ CloudConfigDialog::CloudConfigDialog(QWidget *parent)
             cloudInitCombo->addItem(entry.id, entry.id);
     }
     cloudInitCombo->setToolTip(i18n("The cloud-init template that sets up the guest. Templates are managed in the settings under Templates."));
-    form->addRow(i18n("Cloud-Init Template:"), cloudInitCombo);
+    form->addRow(i18n("Cloud-Init template:"), cloudInitCombo);
 
     layout->addLayout(form);
 

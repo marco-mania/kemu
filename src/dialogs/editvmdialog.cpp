@@ -179,7 +179,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     osFamilyCombo->addItem(i18n("Other"), static_cast<int>(VMSpecs::OsFamily::Other));
     osFamilyCombo->insertItem(0, i18n("-- Please select --"), -1);
     osFamilyCombo->setCurrentIndex(0);
-    genLayout->addRow(i18n("OS Family:"), osFamilyCombo);
+    genLayout->addRow(i18n("OS family:"), osFamilyCombo);
 
     auto *osFamilyModel = qobject_cast<QStandardItemModel *>(osFamilyCombo->model());
     if (osFamilyModel) {
@@ -200,7 +200,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     auto *nameLayout = new QHBoxLayout();
     nameLayout->addWidget(osNameCombo);
 
-    genLayout->addRow(i18n("OS Name:"), nameLayout);
+    genLayout->addRow(i18n("OS name:"), nameLayout);
 
     osNameLabel = qobject_cast<QLabel *>(genLayout->labelForField(nameLayout));
 
@@ -209,7 +209,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     isoPathRequester->lineEdit()->setClearButtonEnabled(true);
     isoPathRequester->setMode(KFile::File | KFile::ExistingOnly | KFile::LocalOnly);
     isoPathRequester->setNameFilter(i18n("ISO Images (*.iso)"));
-    genLayout->addRow(i18n("ISO Image:"), isoPathRequester);
+    genLayout->addRow(i18n("ISO image:"), isoPathRequester);
     isoPathLabel = qobject_cast<QLabel *>(genLayout->labelForField(isoPathRequester));
 
     bootFromIsoCheck = new QCheckBox(i18n("Boot from ISO"));
@@ -222,10 +222,10 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     floppyPathRequester->lineEdit()->setClearButtonEnabled(true);
     floppyPathRequester->setMode(KFile::File | KFile::ExistingOnly | KFile::LocalOnly);
     floppyPathRequester->setNameFilter(i18n("Floppy Images (*.img *.ima *.flp *.vfd);;All Files (*)"));
-    genLayout->addRow(i18n("Floppy Image:"), floppyPathRequester);
+    genLayout->addRow(i18n("Floppy image:"), floppyPathRequester);
     floppyPathLabel = qobject_cast<QLabel *>(genLayout->labelForField(floppyPathRequester));
 
-    bootFromFloppyCheck = new QCheckBox(i18n("Boot from Floppy"));
+    bootFromFloppyCheck = new QCheckBox(i18n("Boot from floppy"));
     bootFromFloppyCheck->setToolTip(i18n("If checked, the VM boots from the floppy image (drive A:)."));
     bootFromFloppyCheck->setEnabled(false);
     genLayout->addRow({}, bootFromFloppyCheck);
@@ -237,14 +237,14 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     sharedPathEdit->setClearButtonEnabled(true);
     shareLayout->addWidget(sharedPathEdit);
     shareLayout->addWidget(btnBrowseShare);
-    genLayout->addRow(i18n("Shared Folder (VirtFS):"), shareLayout);
+    genLayout->addRow(i18n("Shared folder (VirtFS):"), shareLayout);
     shareToolWarning = createInlineMessage(KMessageWidget::Warning);
     genLayout->addRow({}, shareToolWarning);
 
     sharedNameEdit = new QLineEdit();
     sharedNameEdit->setValidator(new QRegularExpressionValidator(QRegularExpression(u"^[a-zA-Z0-9]*$"_s), this));
     sharedNameEdit->setClearButtonEnabled(true);
-    genLayout->addRow(i18n("Shared Name (for guest):"), sharedNameEdit);
+    genLayout->addRow(i18n("Shared name (for guest):"), sharedNameEdit);
 
     sharedNameEdit->setEnabled(!sharedPathEdit->text().isEmpty());
 
@@ -273,7 +273,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
             cpuCombo->addItem(VMConfig::toUIString(model), static_cast<int>(model));
         }
     }
-    sysLayout->addRow(i18n("CPU Model:"), cpuCombo);
+    sysLayout->addRow(i18n("CPU model:"), cpuCombo);
 
     cpuSpin = new QSpinBox();
     cpuSpin->setRange(1, 64);
@@ -535,7 +535,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
             break;
         }
     }
-    displayLayout->addRow(i18n("Initial Resolution:"), resolutionCombo);
+    displayLayout->addRow(i18n("Initial resolution:"), resolutionCombo);
     resolutionLabel = qobject_cast<QLabel *>(displayLayout->labelForField(resolutionCombo));
 
     hwRightColumn->addWidget(displayGroup);
@@ -548,7 +548,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Ehci), static_cast<int>(VMSpecs::UsbController::Ehci));
     usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::Default), static_cast<int>(VMSpecs::UsbController::Default));
     usbCombo->addItem(VMConfig::toUIString(VMSpecs::UsbController::None), static_cast<int>(VMSpecs::UsbController::None));
-    inputLayout->addRow(i18n("USB Controller:"), usbCombo);
+    inputLayout->addRow(i18n("USB controller:"), usbCombo);
     usbControllerLabel = qobject_cast<QLabel *>(inputLayout->labelForField(usbCombo));
 
     mouseCombo = new QComboBox();
@@ -622,12 +622,12 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     netCombo->addItem(VMConfig::toUIString(VMSpecs::NetworkCard::Pcnet), static_cast<int>(VMSpecs::NetworkCard::Pcnet));
     netCombo->addItem(VMConfig::toUIString(VMSpecs::NetworkCard::Rtl8029), static_cast<int>(VMSpecs::NetworkCard::Rtl8029));
     netCombo->addItem(VMConfig::toUIString(VMSpecs::NetworkCard::Ne2000), static_cast<int>(VMSpecs::NetworkCard::Ne2000));
-    netFormLayout->addRow(i18n("Network Adapter:"), netCombo);
+    netFormLayout->addRow(i18n("Network adapter:"), netCombo);
 
     networkModeCombo = new QComboBox();
     networkModeCombo->addItem(VMConfig::toUIString(VMSpecs::NetworkMode::UserMode), static_cast<int>(VMSpecs::NetworkMode::UserMode));
     networkModeCombo->addItem(VMConfig::toUIString(VMSpecs::NetworkMode::VirtualNetwork), static_cast<int>(VMSpecs::NetworkMode::VirtualNetwork));
-    netFormLayout->addRow(i18n("Network Mode:"), networkModeCombo);
+    netFormLayout->addRow(i18n("Network mode:"), networkModeCombo);
 
     auto *macLayout = new QHBoxLayout();
     macEdit = new QLineEdit();
@@ -641,7 +641,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     macLayout->addWidget(macEdit);
     macLayout->addWidget(regenerateMacButton);
 
-    netFormLayout->addRow(i18n("MAC Address:"), macLayout);
+    netFormLayout->addRow(i18n("MAC address:"), macLayout);
 
     macWarningMessage = createInlineMessage(KMessageWidget::Error);
     netFormLayout->addRow({}, macWarningMessage);
@@ -707,7 +707,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     extraArgsEdit = new QLineEdit();
     extraArgsEdit->setPlaceholderText(i18n("Additional QEMU parameters"));
     extraArgsEdit->setClearButtonEnabled(true);
-    advLayout->addRow(i18n("Extra Arguments:"), extraArgsEdit);
+    advLayout->addRow(i18n("Extra arguments:"), extraArgsEdit);
 
     guestAgentCheck = new QCheckBox(i18n("Connect the QEMU guest agent"));
     guestAgentCheck->setToolTip(
@@ -747,7 +747,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         {&SmbiosSystemInfo::manufacturer, i18n("Manufacturer:")},
         {&SmbiosSystemInfo::product, i18n("Product:")},
         {&SmbiosSystemInfo::version, i18n("Version:")},
-        {&SmbiosSystemInfo::serial, i18n("Serial Number:")},
+        {&SmbiosSystemInfo::serial, i18n("Serial number:")},
         {&SmbiosSystemInfo::sku, i18n("SKU:")},
         {&SmbiosSystemInfo::family, i18n("Family:")},
     };
@@ -929,7 +929,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         for (const int v : {0x220, 0x240, 0x260, 0x280})
             iobaseCombo->addItem(u"0x%1"_s.arg(v, 0, 16), v);
         iobaseCombo->setCurrentIndex(iobaseCombo->findData(m_sb16Config.iobase));
-        form->addRow(i18n("I/O Base:"), iobaseCombo);
+        form->addRow(i18n("I/O base:"), iobaseCombo);
 
         auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
         form->addRow(buttons);

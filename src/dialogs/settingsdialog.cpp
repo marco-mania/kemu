@@ -1214,7 +1214,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     form->addRow(hostAccessCheck);
 
     // --- Port Forwards ---
-    auto *portFwdCheck = new QCheckBox(i18n("Enable Port Forwarding"));
+    auto *portFwdCheck = new QCheckBox(i18n("Enable port forwarding"));
     // Checked if there are existing forwards
     portFwdCheck->setChecked(!net.portForwards.isEmpty());
     form->addRow(portFwdCheck);

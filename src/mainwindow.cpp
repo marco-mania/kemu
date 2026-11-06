@@ -4955,7 +4955,7 @@ void MainWindow::startClone(const QString &srcName,
                     if (answer == KMessageBox::PrimaryAction) {
                         bool macOk = false;
                         const QString newMac =
-                            QInputDialog::getText(this, i18n("New MAC Address"), i18n("MAC Address (e.g. 52:54:00:11:22:33):"), QLineEdit::Normal, {}, &macOk)
+                            QInputDialog::getText(this, i18n("New MAC Address"), i18n("MAC address (e.g. 52:54:00:11:22:33):"), QLineEdit::Normal, {}, &macOk)
                                 .trimmed();
                         // An invalid or already used address falls back to a
                         // generated one; a duplicate would break the network.
