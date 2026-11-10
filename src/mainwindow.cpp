@@ -83,6 +83,15 @@ QString monitorNotReadyText(const QString &vmName)
 {
     return i18n("QEMU does not answer for '%1' yet. If the virtual machine has just started, try again in a moment.", vmName);
 }
+
+// Gives a window of the VM the icon the user chose for it, without the state
+// emblems of the list. Title bar and task switcher show it; Plasma's task
+// manager stays with the application icon of the desktop file.
+void setVmWindowIcon(QWidget *window, const VmEntry *entry)
+{
+    if (entry)
+        window->setWindowIcon(entry->config.icon(KEMUConst::DetailViewIconSize));
+}
 } // namespace
 
 MainWindow::MainWindow(QWidget *parent)
@@ -686,6 +695,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                          state.window->setWindowTitle(vmName);
                          state.window->setAttribute(Qt::WA_DeleteOnClose, false);
                          state.window->setStatusBarShown(viewerStatusBarShown());
+                         setVmWindowIcon(state.window, cfgEntry);
                          connect(state.window, &DbusViewerWindow::statusBarShownChanged, this, &MainWindow::setViewerStatusBarShown);
                          state.window->show();
 
