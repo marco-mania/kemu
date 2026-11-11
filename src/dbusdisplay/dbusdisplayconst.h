@@ -16,6 +16,7 @@ namespace KemuDbusDisplayConst
 inline const QString ServiceName = u"org.qemu"_s;
 
 // Object paths exported by QEMU's -display dbus
+inline constexpr auto VmPath = "/org/qemu/Display1/VM"_L1;
 inline constexpr auto ConsolePathPrefix = "/org/qemu/Display1/Console_"_L1;
 inline constexpr auto AudioPath = "/org/qemu/Display1/Audio"_L1;
 inline constexpr auto ClipboardPath = "/org/qemu/Display1/Clipboard"_L1;

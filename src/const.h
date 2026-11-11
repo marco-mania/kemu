@@ -27,6 +27,7 @@ inline constexpr auto CustomIconFileFormat = "PNG"_L1;
 inline constexpr auto VMDiskFileName = "disk.qcow2"_L1;
 inline constexpr int MaxExtraDisks = 8;
 inline constexpr int MaxMonitorCount = 16; // virtio-gpu outputs
+inline constexpr int SupportedMonitorCount = 2; // what the viewer handles so far
 inline constexpr int MaxSmbiosStringLength = 64;
 inline constexpr auto VMConfigFileName = "config.json"_L1;
 inline constexpr auto OvmfVarsFileName = "OVMF_VARS.fd"_L1;

@@ -270,6 +270,10 @@ target_sources(
           widgets/steppedspinbox.h
           dbusdisplay/dbusviewerwindow.cpp
           dbusdisplay/dbusviewerwindow.h
+          dbusdisplay/dbusviewersubwindow.cpp
+          dbusdisplay/dbusviewersubwindow.h
+          dbusdisplay/screenshot.cpp
+          dbusdisplay/screenshot.h
           dbusdisplay/displaywidget.cpp
           dbusdisplay/displaywidget.h
           dbusdisplay/framecapture.cpp
@@ -289,6 +293,10 @@ target_sources(
           dbusdisplay/glibeventbridge.cpp
           dbusdisplay/controlconnection.h
           dbusdisplay/controlconnection.cpp
+          dbusdisplay/displayconsoles.h
+          dbusdisplay/multiheadmousemapping.cpp
+          dbusdisplay/multiheadmousemapping.h
+          dbusdisplay/displayconsoles.cpp
           dbusdisplay/osdoverlay.h
           dbusdisplay/osdoverlay.cpp
           dbusdisplay/statusindicator.h

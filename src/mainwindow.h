@@ -262,6 +262,15 @@ private:
     bool startDbusViewer(const QString &vmName);
     void stopDbusViewer(const QString &vmName);
     void finishDbusViewer(const QString &vmName, QemuControlConnection *ctrl);
+    void watchGuestAgentPointer(const QString &vmName, MultiheadMouseMapping *mapping);
+    void refreshDbusDisplayConsoles(const QString &vmName, QemuControlConnection *ctrl);
+    void openDbusSubDisplay(const QString &vmName, guint consoleId);
+    void plugDbusSubDisplays(const QString &vmName);
+    void closeDbusSubDisplay(const QString &vmName, guint consoleId);
+    void updateDbusDisplayMenu(const QString &vmName);
+    void registerDbusDisplayListener(QemuControlConnection *ctrl,
+                                     const QString &consolePath,
+                                     std::function<void(QemuDisplayListener *, const QString &)> done);
     void registerAudioListeners(const QString &vmName);
 
     bool requireTool(const ExternalTools::Tool tool);
@@ -301,6 +310,8 @@ private:
     void saveViewerPrefs(const QString &vmName, const ViewerDevicePrefs &prefs) const;
     bool viewerStatusBarShown() const;
     void setViewerStatusBarShown(bool shown);
+    bool subDisplayStatusBarShown() const;
+    void setSubDisplayStatusBarShown(bool shown);
     void removeViewerPrefs(const QString &vmName) const;
 
     QMap<QString, QDir> m_lastMediaDir;

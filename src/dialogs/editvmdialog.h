@@ -215,6 +215,7 @@ private:
     QComboBox *gpuCombo = nullptr;
     QSpinBox *monitorCountSpin = nullptr;
     QLabel *monitorCountLabel = nullptr;
+    KMessageWidget *monitorMessage = nullptr;
     QSpinBox *gpuMemSpin = nullptr;
     QCheckBox *accel3dCheck = nullptr;
     QComboBox *resolutionCombo = nullptr;

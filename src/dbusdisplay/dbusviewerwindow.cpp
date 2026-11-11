@@ -5,15 +5,19 @@
 #include "dbusviewerwindow.h"
 
 #include <QClipboard>
-#include <QDateTime>
-#include <QFileDialog>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QGuiApplication>
+#include <QSpinBox>
 #include <QStandardPaths>
+#include <QVBoxLayout>
 
 #include <KStandardAction>
 #include <KToggleAction>
 
 #include "const.h"
+#include "dbusdisplay/screenshot.h"
 #include "kemu_dbusdisplay_debug.h"
 
 // =============================================================================
@@ -114,34 +118,157 @@ DbusViewerWindow::~DbusViewerWindow()
     teardownClipboard();
 }
 
+void DbusViewerWindow::setAdditionalDisplays(const QList<QPair<uint, uint>> &displays, const QSet<uint> &openDisplays)
+{
+    bool rebuild = m_displaysMenu->actions().isEmpty() || displays.size() != m_subDisplayActions.size();
+    for (const auto &display : displays) {
+        const uint id = display.first;
+        if (!m_subDisplayActions.contains(id))
+            rebuild = true;
+    }
+
+    if (rebuild) {
+        m_displaysMenu->clear();
+        m_subDisplayActions.clear();
+        m_secondaryPlacementActions.clear();
+        QAction *primary = m_displaysMenu->addAction(i18n("Display 1 (Primary)"));
+        primary->setCheckable(true);
+        primary->setChecked(true);
+        primary->setEnabled(false);
+
+        for (const auto &[id, head] : displays) {
+            QAction *action = m_displaysMenu->addAction(i18n("Display %1", head + 1));
+            action->setCheckable(true);
+            connect(action, &QAction::triggered, this, [this, id](bool checked) {
+                Q_EMIT subDisplayToggled(id, checked);
+            });
+            m_subDisplayActions.insert(id, action);
+        }
+        if (!displays.isEmpty()) {
+            m_displaysMenu->addSeparator();
+            m_secondaryPlacementMenu = m_displaysMenu->addMenu(i18n("Display 2 Position"));
+            const auto addPlacement = [this](const QString &label, MultiheadMouseMapping::SecondaryPlacement placement) {
+                QAction *action = m_secondaryPlacementMenu->addAction(label);
+                action->setCheckable(true);
+                connect(action, &QAction::triggered, this, [this, placement] {
+                    Q_EMIT secondaryPlacementChanged(placement);
+                });
+                m_secondaryPlacementActions.insert(int(placement), action);
+            };
+            addPlacement(i18n("Detect Automatically"), MultiheadMouseMapping::SecondaryPlacement::Automatic);
+            m_secondaryPlacementMenu->addSeparator();
+            addPlacement(i18n("Right of Display 1"), MultiheadMouseMapping::SecondaryPlacement::Right);
+            addPlacement(i18n("Left of Display 1"), MultiheadMouseMapping::SecondaryPlacement::Left);
+            addPlacement(i18n("Above Display 1"), MultiheadMouseMapping::SecondaryPlacement::Above);
+            addPlacement(i18n("Below Display 1"), MultiheadMouseMapping::SecondaryPlacement::Below);
+            QAction *custom = m_secondaryPlacementMenu->addAction(i18n("Custom Position…"));
+            custom->setCheckable(true);
+            m_secondaryPlacementActions.insert(int(MultiheadMouseMapping::SecondaryPlacement::Custom), custom);
+            connect(custom, &QAction::triggered, this, [this] {
+                QDialog dialog(this);
+                dialog.setWindowTitle(i18n("Display 2 Position"));
+                auto *layout = new QVBoxLayout(&dialog);
+                auto *description = new QLabel(i18n("Enter the top-left position of Display 2 relative to Display 1 (0, 0)."), &dialog);
+                description->setWordWrap(true);
+                layout->addWidget(description);
+                auto *form = new QFormLayout;
+                auto *x = new QSpinBox(&dialog);
+                auto *y = new QSpinBox(&dialog);
+                x->setRange(-32768, 32768);
+                y->setRange(-32768, 32768);
+                x->setValue(m_secondaryPosition.x());
+                y->setValue(m_secondaryPosition.y());
+                form->addRow(i18n("X position (px):"), x);
+                form->addRow(i18n("Y position (px):"), y);
+                layout->addLayout(form);
+                auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+                connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+                connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+                layout->addWidget(buttons);
+                if (dialog.exec() == QDialog::Accepted)
+                    Q_EMIT secondaryPositionChanged(QPoint(x->value(), y->value()));
+                else
+                    setSecondaryDisplayPlacement(m_secondaryPlacement);
+            });
+            setSecondaryDisplayPlacement(m_secondaryPlacement);
+            updateSecondaryPlacementMenu();
+        } else {
+            m_secondaryPlacementMenu = nullptr;
+        }
+    }
+
+    for (const auto &[id, head] : displays) {
+        QAction *action = m_subDisplayActions.value(id);
+        action->setText(i18n("Display %1", head + 1));
+        QSignalBlocker blocker(action);
+        action->setChecked(openDisplays.contains(id));
+    }
+    if (rebuild)
+        updateMouseStatus();
+}
+
+void DbusViewerWindow::setSecondaryDisplayPlacement(MultiheadMouseMapping::SecondaryPlacement placement)
+{
+    m_secondaryPlacement = placement;
+    for (auto it = m_secondaryPlacementActions.cbegin(); it != m_secondaryPlacementActions.cend(); ++it) {
+        QSignalBlocker blocker(it.value());
+        it.value()->setChecked(it.key() == int(placement));
+    }
+}
+
+void DbusViewerWindow::setSecondaryPlacementByGuestAgent(bool byGuestAgent)
+{
+    m_secondaryPlacementByGuestAgent = byGuestAgent;
+    updateSecondaryPlacementMenu();
+    updateMouseStatus();
+}
+
+void DbusViewerWindow::showGuestAgentPointerMisplaced()
+{
+    showOsd(i18nc("@info:status", "Pointer misplaced in the guest"), 5000);
+    statusBar()->showMessage(i18nc("@info:status",
+                                   "spice-vdagent places the pointer off target. Set the same display scale for all monitors in the guest."),
+                             30000);
+}
+
+void DbusViewerWindow::updateSecondaryPlacementMenu()
+{
+    if (!m_secondaryPlacementMenu)
+        return;
+    // The agent follows the guest's own arrangement, there is nothing to choose.
+    m_secondaryPlacementMenu->setTitle(m_secondaryPlacementByGuestAgent ? i18n("Display 2 Position: Set by Guest Agent") : i18n("Display 2 Position"));
+    m_secondaryPlacementMenu->menuAction()->setEnabled(!m_secondaryPlacementByGuestAgent);
+}
+
+void DbusViewerWindow::setSecondaryDisplayPosition(const QPoint &position)
+{
+    m_secondaryPosition = position;
+}
+
+void DbusViewerWindow::showLayoutDetectionFailed()
+{
+    // The status bar is hidden in fullscreen, the OSD only fits a short line.
+    showOsd(i18nc("@info:status", "Monitor arrangement not detected"), 5000);
+    statusBar()->showMessage(i18nc("@info:status",
+                                   "The monitor arrangement of the guest could not be detected. Install spice-vdagent in the guest "
+                                   "or choose View → Displays → Display 2 Position."),
+                             30000);
+}
+
 // =============================================================================
 // Screenshot
 // =============================================================================
 
 void DbusViewerWindow::saveScreenshot()
 {
-    const QImage image = m_display->captureGuestFrame();
-    if (image.isNull()) {
-        QMessageBox::warning(this, i18n("Screenshot Failed"), i18n("Could not capture the guest display."));
-        return;
-    }
-
-    const QString picturesDir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
-    const QString defaultName = u"%1/%2_%3.png"_s.arg(picturesDir, windowTitle(), QDateTime::currentDateTime().toString(u"yyyyMMdd_HHmmss"_s));
-    const QString filePath = QFileDialog::getSaveFileName(this, i18n("Save Screenshot"), defaultName, i18n("PNG Image (*.png);;JPEG Image (*.jpg *.jpeg)"));
+    const QString filePath = saveScreenshotInteractively(this, m_display->captureGuestFrame(), windowTitle());
     if (filePath.isEmpty())
         return;
-
-    const QByteArray format = filePath.endsWith(u".jpg"_s, Qt::CaseInsensitive) || filePath.endsWith(u".jpeg"_s, Qt::CaseInsensitive) ? "JPEG" : "PNG";
-    if (image.save(filePath, format.constData())) {
-        const QString message = i18n("Screenshot saved to %1", filePath);
-        if (statusBar()->isVisible())
-            statusBar()->showMessage(message);
-        else
-            showOsd(message, 3000);
-    }
+    const QString message = i18n("Screenshot saved to %1", filePath);
+    if (statusBar()->isVisible())
+        statusBar()->showMessage(message);
     else
-        QMessageBox::warning(this, i18n("Error"), i18n("Failed to save screenshot to %1", filePath));
+        showOsd(message, 3000);
 }
 
 // =============================================================================
@@ -371,6 +498,9 @@ void DbusViewerWindow::createMenus()
     viewMenu->addAction(m_actZoomReset);
     viewMenu->addSeparator();
     viewMenu->addAction(m_actScreenshot);
+    viewMenu->addSeparator();
+    m_displaysMenu = viewMenu->addMenu(i18n("&Displays"));
+    setAdditionalDisplays({}, {});
 
     // Devices
     QMenu *devicesMenu = menuBar()->addMenu(i18n("&Devices"));
@@ -961,7 +1091,14 @@ void DbusViewerWindow::updateMouseStatus()
     }
 
     if (m_display->isGuestAbsolute()) {
-        m_indMouse->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Absolute pointer - host and guest cursor are synced"));
+        // Across several displays only the guest knows how they are arranged.
+        QString tip = i18nc("@info:tooltip", "Absolute pointer - host and guest cursor are synced");
+        if (m_secondaryPlacementByGuestAgent)
+            tip = i18nc("@info:tooltip", "Absolute pointer - placed by spice-vdagent in the guest");
+        else if (!m_subDisplayActions.isEmpty())
+            tip = i18nc("@info:tooltip",
+                        "Absolute pointer - the monitor arrangement is estimated. Install spice-vdagent in the guest for exact placement.");
+        m_indMouse->setStatus(StatusIndicator::Active, tip);
     } else {
         m_indMouse->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Pointer released - click into the display to capture"));
     }

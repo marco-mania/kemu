@@ -319,7 +319,11 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     } else if (config.gpuType() == VMSpecs::GpuType::Virtio) {
         const QSize res = config.displayResolution();
         const QString device = effective3d ? u"virtio-vga-gl"_s : u"virtio-vga"_s;
-        args << u"-device"_s << u"%1,xres=%2,yres=%3,max_hostmem=%4M"_s.arg(device).arg(res.width()).arg(res.height()).arg(mem);
+        QString gpuOpt = u"%1,xres=%2,yres=%3,max_hostmem=%4M"_s.arg(device).arg(res.width()).arg(res.height()).arg(mem);
+        const int monitors = qMin(config.monitorCount(), KEMUConst::SupportedMonitorCount);
+        if (config.displayType() == VMSpecs::DisplayType::Dbus && monitors > 1)
+            gpuOpt += u",max_outputs=%1"_s.arg(monitors);
+        args << u"-device"_s << gpuOpt;
     } else if (config.gpuType() == VMSpecs::GpuType::CirrusGD5446) {
         args << u"-device"_s << u"cirrus-vga,vgamem_mb=%1"_s.arg(mem);
     } else if (config.gpuType() == VMSpecs::GpuType::CirrusGD5430) {
@@ -345,8 +349,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         }
         args << u"-display"_s << displayOpt;
 
-        // ---- Guest agent for clipboard (clipboard only; pointing is
-        //      handled by the selected pointer device) ----
+        // ---- Guest agent for clipboard and, with several monitors, pointing ----
         // For -display dbus, the in-guest spice-vdagent talks to QEMU's
         // qemu-vdagent chardev. QEMU bridges that to /org/qemu/Display1/Clipboard
         // on its D-Bus bus.
@@ -356,10 +359,14 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         // spice-vdagent daemon only for historical reasons.
         // virtio-serial needs PCI; without it (isapc) QEMU would not start.
         // Not every QEMU build includes the qemu-vdagent backend.
+        // Across several monitors only the guest knows how they are arranged,
+        // so the agent places the pointer there once it runs. Until then the
+        // tablet gets it and the viewer maps positions itself.
         if (VMConfig::supportsPciBus(config.machineType()) && QemuCapabilities::instance().hasChardev(u"qemu-vdagent"_s)) {
+            const bool agentPointer = config.gpuType() == VMSpecs::GpuType::Virtio && config.monitorCount() > 1;
             args << u"-device"_s << u"virtio-serial-pci"_s;
             virtioSerial = true;
-            args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,clipboard=on,mouse=off"_s;
+            args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,clipboard=on,mouse=%1"_s.arg(agentPointer ? u"on"_s : u"off"_s);
             args << u"-device"_s << u"virtserialport,chardev=vdagent,name=com.redhat.spice.0"_s;
         }
 

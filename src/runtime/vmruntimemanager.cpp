@@ -108,8 +108,8 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
 
     // The monitor path is only a fallback for exported scripts; this QEMU
     // gets the descriptor from netCtx.
-    QStringList args =
-        QemuCommandBuilder::build(config, vmDir(vmName), monitorSocketPath(vmName), netCtx, /*relativePaths=*/false, req.headless, savestatePath);
+    QStringList args = QemuCommandBuilder::build(config, vmDir(vmName), monitorSocketPath(vmName), netCtx,
+                                                  /*relativePaths=*/false, req.headless, savestatePath);
 
     // Unattended runs only: an interactive installer's UI could move to the
     // serial console once one is present, which would defeat an attended

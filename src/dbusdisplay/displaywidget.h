@@ -16,6 +16,7 @@
 #include <QOpenGLWidget>
 #include <QPainter>
 #include <QPixmap>
+#include <QSharedPointer>
 #include <QSet>
 #include <QSize>
 #include <QSocketNotifier>
@@ -31,6 +32,8 @@
 #include "dbusdisplay/waylandpointerlock.h"
 #include "dbusdisplay/waylandsubsurface.h"
 
+class MultiheadMouseMapping;
+
 using namespace Qt::StringLiterals;
 
 class QemuDisplayWidget : public QOpenGLWidget, protected QOpenGLFunctions
@@ -42,6 +45,10 @@ public:
     ~QemuDisplayWidget() override;
 
     void setScale(float scale);
+    void setMultiheadMouseMapping(const QSharedPointer<MultiheadMouseMapping> &mapping, uint head);
+    // virtio-gpu reports where the cursor image starts, QXL where the
+    // pointer is.
+    void setCursorPositionIsImageOrigin(bool imageOrigin);
     QImage captureGuestFrame();
 
     void setDimmed(bool dimmed);
@@ -157,6 +164,8 @@ private:
     static uint32_t evdevToQnum(uint32_t evdev);
     static int qtButtonToQemu(Qt::MouseButton button);
     QPointF mapToFramebuffer(const QPointF &widgetPos) const;
+    bool isInactiveSecondaryHead() const;
+    QPoint guestPointer(const CursorInfo &ci) const;
 
     // Motion coalescing: guests cannot consume 1000 Hz of pointer events.
     void queueAbsMotion(uint fx, uint fy);
@@ -166,6 +175,7 @@ private:
     QTimer m_motionTimer;
     uint m_pendingAbsX = 0;
     uint m_pendingAbsY = 0;
+    QString m_pendingAbsConsolePath;
     int m_pendingRelX = 0;
     int m_pendingRelY = 0;
     bool m_hasPendingAbs = false;
@@ -184,6 +194,9 @@ private:
     QemuDisplayListener *m_listener;
     QPointer<QemuControlConnection> m_ctrl = nullptr;
     QString m_consolePath;
+    QSharedPointer<MultiheadMouseMapping> m_multiheadMouseMapping;
+    uint m_displayHead = 0;
+    bool m_cursorPositionIsImageOrigin = false;
     guint m_propsSubscription = 0;
 
     bool m_pendingRepaint = false;

@@ -6,6 +6,8 @@
 
 #include "displaywidget.h"
 
+#include <QDeadlineTimer>
+
 #include <cstring>
 #include <glib.h>
 #include <unistd.h>
@@ -20,6 +22,7 @@
 #include "dbusdisplay/dbusdisplayconst.h"
 #include "dbusdisplay/framecapture.h"
 #include "dbusdisplay/linuxtoqnum.h"
+#include "dbusdisplay/multiheadmousemapping.h"
 #include "kemu_dbusdisplay_debug.h"
 
 // ~125 Hz - below the rate any guest input driver samples at.
@@ -164,9 +167,51 @@ QemuDisplayWidget::~QemuDisplayWidget()
 
     if (m_ctrl)
         m_ctrl->unsubscribeSignal(m_propsSubscription);
+    if (m_multiheadMouseMapping) {
+        disconnect(m_multiheadMouseMapping.get(), nullptr, this, nullptr);
+        m_multiheadMouseMapping->setCursorVisible(m_displayHead, false);
+    }
     makeCurrent();
     releaseGL();
     doneCurrent();
+}
+
+void QemuDisplayWidget::setMultiheadMouseMapping(const QSharedPointer<MultiheadMouseMapping> &mapping, uint head)
+{
+    if (m_multiheadMouseMapping) {
+        disconnect(m_multiheadMouseMapping.get(), nullptr, this, nullptr);
+        m_multiheadMouseMapping->setCursorVisible(m_displayHead, false);
+    }
+    m_multiheadMouseMapping = mapping;
+    m_displayHead = head;
+    if (!mapping)
+        return;
+    connect(mapping.get(), &MultiheadMouseMapping::cursorHeadsChanged, this, &QemuDisplayWidget::updateCursor);
+    mapping->attachHead(head);
+    if (head == 0 && !m_fbSize.isEmpty())
+        mapping->handleScanout(head, m_fbSize);
+}
+
+void QemuDisplayWidget::setCursorPositionIsImageOrigin(bool imageOrigin)
+{
+    if (m_cursorPositionIsImageOrigin == imageOrigin)
+        return;
+    m_cursorPositionIsImageOrigin = imageOrigin;
+    updateSubSurfaceCursor();
+    if (m_relativeGrabActive)
+        scheduleRepaint();
+}
+
+QPoint QemuDisplayWidget::guestPointer(const CursorInfo &ci) const
+{
+    if (m_cursorPositionIsImageOrigin)
+        return QPoint(ci.pos_x + ci.hot_x, ci.pos_y + ci.hot_y);
+    return QPoint(ci.pos_x, ci.pos_y);
+}
+
+bool QemuDisplayWidget::isInactiveSecondaryHead() const
+{
+    return m_multiheadMouseMapping && m_displayHead != 0 && !m_multiheadMouseMapping->hasDisplay(m_displayHead);
 }
 
 // =============================================================================
@@ -244,7 +289,7 @@ void QemuDisplayWidget::updateSubSurfaceCursor()
 
     const CursorInfo ci = m_listener->cursorInfo();
     const bool show = m_relativeGrabActive && !m_dimmed && ci.visible && !ci.image.isNull();
-    m_subsurface->setCursor(ci.image, QPoint(ci.hot_x, ci.hot_y), QPoint(ci.pos_x, ci.pos_y), show);
+    m_subsurface->setCursor(ci.image, QPoint(ci.hot_x, ci.hot_y), guestPointer(ci), show);
 }
 
 bool QemuDisplayWidget::presentViaSubSurface()
@@ -330,8 +375,15 @@ void QemuDisplayWidget::updateCursor()
     }
 
     const CursorInfo ci = m_listener->cursorInfo();
-    if (ci.image.isNull() || !ci.visible) {
+    // The guest shows its cursor on another head while the host pointer is
+    // over this one: a stale cursor is better than none.
+    const bool fallback = !ci.visible && m_multiheadMouseMapping && m_multiheadMouseMapping->isCursorOnOtherHead(m_displayHead);
+    if (!ci.visible && !fallback) {
         setCursor(Qt::BlankCursor);
+        return;
+    }
+    if (ci.image.isNull()) {
+        setCursor(fallback ? Qt::ArrowCursor : Qt::BlankCursor);
         return;
     }
     const float submit_scale = qCeil(devicePixelRatio());
@@ -369,27 +421,32 @@ void QemuDisplayWidget::onCursorImageChanged()
 void QemuDisplayWidget::onCursorMoved()
 {
     const CursorInfo ci = m_listener->cursorInfo();
+    if (m_multiheadMouseMapping) {
+        m_multiheadMouseMapping->setCursorVisible(m_displayHead, ci.visible);
+        if (ci.visible && !ci.image.isNull())
+            m_multiheadMouseMapping->noteGuestPointer(m_displayHead, guestPointer(ci), QDeadlineTimer::current().deadline());
+    }
+    const bool visibilityChanged = ci.visible != m_lastCursorVisible;
+    const QPoint pos(ci.pos_x, ci.pos_y);
+    const bool positionChanged = pos != m_lastCursorPos;
 
-    if (ci.visible != m_lastCursorVisible) {
+    if (visibilityChanged) {
         m_lastCursorVisible = ci.visible;
-        updateCursor(); // host cursor must show/hide
+        updateCursor();
     }
 
     if (!m_relativeGrabActive)
-        return; // no overlay drawn, nothing to repaint
-
-    const QPoint pos(ci.pos_x, ci.pos_y);
-    if (pos == m_lastCursorPos)
+        return;
+    if (!positionChanged && !visibilityChanged)
         return;
     m_lastCursorPos = pos;
 
     if (m_subsurfaceActive) {
-        // Moving the cursor sub-surface needs no repaint at all.
         updateSubSurfaceCursor();
         return;
     }
 
-    scheduleRepaint(); // overlay follows the guest position
+    scheduleRepaint();
 }
 
 void QemuDisplayWidget::scheduleRepaint()
@@ -973,8 +1030,9 @@ void QemuDisplayWidget::renderCursorQuad()
     const int curW = qMax(1, qRound(m_cursorTexSize.width() * m_scale));
     const int curH = qMax(1, qRound(m_cursorTexSize.height() * m_scale));
 
-    const int fromLeft = offX + qRound((ci.pos_x - ci.hot_x) * m_scale);
-    const int fromTop = offY + qRound((ci.pos_y - ci.hot_y) * m_scale);
+    const QPoint pointer = guestPointer(ci);
+    const int fromLeft = offX + qRound((pointer.x() - ci.hot_x) * m_scale);
+    const int fromTop = offY + qRound((pointer.y() - ci.hot_y) * m_scale);
 
     // Viewport origin is bottom-left; a viewport may extend past the
     // framebuffer, rasterisation clips it. That handles edge-clipped cursors.
@@ -1120,6 +1178,8 @@ void QemuDisplayWidget::onScanoutChanged(int w, int h)
 
     if (w == 0 || h == 0) {
         m_fbSize = QSize();
+        if (m_multiheadMouseMapping)
+            m_multiheadMouseMapping->handleScanout(m_displayHead, {});
         m_textureReady = false;
         scheduleRepaint();
         return;
@@ -1130,6 +1190,8 @@ void QemuDisplayWidget::onScanoutChanged(int w, int h)
     }
 
     scheduleRepaint();
+    if (m_multiheadMouseMapping)
+        m_multiheadMouseMapping->handleScanout(m_displayHead, QSize(w, h));
     if (m_fbSize != QSize(w, h)) {
         m_fbSize = QSize(w, h);
         updateWidgetSize();
@@ -1147,6 +1209,8 @@ void QemuDisplayWidget::onDmaBufScanout(int w, int h)
         m_texAllocSize = QSize();
     m_dmaBufPending = true;
     scheduleRepaint();
+    if (m_multiheadMouseMapping)
+        m_multiheadMouseMapping->handleScanout(m_displayHead, QSize(w, h));
     if (m_fbSize != QSize(w, h)) {
         m_fbSize = QSize(w, h);
         updateWidgetSize();
@@ -1315,6 +1379,15 @@ QPointF QemuDisplayWidget::mapToFramebuffer(const QPointF &widgetPos) const
 
 void QemuDisplayWidget::queueAbsMotion(uint fx, uint fy)
 {
+    m_pendingAbsConsolePath = m_consolePath;
+    if (m_multiheadMouseMapping) {
+        const auto position = m_multiheadMouseMapping->mapToPrimary(m_displayHead, QPoint(int(fx), int(fy)));
+        if (position) {
+            fx = uint(position->x());
+            fy = uint(position->y());
+            m_pendingAbsConsolePath = m_multiheadMouseMapping->primaryConsolePath();
+        }
+    }
     m_pendingAbsX = fx;
     m_pendingAbsY = fy;
     m_hasPendingAbs = true;
@@ -1347,7 +1420,15 @@ void QemuDisplayWidget::flushMotion()
         m_hasPendingRel = false;
     }
     if (m_hasPendingAbs) {
-        m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::MouseIface, u"SetAbsPosition"_s, g_variant_new("(uu)", m_pendingAbsX, m_pendingAbsY));
+        m_ctrl->callAsync(m_pendingAbsConsolePath, KemuDbusDisplayConst::MouseIface, u"SetAbsPosition"_s, g_variant_new("(uu)", m_pendingAbsX, m_pendingAbsY));
+        if (m_multiheadMouseMapping) {
+            const QPoint sent{int(m_pendingAbsX), int(m_pendingAbsY)};
+            const qint64 msecs = QDeadlineTimer::current().deadline();
+            if (m_multiheadMouseMapping->hasGuestAgentPointer() && m_pendingAbsConsolePath == m_consolePath)
+                m_multiheadMouseMapping->noteAgentPointerSent(m_displayHead, sent, msecs);
+            else if (m_pendingAbsConsolePath == m_multiheadMouseMapping->primaryConsolePath())
+                m_multiheadMouseMapping->notePointerSent(sent, msecs);
+        }
         m_hasPendingAbs = false;
         sent = true;
     }
@@ -1365,7 +1446,9 @@ void QemuDisplayWidget::sendWheelClick(uint button)
 
 void QemuDisplayWidget::mouseMoveEvent(QMouseEvent *event)
 {
-    if (m_dimmed)
+    // A head the guest does not drive has nothing to point at; the input
+    // would land on another head.
+    if (m_dimmed || isInactiveSecondaryHead())
         return;
 
     if (m_pointerLocked)
@@ -1416,7 +1499,7 @@ void QemuDisplayWidget::onRelativeMotion(double dx, double dy)
 
 void QemuDisplayWidget::mousePressEvent(QMouseEvent *event)
 {
-    if (m_dimmed)
+    if (m_dimmed || isInactiveSecondaryHead())
         return;
 
     // Relative: first click captures the pointer (SDL-style).
@@ -1460,7 +1543,7 @@ void QemuDisplayWidget::wheelEvent(QWheelEvent *event)
 {
     // While dimmed (e.g. during a save-state), the guest is paused or
     // about to be killed.
-    if (m_dimmed)
+    if (m_dimmed || isInactiveSecondaryHead())
         return;
 
     flushMotion(); // scroll target depends on the current position

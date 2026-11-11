@@ -916,11 +916,9 @@ void QemuDisplayListener::handleMouseSet(GVariant *parameters, GDBusMethodInvoca
     gint32 x, y, on;
     g_variant_get(parameters, "(iii)", &x, &y, &on);
 
-    {
-        m_cursor.pos_x = x;
-        m_cursor.pos_y = y;
-        m_cursor.visible = (on != 0);
-    }
+    m_cursor.pos_x = x;
+    m_cursor.pos_y = y;
+    m_cursor.visible = (on != 0);
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
     Q_EMIT cursorMoved();

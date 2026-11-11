@@ -28,6 +28,7 @@ as host display backends. Guest operating systems can still use X11.
 
 - Integrated QEMU D-Bus viewer with 3D acceleration, bidirectional audio,
   clipboard sharing and pointer capture, or QEMU's own SDL window
+- A second monitor in a separate window (experimental)
 - Hot-swapping of ISO and floppy images, USB passthrough
 - Shared folders via 9p (Linux/BSD) and virtio-fs (Windows)
 
@@ -203,6 +204,20 @@ Closing the viewer leaves the VM running headless; select *Show Display* to
 reopen it. Clipboard sharing requires the SPICE vdagent in the guest. For
 more details, including a workaround for Wayland guests, see
 [docs/display.md](docs/display.md).
+
+### Multiple monitors (experimental)
+
+A virtual machine using VirtIO graphics and the integrated viewer supports
+two monitors (*Edit… → Hardware → Display → Monitors*). Display 2 opens in a
+separate window. Closing this window disconnects the monitor in the guest OS;
+selecting *View → Displays → Display 2* in the viewer reconnects it.
+
+Installing the SPICE vdagent in the guest OS ensures accurate mouse tracking
+by communicating the guest's display layout to the host. Without the agent,
+QEMU attempts to infer the layout from the guest cursor or uses the arrangement
+set under *View → Displays → Display 2 Position*. Because guest display scaling
+can cause pointer misalignment, set both monitors to the same scaling factor
+when using the agent.
 
 ### Networking
 

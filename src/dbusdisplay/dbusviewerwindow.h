@@ -15,6 +15,9 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QScrollArea>
+#include <QPair>
+#include <QHash>
+#include <QSet>
 #include <QStatusBar>
 #include <QStringList>
 #include <QStyle>
@@ -32,6 +35,7 @@
 #include "dbusdisplay/controlconnection.h"
 #include "dbusdisplay/displaywidget.h"
 #include "dbusdisplay/listener.h"
+#include "dbusdisplay/multiheadmousemapping.h"
 #include "dbusdisplay/osdoverlay.h"
 #include "dbusdisplay/statusindicator.h"
 #include "dbusdisplay/waylandkeyboardshortcutsinhibit.h"
@@ -90,6 +94,12 @@ public:
 
     void saveScreenshot();
     void setStatusBarShown(bool shown);
+    void setAdditionalDisplays(const QList<QPair<uint, uint>> &displays, const QSet<uint> &openDisplays);
+    void setSecondaryDisplayPlacement(MultiheadMouseMapping::SecondaryPlacement placement);
+    void setSecondaryDisplayPosition(const QPoint &position);
+    void showLayoutDetectionFailed();
+    void setSecondaryPlacementByGuestAgent(bool byGuestAgent);
+    void showGuestAgentPointerMisplaced();
 
     QemuDisplayWidget *displayWidget() const
     {
@@ -139,6 +149,9 @@ public:
 
 Q_SIGNALS:
     void viewerClosed();
+    void subDisplayToggled(uint consoleId, bool open);
+    void secondaryPlacementChanged(MultiheadMouseMapping::SecondaryPlacement placement);
+    void secondaryPositionChanged(const QPoint &position);
     void shutdownRequested();
     void resetRequested();
     void powerOffRequested();
@@ -192,6 +205,7 @@ private:
     void createMenus();
     void createStatusBar();
     void updateStatusBar();
+    void updateSecondaryPlacementMenu();
     void popupIndicatorMenu(StatusIndicator *indicator, QMenu *menu);
     void showOsd(const QString &text, int holdMs = 2500);
     void setupClipboard(ClipboardDirection dir);
@@ -255,6 +269,13 @@ private:
     QAction *m_actAbout = nullptr;
 
     QMenu *m_usbMenu = nullptr;
+    QMenu *m_displaysMenu = nullptr;
+    QMenu *m_secondaryPlacementMenu = nullptr;
+    QHash<int, QAction *> m_secondaryPlacementActions;
+    MultiheadMouseMapping::SecondaryPlacement m_secondaryPlacement = MultiheadMouseMapping::SecondaryPlacement::Automatic;
+    QPoint m_secondaryPosition = QPoint(1920, 0);
+    bool m_secondaryPlacementByGuestAgent = false;
+    QHash<uint, QAction *> m_subDisplayActions;
 
     QLabel *m_lblResolution = nullptr;
 

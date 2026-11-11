@@ -247,6 +247,58 @@ private Q_SLOTS:
         QVERIFY(a != b);
     }
 
+    void multiheadArguments_data()
+    {
+        QTest::addColumn<bool>("dbus");
+        QTest::addColumn<bool>("virtio");
+        QTest::addColumn<bool>("acceleration");
+        QTest::addColumn<bool>("headless");
+        QTest::addColumn<int>("outputs");
+        QTest::addColumn<bool>("expectedMultihead");
+
+        QTest::newRow("default") << true << true << true << false << 1 << false;
+        QTest::newRow("dbus-3d") << true << true << true << false << 2 << true;
+        QTest::newRow("dbus-3d-headless") << true << true << true << true << 2 << true;
+        QTest::newRow("dbus-2d") << true << true << false << false << 2 << true;
+        QTest::newRow("sdl") << false << true << true << false << 2 << false;
+        QTest::newRow("qxl") << true << false << false << false << 2 << false;
+        QTest::newRow("max-clamped") << true << true << false << false << 20 << true;
+    }
+
+    void multiheadArguments()
+    {
+        QFETCH(bool, dbus);
+        QFETCH(bool, virtio);
+        QFETCH(bool, acceleration);
+        QFETCH(bool, headless);
+        QFETCH(int, outputs);
+        QFETCH(bool, expectedMultihead);
+
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QDir vmDir(dir.path());
+        VMConfig config = testConfig(vmDir);
+        config.setDisplayType(dbus ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Sdl);
+        config.setGpuType(virtio ? VMSpecs::GpuType::Virtio : VMSpecs::GpuType::Qxl);
+        config.setGpu3dAcceleration(acceleration);
+        config.setMonitorCount(outputs);
+
+        const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s), {}, false, headless);
+        QString graphicsDevice;
+        for (const QString &arg : args) {
+            if (arg.startsWith(u"virtio-vga"_s) || arg.startsWith(u"qxl-vga"_s)) {
+                graphicsDevice = arg;
+                break;
+            }
+        }
+        // Only the guest agent knows how the guest arranged the monitors.
+        QCOMPARE(args.contains(u"qemu-vdagent,id=vdagent,clipboard=on,mouse=on"_s), expectedMultihead);
+        QVERIFY(!graphicsDevice.isEmpty());
+        QCOMPARE(graphicsDevice.contains(u"max_outputs="_s), expectedMultihead);
+        if (expectedMultihead)
+            QVERIFY(graphicsDevice.contains(u"max_outputs=%1"_s.arg(qMin(outputs, KEMUConst::SupportedMonitorCount))));
+    }
+
     void exportedScript_data()
     {
         QTest::addColumn<bool>("relativePaths");

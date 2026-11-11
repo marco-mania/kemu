@@ -9,10 +9,15 @@
 #include <optional>
 
 #include <QByteArray>
+#include <QHash>
 #include <QPointer>
+#include <QSharedPointer>
 #include <QString>
 
 #include "dbusdisplay/dbusviewerwindow.h"
+#include "dbusdisplay/dbusviewersubwindow.h"
+#include "dbusdisplay/displayconsoles.h"
+#include "dbusdisplay/multiheadmousemapping.h"
 #include "utils/cloudimagedeployer.h"
 #include "utils/guestagentclient.h"
 
@@ -30,12 +35,26 @@ struct VmRuntimeInfo {
 
     // --- integrated D-Bus viewer ---
 
+    struct SubDisplayState {
+        QemuDisplayConsole console;
+        QPointer<QemuDisplayListener> listener;
+        QPointer<DbusViewerSubWindow> window;
+        quint64 registrationGeneration = 0;
+        bool registering = false;
+        bool wanted = true;
+        QRect lastUiInfo;
+    };
+
     struct ViewerState {
         QPointer<DbusViewerWindow> window;
+        QSharedPointer<MultiheadMouseMapping> mouseMapping;
         QemuDisplayListener *displayListener = nullptr;
         QemuAudioListener *audioOut = nullptr;
         QemuAudioInListener *audioIn = nullptr;
         QPointer<QemuControlConnection> ctrl;
+        QHash<guint, SubDisplayState> subDisplays;
+        quint64 consoleDiscoveryGeneration = 0;
+        quint64 subDisplayRegistrationGeneration = 0;
     };
 
     // Empty until the viewer has been set up; mirrors the old

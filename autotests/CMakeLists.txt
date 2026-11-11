@@ -39,6 +39,24 @@ ecm_add_test(tpmstatetest.cpp ${CMAKE_SOURCE_DIR}/src/utils/tpmstate.cpp ${CMAKE
              LINK_LIBRARIES Qt6::Core Qt6::Test)
 target_include_directories(tpmstatetest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
+ecm_add_test(multiheadmousemappingtest.cpp
+             ${CMAKE_SOURCE_DIR}/src/dbusdisplay/multiheadmousemapping.cpp
+             TEST_NAME multiheadmousemappingtest
+             LINK_LIBRARIES Qt6::Core Qt6::Test)
+target_include_directories(multiheadmousemappingtest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+ecm_add_test(displayconsolestest.cpp
+             ${CMAKE_SOURCE_DIR}/src/dbusdisplay/displayconsoles.cpp
+             ${CMAKE_SOURCE_DIR}/src/dbusdisplay/controlconnection.cpp
+             ${CMAKE_SOURCE_DIR}/src/dbusdisplay/glibeventbridge.cpp
+             TEST_NAME displayconsolestest
+             LINK_LIBRARIES Qt6::Core Qt6::Test PkgConfig::GIO)
+target_include_directories(displayconsolestest PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR})
+ecm_qt_declare_logging_category(displayconsolestest
+                                HEADER "kemu_dbusdisplay_debug.h"
+                                IDENTIFIER "KEMU_DBUSDISPLAY"
+                                CATEGORY_NAME "org.kde.kemu.dbusdisplay")
+
 # D-Bus display protocol tests use a local peer connection and no QEMU process.
 ecm_add_test(dbusdisplaytest.cpp
              ${CMAKE_SOURCE_DIR}/src/dbusdisplay/listener.cpp

@@ -506,15 +506,16 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
                                 "a native QEMU window outside KEMU - useful for the standalone qemu.sh "
                                 "script, or if your QEMU build lacks dbus-display support."));
 
-    // Shows the stored value; this version always starts the VM with one.
     monitorCountSpin = new QSpinBox();
-    monitorCountSpin->setRange(1, KEMUConst::MaxMonitorCount);
+    monitorCountSpin->setRange(1, KEMUConst::SupportedMonitorCount);
     monitorCountSpin->setValue(GlobalDefaults.monitorCount);
-    monitorCountSpin->setToolTip(i18n("Multiple monitors are not supported yet. The VM starts with one monitor."));
+    monitorCountSpin->setToolTip(i18n("Multiple monitors require VirtIO graphics and the integrated D-Bus viewer. "
+                                      "The current implementation supports up to two monitors."));
     displayLayout->addRow(i18n("Monitors:"), monitorCountSpin);
     monitorCountLabel = qobject_cast<QLabel *>(displayLayout->labelForField(monitorCountSpin));
-    monitorCountSpin->setEnabled(false);
-    monitorCountLabel->setEnabled(false);
+
+    monitorMessage = createInlineMessage(KMessageWidget::Information);
+    displayLayout->addRow({}, monitorMessage);
 
     resolutionCombo = new QComboBox();
     resolutionCombo->addItem(u"1280 × 800"_s, QSize(1280, 800));
@@ -894,6 +895,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     connect(gpuCombo, &QComboBox::currentIndexChanged, this, &EditVmDialog::onGpuDisplayChanged);
     connect(displayCombo, &QComboBox::currentIndexChanged, this, &EditVmDialog::onGpuDisplayChanged);
     connect(accel3dCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
+    connect(monitorCountSpin, &QSpinBox::valueChanged, this, &EditVmDialog::onGpuDisplayChanged);
     // The hints depend on the OS family set on the General tab.
     connect(osFamilyCombo, &QComboBox::currentIndexChanged, this, &EditVmDialog::onGpuDisplayChanged);
     connect(audioCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
@@ -1310,6 +1312,26 @@ void EditVmDialog::onGpuDisplayChanged()
 
     resolutionCombo->setEnabled(isVirtio);
     resolutionLabel->setEnabled(isVirtio);
+
+    const bool multiheadAvailable = isVirtio
+        && static_cast<VMSpecs::DisplayType>(displayCombo->currentData().toInt()) == VMSpecs::DisplayType::Dbus;
+    monitorCountSpin->setEnabled(multiheadAvailable);
+    monitorCountLabel->setEnabled(multiheadAvailable);
+    // The Windows virtio-gpu driver drives a single output. Elsewhere only
+    // spice-vdagent knows how the guest arranged the monitors.
+    QString monitorText;
+    QString monitorToolTip;
+    if (multiheadAvailable && monitorCountSpin->value() > 1) {
+        if (isWindows) {
+            monitorText = i18n("Multiple monitors are experimental. Windows guests currently use one monitor.");
+        } else {
+            monitorText = i18n("Multiple monitors are experimental. For exact pointer placement, install spice-vdagent in the guest.");
+            monitorToolTip = i18n("With several monitors, spice-vdagent in the guest places the pointer exactly. "
+                                  "Without it, KEMU estimates how the guest arranged the monitors.");
+        }
+    }
+    monitorMessage->setToolTip(monitorToolTip);
+    updateInlineMessage(monitorMessage, monitorText, KMessageWidget::Information);
 
     const bool can3d = isVirtio && VMConfig::isGpu3dAvailable();
     accel3dCheck->setEnabled(can3d);
