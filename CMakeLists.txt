@@ -8,7 +8,7 @@ if(POLICY CMP0175)
   cmake_policy(SET CMP0175 OLD)
 endif()
 
-project(kemu VERSION 0.7.0)
+project(kemu VERSION 0.8.0)
 
 option(KEMU_SELF_CONTAINED "Application ships its own external tools" OFF)
 
@@ -54,7 +54,10 @@ if(Qt6_VERSION VERSION_GREATER_EQUAL "6.10.0")
   find_package(Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED COMPONENTS GuiPrivate)
 endif()
 if(NOT TARGET Qt6::GuiPrivate)
-  message(FATAL_ERROR "Qt6::GuiPrivate is required (install the Qt private development headers)")
+  message(
+    FATAL_ERROR
+      "Qt6::GuiPrivate is required (install the Qt private development headers)"
+  )
 endif()
 
 find_package(Qt6WaylandClient ${QT_MIN_VERSION} REQUIRED CONFIG)

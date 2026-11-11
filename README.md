@@ -10,7 +10,8 @@ KEMU requires a native Wayland desktop session. X11 and XWayland cannot be used
 as host display backends. Guest operating systems can still use X11.
 
 ![image](screenshots/fullview.png) ![image](screenshots/newvm.png)
-![image](screenshots/vmsettings.png) ![image](screenshots/snapshotdialog.png)
+![image](screenshots/vmsettings.png) ![image](screenshots/vmsettings2.png)
+![image](screenshots/snapshotdialog.png)
 
 ## Features
 
