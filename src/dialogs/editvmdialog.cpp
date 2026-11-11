@@ -509,8 +509,9 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     monitorCountSpin = new QSpinBox();
     monitorCountSpin->setRange(1, KEMUConst::SupportedMonitorCount);
     monitorCountSpin->setValue(GlobalDefaults.monitorCount);
-    monitorCountSpin->setToolTip(i18n("Multiple monitors require VirtIO graphics and the integrated D-Bus viewer. "
-                                      "The current implementation supports up to two monitors."));
+    monitorCountSpin->setToolTip(
+        i18n("Multiple monitors require VirtIO graphics and the integrated D-Bus viewer. "
+             "The current implementation supports up to two monitors."));
     displayLayout->addRow(i18n("Monitors:"), monitorCountSpin);
     monitorCountLabel = qobject_cast<QLabel *>(displayLayout->labelForField(monitorCountSpin));
 
@@ -1313,8 +1314,7 @@ void EditVmDialog::onGpuDisplayChanged()
     resolutionCombo->setEnabled(isVirtio);
     resolutionLabel->setEnabled(isVirtio);
 
-    const bool multiheadAvailable = isVirtio
-        && static_cast<VMSpecs::DisplayType>(displayCombo->currentData().toInt()) == VMSpecs::DisplayType::Dbus;
+    const bool multiheadAvailable = isVirtio && static_cast<VMSpecs::DisplayType>(displayCombo->currentData().toInt()) == VMSpecs::DisplayType::Dbus;
     monitorCountSpin->setEnabled(multiheadAvailable);
     monitorCountLabel->setEnabled(multiheadAvailable);
     // The Windows virtio-gpu driver drives a single output. Elsewhere only
@@ -1323,11 +1323,12 @@ void EditVmDialog::onGpuDisplayChanged()
     QString monitorToolTip;
     if (multiheadAvailable && monitorCountSpin->value() > 1) {
         if (isWindows) {
-            monitorText = i18n("Multiple monitors are experimental. Windows guests currently use one monitor.");
+            monitorText = i18n("Multiple monitor support is experimental. Windows guests currently support only a single monitor.");
         } else {
-            monitorText = i18n("Multiple monitors are experimental. For exact pointer placement, install spice-vdagent in the guest.");
-            monitorToolTip = i18n("With several monitors, spice-vdagent in the guest places the pointer exactly. "
-                                  "Without it, KEMU estimates how the guest arranged the monitors.");
+            monitorText = i18n("Multiple monitor support is experimental. For accurate pointer tracking, install spice-vdagent in the guest.");
+            monitorToolTip = i18n(
+                "When using multiple monitors, spice-vdagent ensures accurate pointer positioning in the guest. "
+                "Without it, KEMU estimates the guest display layout.");
         }
     }
     monitorMessage->setToolTip(monitorToolTip);
