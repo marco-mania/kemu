@@ -1056,6 +1056,8 @@ void QemuDisplayWidget::renderCursorQuad()
 
 void QemuDisplayWidget::queryPointerMode()
 {
+    if (!m_ctrl)
+        return;
     auto ptr = QPointer(this);
     m_ctrl->callWithReply(m_consolePath,
                           u"org.freedesktop.DBus.Properties"_s,
@@ -1409,6 +1411,12 @@ void QemuDisplayWidget::flushMotion()
 {
     m_motionTimer.stop();
 
+    if (!m_ctrl) {
+        m_hasPendingRel = m_hasPendingAbs = false;
+        m_pendingRelX = m_pendingRelY = 0;
+        return;
+    }
+
     bool sent = false;
     if (m_hasPendingRel) {
         if (m_pendingRelX != 0 || m_pendingRelY != 0) {
@@ -1440,6 +1448,8 @@ void QemuDisplayWidget::flushMotion()
 
 void QemuDisplayWidget::sendWheelClick(uint button)
 {
+    if (!m_ctrl)
+        return;
     m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::MouseIface, u"Press"_s, g_variant_new("(u)", button));
     m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::MouseIface, u"Release"_s, g_variant_new("(u)", button));
 }
@@ -1518,7 +1528,7 @@ void QemuDisplayWidget::mousePressEvent(QMouseEvent *event)
     flushMotion(); // the button event must not overtake the position
 
     const int btn = qtButtonToQemu(event->button());
-    if (btn >= 0)
+    if (btn >= 0 && m_ctrl)
         m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::MouseIface, u"Press"_s, g_variant_new("(u)", static_cast<uint>(btn)));
 }
 
@@ -1535,7 +1545,7 @@ void QemuDisplayWidget::mouseReleaseEvent(QMouseEvent *event)
     flushMotion();
 
     const int btn = qtButtonToQemu(event->button());
-    if (btn >= 0)
+    if (btn >= 0 && m_ctrl)
         m_ctrl->callAsync(m_consolePath, KemuDbusDisplayConst::MouseIface, u"Release"_s, g_variant_new("(u)", static_cast<uint>(btn)));
 }
 
@@ -1596,6 +1606,11 @@ int QemuDisplayWidget::qtButtonToQemu(Qt::MouseButton button)
         return 1;
     case Qt::RightButton:
         return 2;
+    // 3/4 and 7/8 are the wheel, see sendWheelClick().
+    case Qt::BackButton:
+        return 5; // QEMU "side"
+    case Qt::ForwardButton:
+        return 6; // QEMU "extra"
     default:
         return -1;
     }

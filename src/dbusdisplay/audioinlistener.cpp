@@ -234,7 +234,7 @@ bool QemuAudioInWorker::setup(int fd, const QAudioDevice &device)
 {
     m_device = device;
 
-    m_context = g_main_context_new();
+    m_context = GLibEventBridge::newContext();
 
     GError *error = nullptr;
     GSocket *gsock = g_socket_new_from_fd(fd, &error);

@@ -38,6 +38,17 @@ public:
     explicit GLibEventBridge(GMainContext *context, QObject *parent = nullptr);
     ~GLibEventBridge() override;
 
+    // Creates a context this bridge can drive. Every context handed to the
+    // bridge must come from here: GLib only signals the wakeup fd when a
+    // source is attached from a thread other than the owner's, and the
+    // bridge owns the context on the very thread that issues our own GDBus
+    // calls. Without OWNERLESS_POLLING the call timeouts those attach would
+    // never arm m_timeoutTimer, so an unanswered call would wait forever.
+    static GMainContext *newContext()
+    {
+        return g_main_context_new_with_flags(G_MAIN_CONTEXT_FLAGS_OWNERLESS_POLLING);
+    }
+
     // Detach: no further dispatching. Safe to call from within a handler
     // currently being dispatched by this bridge.
     void stop();

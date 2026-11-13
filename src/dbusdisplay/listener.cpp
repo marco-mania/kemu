@@ -243,7 +243,7 @@ bool QemuDisplayListener::connectListener()
     m_ourFd = -1;
     m_socketFd = ourFd;
 
-    m_context = g_main_context_new();
+    m_context = GLibEventBridge::newContext();
 
     GError *error = nullptr;
     GSocket *gsock = g_socket_new_from_fd(ourFd, &error);

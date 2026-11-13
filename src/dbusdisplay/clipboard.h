@@ -112,4 +112,10 @@ private:
     // re-announces the selection on every focus change, and clipboard
     // managers (Klipper) echo guest data late.
     QString m_lastSharedText;
+
+    // Content of our latest grab, captured when it was announced. Request()
+    // is answered from here and never from the live clipboard: QEMU waits for
+    // the reply synchronously in its main loop, so a slow source application
+    // would stall the whole VM for as long as it takes to deliver.
+    QString m_offeredText;
 };

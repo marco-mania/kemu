@@ -19,7 +19,7 @@ class QemuControlDispatch : public QObject
 {
 public:
     QemuControlDispatch()
-        : m_context(g_main_context_new())
+        : m_context(GLibEventBridge::newContext())
         , m_bridge(new GLibEventBridge(m_context, this))
         , m_cancellable(g_cancellable_new())
     {

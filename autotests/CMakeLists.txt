@@ -69,6 +69,29 @@ ecm_qt_declare_logging_category(dbusdisplaytest
                                 IDENTIFIER "KEMU_DBUSDISPLAY"
                                 CATEGORY_NAME "org.kde.kemu.dbusdisplay")
 
+ecm_add_test(glibeventbridgetest.cpp
+             ${CMAKE_SOURCE_DIR}/src/dbusdisplay/glibeventbridge.cpp
+             TEST_NAME glibeventbridgetest
+             LINK_LIBRARIES Qt6::Core Qt6::Test PkgConfig::GIO)
+target_include_directories(glibeventbridgetest PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR})
+ecm_qt_declare_logging_category(glibeventbridgetest
+                                HEADER "kemu_dbusdisplay_debug.h"
+                                IDENTIFIER "KEMU_DBUSDISPLAY"
+                                CATEGORY_NAME "org.kde.kemu.dbusdisplay")
+
+# Host clipboard bridge against a stand-in for QEMU's clipboard peer.
+ecm_add_test(clipboardtest.cpp
+             ${CMAKE_SOURCE_DIR}/src/dbusdisplay/clipboard.cpp
+             ${CMAKE_SOURCE_DIR}/src/dbusdisplay/controlconnection.cpp
+             ${CMAKE_SOURCE_DIR}/src/dbusdisplay/glibeventbridge.cpp
+             TEST_NAME clipboardtest
+             LINK_LIBRARIES Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test PkgConfig::GIO)
+target_include_directories(clipboardtest PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR})
+ecm_qt_declare_logging_category(clipboardtest
+                                HEADER "kemu_dbusdisplay_debug.h"
+                                IDENTIFIER "KEMU_DBUSDISPLAY"
+                                CATEGORY_NAME "org.kde.kemu.dbusdisplay")
+
 ecm_add_test(controlconnectiontest.cpp
              ${CMAKE_SOURCE_DIR}/src/dbusdisplay/controlconnection.cpp
              ${CMAKE_SOURCE_DIR}/src/dbusdisplay/glibeventbridge.cpp

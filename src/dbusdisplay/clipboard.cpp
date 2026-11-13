@@ -175,9 +175,12 @@ void QemuClipboardManager::onMethodCall(GDBusConnection *,
 
     } else if (g_strcmp0(method_name, "Register") == 0) {
         // QEMU re-registers us to restart the serial counter, e.g. whenever
-        // the guest agent (re)connects.
+        // the guest agent (re)connects. The session starts empty on QEMU's
+        // side, so offer the host content again - after the reply, not from
+        // within this dispatch.
         self->resetSession();
         g_dbus_method_invocation_return_value(invocation, nullptr);
+        QTimer::singleShot(0, self, &QemuClipboardManager::onHostClipboardChanged);
 
     } else if (g_strcmp0(method_name, "Unregister") == 0) {
         g_dbus_method_invocation_return_value(invocation, nullptr);
@@ -214,6 +217,11 @@ void QemuClipboardManager::doRegister()
                               resetSession();
                               m_registered = true;
                               qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Register() acknowledged";
+
+                              // Whatever is on the host clipboard right now is
+                              // the first offer; waiting for the next change
+                              // would leave the guest empty-handed until then.
+                              QTimer::singleShot(0, this, &QemuClipboardManager::onHostClipboardChanged);
                           });
 }
 
@@ -355,18 +363,16 @@ QemuClipboardManager::ClipboardData QemuClipboardManager::handleRequest(uint sel
         return {};
     }
 
-    const QMimeData *mimeData = m_hostClipboard->mimeData();
-    if (!mimeData)
+    // Only what our grab announced, from the snapshot taken then (see
+    // m_offeredText). QEMU's bridge carries UTF-8 text and nothing else.
+    if (m_offeredText.isEmpty()) {
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: nothing offered, cannot satisfy request";
         return {};
-
+    }
     for (const QString &mime : mimes) {
-        if (mimeData->hasFormat(mime)) {
-            qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: serving guest with native format:" << mime;
-            return {mime, mimeData->data(mime)};
-        }
-        if ((mime == u"text/plain"_s || mime == u"text/plain;charset=utf-8"_s || mime == u"UTF8_STRING"_s) && mimeData->hasText()) {
-            qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: serving guest with text fallback for:" << mime;
-            return {mime, mimeData->text().toUtf8()};
+        if (mime == u"text/plain;charset=utf-8"_s || mime == u"text/plain"_s || mime == u"UTF8_STRING"_s) {
+            qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: serving guest from the offered snapshot as" << mime;
+            return {mime, m_offeredText.toUtf8()};
         }
     }
 
@@ -401,6 +407,7 @@ void QemuClipboardManager::onHostClipboardChanged()
         return;
     }
     m_lastSharedText = hostText;
+    m_offeredText = hostText;
 
     const QStringList mimesToSend = {
         u"text/plain;charset=utf-8"_s,
