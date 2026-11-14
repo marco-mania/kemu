@@ -63,6 +63,7 @@ struct ViewerDevicePrefs {
     bool audioOut = true; // default: on (current behaviour)
     bool audioIn = false; // default: off
     ClipboardDirection clipboard = ClipboardDirection::Off; // default: off
+    bool clipboardFilterPasswords = true; // password manager entries stay on the host
     bool networkLinkUp = true; // virtual cable plugged in
 };
 
@@ -192,6 +193,7 @@ private Q_SLOTS:
     void onClipboardToGuest();
     void onClipboardBoth();
     void onClipboardRegistrationFailed(const QString &error);
+    void onToggleClipboardFilterPasswords(bool checked);
     void onScanoutChanged(int width, int height);
     void onQemuDisconnected();
     void onAbout();
@@ -263,6 +265,7 @@ private:
     QAction *m_actClipToHost = nullptr;
     QAction *m_actClipToGuest = nullptr;
     QAction *m_actClipBoth = nullptr;
+    QAction *m_actClipFilterPasswords = nullptr;
     QAction *m_actGrabMouse = nullptr;
     QAction *m_actKeyboardShortcutsInhibit = nullptr;
     QAction *m_actNetworkLink = nullptr;

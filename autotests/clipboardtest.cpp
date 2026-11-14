@@ -96,6 +96,12 @@ public:
         return m_registrations;
     }
 
+    int releases() const
+    {
+        std::lock_guard lock(m_mutex);
+        return m_releases;
+    }
+
     // QEMU restarting the serial counter, e.g. when the guest agent reconnects.
     void resetSerial()
     {
@@ -197,6 +203,9 @@ private:
         } else if (g_strcmp0(method, "Register") == 0) {
             std::lock_guard lock(self->m_mutex);
             ++self->m_registrations;
+        } else if (g_strcmp0(method, "Release") == 0) {
+            std::lock_guard lock(self->m_mutex);
+            ++self->m_releases;
         } else if (g_strcmp0(method, "Request") == 0) {
             g_dbus_method_invocation_return_dbus_error(invocation, "org.qemu.Display1.Error.Failed", "Empty clipboard");
             return;
@@ -212,6 +221,7 @@ private:
     mutable std::mutex m_mutex;
     std::vector<Grab> m_grabs;
     int m_registrations = 0;
+    int m_releases = 0;
 };
 
 void setHostText(const QString &text, bool secret = false)
@@ -253,12 +263,24 @@ private Q_SLOTS:
         QVERIFY(qemu.grabs().at(0).mimes.contains(u"text/plain;charset=utf-8"_s));
         QCOMPARE(qemu.request(), std::optional<QString>(u"first"_s));
 
-        // Password manager entries are shared like any other text, so they
-        // can be pasted into the guest.
+        // With the password filter on (the default), a password entry is
+        // neither announced nor handed out: the guest still gets what it was
+        // offered last.
         setHostText(u"hunter2"_s, true);
+        QTest::qWait(200);
+        QCOMPARE(qemu.grabs().size(), size_t(1));
+        QCOMPARE(qemu.request(), std::optional<QString>(u"first"_s));
+
+        // Switched off, the password on the clipboard is offered right away.
+        manager->setFilterPasswords(false);
         QTRY_COMPARE_WITH_TIMEOUT(qemu.grabs().size(), size_t(2), 2000);
         QCOMPARE(qemu.grabs().at(1).serial, 1u);
         QCOMPARE(qemu.request(), std::optional<QString>(u"hunter2"_s));
+
+        // Switched on again, the offer is withdrawn.
+        manager->setFilterPasswords(true);
+        QTRY_COMPARE_WITH_TIMEOUT(qemu.releases(), 1, 2000);
+        QCOMPARE(qemu.request(), std::nullopt);
 
         setHostText(u"second"_s);
         QTRY_COMPARE_WITH_TIMEOUT(qemu.grabs().size(), size_t(3), 2000);

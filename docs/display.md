@@ -26,7 +26,9 @@ socket file. No special guest drivers are required for video or input.
   on the host.
 - **Clipboard:** Choose off, guest → host, host → guest or bidirectional
   sharing from the viewer's *Devices* menu. The guest requires the SPICE
-  vdagent.
+  vdagent. *Filter Passwords* (on by default) keeps entries that password
+  managers such as KeePassXC mark as secret on the host; switched off, they
+  reach the guest like any other text.
 - **Pointer capture:** Locks the pointer to the viewer for guests using
   relative mouse input. The compositor must support the pointer constraints
   and relative pointer protocols. Guests using a tablet pointer do not need

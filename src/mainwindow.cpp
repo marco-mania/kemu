@@ -5675,6 +5675,7 @@ ViewerDevicePrefs MainWindow::loadViewerPrefs(const QString &vmName) const
     prefs.audioOut = grp.readEntry(u"AudioOut"_s, prefs.audioOut);
     prefs.audioIn = grp.readEntry(u"AudioIn"_s, prefs.audioIn);
     prefs.clipboard = clipboardDirFromString(grp.readEntry(u"Clipboard"_s, clipboardDirToString(prefs.clipboard)));
+    prefs.clipboardFilterPasswords = grp.readEntry(u"ClipboardFilterPasswords"_s, prefs.clipboardFilterPasswords);
     prefs.networkLinkUp = grp.readEntry(u"NetworkLinkUp"_s, prefs.networkLinkUp);
     return prefs;
 }
@@ -5687,6 +5688,7 @@ void MainWindow::saveViewerPrefs(const QString &vmName, const ViewerDevicePrefs 
     grp.writeEntry(u"AudioOut"_s, prefs.audioOut);
     grp.writeEntry(u"AudioIn"_s, prefs.audioIn);
     grp.writeEntry(u"Clipboard"_s, clipboardDirToString(prefs.clipboard));
+    grp.writeEntry(u"ClipboardFilterPasswords"_s, prefs.clipboardFilterPasswords);
     grp.writeEntry(u"NetworkLinkUp"_s, prefs.networkLinkUp);
 
     config->sync();

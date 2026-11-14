@@ -56,6 +56,10 @@ public:
     // the session and make QEMU reconnect the guest agent.
     void setDirection(ClipboardDirection direction);
 
+    // Keep entries that password managers mark as secret
+    // (x-kde-passwordManagerHint) on the host. On by default.
+    void setFilterPasswords(bool filter);
+
     struct ClipboardData {
         QString mime;
         QByteArray data;
@@ -118,4 +122,9 @@ private:
     // the reply synchronously in its main loop, so a slow source application
     // would stall the whole VM for as long as it takes to deliver.
     QString m_offeredText;
+    bool m_offeredIsSecret = false;
+
+    bool m_filterPasswords = true;
+    static bool isSecret(const QMimeData *mimeData);
+    void withdrawOffer();
 };

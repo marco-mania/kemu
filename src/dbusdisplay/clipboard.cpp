@@ -92,6 +92,42 @@ void QemuClipboardManager::setDirection(ClipboardDirection direction)
     m_direction = direction;
 }
 
+void QemuClipboardManager::setFilterPasswords(bool filter)
+{
+    if (m_filterPasswords == filter)
+        return;
+    m_filterPasswords = filter;
+
+    if (!filter) {
+        // A password already on the clipboard becomes available right away.
+        QTimer::singleShot(0, this, &QemuClipboardManager::onHostClipboardChanged);
+    } else if (m_offeredIsSecret) {
+        // The guest may have fetched it already, but it is no longer handed out.
+        withdrawOffer();
+    }
+}
+
+bool QemuClipboardManager::isSecret(const QMimeData *mimeData)
+{
+    // Convention of KeePassXC, Klipper and others for password entries.
+    static const QString hint = u"x-kde-passwordManagerHint"_s;
+    return mimeData->hasFormat(hint) && mimeData->data(hint) == "secret";
+}
+
+void QemuClipboardManager::withdrawOffer()
+{
+    m_offeredText.clear();
+    m_offeredIsSecret = false;
+    m_lastSharedText.clear(); // offer it again if the filter goes off once more
+    if (!m_weAreOwner || !m_ctrl || !m_registered)
+        return;
+    // QEMU then passes an empty clipboard to the guest agent, which drops
+    // what it holds from us.
+    m_weAreOwner = false;
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: offer withdrawn";
+    m_ctrl->callAsync(KemuDbusDisplayConst::ClipboardPath, KemuDbusDisplayConst::ClipboardIface, u"Release"_s, g_variant_new("(u)", 0u));
+}
+
 QemuClipboardManager::~QemuClipboardManager()
 {
     if (m_ctrl) {
@@ -401,6 +437,13 @@ void QemuClipboardManager::onHostClipboardChanged()
     if (!mimeData || !mimeData->hasText())
         return;
 
+    // The guest keeps what it was offered before; only the password stays here.
+    const bool secret = isSecret(mimeData);
+    if (secret && m_filterPasswords) {
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: password manager entry not shared with the guest";
+        return;
+    }
+
     const QString hostText = mimeData->text();
     if (hostText.isEmpty() || hostText == m_lastSharedText) {
         qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: dataChanged ignored (content already shared)";
@@ -408,6 +451,7 @@ void QemuClipboardManager::onHostClipboardChanged()
     }
     m_lastSharedText = hostText;
     m_offeredText = hostText;
+    m_offeredIsSecret = secret;
 
     const QStringList mimesToSend = {
         u"text/plain;charset=utf-8"_s,

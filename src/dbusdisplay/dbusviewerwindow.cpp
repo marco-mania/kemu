@@ -452,6 +452,12 @@ void DbusViewerWindow::createActions()
     clipGroup->addAction(m_actClipBoth);
     connect(m_actClipBoth, &QAction::triggered, this, &DbusViewerWindow::onClipboardBoth);
 
+    m_actClipFilterPasswords = new QAction(i18nc("@action:inmenu", "Filter Passwords"), this);
+    m_actClipFilterPasswords->setCheckable(true);
+    m_actClipFilterPasswords->setStatusTip(i18nc("@info:status", "Keep entries that password managers mark as secret on the host"));
+    m_actClipFilterPasswords->setChecked(m_prefs.clipboardFilterPasswords); // before connect(): no spurious toggle
+    connect(m_actClipFilterPasswords, &QAction::toggled, this, &DbusViewerWindow::onToggleClipboardFilterPasswords);
+
     // -- Devices: Network ---
     m_actNetworkLink = new QAction(i18nc("@action:inmenu", "&Network Connected"), this);
     m_actNetworkLink->setCheckable(true);
@@ -558,6 +564,8 @@ void DbusViewerWindow::createMenus()
     m_clipMenu->addAction(m_actClipToHost);
     m_clipMenu->addAction(m_actClipToGuest);
     m_clipMenu->addAction(m_actClipBoth);
+    m_clipMenu->addSeparator();
+    m_clipMenu->addAction(m_actClipFilterPasswords);
 
     devicesMenu->addSeparator();
     devicesMenu->addAction(m_actNetworkLink);
@@ -963,6 +971,7 @@ void DbusViewerWindow::setupClipboard(ClipboardDirection dir)
         m_clipboard->setDirection(dir);
     } else {
         m_clipboard = new QemuClipboardManager(m_ctrl, dir, this);
+        m_clipboard->setFilterPasswords(m_prefs.clipboardFilterPasswords); // before setup(): it offers the host content
         connect(m_clipboard, &QemuClipboardManager::registrationFailed, this, &DbusViewerWindow::onClipboardRegistrationFailed);
         ok = m_clipboard->setup();
     }
@@ -1005,6 +1014,15 @@ void DbusViewerWindow::onClipboardRegistrationFailed(const QString &error)
     m_actClipOff->setChecked(true);
     updateStatusBar();
     statusBar()->showMessage(i18n("Clipboard sharing unavailable: %1", error), 5000);
+}
+
+void DbusViewerWindow::onToggleClipboardFilterPasswords(bool checked)
+{
+    m_prefs.clipboardFilterPasswords = checked;
+    if (m_clipboard)
+        m_clipboard->setFilterPasswords(checked);
+    statusBar()->showMessage(checked ? i18n("Passwords stay on the host") : i18n("Passwords are shared with the guest"), 3000);
+    Q_EMIT devicePrefsChanged(m_prefs);
 }
 
 void DbusViewerWindow::teardownClipboard()
