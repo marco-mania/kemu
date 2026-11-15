@@ -59,7 +59,8 @@ public:
     void hello(const QStringList &capabilities = {u"clipboard"_s, u"display.layout"_s},
                const QList<int> &versions = {1},
                const QByteArray &nonce = ScriptedAgentDefaults::Nonce,
-               qint64 maxTransfer = 16 * 1024 * 1024)
+               qint64 maxTransfer = 16 * 1024 * 1024,
+               const QString &clipboardBackend = u"ext-data-control"_s)
     {
         QCborArray caps;
         for (const QString &capability : capabilities)
@@ -74,7 +75,7 @@ public:
                  {u"agent"_s, QCborMap{{u"name"_s, u"kemu-agent"_s}, {u"version"_s, u"0.1.0"_s}}},
                  {u"os"_s, QCborMap{{u"id"_s, u"fedora"_s}, {u"pretty_name"_s, u"Fedora Linux 43"_s}}},
                  {u"session"_s, QCborMap{{u"type"_s, u"wayland"_s}, {u"desktop"_s, u"KDE"_s}}},
-                 {u"backends"_s, QCborMap{{u"clipboard"_s, u"ext-data-control"_s}, {u"layout"_s, u"wayland"_s}}},
+                 {u"backends"_s, QCborMap{{u"clipboard"_s, clipboardBackend}, {u"layout"_s, u"wayland"_s}}},
                  {u"capabilities"_s, caps},
                  {u"limits"_s, QCborMap{{u"max_transfer"_s, maxTransfer}}},
              });

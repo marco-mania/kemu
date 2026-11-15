@@ -423,6 +423,12 @@ void DbusViewerWindow::createActions()
     connect(m_actEjectFloppy, &QAction::triggered, this, &DbusViewerWindow::ejectFloppyRequested);
 
     // --- Devices: Clipboard ---
+    // First line of the menu while the settings cannot take effect yet
+    // (updateClipboardMenu()).
+    m_actClipHint = new QAction(QIcon::fromTheme(u"dialog-information"_s), QString(), this);
+    m_actClipHint->setEnabled(false);
+    m_actClipHint->setVisible(false);
+
     auto *clipGroup = new QActionGroup(this);
     clipGroup->setExclusive(true);
 
@@ -587,6 +593,12 @@ void DbusViewerWindow::createMenus()
     devicesMenu->addSeparator();
 
     m_clipMenu = devicesMenu->addMenu(i18n("&Clipboard"));
+    // Disabled entries say why.
+    devicesMenu->setToolTipsVisible(true);
+    m_clipMenu->setToolTipsVisible(true);
+    m_clipMenu->addAction(m_actClipHint);
+    m_clipHintSeparator = m_clipMenu->addSeparator();
+    m_clipHintSeparator->setVisible(false);
     m_clipMenu->addAction(m_actClipOff);
     m_clipMenu->addAction(m_actClipToHost);
     m_clipMenu->addAction(m_actClipToGuest);
@@ -783,13 +795,17 @@ void DbusViewerWindow::updateStatusBar()
         break;
     }
     updateKemuAgentIndicator();
-    if (!m_kemuAgent) {
-        m_indClipboard->setStatus(StatusIndicator::Unavailable, i18nc("@info:tooltip", "Clipboard sharing is not available for this machine type"));
+    const ClipboardMenuState clipState = clipboardMenuState(m_kemuAgent, m_kemuAgentUnsupported.isEmpty());
+    updateClipboardMenu(clipState);
+    if (const QString unavailable = clipboardUnavailableReason(clipState); !unavailable.isEmpty()) {
+        m_indClipboard->setStatus(StatusIndicator::Unavailable, unavailable);
     } else if (m_clipDirection == ClipboardDirection::Off) {
         m_indClipboard->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Clipboard sharing off - click to change"));
-    } else if (!m_kemuAgent->hasSession()) {
-        m_indClipboard->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "%1\nWaiting for kemu-agent in the guest", clipText), clipEmblem);
-    } else if (!m_kemuAgent->hasCapability(KemuAgentProtocol::Capability::Clipboard) || m_kemuAgent->agentInfo().clipboardBackend == u"none"_s) {
+    } else if (clipState.agent == ClipboardMenuState::Agent::Away) {
+        m_indClipboard->setStatus(StatusIndicator::Inactive,
+                                  i18nc("@info:tooltip %2 says what kemu-agent is doing", "%1\n%2", clipText, kemuAgentAwayText()),
+                                  clipEmblem);
+    } else if (clipState.agent == ClipboardMenuState::Agent::NoGuestClipboard) {
         m_indClipboard->setStatus(StatusIndicator::Inactive,
                                   i18nc("@info:tooltip", "%1\nkemu-agent cannot reach the clipboard of the guest session", clipText),
                                   clipEmblem);
@@ -1050,9 +1066,10 @@ void DbusViewerWindow::setupClipboard(ClipboardDirection dir)
     default:
         break;
     }
-    if (!m_kemuAgent)
-        statusBar()->showMessage(i18n("Clipboard sharing is not available for this machine type"), 5000);
-    else if (!m_kemuAgent->hasSession())
+    const ClipboardMenuState clipState = clipboardMenuState(m_kemuAgent, m_kemuAgentUnsupported.isEmpty());
+    if (const QString unavailable = clipboardUnavailableReason(clipState); !unavailable.isEmpty())
+        statusBar()->showMessage(unavailable, 5000);
+    else if (clipState.agent == ClipboardMenuState::Agent::Away)
         statusBar()->showMessage(i18n("Clipboard enabled: %1 - waiting for kemu-agent in the guest", dirStr), 5000);
     else
         statusBar()->showMessage(i18n("Clipboard enabled: %1", dirStr), 3000);
@@ -1081,7 +1098,7 @@ void DbusViewerWindow::onToggleClipboardPrimary(bool checked)
 void DbusViewerWindow::onToggleClipboardFiles(bool checked)
 {
     m_prefs.clipboardFiles = checked;
-    m_clipFilesLimitMenu->setEnabled(checked);
+    m_clipFilesLimitMenu->setEnabled(checked && m_actClipFiles->isEnabled());
     if (m_clipboard)
         m_clipboard->setShareFiles(checked);
     if (!checked)
@@ -1115,8 +1132,9 @@ void DbusViewerWindow::updateKemuAgentIndicator()
 {
     if (!m_indKemuAgent)
         return;
-    // Without a channel (no PCI bus) there is nothing to wait for.
-    m_indKemuAgent->setVisible(!m_kemuAgent.isNull());
+    // Without a channel (no PCI bus) there is nothing to wait for, nor for a
+    // guest system kemu-agent does not run on - unless one connects anyway.
+    m_indKemuAgent->setVisible(m_kemuAgent && (m_kemuAgentUnsupported.isEmpty() || m_kemuAgent->hasSession()));
     if (!m_kemuAgent)
         return;
 
@@ -1195,6 +1213,84 @@ void DbusViewerWindow::setKemuAgent(KemuAgentClient *agent)
         connect(agent, &KemuAgentClient::layoutChanged, this, &DbusViewerWindow::updateKemuAgentIndicator);
     }
     updateStatusBar();
+}
+
+void DbusViewerWindow::setKemuAgentUnsupported(const QString &reason)
+{
+    m_kemuAgentUnsupported = reason;
+    updateStatusBar();
+}
+
+QString DbusViewerWindow::clipboardUnavailableReason(const ClipboardMenuState &state) const
+{
+    switch (state.agent) {
+    case ClipboardMenuState::Agent::NoChannel:
+        return i18nc("@info:tooltip", "Clipboard sharing is not available for this machine type");
+    case ClipboardMenuState::Agent::UnsupportedGuest:
+        return m_kemuAgentUnsupported;
+    case ClipboardMenuState::Agent::Away:
+    case ClipboardMenuState::Agent::NoGuestClipboard:
+    case ClipboardMenuState::Agent::Ready:
+        break;
+    }
+    return {};
+}
+
+QString DbusViewerWindow::kemuAgentAwayText() const
+{
+    if (m_kemuAgent && m_kemuAgent->status() == KemuAgentClient::Status::Unresponsive)
+        return i18nc("@info", "kemu-agent in the guest is not responding");
+    return i18nc("@info", "Waiting for kemu-agent in the guest");
+}
+
+void DbusViewerWindow::updateClipboardMenu(const ClipboardMenuState &state)
+{
+    using Agent = ClipboardMenuState::Agent;
+    if (!m_clipMenu)
+        return;
+
+    // Nothing to set: the whole menu is off, also behind the indicator.
+    const QString unavailable = clipboardUnavailableReason(state);
+    const bool available = unavailable.isEmpty();
+    m_clipMenu->setEnabled(available);
+    m_clipMenu->menuAction()->setToolTip(unavailable);
+    if (m_indClipboard)
+        m_indClipboard->setPopupMenu(available ? m_clipMenu : nullptr);
+
+    // While the agent is away the settings stay open, they apply once it
+    // comes; the first line says why nothing happens yet.
+    QString hint;
+    if (state.agent == Agent::Away)
+        hint = kemuAgentAwayText();
+    else if (state.agent == Agent::NoGuestClipboard)
+        hint = i18nc("@info", "kemu-agent cannot reach the clipboard of the guest session");
+    m_actClipHint->setText(hint);
+    m_actClipHint->setToolTip(state.agent == Agent::Away ? i18nc("@info:tooltip", "The settings take effect once kemu-agent runs in the guest session")
+                                                         : QString());
+    m_actClipHint->setVisible(!hint.isEmpty());
+    m_clipHintSeparator->setVisible(!hint.isEmpty());
+
+    // What is known not to work is off and says why; the setting stays as
+    // it was and applies again with an agent that can.
+    const bool directions = available && state.agent != Agent::NoGuestClipboard;
+    for (QAction *action : {m_actClipOff, m_actClipToHost, m_actClipToGuest, m_actClipBoth, m_actClipFilterPasswords})
+        action->setEnabled(directions);
+
+    const auto offer = [](QAction *action, bool enabled, const QString &reason) {
+        action->setEnabled(enabled);
+        action->setToolTip(enabled ? QString() : reason);
+    };
+    const bool hostSelection = QGuiApplication::clipboard()->supportsSelection();
+    QString noSelection;
+    if (!hostSelection)
+        noSelection = i18nc("@info:tooltip", "The host desktop has no selection clipboard");
+    else if (!state.guestSelection)
+        noSelection = i18nc("@info:tooltip", "The guest session has no selection clipboard");
+    offer(m_actClipPrimary, directions && hostSelection && state.guestSelection, noSelection);
+    offer(m_actClipFiles,
+          directions && state.guestFiles,
+          state.guestFiles ? QString() : i18nc("@info:tooltip", "The kemu-agent in the guest is too old to share files"));
+    m_clipFilesLimitMenu->setEnabled(m_actClipFiles->isEnabled() && m_prefs.clipboardFiles);
 }
 
 void DbusViewerWindow::setSuspended(bool suspended)

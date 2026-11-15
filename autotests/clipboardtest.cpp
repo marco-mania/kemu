@@ -847,6 +847,58 @@ private Q_SLOTS:
         QVERIFY(!QFileInfo::exists(root.path() + u"/../.bashrc"_s));
     }
 
+    // --- What the clipboard menu of the viewer offers ---
+
+    void menuStateFollowsAgent()
+    {
+        using Agent = ClipboardMenuState::Agent;
+        QCOMPARE(clipboardMenuState(nullptr, true).agent, Agent::NoChannel);
+        QCOMPARE(clipboardMenuState(nullptr, false).agent, Agent::NoChannel);
+
+        // No agent yet: everything stays open, unless the guest system has none.
+        Rig rig = makeRig();
+        ClipboardMenuState state = clipboardMenuState(rig.client.get(), true);
+        QCOMPARE(state.agent, Agent::Away);
+        QVERIFY(state.guestSelection);
+        QVERIFY(state.guestFiles);
+        QCOMPARE(clipboardMenuState(rig.client.get(), false).agent, Agent::UnsupportedGuest);
+
+        // A connected agent says what it can, also where none was expected.
+        QVERIFY(startSession(rig, {u"clipboard"_s}));
+        for (const bool supported : {true, false}) {
+            state = clipboardMenuState(rig.client.get(), supported);
+            QCOMPARE(state.agent, Agent::Ready);
+            QVERIFY(!state.guestSelection);
+            QVERIFY(!state.guestFiles);
+        }
+        QVERIFY(startSession(rig, {u"clipboard"_s, u"clipboard.primary"_s, u"clipboard.files"_s}));
+        state = clipboardMenuState(rig.client.get(), true);
+        QCOMPARE(state.agent, Agent::Ready);
+        QVERIFY(state.guestSelection);
+        QVERIFY(state.guestFiles);
+
+        // It went away: nothing is known about the next one.
+        rig.client->setPortOpen(false);
+        QTRY_VERIFY(!rig.client->hasSession());
+        state = clipboardMenuState(rig.client.get(), true);
+        QCOMPARE(state.agent, Agent::Away);
+        QVERIFY(state.guestSelection);
+        QVERIFY(state.guestFiles);
+        QCOMPARE(clipboardMenuState(rig.client.get(), false).agent, Agent::UnsupportedGuest);
+    }
+
+    void menuStateWithoutGuestClipboard()
+    {
+        Rig rig = makeRig();
+        rig.agent->hello({u"clipboard"_s, u"clipboard.primary"_s}, {1}, ScriptedAgentDefaults::Nonce, 16 * 1024 * 1024, u"none"_s);
+        QVERIFY(rig.agent->next(Welcome));
+        QCOMPARE(clipboardMenuState(rig.client.get(), true).agent, ClipboardMenuState::Agent::NoGuestClipboard);
+
+        // Without the capability at all, the same.
+        QVERIFY(startSession(rig, {u"display.layout"_s}));
+        QCOMPARE(clipboardMenuState(rig.client.get(), true).agent, ClipboardMenuState::Agent::NoGuestClipboard);
+    }
+
     void survivesClientGoingAway()
     {
         Rig rig = makeRig();

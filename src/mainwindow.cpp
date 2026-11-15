@@ -762,6 +762,23 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                                              mapping->setAgentLayout(agent->layout());
                                      });
                          }
+                         // kemu-agent runs in Linux guests only; "Other" may well be one.
+                         if (cfgEntry) {
+                             switch (cfgEntry->config.osFamily()) {
+                             case VMSpecs::OsFamily::Windows:
+                                 state.window->setKemuAgentUnsupported(i18nc("@info:tooltip", "Clipboard sharing is not available for Windows guests yet"));
+                                 break;
+                             case VMSpecs::OsFamily::BSD:
+                                 state.window->setKemuAgentUnsupported(i18nc("@info:tooltip", "Clipboard sharing is not available for BSD guests yet"));
+                                 break;
+                             case VMSpecs::OsFamily::DOS:
+                                 state.window->setKemuAgentUnsupported(i18nc("@info:tooltip", "Clipboard sharing is not available for DOS guests"));
+                                 break;
+                             case VMSpecs::OsFamily::Linux:
+                             case VMSpecs::OsFamily::Other:
+                                 break;
+                             }
+                         }
                          state.window->setWindowTitle(vmName);
                          state.window->setAttribute(Qt::WA_DeleteOnClose, false);
                          state.window->setStatusBarShown(viewerStatusBarShown());

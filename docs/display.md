@@ -34,6 +34,12 @@ socket file. No special guest drivers are required for video or input.
   pasted on the other, up to the *File Size Limit* per copy (256 MiB by
   default). With it, the guest can place files in KEMU's cache directory on
   the host; they are never executable and are removed when the viewer closes.
+  The settings can be made before kemu-agent runs and take effect once it
+  does; the menu's first line then says what KEMU is waiting for. What the
+  running agent cannot do is greyed out, with the reason as a tooltip, for
+  example *Share Files* with an agent older than 0.3. Without the agent port
+  (machine types without PCI) and for Windows, BSD and DOS guests the whole
+  menu is unavailable.
 - **Pointer capture:** Locks the pointer to the viewer for guests using
   relative mouse input. The compositor must support the pointer constraints
   and relative pointer protocols. Guests using a tablet pointer do not need
@@ -80,7 +86,8 @@ Some limits of the current version:
   pasted, so each copy is limited in size; symbolic links are left out, and
   cut works like copy.
 - Windows and BSD guests have no agent yet, so they have no clipboard
-  sharing.
+  sharing. KEMU goes by the operating system set for the VM; should an agent
+  connect after all, it is used.
 
 The protocol between KEMU and the agent is specified in
 [kemu-agent-protocol.md](kemu-agent-protocol.md).

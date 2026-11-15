@@ -118,6 +118,9 @@ public:
     // The kemu-agent channel of the VM; nullptr without one. Clipboard
     // sharing runs through it. Lives as long as QEMU, so set once.
     void setKemuAgent(KemuAgentClient *agent);
+    // No kemu-agent for the guest system (Windows, BSD, DOS): the clipboard
+    // menu stays off and says why, unless an agent connects after all.
+    void setKemuAgentUnsupported(const QString &reason);
 
     // Subsequent audio activation (after asynchronous D-Bus registration)
     void audioOutReady();
@@ -222,6 +225,9 @@ private:
     void showOsd(const QString &text, int holdMs = 2500);
     void setupClipboard(ClipboardDirection dir);
     void updateKemuAgentIndicator();
+    void updateClipboardMenu(const ClipboardMenuState &state);
+    QString clipboardUnavailableReason(const ClipboardMenuState &state) const;
+    QString kemuAgentAwayText() const;
     void teardownClipboard();
     Q_INVOKABLE void updateWindowAndDisplaySize();
     void fitContentToWindow();
@@ -241,6 +247,7 @@ private:
     QemuAudioInListener *m_audioIn = nullptr;
     AgentClipboard *m_clipboard = nullptr;
     QPointer<KemuAgentClient> m_kemuAgent;
+    QString m_kemuAgentUnsupported; // why the guest system has none; empty: it may come
 
     bool m_audioOutConnected = false;
     bool m_audioInConnected = false;
@@ -273,6 +280,8 @@ private:
     QAction *m_actEjectIso = nullptr;
     QAction *m_actChangeFloppy = nullptr;
     QAction *m_actEjectFloppy = nullptr;
+    QAction *m_actClipHint = nullptr; // why the settings do nothing yet
+    QAction *m_clipHintSeparator = nullptr;
     QAction *m_actClipOff = nullptr;
     QAction *m_actClipToHost = nullptr;
     QAction *m_actClipToGuest = nullptr;

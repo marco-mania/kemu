@@ -39,6 +39,28 @@ enum class ClipboardDirection {
 const QString clipboardDirToString(ClipboardDirection dir);
 ClipboardDirection clipboardDirFromString(const QString &s);
 
+// What the clipboard menu of the viewer can offer. Without a port, or for a
+// guest system kemu-agent does not run on, nothing can work. While the agent
+// is away, everything stays open: the settings apply once it comes. A
+// connected agent says what it can.
+struct ClipboardMenuState {
+    enum class Agent {
+        NoChannel, // the VM has no kemu-agent port
+        UnsupportedGuest, // no kemu-agent for the guest system, and none connected
+        Away, // not running, connecting or not responding
+        NoGuestClipboard, // connected, without access to the clipboard of the guest session
+        Ready,
+    };
+    Agent agent = Agent::NoChannel;
+    // False only when a connected agent lacks them.
+    bool guestSelection = true;
+    bool guestFiles = true;
+};
+
+// guestSupported: kemu-agent exists for the guest system (MainWindow knows
+// it from the VM configuration). An agent that connects counts for more.
+ClipboardMenuState clipboardMenuState(const KemuAgentClient *agent, bool guestSupported);
+
 /**
  * @brief Shares the host clipboard with the guest through kemu-agent.
  *

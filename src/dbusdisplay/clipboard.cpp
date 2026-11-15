@@ -45,6 +45,26 @@ ClipboardDirection clipboardDirFromString(const QString &s)
     return ClipboardDirection::Off;
 }
 
+ClipboardMenuState clipboardMenuState(const KemuAgentClient *agent, bool guestSupported)
+{
+    using Agent = ClipboardMenuState::Agent;
+    ClipboardMenuState state;
+    if (!agent) {
+        state.agent = Agent::NoChannel;
+        return state;
+    }
+    if (!agent->hasSession()) {
+        // Nothing known yet about what the next agent can do.
+        state.agent = guestSupported ? Agent::Away : Agent::UnsupportedGuest;
+        return state;
+    }
+    const bool clipboard = agent->hasCapability(Capability::Clipboard) && agent->agentInfo().clipboardBackend != u"none"_s;
+    state.agent = clipboard ? Agent::Ready : Agent::NoGuestClipboard;
+    state.guestSelection = agent->hasCapability(Capability::ClipboardPrimary);
+    state.guestFiles = agent->hasCapability(Capability::ClipboardFiles);
+    return state;
+}
+
 namespace
 {
 constexpr std::array kSelections{Selection::Clipboard, Selection::Primary};
