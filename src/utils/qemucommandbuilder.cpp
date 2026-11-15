@@ -51,7 +51,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
                                       const QString &incomingSavestatePath)
 {
     QStringList args;
-    // The clipboard agent and the guest agent share one virtio-serial bus.
+    // kemu-agent and the QEMU guest agent share one virtio-serial bus.
     bool virtioSerial = false;
 
     // guest= does not protect against commas in the name, they still have to
@@ -349,27 +349,20 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         }
         args << u"-display"_s << displayOpt;
 
-        // ---- Guest agent for clipboard and, with several monitors, pointing ----
-        // For -display dbus, the in-guest spice-vdagent talks to QEMU's
-        // qemu-vdagent chardev. QEMU bridges that to /org/qemu/Display1/Clipboard
-        // on its D-Bus bus.
-        // Without this block, the Clipboard D-Bus object exists but has
-        // no peer on the guest side -- Grab/Request calls go nowhere.
-        // NB: The port name "com.redhat.spice.0" is hardcoded in the
-        // spice-vdagent daemon only for historical reasons.
-        // virtio-serial needs PCI; without it (isapc) QEMU would not start.
-        // Not every QEMU build includes the qemu-vdagent backend.
-        // Across several monitors only the guest knows how they are arranged,
-        // so the agent places the pointer there once it runs. Until then the
-        // tablet gets it and the viewer maps positions itself.
-        if (VMConfig::supportsPciBus(config.machineType()) && QemuCapabilities::instance().hasChardev(u"qemu-vdagent"_s)) {
-            const bool agentPointer = config.gpuType() == VMSpecs::GpuType::Virtio && config.monitorCount() > 1;
+        // ---- kemu-agent: clipboard and display layout of Linux guests ----
+        // A virtio-serial port KEMU speaks the agent protocol on
+        // (docs/kemu-agent-protocol.md); QEMU only carries the bytes. The
+        // integrated viewer is the only user, so the port comes with it, and
+        // only over a descriptor: nothing in the file system another process
+        // could connect to and pose as KEMU. virtio-serial needs PCI; without
+        // it (isapc) QEMU would not start.
+        if (networkContext.agentFd >= 0 && VMConfig::supportsPciBus(config.machineType())) {
             args << u"-device"_s << u"virtio-serial-pci"_s;
             virtioSerial = true;
-            args << u"-chardev"_s << u"qemu-vdagent,id=vdagent,clipboard=on,mouse=%1"_s.arg(agentPointer ? u"on"_s : u"off"_s);
-            args << u"-device"_s << u"virtserialport,chardev=vdagent,name=com.redhat.spice.0"_s;
+            args << u"-chardev"_s << u"socket,id=%1,fd=%2"_s.arg(KEMUConst::AgentChardevId).arg(networkContext.agentFd);
+            args << u"-device"_s
+                 << u"virtserialport,chardev=%1,id=%2,name=%3"_s.arg(KEMUConst::AgentChardevId, KEMUConst::AgentPortId, KEMUConst::AgentPortName);
         }
-
     } else if (headless) {
         args << u"-display"_s << u"none"_s;
     } else {
@@ -565,6 +558,7 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     QemuNetworkContext scriptNetCtx = networkContext;
     scriptNetCtx.monitorFd = -1;
     scriptNetCtx.guestAgentFd = -1;
+    scriptNetCtx.agentFd = -1;
     scriptNetCtx.switchFd = -1;
     if (config.networkCard() != VMSpecs::NetworkCard::None && config.networkMode() == VMSpecs::NetworkMode::VirtualNetwork)
         scriptNetCtx.mcastAddress = mcastAddressFor(network.name);

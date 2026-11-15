@@ -41,6 +41,7 @@ target_include_directories(tpmstatetest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 ecm_add_test(multiheadmousemappingtest.cpp
              ${CMAKE_SOURCE_DIR}/src/dbusdisplay/multiheadmousemapping.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/kemuagentprotocol.cpp
              TEST_NAME multiheadmousemappingtest
              LINK_LIBRARIES Qt6::Core Qt6::Test)
 target_include_directories(multiheadmousemappingtest PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -79,18 +80,41 @@ ecm_qt_declare_logging_category(glibeventbridgetest
                                 IDENTIFIER "KEMU_DBUSDISPLAY"
                                 CATEGORY_NAME "org.kde.kemu.dbusdisplay")
 
-# Host clipboard bridge against a stand-in for QEMU's clipboard peer.
+# kemu-agent protocol: framing, CBOR rules and the MIME type rules.
+ecm_add_test(kemuagentprotocoltest.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/kemuagentprotocol.cpp
+             TEST_NAME kemuagentprotocoltest
+             LINK_LIBRARIES Qt6::Core Qt6::Test)
+target_include_directories(kemuagentprotocoltest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# Host end of the agent channel against a scripted agent on a socketpair.
+ecm_add_test(kemuagentclienttest.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/kemuagentclient.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/kemuagentprotocol.cpp
+             TEST_NAME kemuagentclienttest
+             LINK_LIBRARIES Qt6::Core Qt6::Network Qt6::Test)
+target_include_directories(kemuagentclienttest PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR})
+ecm_qt_declare_logging_category(kemuagentclienttest
+                                HEADER "kemu_debug.h"
+                                IDENTIFIER "KEMU"
+                                CATEGORY_NAME "org.kde.kemu")
+
+# Clipboard sharing through kemu-agent, against a scripted agent.
 ecm_add_test(clipboardtest.cpp
              ${CMAKE_SOURCE_DIR}/src/dbusdisplay/clipboard.cpp
-             ${CMAKE_SOURCE_DIR}/src/dbusdisplay/controlconnection.cpp
-             ${CMAKE_SOURCE_DIR}/src/dbusdisplay/glibeventbridge.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/kemuagentclient.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/kemuagentprotocol.cpp
              TEST_NAME clipboardtest
-             LINK_LIBRARIES Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test PkgConfig::GIO)
+             LINK_LIBRARIES Qt6::Core Qt6::Gui Qt6::Network Qt6::Test)
 target_include_directories(clipboardtest PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR})
 ecm_qt_declare_logging_category(clipboardtest
                                 HEADER "kemu_dbusdisplay_debug.h"
                                 IDENTIFIER "KEMU_DBUSDISPLAY"
                                 CATEGORY_NAME "org.kde.kemu.dbusdisplay")
+ecm_qt_declare_logging_category(clipboardtest
+                                HEADER "kemu_debug.h"
+                                IDENTIFIER "KEMU"
+                                CATEGORY_NAME "org.kde.kemu")
 
 ecm_add_test(controlconnectiontest.cpp
              ${CMAKE_SOURCE_DIR}/src/dbusdisplay/controlconnection.cpp

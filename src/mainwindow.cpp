@@ -37,6 +37,7 @@
 #include "utils/diskencryption.h"
 #include "utils/diskimagecheck.h"
 #include "utils/diskkeystore.h"
+#include "utils/kemuagentclient.h"
 #include "utils/keyspecs.h"
 #include "utils/linkedclones.h"
 #include "utils/qemucapabilities.h"
@@ -675,34 +676,6 @@ void MainWindow::registerDbusDisplayListener(QemuControlConnection *ctrl,
                      });
 }
 
-// With several monitors QEMU hands the pointer to spice-vdagent as soon as
-// the agent announces it (see QemuCommandBuilder), and back when the agent
-// goes away. It reports neither, so ask which mouse is current.
-void MainWindow::watchGuestAgentPointer(const QString &vmName, MultiheadMouseMapping *mapping)
-{
-    auto *timer = new QTimer(mapping);
-    timer->setInterval(1000);
-    connect(timer, &QTimer::timeout, mapping, [this, vmName, mapping] {
-        const VmEntry *entry = veModel->entryByName(vmName);
-        if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected())
-            return;
-        entry->qmpClient->sendCommand(u"query-mice"_s, {}, [mapping = QPointer<MultiheadMouseMapping>(mapping)](QMPResult result) {
-            if (!mapping || !result.success)
-                return;
-            bool agent = false;
-            for (const QJsonValue &mouse : std::as_const(result.dataArray)) {
-                const QJsonObject info = mouse.toObject();
-                if (info.value(u"current"_s).toBool()) {
-                    agent = info.value(u"name"_s).toString() == u"vdagent mouse"_s;
-                    break;
-                }
-            }
-            mapping->setGuestAgentPointer(agent);
-        });
-    });
-    timer->start();
-}
-
 void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *ctrl)
 {
     const QString consolePath = KemuDbusDisplayConst::ConsolePathPrefix + u"0"_s;
@@ -773,12 +746,22 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                                                              nullptr);
                          state.window->displayWidget()->setMultiheadMouseMapping(state.mouseMapping, 0);
                          state.window->displayWidget()->setCursorPositionIsImageOrigin(cfgEntry && cfgEntry->config.gpuType() == VMSpecs::GpuType::Virtio);
-                         connect(state.mouseMapping.get(), &MultiheadMouseMapping::guestAgentPointerChanged, state.window,
-                                 &DbusViewerWindow::setSecondaryPlacementByGuestAgent);
-                         connect(state.mouseMapping.get(), &MultiheadMouseMapping::guestAgentPointerMisplaced, state.window,
-                                 &DbusViewerWindow::showGuestAgentPointerMisplaced);
-                         if (cfgEntry && cfgEntry->config.gpuType() == VMSpecs::GpuType::Virtio && cfgEntry->config.monitorCount() > 1)
-                             watchGuestAgentPointer(vmName, state.mouseMapping.get());
+                         // kemu-agent: the clipboard, and where the guest put its monitors.
+                         connect(state.mouseMapping.get(),
+                                 &MultiheadMouseMapping::agentLayoutChanged,
+                                 state.window,
+                                 &DbusViewerWindow::setDisplayLayoutFromAgent);
+                         if (KemuAgentClient *agent = m_runtimeManager->runtimeFor(vmName).kemuAgent) {
+                             state.window->setKemuAgent(agent);
+                             state.mouseMapping->setAgentLayout(agent->layout());
+                             connect(agent,
+                                     &KemuAgentClient::layoutChanged,
+                                     state.mouseMapping.get(),
+                                     [mapping = state.mouseMapping.get(), agent = QPointer<KemuAgentClient>(agent)] {
+                                         if (agent)
+                                             mapping->setAgentLayout(agent->layout());
+                                     });
+                         }
                          state.window->setWindowTitle(vmName);
                          state.window->setAttribute(Qt::WA_DeleteOnClose, false);
                          state.window->setStatusBarShown(viewerStatusBarShown());
@@ -4106,9 +4089,9 @@ void MainWindow::onQMPEvent(const QString &vmName, const QString &eventName, con
                         qCWarning(KEMU) << "Could not resume" << vmName << "from savestate:" << r.errorMessage;
                 });
             }
-            // The guest clock stopped when the state was saved. The agent's
-            // port came back with the state; ask, in case no event says so.
-            m_runtimeManager->refreshGuestAgentPort(vmName);
+            // The guest clock stopped when the state was saved. The agents'
+            // ports came back with the state; ask, in case no event says so.
+            m_runtimeManager->refreshAgentPorts(vmName);
             m_runtimeManager->requestGuestTimeSync(vmName);
         }
         return;
@@ -5703,6 +5686,7 @@ ViewerDevicePrefs MainWindow::loadViewerPrefs(const QString &vmName) const
     prefs.audioIn = grp.readEntry(u"AudioIn"_s, prefs.audioIn);
     prefs.clipboard = clipboardDirFromString(grp.readEntry(u"Clipboard"_s, clipboardDirToString(prefs.clipboard)));
     prefs.clipboardFilterPasswords = grp.readEntry(u"ClipboardFilterPasswords"_s, prefs.clipboardFilterPasswords);
+    prefs.clipboardPrimary = grp.readEntry(u"ClipboardPrimary"_s, prefs.clipboardPrimary);
     prefs.networkLinkUp = grp.readEntry(u"NetworkLinkUp"_s, prefs.networkLinkUp);
     return prefs;
 }
@@ -5716,6 +5700,7 @@ void MainWindow::saveViewerPrefs(const QString &vmName, const ViewerDevicePrefs 
     grp.writeEntry(u"AudioIn"_s, prefs.audioIn);
     grp.writeEntry(u"Clipboard"_s, clipboardDirToString(prefs.clipboard));
     grp.writeEntry(u"ClipboardFilterPasswords"_s, prefs.clipboardFilterPasswords);
+    grp.writeEntry(u"ClipboardPrimary"_s, prefs.clipboardPrimary);
     grp.writeEntry(u"NetworkLinkUp"_s, prefs.networkLinkUp);
 
     config->sync();

@@ -97,6 +97,12 @@ inline constexpr auto GuestAgentPortId = "qga0port"_L1;
 inline constexpr auto GuestAgentPortName = "org.qemu.guest_agent.0"_L1;
 inline constexpr auto GuestAgentSocketFileName = "qemu-ga.sock"_L1;
 
+// kemu-agent (docs/kemu-agent-protocol.md): clipboard and display layout of
+// Linux guests. Integrated viewer only, always over a socketpair.
+inline constexpr auto AgentChardevId = "kemuagent"_L1;
+inline constexpr auto AgentPortId = "kemuagent0"_L1;
+inline constexpr auto AgentPortName = "org.kde.kemu.agent.0"_L1;
+
 // QEMU's seccomp filter, as libvirt applies it. Resource control calls fail
 // with EPERM; anything else on the deny lists kills QEMU with SIGSYS. Opt-in
 // through the "Confine QEMU with its seccomp sandbox" setting, because that

@@ -14,12 +14,13 @@
 #include <QSharedPointer>
 #include <QString>
 
-#include "dbusdisplay/dbusviewerwindow.h"
 #include "dbusdisplay/dbusviewersubwindow.h"
+#include "dbusdisplay/dbusviewerwindow.h"
 #include "dbusdisplay/displayconsoles.h"
 #include "dbusdisplay/multiheadmousemapping.h"
 #include "utils/cloudimagedeployer.h"
 #include "utils/guestagentclient.h"
+#include "utils/kemuagentclient.h"
 
 /**
  * Runtime state of a single virtual machine.
@@ -86,6 +87,12 @@ struct VmRuntimeInfo {
     QPointer<GuestAgentClient> guestAgent;
     // The guest clock is to be set once the agent answers.
     bool guestTimeSyncPending = false;
+
+    // --- kemu-agent ---
+
+    // Null without a channel (no integrated viewer, or a machine without
+    // PCI). Lives as long as QEMU runs; viewers come and go on top of it.
+    QPointer<KemuAgentClient> kemuAgent;
 
     // --- deployment ---
 

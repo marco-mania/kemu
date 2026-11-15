@@ -6,8 +6,17 @@
 
 #include "clipboard.h"
 
-#include "dbusdisplay/dbusdisplayconst.h"
+#include <QBuffer>
+#include <QCborArray>
+#include <QCryptographicHash>
+#include <QGuiApplication>
+#include <QImage>
+#include <QMimeData>
+#include <QScopeGuard>
+
 #include "kemu_dbusdisplay_debug.h"
+
+using namespace KemuAgentProtocol;
 
 const QString clipboardDirToString(ClipboardDirection dir)
 {
@@ -35,452 +44,842 @@ ClipboardDirection clipboardDirFromString(const QString &s)
     return ClipboardDirection::Off;
 }
 
-// =============================================================================
-// D-Bus interface XML - same interface QEMU exposes; we export it back for
-// QEMU's callbacks after Register.
-// =============================================================================
-static const gchar clipboardXml[] =
-    R"XML(
-<node>
-  <interface name="org.qemu.Display1.Clipboard">
-    <method name="Register"/>
-    <method name="Unregister"/>
-    <method name="Grab">
-      <arg type="u" name="selection" direction="in"/>
-      <arg type="u" name="serial" direction="in"/>
-      <arg type="as" name="mimes" direction="in"/>
-    </method>
-    <method name="Release">
-      <arg type="u" name="selection" direction="in"/>
-    </method>
-    <method name="Request">
-      <arg type="u" name="selection" direction="in"/>
-      <arg type="as" name="mimes" direction="in"/>
-      <arg type="s" name="mime" direction="out"/>
-      <arg type="ay" name="data" direction="out"/>
-    </method>
-  </interface>
-</node>
-)XML";
-
-static const GDBusInterfaceVTable clipboardVTable = {QemuClipboardManager::onMethodCall, nullptr, nullptr, {}};
-
-// Floating "as" variant from a QStringList (consumed by @as in g_variant_new).
-static GVariant *mimesToVariant(const QStringList &mimes)
+namespace
 {
-    GVariantBuilder b;
-    g_variant_builder_init(&b, G_VARIANT_TYPE("as"));
-    for (const QString &m : mimes)
-        g_variant_builder_add(&b, "s", m.toUtf8().constData());
-    return g_variant_builder_end(&b);
+constexpr std::array kSelections{Selection::Clipboard, Selection::Primary};
+
+QClipboard::Mode toMode(Selection selection)
+{
+    return selection == Selection::Primary ? QClipboard::Selection : QClipboard::Clipboard;
 }
 
-QemuClipboardManager::QemuClipboardManager(QemuControlConnection *ctrl, ClipboardDirection direction, QObject *parent)
+const char *selectionName(Selection selection)
+{
+    return selection == Selection::Primary ? "PRIMARY" : "CLIPBOARD";
+}
+
+qint64 toCbor(quint64 value)
+{
+    return qint64(value);
+}
+} // namespace
+
+AgentClipboard::AgentClipboard(ClipboardDirection direction, QObject *parent)
+    : AgentClipboard(direction, Config{}, parent)
+{
+}
+
+AgentClipboard::AgentClipboard(ClipboardDirection direction, const Config &config, QObject *parent)
     : QObject(parent)
-    , m_ctrl(ctrl)
+    , m_clipboard(QGuiApplication::clipboard())
+    , m_config(config)
     , m_direction(direction)
 {
-    m_hostClipboard = QApplication::clipboard();
-
-    // Always connected: the direction can change at runtime, and
-    // onHostClipboardChanged() filters by it.
-    connect(m_hostClipboard, &QClipboard::dataChanged, this, &QemuClipboardManager::onHostClipboardChanged);
+    for (const Selection selection : kSelections) {
+        QTimer &settle = state(selection).settle;
+        settle.setSingleShot(true);
+        // Applications sometimes set the clipboard twice; PRIMARY changes
+        // with every selected character (section 6.7).
+        settle.setInterval(selection == Selection::Primary ? m_config.primarySettleMs : m_config.settleMs);
+        connect(&settle, &QTimer::timeout, this, [this, selection] {
+            examineHost(selection, false);
+        });
+    }
+    m_timeouts.setInterval(std::max(100, m_config.requestTimeoutMs / 10));
+    connect(&m_timeouts, &QTimer::timeout, this, &AgentClipboard::checkTimeouts);
+    connect(m_clipboard, &QClipboard::changed, this, &AgentClipboard::onHostChanged);
 }
 
-void QemuClipboardManager::setDirection(ClipboardDirection direction)
+AgentClipboard::~AgentClipboard()
 {
-    m_direction = direction;
+    // Without a viewer, nothing is shared.
+    if (m_agent)
+        m_agent->setPolicy({});
 }
 
-void QemuClipboardManager::setFilterPasswords(bool filter)
+AgentClipboard::State &AgentClipboard::state(Selection selection)
+{
+    return m_states[int(selection)];
+}
+
+const AgentClipboard::State &AgentClipboard::state(Selection selection) const
+{
+    return m_states[int(selection)];
+}
+
+AgentClipboard::Owner AgentClipboard::owner(Selection selection) const
+{
+    return state(selection).owner;
+}
+
+quint64 AgentClipboard::localSerial(Selection selection) const
+{
+    return state(selection).localSerial;
+}
+
+quint64 AgentClipboard::peerSerial(Selection selection) const
+{
+    return state(selection).peerSerial;
+}
+
+bool AgentClipboard::isFetching(Selection selection) const
+{
+    return state(selection).fetch.active;
+}
+
+// =============================================================================
+// Settings and sessions
+// =============================================================================
+
+void AgentClipboard::setAgent(KemuAgentClient *agent)
+{
+    if (m_agent == agent)
+        return;
+    if (m_agent) {
+        m_agent->disconnect(this);
+        m_agent->setPolicy({});
+    }
+    resetState();
+    m_agent = agent;
+    if (!m_agent)
+        return;
+
+    connect(m_agent, &KemuAgentClient::sessionStarted, this, &AgentClipboard::onSessionStarted);
+    connect(m_agent, &KemuAgentClient::sessionEnded, this, &AgentClipboard::onSessionEnded);
+    connect(m_agent, &KemuAgentClient::message, this, &AgentClipboard::onMessage);
+    connect(m_agent, &KemuAgentClient::drained, this, &AgentClipboard::pumpOutbound);
+    connect(m_agent, &QObject::destroyed, this, [this] {
+        resetState();
+    });
+    m_agent->setPolicy(policyFor(m_direction, m_sharePrimary));
+    if (m_agent->hasSession())
+        onSessionStarted();
+}
+
+void AgentClipboard::setDirection(ClipboardDirection direction)
+{
+    if (m_direction == direction)
+        return;
+    const KemuAgentClient::Policy previous = policyFor(m_direction, m_sharePrimary);
+    m_direction = direction;
+    applyPolicy(previous);
+}
+
+void AgentClipboard::setSharePrimary(bool share)
+{
+    if (m_sharePrimary == share)
+        return;
+    const KemuAgentClient::Policy previous = policyFor(m_direction, m_sharePrimary);
+    m_sharePrimary = share;
+    applyPolicy(previous);
+}
+
+void AgentClipboard::setFilterPasswords(bool filter)
 {
     if (m_filterPasswords == filter)
         return;
     m_filterPasswords = filter;
-
-    if (!filter) {
-        // A password already on the clipboard becomes available right away.
-        QTimer::singleShot(0, this, &QemuClipboardManager::onHostClipboardChanged);
-    } else if (m_offeredIsSecret) {
-        // The guest may have fetched it already, but it is no longer handed out.
-        withdrawOffer();
+    for (const Selection selection : kSelections) {
+        State &s = state(selection);
+        if (!filter) {
+            // A password already on the clipboard becomes available right away.
+            examineHost(selection, true);
+        } else if (s.owner == Owner::Local && s.offeredSecret) {
+            // The guest may have fetched it already, but it is no longer handed out.
+            qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: password entry withdrawn from the guest";
+            sendRelease(selection);
+            s.sharedHash.clear();
+        }
     }
 }
 
-bool QemuClipboardManager::isSecret(const QMimeData *mimeData)
+KemuAgentClient::Policy AgentClipboard::policyFor(ClipboardDirection direction, bool sharePrimary) const
+{
+    KemuAgentClient::Policy policy;
+    policy.toHost = direction == ClipboardDirection::ToHost || direction == ClipboardDirection::Both;
+    policy.toGuest = direction == ClipboardDirection::ToGuest || direction == ClipboardDirection::Both;
+    // Not every host session has a selection to share (section 6.7).
+    policy.primary = sharePrimary && direction != ClipboardDirection::Off && m_clipboard->supportsSelection();
+    return policy;
+}
+
+bool AgentClipboard::mayOffer(Selection selection, const KemuAgentClient::Policy &policy) const
+{
+    if (!m_agent || !m_agent->hasSession() || !policy.toGuest)
+        return false;
+    if (selection == Selection::Clipboard)
+        return m_agent->hasCapability(Capability::Clipboard);
+    return policy.primary && m_agent->hasCapability(Capability::ClipboardPrimary) && m_clipboard->supportsSelection();
+}
+
+bool AgentClipboard::acceptsPeer(Selection selection, const KemuAgentClient::Policy &policy) const
+{
+    if (!m_agent || !m_agent->hasSession() || !policy.toHost)
+        return false;
+    if (selection == Selection::Clipboard)
+        return m_agent->hasCapability(Capability::Clipboard);
+    return policy.primary && m_agent->hasCapability(Capability::ClipboardPrimary) && m_clipboard->supportsSelection();
+}
+
+void AgentClipboard::applyPolicy(const KemuAgentClient::Policy &previous)
+{
+    const KemuAgentClient::Policy current = policyFor(m_direction, m_sharePrimary);
+    for (const Selection selection : kSelections) {
+        State &s = state(selection);
+        // The host withdraws its own offers (section 5.5).
+        if (mayOffer(selection, previous) && !mayOffer(selection, current) && s.owner == Owner::Local)
+            sendRelease(selection);
+        if (acceptsPeer(selection, previous) && !acceptsPeer(selection, current) && s.owner == Owner::Peer) {
+            cancelFetch(selection);
+            s.owner = Owner::None;
+        }
+    }
+    if (m_agent)
+        m_agent->setPolicy(current);
+    for (const Selection selection : kSelections) {
+        if (!mayOffer(selection, previous) && mayOffer(selection, current))
+            examineHost(selection, true);
+    }
+}
+
+void AgentClipboard::onSessionStarted()
+{
+    resetState();
+    // The agent starts empty: offer what the host holds (section 5.5).
+    for (const Selection selection : kSelections)
+        examineHost(selection, true);
+}
+
+void AgentClipboard::onSessionEnded()
+{
+    resetState();
+}
+
+void AgentClipboard::resetState()
+{
+    for (const Selection selection : kSelections) {
+        State &s = state(selection);
+        s.localSerial = 0;
+        s.peerSerial = 0;
+        s.owner = Owner::None;
+        s.offered.clear();
+        s.offeredSecret = false;
+        s.sharedHash.clear();
+        s.peerTypes.clear();
+        s.fetch = Fetch();
+    }
+    m_inbound.clear();
+    m_outbound.clear();
+    m_nextOutbound = 0;
+    m_nextRequestId = 0;
+    m_timeouts.stop();
+}
+
+void AgentClipboard::onMessage(quint16 type, const QCborMap &body)
+{
+    switch (type) {
+    case ClipboardOffer:
+        handleOffer(body);
+        break;
+    case ClipboardRelease:
+        handleRelease(body);
+        break;
+    case ClipboardRequest:
+        handleRequest(body);
+        break;
+    case ClipboardData:
+        handleData(body);
+        break;
+    case ClipboardFail:
+        handleFail(body);
+        break;
+    case ClipboardCancel:
+        handleCancel(body);
+        break;
+    default:
+        break;
+    }
+}
+
+void AgentClipboard::onHostChanged(QClipboard::Mode mode)
+{
+    if (mode == QClipboard::Clipboard)
+        state(Selection::Clipboard).settle.start();
+    else if (mode == QClipboard::Selection)
+        state(Selection::Primary).settle.start();
+}
+
+std::optional<Selection> AgentClipboard::selectionOf(const QCborMap &body) const
+{
+    const auto value = Fields::uint(body, "selection"_L1);
+    if (!value || *value >= quint64(SelectionCount))
+        return std::nullopt;
+    return Selection(*value);
+}
+
+void AgentClipboard::badMessage(quint16 type)
+{
+    qCWarning(KEMU_DBUSDISPLAY).noquote() << "Clipboard: malformed" << messageName(type) << "from kemu-agent";
+    if (m_agent)
+        m_agent->send(Error, QCborMap{{u"code"_s, QString(Reason::BadMessage)}, {u"type"_s, int(type)}});
+}
+
+QByteArray AgentClipboard::contentHash(const Content &content)
+{
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    for (const auto &[type, data] : content) {
+        hash.addData(type.toUtf8());
+        hash.addData(QByteArrayView("\0", 1));
+        hash.addData(QByteArray::number(data.size()));
+        hash.addData(data);
+    }
+    return hash.result();
+}
+
+bool AgentClipboard::isSecret(const Content &content)
 {
     // Convention of KeePassXC, Klipper and others for password entries.
-    static const QString hint = u"x-kde-passwordManagerHint"_s;
-    return mimeData->hasFormat(hint) && mimeData->data(hint) == "secret";
+    for (const auto &[type, data] : content) {
+        if (type == Mime::PasswordHint && data == "secret")
+            return true;
+    }
+    return false;
 }
 
-void QemuClipboardManager::withdrawOffer()
+// =============================================================================
+// Host to guest
+// =============================================================================
+
+std::optional<AgentClipboard::Content> AgentClipboard::snapshot(const QMimeData *data) const
 {
-    m_offeredText.clear();
-    m_offeredIsSecret = false;
-    m_lastSharedText.clear(); // offer it again if the filter goes off once more
-    if (!m_weAreOwner || !m_ctrl || !m_registered)
+    if (!data)
+        return std::nullopt;
+    const QStringList formats = data->formats();
+    QStringList types;
+    QString image;
+    for (const QString &format : formats) {
+        if (!Mime::isShareable(format) || types.contains(format))
+            continue;
+        // One image format is enough: the guest converts on demand, and
+        // every further one costs the source an encoding.
+        if (Mime::isImage(format)) {
+            if (image.isEmpty() || (format == Mime::Png && image != Mime::Png))
+                image = format;
+            continue;
+        }
+        types.append(format);
+    }
+    if (image.isEmpty() && data->hasImage())
+        image = Mime::Png;
+    if (!image.isEmpty())
+        types.append(image);
+    if (data->hasText() && !types.contains(Mime::Utf8Text)) {
+        const qsizetype plain = types.indexOf(Mime::PlainText);
+        types.insert(plain >= 0 ? plain : 0, QString(Mime::Utf8Text));
+    }
+    while (types.size() > MaxOfferTypes)
+        types.removeAt(types.size() - (image.isEmpty() ? 1 : 2)); // the image at the end stays
+
+    Content content;
+    qint64 total = 0;
+    for (const QString &type : std::as_const(types)) {
+        QByteArray bytes;
+        if (type == Mime::Utf8Text && !data->hasFormat(type)) {
+            bytes = data->text().toUtf8();
+        } else if (type == Mime::Png && !data->hasFormat(type)) {
+            const QImage picture = qvariant_cast<QImage>(data->imageData());
+            if (picture.isNull())
+                continue;
+            QBuffer buffer(&bytes);
+            buffer.open(QIODevice::WriteOnly);
+            picture.save(&buffer, "PNG");
+        } else {
+            bytes = data->data(type);
+            if (type == Mime::UriList) {
+                bytes = Mime::stripFileUris(bytes);
+                if (bytes.isEmpty())
+                    continue; // only local files
+            }
+        }
+        if (total + bytes.size() > m_config.snapshotBudget) {
+            qCDebug(KEMU_DBUSDISPLAY) << "Clipboard:" << type << "of" << bytes.size() << "bytes stays on the host";
+            continue;
+        }
+        total += bytes.size();
+        content.append({type, bytes});
+    }
+    return content;
+}
+
+void AgentClipboard::examineHost(Selection selection, bool force)
+{
+    State &s = state(selection);
+    if (!mayOffer(selection, policyFor(m_direction, m_sharePrimary)))
         return;
-    // QEMU then passes an empty clipboard to the guest agent, which drops
-    // what it holds from us.
-    m_weAreOwner = false;
-    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: offer withdrawn";
-    m_ctrl->callAsync(KemuDbusDisplayConst::ClipboardPath, KemuDbusDisplayConst::ClipboardIface, u"Release"_s, g_variant_new("(u)", 0u));
-}
 
-QemuClipboardManager::~QemuClipboardManager()
-{
-    if (m_ctrl) {
-        if (m_registered)
-            m_ctrl->callAsync(KemuDbusDisplayConst::ClipboardPath, KemuDbusDisplayConst::ClipboardIface, u"Unregister"_s, nullptr);
-        m_ctrl->unregisterObject(m_registrationId);
+    const QMimeData *data = m_clipboard->mimeData(toMode(selection));
+    if (!data || data->formats().isEmpty()) {
+        if (s.owner == Owner::Local)
+            sendRelease(selection);
+        return;
     }
-}
+    if (data->hasFormat(ProxyMarker))
+        return; // the guest's content, put there by us
 
-bool QemuClipboardManager::setup()
-{
-    if (!m_ctrl)
-        return false;
-
-    QString err;
-    m_registrationId = m_ctrl->registerObject(KemuDbusDisplayConst::ClipboardPath, clipboardXml, &clipboardVTable, this, &err);
-    if (!m_registrationId) {
-        qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: object registration failed:" << err;
-        return false;
+    const auto content = snapshot(data);
+    if (!content || content->isEmpty()) {
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: nothing to share on the host" << selectionName(selection);
+        if (s.owner == Owner::Local)
+            sendRelease(selection);
+        return;
     }
 
-    QTimer::singleShot(0, this, &QemuClipboardManager::doRegister);
-    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Setup OK (direction:" << static_cast<int>(m_direction) << ")";
-    return true;
+    // Wayland announces the selection again on every focus change, and
+    // clipboard managers such as Klipper take over what we put there
+    // without our marker: content already on both sides is not offered again.
+    const QByteArray hash = contentHash(*content);
+    if (!force && hash == s.sharedHash) {
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: host" << selectionName(selection) << "unchanged";
+        return;
+    }
+    if (s.owner == Owner::Peer && !s.peerText.isNull()) {
+        for (const auto &[type, bytes] : *content) {
+            if (type == Mime::Utf8Text && bytes == s.peerText) {
+                qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: host holds the guest's content again, not offered";
+                return;
+            }
+        }
+    }
+
+    const bool secret = isSecret(*content);
+    if (secret && m_filterPasswords) {
+        // What the guest was offered before is no longer on the host
+        // (section 6.2); the password itself stays here.
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: password manager entry not shared with the guest";
+        if (s.owner == Owner::Local)
+            sendRelease(selection);
+        return;
+    }
+
+    // New host content: whatever the guest offered before is outdated.
+    if (s.fetch.active)
+        cancelFetch(selection);
+    sendOffer(selection, *content, secret, hash);
 }
 
-void QemuClipboardManager::onMethodCall(GDBusConnection *,
-                                        const gchar *,
-                                        const gchar *,
-                                        const gchar *,
-                                        const gchar *method_name,
-                                        GVariant *parameters,
-                                        GDBusMethodInvocation *invocation,
-                                        gpointer user_data)
+void AgentClipboard::sendOffer(Selection selection, const Content &content, bool secret, const QByteArray &hash)
 {
-    auto *self = static_cast<QemuClipboardManager *>(user_data);
+    State &s = state(selection);
+    ++s.localSerial;
+    s.owner = Owner::Local;
+    s.offered = content;
+    s.offeredSecret = secret;
+    s.sharedHash = hash;
 
-    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard D-Bus <-" << method_name;
+    QCborArray types;
+    QCborMap sizes;
+    for (const auto &[type, bytes] : content) {
+        types.append(type);
+        sizes.insert(type, bytes.size());
+    }
+    QCborMap body;
+    body.insert("selection"_L1, int(selection));
+    body.insert("serial"_L1, toCbor(s.localSerial));
+    body.insert("seen"_L1, toCbor(s.peerSerial));
+    body.insert("types"_L1, types);
+    body.insert("sizes"_L1, sizes);
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: offering host" << selectionName(selection) << s.localSerial << types.toVariantList();
+    m_agent->send(ClipboardOffer, body);
+}
 
-    if (g_strcmp0(method_name, "Grab") == 0) {
-        guint32 selection = 0, serial = 0;
-        gchar **mimesRaw = nullptr;
-        g_variant_get(parameters, "(uu^as)", &selection, &serial, &mimesRaw);
+void AgentClipboard::sendRelease(Selection selection)
+{
+    State &s = state(selection);
+    if (m_agent)
+        m_agent->send(ClipboardRelease, QCborMap{{u"selection"_s, int(selection)}, {u"serial"_s, toCbor(s.localSerial)}});
+    s.owner = Owner::None;
+    s.offered.clear();
+    s.offeredSecret = false;
+}
 
-        QStringList mimes;
-        for (gchar **p = mimesRaw; p && *p; ++p)
-            mimes << QString::fromUtf8(*p);
-        g_strfreev(mimesRaw);
+void AgentClipboard::handleRequest(const QCborMap &body)
+{
+    const auto id = Fields::uint(body, "id"_L1);
+    const auto selection = selectionOf(body);
+    const auto serial = Fields::uint(body, "serial"_L1);
+    const auto type = Fields::text(body, "type"_L1);
+    if (!id || !selection || !serial || !type) {
+        badMessage(ClipboardRequest);
+        return;
+    }
+    auto fail = [this, id](QLatin1StringView reason) {
+        m_agent->send(ClipboardFail, QCborMap{{u"id"_s, toCbor(*id)}, {u"reason"_s, QString(reason)}});
+    };
 
-        self->handleGrab(selection, serial, mimes);
-        g_dbus_method_invocation_return_value(invocation, nullptr);
+    const State &s = state(*selection);
+    if (!mayOffer(*selection, policyFor(m_direction, m_sharePrimary)))
+        return fail(Reason::Denied);
+    if (s.owner != Owner::Local || *serial != s.localSerial)
+        return fail(Reason::Stale);
+    const auto it = std::find_if(s.offered.cbegin(), s.offered.cend(), [&](const auto &entry) {
+        return entry.first == *type;
+    });
+    if (it == s.offered.cend())
+        return fail(Reason::NotOffered);
+    if (quint64(it->second.size()) > m_agent->peerMaxTransfer())
+        return fail(Reason::TooLarge);
+    if (m_outbound.size() >= m_config.maxServing)
+        return fail(Reason::Busy);
 
-    } else if (g_strcmp0(method_name, "Release") == 0) {
-        guint32 selection = 0;
-        g_variant_get(parameters, "(u)", &selection);
-        self->handleRelease(selection);
-        g_dbus_method_invocation_return_value(invocation, nullptr);
+    m_outbound.append(Outbound{*id, it->second, 0});
+    pumpOutbound();
+}
 
-    } else if (g_strcmp0(method_name, "Request") == 0) {
-        guint32 selection = 0;
-        gchar **mimesRaw = nullptr;
-        g_variant_get(parameters, "(u^as)", &selection, &mimesRaw);
-
-        QStringList mimes;
-        for (gchar **p = mimesRaw; p && *p; ++p)
-            mimes << QString::fromUtf8(*p);
-        g_strfreev(mimesRaw);
-
-        const auto result = self->handleRequest(selection, mimes);
-        if (result.empty()) {
-            // Spec: return an error when the request cannot be satisfied.
-            g_dbus_method_invocation_return_dbus_error(invocation, "org.qemu.Display1.Clipboard.Empty", "Host clipboard cannot satisfy the request");
+void AgentClipboard::handleCancel(const QCborMap &body)
+{
+    const auto id = Fields::uint(body, "id"_L1);
+    if (!id)
+        return;
+    for (qsizetype i = 0; i < m_outbound.size(); ++i) {
+        if (m_outbound.at(i).id == *id) {
+            m_outbound.removeAt(i);
+            if (m_nextOutbound > i)
+                --m_nextOutbound;
             return;
         }
-
-        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard D-Bus -> Request reply:" << result.data.size() << "bytes, mime:" << result.mime;
-
-        // g_variant_new_fixed_array copies; result.data need not outlive this.
-        GVariant *data = g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, result.data.constData(), result.data.size(), sizeof(guint8));
-        g_dbus_method_invocation_return_value(invocation, g_variant_new("(s@ay)", result.mime.toUtf8().constData(), data));
-
-    } else if (g_strcmp0(method_name, "Register") == 0) {
-        // QEMU re-registers us to restart the serial counter, e.g. whenever
-        // the guest agent (re)connects. The session starts empty on QEMU's
-        // side, so offer the host content again - after the reply, not from
-        // within this dispatch.
-        self->resetSession();
-        g_dbus_method_invocation_return_value(invocation, nullptr);
-        QTimer::singleShot(0, self, &QemuClipboardManager::onHostClipboardChanged);
-
-    } else if (g_strcmp0(method_name, "Unregister") == 0) {
-        g_dbus_method_invocation_return_value(invocation, nullptr);
-
-    } else {
-        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "Unknown method: %s", method_name);
     }
 }
 
-void QemuClipboardManager::doRegister()
+void AgentClipboard::pumpOutbound()
 {
-    if (!m_ctrl)
+    if (m_pumping || !m_agent)
         return;
+    m_pumping = true;
+    const auto done = qScopeGuard([this] {
+        m_pumping = false;
+    });
+    while (!m_outbound.isEmpty() && m_agent && m_agent->hasSession() && m_agent->pendingBytes() < m_config.pacingThreshold) {
+        if (m_nextOutbound >= m_outbound.size())
+            m_nextOutbound = 0;
+        Outbound &transfer = m_outbound[m_nextOutbound];
 
-    auto ptr = QPointer(this);
-    m_ctrl->callWithReply(KemuDbusDisplayConst::ClipboardPath,
-                          KemuDbusDisplayConst::ClipboardIface,
-                          u"Register"_s,
-                          nullptr,
-                          [this, ptr](GVariant *, const GError *error) {
-                              if (!ptr)
-                                  return;
-                              if (error) {
-                                  qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Register() failed:" << error->message;
-                                  m_registered = false;
-                                  // Free the path right away, so a new manager can export it.
-                                  if (m_ctrl)
-                                      m_ctrl->unregisterObject(m_registrationId);
-                                  m_registrationId = 0;
-                                  Q_EMIT registrationFailed(QString::fromUtf8(error->message));
-                                  return;
-                              }
+        const qsizetype size = std::min(m_config.chunkSize, transfer.data.size() - transfer.offset);
+        QCborMap body;
+        body.insert("id"_L1, toCbor(transfer.id));
+        body.insert("data"_L1, transfer.data.mid(transfer.offset, size));
+        if (transfer.offset == 0)
+            body.insert("size"_L1, transfer.data.size());
+        transfer.offset += size;
+        const bool last = transfer.offset >= transfer.data.size();
+        if (last)
+            body.insert("last"_L1, true);
+        m_agent->send(ClipboardData, body);
 
-                              resetSession();
-                              m_registered = true;
-                              qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Register() acknowledged";
-
-                              // Whatever is on the host clipboard right now is
-                              // the first offer; waiting for the next change
-                              // would leave the guest empty-handed until then.
-                              QTimer::singleShot(0, this, &QemuClipboardManager::onHostClipboardChanged);
-                          });
-}
-
-void QemuClipboardManager::resetSession()
-{
-    // Spec: the serial counter restarts at 0 on every (re-)registration.
-    m_currentSerial = 0;
-    m_haveSerial = false;
-    m_weAreOwner = false;
-    // Offer the host content again to a (re)connected guest agent.
-    m_lastSharedText.clear();
-    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: session reset, serial 0";
+        // Round robin, so one large transfer does not hold up the others.
+        if (last)
+            m_outbound.removeAt(m_nextOutbound);
+        else
+            ++m_nextOutbound;
+    }
 }
 
 // =============================================================================
-// Guest -> Host
+// Guest to host
 // =============================================================================
 
-void QemuClipboardManager::handleGrab(uint selection, uint serial, const QStringList &mimes)
+void AgentClipboard::handleOffer(const QCborMap &body)
 {
-    if (selection != 0)
+    const auto selection = selectionOf(body);
+    const auto serial = Fields::uint(body, "serial"_L1);
+    const auto seen = Fields::uint(body, "seen"_L1);
+    const auto types = Fields::textList(body, "types"_L1);
+    if (!selection || !serial || !seen || !types || types->size() > MaxOfferTypes) {
+        badMessage(ClipboardOffer);
         return;
-    if (!m_registered) {
-        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Grab received before Register ack - ignoring";
+    }
+    State &s = state(*selection);
+    if (*serial <= s.peerSerial)
+        return; // stale
+    if (!acceptsPeer(*selection, policyFor(m_direction, m_sharePrimary))) {
+        // Refused for our own policy (section 6.2): an older guest content
+        // on the host is outdated now.
+        s.peerSerial = *serial;
+        if (s.owner == Owner::Peer) {
+            cancelFetch(*selection);
+            s.owner = Owner::None;
+            s.peerTypes.clear();
+            s.peerText.clear();
+            removeProxy(*selection, std::nullopt);
+        }
+        return;
+    }
+    if (s.owner == Owner::Local && *seen < s.localSerial) {
+        // Both copied at once, and the host wins (section 6.2).
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: guest and host copied at once; the host's content stays";
+        s.peerSerial = *serial;
         return;
     }
 
-    // Serial protocol: discard stale grabs; on tie the client (us) wins.
-    // Tracked in every direction, or our next host grab would carry a stale
-    // serial that QEMU drops silently.
-    if (m_haveSerial && serial < m_currentSerial) {
-        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: stale Grab discarded (serial" << serial << "<" << m_currentSerial << ")";
+    s.peerSerial = *serial;
+    s.owner = Owner::Peer;
+    s.offered.clear();
+    s.offeredSecret = false;
+    s.peerTypes.clear();
+    for (const QString &type : *types) {
+        if (Mime::isWellFormed(type))
+            s.peerTypes.append(type);
+    }
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: the guest offers" << selectionName(*selection) << *serial << s.peerTypes;
+    startFetch(*selection, Fields::map(body, "sizes"_L1).value_or(QCborMap()));
+}
+
+void AgentClipboard::handleRelease(const QCborMap &body)
+{
+    const auto selection = selectionOf(body);
+    const auto serial = Fields::uint(body, "serial"_L1);
+    if (!selection || !serial) {
+        badMessage(ClipboardRelease);
         return;
     }
-    if (m_haveSerial && serial == m_currentSerial && m_weAreOwner) {
-        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: tied Grab rejected (client wins on equal serial)";
+    State &s = state(*selection);
+    if (s.owner != Owner::Peer || s.peerSerial != *serial)
         return;
-    }
+    cancelFetch(*selection);
+    s.owner = Owner::None;
+    s.peerTypes.clear();
+    s.peerText.clear();
+    removeProxy(*selection, *serial);
+}
 
-    m_currentSerial = serial;
-    m_haveSerial = true;
-    m_weAreOwner = false;
-
-    if (m_direction != ClipboardDirection::ToHost && m_direction != ClipboardDirection::Both) {
+void AgentClipboard::removeProxy(Selection selection, std::optional<quint64> serial)
+{
+    // Only our own proxy, and only the one for that offer.
+    const QMimeData *current = m_clipboard->mimeData(toMode(selection));
+    if (!current || !current->hasFormat(ProxyMarker))
         return;
+    if (serial && current->data(ProxyMarker) != QByteArray::number(*serial))
+        return;
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: guest content removed from the host" << selectionName(selection);
+    m_clipboard->clear(toMode(selection));
+}
+
+void AgentClipboard::startFetch(Selection selection, const QCborMap &sizes)
+{
+    cancelFetch(selection);
+    State &s = state(selection);
+    Fetch &fetch = s.fetch;
+    fetch.active = true;
+    fetch.serial = s.peerSerial;
+
+    // One image format is enough: Qt offers the others on the host.
+    const bool hasPng = s.peerTypes.contains(Mime::Png);
+    bool imageTaken = false;
+    for (const QString &type : std::as_const(s.peerTypes)) {
+        if (!Mime::isShareable(type))
+            continue;
+        if (Mime::isImage(type)) {
+            if (imageTaken || (hasPng && type != Mime::Png))
+                continue;
+            imageTaken = true;
+        }
+        const auto size = Fields::toUInt(sizes.value(type));
+        if (size && (qint64(*size) > m_config.fetchBudget || *size > KemuAgentClient::kMaxTransfer))
+            continue;
+        fetch.queue.append(type);
     }
+    pumpFetch();
+    inboundDone(selection);
+}
 
-    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Guest grabbed clipboard, MIMEs:" << mimes;
-
-    static const QStringList preferred = {
-        u"text/plain;charset=utf-8"_s,
-        u"text/plain"_s,
-        u"UTF8_STRING"_s,
-    };
-
-    QString selectedMime;
-    for (const auto &pref : preferred) {
-        if (mimes.contains(pref)) {
-            selectedMime = pref;
-            break;
+void AgentClipboard::pumpFetch()
+{
+    if (!m_agent)
+        return;
+    for (const Selection selection : kSelections) {
+        Fetch &fetch = state(selection).fetch;
+        while (fetch.active && !fetch.queue.isEmpty() && m_inbound.size() < m_config.maxOpenRequests) {
+            const QString type = fetch.queue.takeFirst();
+            const quint64 id = ++m_nextRequestId;
+            Inbound inbound{selection, type, {}, false, {}};
+            inbound.lastActivity.start();
+            m_inbound.insert(id, inbound);
+            m_agent->send(ClipboardRequest,
+                          QCborMap{{u"id"_s, toCbor(id)}, {u"selection"_s, int(selection)}, {u"serial"_s, toCbor(fetch.serial)}, {u"type"_s, type}});
         }
     }
-    if (selectedMime.isEmpty() && !mimes.isEmpty())
-        selectedMime = mimes.first();
-    if (selectedMime.isEmpty() || !m_ctrl)
-        return;
-
-    auto ptr = QPointer(this);
-    m_ctrl->callWithReply(KemuDbusDisplayConst::ClipboardPath,
-                          KemuDbusDisplayConst::ClipboardIface,
-                          u"Request"_s,
-                          g_variant_new("(u@as)", static_cast<guint32>(selection), mimesToVariant({selectedMime})),
-                          [this, ptr](GVariant *reply, const GError *error) {
-                              if (!ptr)
-                                  return;
-                              if (error || !reply) {
-                                  qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Request reply error:" << (error ? error->message : "no reply");
-                                  return;
-                              }
-
-                              const gchar *mimeRaw = nullptr;
-                              GVariant *dataV = nullptr;
-                              g_variant_get(reply, "(&s@ay)", &mimeRaw, &dataV);
-
-                              const QString mime = QString::fromUtf8(mimeRaw);
-                              gsize dataLen = 0;
-                              const guint8 *raw = static_cast<const guint8 *>(g_variant_get_fixed_array(dataV, &dataLen, sizeof(guint8)));
-                              const QByteArray data(reinterpret_cast<const char *>(raw), static_cast<qsizetype>(dataLen));
-                              g_variant_unref(dataV);
-
-                              qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: guest data received:" << data.size() << "bytes, mime:" << mime;
-
-                              if (data.isEmpty())
-                                  return;
-
-                              auto *newMimeData = new QMimeData();
-                              if (mime.startsWith(u"text/"_s) || mime == u"UTF8_STRING"_s) {
-                                  const QString text = QString::fromUtf8(data);
-                                  newMimeData->setText(text);
-                                  m_lastSharedText = text;
-                              } else {
-                                  newMimeData->setData(mime, data);
-                                  m_lastSharedText.clear();
-                              }
-
-                              // Arm the echo guard, then place the data on the host clipboard.
-                              m_settingFromGuest = true;
-                              m_hostClipboard->setMimeData(newMimeData);
-
-                              QTimer::singleShot(150, this, [this] {
-                                  m_settingFromGuest = false;
-                              });
-
-                              qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Guest -> Host transfer complete";
-                          });
+    if (!m_inbound.isEmpty() && !m_timeouts.isActive())
+        m_timeouts.start();
 }
 
-// =============================================================================
-// Host -> Guest
-// =============================================================================
-
-void QemuClipboardManager::handleRelease(uint selection)
+void AgentClipboard::cancelFetch(Selection selection)
 {
-    if (selection != 0)
-        return;
-
-    // QEMU released its grab. We don't touch ownership here - it stays with
-    // whoever has the highest serial. A Release just signals the previous
-    // owner is willing to drop, but until somebody grabs, ownership state
-    // doesn't change.
-    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: QEMU released selection" << selection;
+    const QList<quint64> ids = m_inbound.keys();
+    for (const quint64 id : ids) {
+        if (m_inbound.value(id).selection != selection)
+            continue;
+        m_inbound.remove(id);
+        if (m_agent)
+            m_agent->send(ClipboardCancel, QCborMap{{u"id"_s, toCbor(id)}});
+    }
+    state(selection).fetch = Fetch();
+    if (m_inbound.isEmpty())
+        m_timeouts.stop();
 }
 
-QemuClipboardManager::ClipboardData QemuClipboardManager::handleRequest(uint selection, const QStringList &mimes)
+void AgentClipboard::cancelInbound(quint64 id)
 {
-    if (selection != 0)
-        return {};
-    if (m_direction != ClipboardDirection::ToGuest && m_direction != ClipboardDirection::Both) {
-        return {};
-    }
+    const auto it = m_inbound.constFind(id);
+    if (it == m_inbound.constEnd())
+        return;
+    const Selection selection = it->selection;
+    m_inbound.erase(it);
+    if (m_agent)
+        m_agent->send(ClipboardCancel, QCborMap{{u"id"_s, toCbor(id)}});
+    inboundDone(selection);
+}
 
-    // Only what our grab announced, from the snapshot taken then (see
-    // m_offeredText). QEMU's bridge carries UTF-8 text and nothing else.
-    if (m_offeredText.isEmpty()) {
-        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: nothing offered, cannot satisfy request";
-        return {};
+void AgentClipboard::handleData(const QCborMap &body)
+{
+    const auto id = Fields::uint(body, "id"_L1);
+    const auto data = Fields::bytes(body, "data"_L1);
+    if (!id || !data) {
+        badMessage(ClipboardData);
+        return;
     }
-    for (const QString &mime : mimes) {
-        if (mime == u"text/plain;charset=utf-8"_s || mime == u"text/plain"_s || mime == u"UTF8_STRING"_s) {
-            qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: serving guest from the offered snapshot as" << mime;
-            return {mime, m_offeredText.toUtf8()};
+    const auto it = m_inbound.find(*id);
+    if (it == m_inbound.end())
+        return; // cancelled, or not ours
+    Inbound &inbound = *it;
+    const Selection selection = inbound.selection;
+    Fetch &fetch = state(selection).fetch;
+    inbound.lastActivity.restart();
+
+    const qint64 room = std::min(qint64(KemuAgentClient::kMaxTransfer), m_config.fetchBudget - fetch.bytes);
+    const auto size = Fields::uint(body, "size"_L1);
+    if (size && !inbound.sizeSeen) {
+        inbound.sizeSeen = true;
+        if (qint64(*size) > room) {
+            qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: guest" << inbound.type << "of" << *size << "bytes stays in the guest";
+            cancelInbound(*id);
+            return;
         }
     }
+    if (inbound.data.size() + data->size() > room) {
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: guest" << inbound.type << "larger than the budget, stays in the guest";
+        cancelInbound(*id);
+        return;
+    }
+    inbound.data += *data;
 
-    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: host cannot satisfy request, mimes:" << mimes;
-    return {};
+    if (Fields::boolean(body, "last"_L1).value_or(false)) {
+        fetch.done.append({inbound.type, inbound.data});
+        fetch.bytes += inbound.data.size();
+        m_inbound.erase(it);
+        inboundDone(selection);
+    }
 }
 
-void QemuClipboardManager::onHostClipboardChanged()
+void AgentClipboard::handleFail(const QCborMap &body)
 {
-    if (m_direction != ClipboardDirection::ToGuest && m_direction != ClipboardDirection::Both) {
+    const auto id = Fields::uint(body, "id"_L1);
+    if (!id) {
+        badMessage(ClipboardFail);
         return;
     }
-    if (!m_ctrl || !m_registered)
+    const auto it = m_inbound.constFind(*id);
+    if (it == m_inbound.constEnd())
         return;
+    const Selection selection = it->selection;
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: the guest could not deliver" << it->type << Fields::text(body, "reason"_L1).value_or(QString());
+    m_inbound.erase(it);
+    inboundDone(selection);
+}
 
-    // Suppress self-induced dataChanged: when we mirror guest data onto the
-    // host clipboard, Qt emits dataChanged synchronously (and again later
-    // under Wayland). Without this guard we'd bounce the content back to
-    // the guest as a fresh Grab.
-    if (m_settingFromGuest) {
-        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: dataChanged ignored (self-induced echo)";
+void AgentClipboard::inboundDone(Selection selection)
+{
+    pumpFetch();
+    if (m_inbound.isEmpty())
+        m_timeouts.stop();
+    const Fetch &fetch = state(selection).fetch;
+    if (!fetch.active || !fetch.queue.isEmpty())
+        return;
+    for (const Inbound &inbound : std::as_const(m_inbound)) {
+        if (inbound.selection == selection)
+            return;
+    }
+    finishFetch(selection);
+}
+
+void AgentClipboard::finishFetch(Selection selection)
+{
+    State &s = state(selection);
+    const Fetch fetch = std::exchange(s.fetch, Fetch());
+    if (fetch.done.isEmpty()) {
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: nothing of the guest's offer arrived";
         return;
     }
 
-    const QMimeData *mimeData = m_hostClipboard->mimeData();
-    if (!mimeData || !mimeData->hasText())
-        return;
-
-    // The guest keeps what it was offered before; only the password stays here.
-    const bool secret = isSecret(mimeData);
-    if (secret && m_filterPasswords) {
-        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: password manager entry not shared with the guest";
+    // The host copied while the guest's content was on its way, and that
+    // copy waits for its offer: it is the newer one and wins (section 6.2).
+    if (s.settle.isActive() && hostHoldsNewContent(selection)) {
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: the host copied meanwhile; the guest's content stays in the guest";
+        s.peerText.clear();
         return;
     }
 
-    const QString hostText = mimeData->text();
-    if (hostText.isEmpty() || hostText == m_lastSharedText) {
-        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: dataChanged ignored (content already shared)";
+    if (m_filterPasswords && isSecret(fetch.done)) {
+        // Refused for our own policy (section 6.2): the guest keeps it, and
+        // an older guest content on the host is outdated now.
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: password manager entry stays in the guest";
+        s.owner = Owner::None;
+        s.peerText.clear();
+        removeProxy(selection, std::nullopt);
         return;
     }
-    m_lastSharedText = hostText;
-    m_offeredText = hostText;
-    m_offeredIsSecret = secret;
 
-    const QStringList mimesToSend = {
-        u"text/plain;charset=utf-8"_s,
-        u"text/plain"_s,
-        u"UTF8_STRING"_s,
-    };
+    auto *data = new QMimeData;
+    QByteArray text;
+    bool imageSet = false;
+    for (const auto &[type, bytes] : fetch.done) {
+        data->setData(type, bytes);
+        if (type == Mime::Utf8Text)
+            text = bytes;
+        if (!imageSet && Mime::isImage(type)) {
+            QImage picture;
+            if (picture.loadFromData(bytes)) {
+                data->setImageData(picture);
+                imageSet = true;
+            }
+        }
+    }
+    if (!text.isNull() && !data->hasFormat(Mime::PlainText))
+        data->setText(QString::fromUtf8(text));
+    data->setData(ProxyMarker, QByteArray::number(fetch.serial));
 
-    // The first grab after (re-)registration carries serial 0: the guest
-    // agent silently discards anything but the serial it expects next.
-    m_currentSerial = m_haveSerial ? m_currentSerial + 1 : 0;
-    m_haveSerial = true;
-    m_weAreOwner = true;
+    s.peerText = text;
+    s.sharedHash = contentHash(fetch.done);
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: guest content on the host" << selectionName(selection) << fetch.bytes << "bytes";
+    m_clipboard->setMimeData(data, toMode(selection));
+}
 
-    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: Host->Guest Grab (serial:" << m_currentSerial << ")";
+bool AgentClipboard::hostHoldsNewContent(Selection selection) const
+{
+    const QMimeData *data = m_clipboard->mimeData(toMode(selection));
+    if (!data || data->formats().isEmpty() || data->hasFormat(ProxyMarker))
+        return false;
+    const auto content = snapshot(data);
+    return content && !content->isEmpty() && contentHash(*content) != state(selection).sharedHash;
+}
 
-    auto ptr = QPointer(this);
-    m_ctrl->callWithReply(KemuDbusDisplayConst::ClipboardPath,
-                          KemuDbusDisplayConst::ClipboardIface,
-                          u"Grab"_s,
-                          g_variant_new("(uu@as)", 0u, static_cast<guint32>(m_currentSerial), mimesToVariant(mimesToSend)),
-                          [this, ptr](GVariant *, const GError *error) {
-                              if (!ptr)
-                                  return;
-                              if (error) {
-                                  qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: Grab to QEMU failed:" << error->message;
-                                  m_weAreOwner = false;
-                                  m_lastSharedText.clear(); // allow a retry with the same content
-                              }
-                              // Do NOT proactively call Request() from here. QEMU pulls the data
-                              // itself when the guest pastes, by invoking our Request handler.
-                          });
+void AgentClipboard::checkTimeouts()
+{
+    QList<quint64> expired;
+    for (auto it = m_inbound.cbegin(); it != m_inbound.cend(); ++it) {
+        if (it->lastActivity.elapsed() > m_config.requestTimeoutMs)
+            expired.append(it.key());
+    }
+    for (const quint64 id : std::as_const(expired)) {
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: request" << id << "to the guest timed out";
+        cancelInbound(id);
+    }
 }

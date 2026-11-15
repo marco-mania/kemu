@@ -1432,9 +1432,7 @@ void QemuDisplayWidget::flushMotion()
         if (m_multiheadMouseMapping) {
             const QPoint sent{int(m_pendingAbsX), int(m_pendingAbsY)};
             const qint64 msecs = QDeadlineTimer::current().deadline();
-            if (m_multiheadMouseMapping->hasGuestAgentPointer() && m_pendingAbsConsolePath == m_consolePath)
-                m_multiheadMouseMapping->noteAgentPointerSent(m_displayHead, sent, msecs);
-            else if (m_pendingAbsConsolePath == m_multiheadMouseMapping->primaryConsolePath())
+            if (m_pendingAbsConsolePath == m_multiheadMouseMapping->primaryConsolePath())
                 m_multiheadMouseMapping->notePointerSent(sent, msecs);
         }
         m_hasPendingAbs = false;

@@ -7,6 +7,7 @@
 #include "multiheadmousemapping.h"
 
 #include <QLoggingCategory>
+#include <QPointF>
 #include <QtGlobal>
 
 #include <algorithm>
@@ -20,9 +21,6 @@ namespace
 {
 constexpr qint64 kSettleMsecs = 100;
 constexpr qint64 kResponseMsecs = 250;
-// Two scalings and libinput leave a pixel or two of rounding.
-constexpr int kAgentTolerance = 6;
-constexpr int kAgentWindow = 8;
 constexpr int kMinSamples = 4;
 constexpr int kMaxSamplesPerHead = 12;
 constexpr int kFailedFitsBeforeReport = 3;
@@ -156,7 +154,6 @@ void MultiheadMouseMapping::storeDisplaySize(uint head, const QSize &size)
     m_pointerSamples.clear();
     m_pendingSample.reset();
     m_lastTablet.reset();
-    m_pendingAgentSample.reset();
     m_failedFits = 0;
     m_failureReported = false;
 }
@@ -262,83 +259,78 @@ std::optional<QRect> MultiheadMouseMapping::displayGeometry(uint head) const
     return secondaryGeometry(primary, size, m_secondaryPlacement, m_secondaryPosition);
 }
 
-void MultiheadMouseMapping::setGuestAgentPointer(bool active)
+void MultiheadMouseMapping::setAgentLayout(const std::optional<KemuAgentProtocol::Layout> &layout)
 {
-    if (m_guestAgentPointer == active)
-        return;
-    m_guestAgentPointer = active;
-    // Positions sent before the switch reached the guest another way.
+    const bool wasActive = hasAgentLayout();
+    m_agentLayout = layout;
+    const bool active = hasAgentLayout();
+    // Samples taken under another layout say nothing about this one.
     m_pendingSample.reset();
     m_lastTablet.reset();
-    resetAgentChecks();
-    qCDebug(lcMultihead) << "Guest agent places the pointer:" << active;
-    Q_EMIT guestAgentPointerChanged(active);
-}
-
-bool MultiheadMouseMapping::hasGuestAgentPointer() const
-{
-    return m_guestAgentPointer;
-}
-
-void MultiheadMouseMapping::noteAgentPointerSent(uint head, const QPoint &position, qint64 msecs)
-{
-    if (!m_guestAgentPointer)
-        return;
-    if (m_agentSent && m_agentSent->head == head && m_agentSent->position == position)
-        return;
-    acceptPendingAgentSample(msecs);
-    m_agentSent = AgentPointer{head, position};
-    m_agentSentMsecs = msecs;
-}
-
-void MultiheadMouseMapping::noteAgentReport(uint head, const QPoint &position, qint64 msecs)
-{
-    if (!m_agentSent || m_agentSent->head != head || msecs - m_agentSentMsecs > kResponseMsecs) {
-        m_pendingAgentSample.reset();
-        return;
-    }
-    const QSize size = displaySize(head);
-    if (size.isEmpty() || position.x() <= 0 || position.y() <= 0 || position.x() >= size.width() - 1 || position.y() >= size.height() - 1)
-        return;
-    m_pendingAgentSample = std::pair{m_agentSent->position, position};
-}
-
-void MultiheadMouseMapping::acceptPendingAgentSample(qint64 msecs)
-{
-    if (!m_pendingAgentSample)
-        return;
-    const auto [sent, shown] = *std::exchange(m_pendingAgentSample, std::nullopt);
-    if (msecs - m_agentSentMsecs < kSettleMsecs)
-        return;
-    const QPoint miss = shown - sent;
-    const bool hit = qAbs(miss.x()) <= kAgentTolerance && qAbs(miss.y()) <= kAgentTolerance;
-    qCDebug(lcMultihead) << "Agent placed" << sent << "at" << shown;
-    m_agentHits.append(hit);
-    if (m_agentHits.size() > kAgentWindow)
-        m_agentHits.removeFirst();
-
-    // Points near where the layouts agree hit even when the scales differ,
-    // so half the window missing is enough.
-    if (!m_agentMissReported && m_agentHits.count(false) >= kAgentWindow / 2) {
-        m_agentMissReported = true;
-        Q_EMIT guestAgentPointerMisplaced();
-    } else if (m_agentMissReported && m_agentHits.size() == kAgentWindow && !m_agentHits.contains(false)) {
-        m_agentMissReported = false;
+    if (active != wasActive) {
+        qCDebug(lcMultihead) << "Pointer mapped from kemu-agent's layout:" << active;
+        Q_EMIT agentLayoutChanged(active);
     }
 }
 
-void MultiheadMouseMapping::resetAgentChecks()
+bool MultiheadMouseMapping::hasAgentLayout() const
 {
-    m_agentSent.reset();
-    m_pendingAgentSample.reset();
-    m_agentHits.clear();
-    m_agentMissReported = false;
+    return m_agentLayout && !m_agentLayout->space.isEmpty() && m_agentLayout->outputForHead(0);
+}
+
+// The inverse of an output transform as wl_output defines it: where a point
+// of the framebuffer, normalised to 0..1, sits on the output as the guest
+// arranges it.
+static QPointF untransform(const QString &transform, double u, double v)
+{
+    if (transform == u"90"_s)
+        return {1.0 - v, u};
+    if (transform == u"180"_s)
+        return {1.0 - u, 1.0 - v};
+    if (transform == u"270"_s)
+        return {v, 1.0 - u};
+    if (transform == u"flipped"_s)
+        return {1.0 - u, v};
+    if (transform == u"flipped-90"_s)
+        return {v, u};
+    if (transform == u"flipped-180"_s)
+        return {u, 1.0 - v};
+    if (transform == u"flipped-270"_s)
+        return {1.0 - v, 1.0 - u};
+    return {u, v};
+}
+
+std::optional<QPoint> MultiheadMouseMapping::mapWithAgentLayout(uint head, const QPoint &position) const
+{
+    const KemuAgentProtocol::DisplayOutput *output = m_agentLayout->outputForHead(head);
+    const QSize primary = displaySize(0);
+    if (!output || primary.isEmpty())
+        return std::nullopt;
+    const QSize framebuffer = displaySize(head).isEmpty() ? output->modeSize : displaySize(head);
+    if (framebuffer.isEmpty())
+        return std::nullopt;
+
+    // The pixel's centre, on the output and then on the guest desktop.
+    const double u = (qBound(0, position.x(), framebuffer.width() - 1) + 0.5) / framebuffer.width();
+    const double v = (qBound(0, position.y(), framebuffer.height() - 1) + 0.5) / framebuffer.height();
+    const QPointF onOutput = untransform(output->transform, u, v);
+    const QRect &space = m_agentLayout->space;
+    const QRect area = output->geometry.translated(-space.topLeft());
+    const int x = qBound(area.left(), int(std::floor(area.x() + onOutput.x() * area.width())), area.right());
+    const int y = qBound(area.top(), int(std::floor(area.y() + onOutput.y() * area.height())), area.bottom());
+
+    // The guest spreads the tablet over its whole space; aim at the step
+    // that lands on this output.
+    return QPoint(primaryCoordinate(x, area.left(), area.left() + area.width(), primary.width(), space.width()),
+                  primaryCoordinate(y, area.top(), area.top() + area.height(), primary.height(), space.height()));
 }
 
 std::optional<QPoint> MultiheadMouseMapping::mapToPrimary(uint head, const QPoint &position) const
 {
-    if (m_guestAgentPointer)
-        return std::nullopt;
+    if (hasAgentLayout()) {
+        if (const auto mapped = mapWithAgentLayout(head, position))
+            return mapped;
+    }
     const auto primary = displayGeometry(0);
     const auto secondary = displayGeometry(1);
     if (!primary || !secondary)
@@ -380,8 +372,8 @@ bool MultiheadMouseMapping::isCursorOnOtherHead(uint head) const
 
 void MultiheadMouseMapping::notePointerSent(const QPoint &primaryPosition, qint64 msecs)
 {
-    if (m_guestAgentPointer)
-        return;
+    if (hasAgentLayout())
+        return; // nothing to learn
     const QSize primary = displaySize(0);
     if (primary.isEmpty())
         return;
@@ -396,10 +388,8 @@ void MultiheadMouseMapping::notePointerSent(const QPoint &primaryPosition, qint6
 
 void MultiheadMouseMapping::noteGuestPointer(uint head, const QPoint &position, qint64 msecs)
 {
-    if (m_guestAgentPointer) {
-        noteAgentReport(head, position, msecs);
+    if (hasAgentLayout())
         return;
-    }
     if (!m_lastTablet)
         return;
     // A report long after the last position sent is the guest's own doing,

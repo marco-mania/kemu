@@ -64,6 +64,10 @@ struct QemuNetworkContext {
     /// Guest agent channel. Below zero, QEMU listens on a unix socket in the
     /// VM folder instead (export scripts).
     int guestAgentFd = -1;
+
+    /// kemu-agent channel (D-Bus display only). Below zero, the guest gets
+    /// no agent port.
+    int agentFd = -1;
 };
 
 class QemuCommandBuilder

@@ -262,7 +262,6 @@ private:
     bool startDbusViewer(const QString &vmName);
     void stopDbusViewer(const QString &vmName);
     void finishDbusViewer(const QString &vmName, QemuControlConnection *ctrl);
-    void watchGuestAgentPointer(const QString &vmName, MultiheadMouseMapping *mapping);
     void refreshDbusDisplayConsoles(const QString &vmName, QemuControlConnection *ctrl);
     void openDbusSubDisplay(const QString &vmName, guint consoleId);
     void plugDbusSubDisplays(const QString &vmName);

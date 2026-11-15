@@ -291,12 +291,61 @@ private Q_SLOTS:
                 break;
             }
         }
-        // Only the guest agent knows how the guest arranged the monitors.
-        QCOMPARE(args.contains(u"qemu-vdagent,id=vdagent,clipboard=on,mouse=on"_s), expectedMultihead);
+        // kemu-agent reports the monitor arrangement on its own port; no
+        // QEMU side agent is involved any more.
+        QVERIFY(!args.join(u' ').contains(u"vdagent"_s));
         QVERIFY(!graphicsDevice.isEmpty());
         QCOMPARE(graphicsDevice.contains(u"max_outputs="_s), expectedMultihead);
         if (expectedMultihead)
             QVERIFY(graphicsDevice.contains(u"max_outputs=%1"_s.arg(qMin(outputs, KEMUConst::SupportedMonitorCount))));
+    }
+
+    void agentPort_data()
+    {
+        QTest::addColumn<bool>("dbus");
+        QTest::addColumn<VMSpecs::MachineType>("machine");
+        QTest::addColumn<bool>("guestAgent");
+        QTest::addColumn<int>("agentFd");
+        QTest::addColumn<bool>("expectedPort");
+
+        QTest::newRow("dbus-fd") << true << VMSpecs::MachineType::Q35 << false << 61 << true;
+        QTest::newRow("dbus-no-fd") << true << VMSpecs::MachineType::Q35 << true << -1 << false;
+        QTest::newRow("dbus-with-qga") << true << VMSpecs::MachineType::Pc << true << 61 << true;
+        QTest::newRow("sdl") << false << VMSpecs::MachineType::Q35 << true << 61 << false;
+        QTest::newRow("isapc") << true << VMSpecs::MachineType::PcISA << false << 61 << false;
+    }
+
+    void agentPort()
+    {
+        QFETCH(bool, dbus);
+        QFETCH(VMSpecs::MachineType, machine);
+        QFETCH(bool, guestAgent);
+        QFETCH(int, agentFd);
+        QFETCH(bool, expectedPort);
+
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QDir vmDir(dir.path());
+        VMConfig config = testConfig(vmDir);
+        config.setDisplayType(dbus ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Sdl);
+        config.setMachineType(machine);
+        const bool pci = VMConfig::supportsPciBus(machine);
+        config.setUseGuestAgent(guestAgent);
+
+        QemuNetworkContext context;
+        context.guestAgentFd = 54;
+        context.agentFd = agentFd;
+        const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s), context);
+
+        const QString port = u"virtserialport,chardev=%1,id=%2,name=%3"_s.arg(KEMUConst::AgentChardevId, KEMUConst::AgentPortId, KEMUConst::AgentPortName);
+        QCOMPARE(args.contains(port), expectedPort);
+        QCOMPARE(args.contains(u"socket,id=%1,fd=%2"_s.arg(KEMUConst::AgentChardevId).arg(agentFd)), expectedPort);
+        // One bus for both agents.
+        QCOMPARE(args.count(u"virtio-serial-pci"_s), (expectedPort || (guestAgent && pci)) ? 1 : 0);
+        QCOMPARE(
+            args.contains(
+                u"virtserialport,chardev=%1,id=%2,name=%3"_s.arg(KEMUConst::GuestAgentChardevId, KEMUConst::GuestAgentPortId, KEMUConst::GuestAgentPortName)),
+            guestAgent && pci);
     }
 
     void exportedScript_data()

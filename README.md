@@ -202,9 +202,8 @@ Each VM uses one of two display backends:
 | **SDL**   | QEMU's own window   | Yes (Virtio)    | System (PipeWire)  | No        |
 
 Closing the viewer leaves the VM running headless; select *Show Display* to
-reopen it. Clipboard sharing requires the SPICE vdagent in the guest. For
-more details, including a workaround for Wayland guests, see
-[docs/display.md](docs/display.md).
+reopen it. Clipboard sharing requires kemu-agent in Linux guests; see
+[docs/display.md](docs/display.md) for details.
 
 ### Multiple monitors (experimental)
 
@@ -213,12 +212,10 @@ two monitors (*Edit… → Hardware → Display → Monitors*). Display 2 opens 
 separate window. Closing this window disconnects the monitor in the guest OS;
 selecting *View → Displays → Display 2* in the viewer reconnects it.
 
-Installing the SPICE vdagent in the guest OS ensures accurate mouse tracking
-by communicating the guest's display layout to the host. Without the agent,
-QEMU attempts to infer the layout from the guest cursor or uses the arrangement
-set under *View → Displays → Display 2 Position*. Because guest display scaling
-can cause pointer misalignment, set both monitors to the same scaling factor
-when using the agent.
+With kemu-agent in a Linux guest, KEMU knows how the guest arranged its
+monitors, including different scaling factors, and places the pointer exactly.
+Without the agent, KEMU infers the layout from the guest cursor or uses the
+arrangement set under *View → Displays → Display 2 Position*.
 
 ### Networking
 

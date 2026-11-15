@@ -10,13 +10,14 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QHash>
 #include <QLabel>
 #include <QMainWindow>
 #include <QMenuBar>
 #include <QMessageBox>
-#include <QScrollArea>
 #include <QPair>
-#include <QHash>
+#include <QPointer>
+#include <QScrollArea>
 #include <QSet>
 #include <QStatusBar>
 #include <QStringList>
@@ -64,6 +65,7 @@ struct ViewerDevicePrefs {
     bool audioIn = false; // default: off
     ClipboardDirection clipboard = ClipboardDirection::Off; // default: off
     bool clipboardFilterPasswords = true; // password manager entries stay on the host
+    bool clipboardPrimary = false; // the selection (middle click) as well
     bool networkLinkUp = true; // virtual cable plugged in
 };
 
@@ -99,8 +101,8 @@ public:
     void setSecondaryDisplayPlacement(MultiheadMouseMapping::SecondaryPlacement placement);
     void setSecondaryDisplayPosition(const QPoint &position);
     void showLayoutDetectionFailed();
-    void setSecondaryPlacementByGuestAgent(bool byGuestAgent);
-    void showGuestAgentPointerMisplaced();
+    // kemu-agent reports the monitor arrangement: nothing to choose.
+    void setDisplayLayoutFromAgent(bool fromAgent);
 
     QemuDisplayWidget *displayWidget() const
     {
@@ -110,6 +112,10 @@ public:
     // Set clipboard mode (for initial CLI configuration).
     // Must be called after show(), also sets the corresponding menu action.
     void setClipboardMode(ClipboardDirection dir);
+
+    // The kemu-agent channel of the VM; nullptr without one. Clipboard
+    // sharing runs through it. Lives as long as QEMU, so set once.
+    void setKemuAgent(KemuAgentClient *agent);
 
     // Subsequent audio activation (after asynchronous D-Bus registration)
     void audioOutReady();
@@ -192,8 +198,8 @@ private Q_SLOTS:
     void onClipboardToHost();
     void onClipboardToGuest();
     void onClipboardBoth();
-    void onClipboardRegistrationFailed(const QString &error);
     void onToggleClipboardFilterPasswords(bool checked);
+    void onToggleClipboardPrimary(bool checked);
     void onScanoutChanged(int width, int height);
     void onQemuDisconnected();
     void onAbout();
@@ -228,7 +234,8 @@ private:
     QemuDisplayListener *m_listener = nullptr;
     QemuAudioListener *m_audioOut = nullptr;
     QemuAudioInListener *m_audioIn = nullptr;
-    QemuClipboardManager *m_clipboard = nullptr;
+    AgentClipboard *m_clipboard = nullptr;
+    QPointer<KemuAgentClient> m_kemuAgent;
 
     bool m_audioOutConnected = false;
     bool m_audioInConnected = false;
@@ -266,6 +273,7 @@ private:
     QAction *m_actClipToGuest = nullptr;
     QAction *m_actClipBoth = nullptr;
     QAction *m_actClipFilterPasswords = nullptr;
+    QAction *m_actClipPrimary = nullptr;
     QAction *m_actGrabMouse = nullptr;
     QAction *m_actKeyboardShortcutsInhibit = nullptr;
     QAction *m_actNetworkLink = nullptr;
@@ -277,7 +285,7 @@ private:
     QHash<int, QAction *> m_secondaryPlacementActions;
     MultiheadMouseMapping::SecondaryPlacement m_secondaryPlacement = MultiheadMouseMapping::SecondaryPlacement::Automatic;
     QPoint m_secondaryPosition = QPoint(1920, 0);
-    bool m_secondaryPlacementByGuestAgent = false;
+    bool m_layoutFromAgent = false;
     QHash<uint, QAction *> m_subDisplayActions;
 
     QLabel *m_lblResolution = nullptr;

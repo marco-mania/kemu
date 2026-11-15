@@ -6,20 +6,24 @@
 
 #pragma once
 
-#pragma push_macro("signals")
-#undef signals
-#include <gio/gio.h>
-#pragma pop_macro("signals")
-
-#include <QApplication>
+#include <QByteArray>
+#include <QCborMap>
 #include <QClipboard>
-#include <QMimeData>
+#include <QElapsedTimer>
+#include <QHash>
+#include <QList>
 #include <QObject>
 #include <QPointer>
 #include <QStringList>
 #include <QTimer>
 
-#include "dbusdisplay/controlconnection.h"
+#include <array>
+#include <optional>
+
+#include "utils/kemuagentclient.h"
+#include "utils/kemuagentprotocol.h"
+
+class QMimeData;
 
 using namespace Qt::StringLiterals;
 
@@ -33,98 +37,169 @@ enum class ClipboardDirection {
 const QString clipboardDirToString(ClipboardDirection dir);
 ClipboardDirection clipboardDirFromString(const QString &s);
 
-// =============================================================================
-// QemuClipboardManager
-// =============================================================================
-// Bridges the host clipboard and QEMU's org.qemu.Display1.Clipboard over the
-// p2p control connection. We export the same interface back to QEMU for its
-// callbacks (Grab/Release/Request), matching the listener classes' pattern.
-// All D-Bus dispatch arrives on the GUI thread via GLibEventBridge.
-// =============================================================================
-
-class QemuClipboardManager : public QObject
+/**
+ * @brief Shares the host clipboard with the guest through kemu-agent.
+ *
+ * The clipboard part of the KEMU agent protocol (section 6), on top of a
+ * KemuAgentClient. Each side announces what it holds with an offer; the
+ * other side fetches it.
+ *
+ * Host to guest: when the host clipboard changes, everything shareable is
+ * read at once (within a budget) into a snapshot. Wayland announces the
+ * selection again on every focus change; identical content is not offered
+ * twice. Requests are served from the snapshot.
+ *
+ * Guest to host: an offer from the guest is fetched at once, within a
+ * budget, and placed on the host clipboard with a private marker type that
+ * keeps it from being offered back. QMimeData hands data to pasting
+ * applications synchronously, so there is no waiting for the guest then.
+ *
+ * When both sides copy at the same moment, the host wins (section 6.2).
+ */
+class AgentClipboard : public QObject
 {
     Q_OBJECT
 
 public:
-    QemuClipboardManager(QemuControlConnection *ctrl, ClipboardDirection direction, QObject *parent = nullptr);
-    ~QemuClipboardManager() override;
-
-    bool setup();
-
-    // Switches direction without re-registering: a new Register would reset
-    // the session and make QEMU reconnect the guest agent.
-    void setDirection(ClipboardDirection direction);
-
-    // Keep entries that password managers mark as secret
-    // (x-kde-passwordManagerHint) on the host. On by default.
-    void setFilterPasswords(bool filter);
-
-    struct ClipboardData {
-        QString mime;
-        QByteArray data;
-        bool empty() const
-        {
-            return data.isEmpty();
-        }
+    struct Config {
+        int settleMs = 50;
+        int primarySettleMs = 250;
+        int requestTimeoutMs = 10000;
+        qint64 snapshotBudget = 32ll * 1024 * 1024; // host content read per offer
+        qint64 fetchBudget = 32ll * 1024 * 1024; // guest content fetched per offer
+        qsizetype chunkSize = 64 * 1024;
+        qsizetype pacingThreshold = 128 * 1024;
+        int maxOpenRequests = 8;
+        int maxServing = 8;
     };
 
-    static void onMethodCall(GDBusConnection *connection,
-                             const gchar *sender,
-                             const gchar *object_path,
-                             const gchar *interface_name,
-                             const gchar *method_name,
-                             GVariant *parameters,
-                             GDBusMethodInvocation *invocation,
-                             gpointer user_data);
+    enum class Owner {
+        None,
+        Local, // the host's offer is in force
+        Peer, // the guest's offer is in force
+    };
+    Q_ENUM(Owner)
 
-    // Called by onMethodCall:
-    void resetSession();
-    void handleGrab(uint selection, uint serial, const QStringList &mimes);
-    void handleRelease(uint selection);
-    ClipboardData handleRequest(uint selection, const QStringList &mimes);
+    // Marks guest content on the host clipboard (private, never offered).
+    static constexpr auto ProxyMarker = "application/x-kemu-guest-proxy"_L1;
 
-Q_SIGNALS:
-    // QEMU refused Register(), e.g. because another peer is registered.
-    // The manager is inert afterwards and should be deleted (deleteLater).
-    void registrationFailed(const QString &error);
+    explicit AgentClipboard(ClipboardDirection direction, QObject *parent = nullptr);
+    AgentClipboard(ClipboardDirection direction, const Config &config, QObject *parent = nullptr);
+    ~AgentClipboard() override;
 
-private Q_SLOTS:
-    void onHostClipboardChanged();
-    void doRegister();
+    // The agent of the VM; nullptr without one. Follows its sessions.
+    void setAgent(KemuAgentClient *agent);
+    [[nodiscard]] KemuAgentClient *agent() const
+    {
+        return m_agent;
+    }
+
+    void setDirection(ClipboardDirection direction);
+    [[nodiscard]] ClipboardDirection direction() const
+    {
+        return m_direction;
+    }
+    // Keep entries that password managers mark as secret
+    // (x-kde-passwordManagerHint) on their side, in both directions.
+    void setFilterPasswords(bool filter);
+    // Share the primary selection (select, middle-click) as well.
+    void setSharePrimary(bool share);
+
+    // Inspection, for the tests and the logs.
+    [[nodiscard]] Owner owner(KemuAgentProtocol::Selection selection) const;
+    [[nodiscard]] quint64 localSerial(KemuAgentProtocol::Selection selection) const;
+    [[nodiscard]] quint64 peerSerial(KemuAgentProtocol::Selection selection) const;
+    [[nodiscard]] bool isFetching(KemuAgentProtocol::Selection selection) const;
 
 private:
-    QPointer<QemuControlConnection> m_ctrl;
-    QClipboard *m_hostClipboard;
+    using Content = QList<std::pair<QString, QByteArray>>;
+
+    struct Inbound {
+        KemuAgentProtocol::Selection selection;
+        QString type;
+        QByteArray data;
+        bool sizeSeen = false;
+        QElapsedTimer lastActivity;
+    };
+    struct Outbound {
+        quint64 id = 0;
+        QByteArray data;
+        qsizetype offset = 0;
+    };
+    struct Fetch {
+        bool active = false;
+        quint64 serial = 0;
+        QStringList queue;
+        Content done;
+        qint64 bytes = 0;
+    };
+    struct State {
+        quint64 localSerial = 0;
+        quint64 peerSerial = 0;
+        Owner owner = Owner::None;
+        Content offered; // snapshot of the host's offer in force
+        bool offeredSecret = false;
+        QByteArray sharedHash; // content already on both sides
+        QByteArray peerText; // UTF-8 text of the guest's content, to spot echoes
+        QStringList peerTypes;
+        Fetch fetch;
+        QTimer settle;
+    };
+
+    State &state(KemuAgentProtocol::Selection selection);
+    const State &state(KemuAgentProtocol::Selection selection) const;
+    [[nodiscard]] KemuAgentClient::Policy policyFor(ClipboardDirection direction, bool sharePrimary) const;
+    [[nodiscard]] bool mayOffer(KemuAgentProtocol::Selection selection, const KemuAgentClient::Policy &policy) const;
+    [[nodiscard]] bool acceptsPeer(KemuAgentProtocol::Selection selection, const KemuAgentClient::Policy &policy) const;
+    void applyPolicy(const KemuAgentClient::Policy &previous);
+
+    void onSessionStarted();
+    void onSessionEnded();
+    void onMessage(quint16 type, const QCborMap &body);
+    void onHostChanged(QClipboard::Mode mode);
+
+    // Host to guest
+    void examineHost(KemuAgentProtocol::Selection selection, bool force);
+    std::optional<Content> snapshot(const QMimeData *data) const;
+    void sendOffer(KemuAgentProtocol::Selection selection, const Content &content, bool secret, const QByteArray &hash);
+    void sendRelease(KemuAgentProtocol::Selection selection);
+    void handleRequest(const QCborMap &body);
+    void handleCancel(const QCborMap &body);
+    void pumpOutbound();
+
+    // Guest to host
+    void handleOffer(const QCborMap &body);
+    void handleRelease(const QCborMap &body);
+    void handleData(const QCborMap &body);
+    void handleFail(const QCborMap &body);
+    void startFetch(KemuAgentProtocol::Selection selection, const QCborMap &sizes);
+    void pumpFetch();
+    void cancelFetch(KemuAgentProtocol::Selection selection);
+    void cancelInbound(quint64 id);
+    void inboundDone(KemuAgentProtocol::Selection selection);
+    void finishFetch(KemuAgentProtocol::Selection selection);
+    void removeProxy(KemuAgentProtocol::Selection selection, std::optional<quint64> serial);
+    [[nodiscard]] bool hostHoldsNewContent(KemuAgentProtocol::Selection selection) const;
+    void checkTimeouts();
+
+    void resetState();
+    std::optional<KemuAgentProtocol::Selection> selectionOf(const QCborMap &body) const;
+    void badMessage(quint16 type);
+    static QByteArray contentHash(const Content &content);
+    static bool isSecret(const Content &content);
+
+    QPointer<KemuAgentClient> m_agent;
+    QClipboard *m_clipboard;
+    Config m_config;
     ClipboardDirection m_direction;
-
-    guint m_registrationId = 0;
-
-    // Serial of the latest grab; only meaningful once m_haveSerial is set.
-    uint m_currentSerial = 0;
-    bool m_haveSerial = false;
-    bool m_weAreOwner = false;
-    bool m_registered = false;
-
-    // Echo guard: set just before we mirror guest data onto the host clipboard,
-    // cleared a few ms later. Suppresses the self-triggered dataChanged storm
-    // (especially under Wayland, where setMimeData fires multiple signals).
-    bool m_settingFromGuest = false;
-
-    // Text currently shared between host and guest, in either direction.
-    // dataChanged with identical content is never sent to the guest: Wayland
-    // re-announces the selection on every focus change, and clipboard
-    // managers (Klipper) echo guest data late.
-    QString m_lastSharedText;
-
-    // Content of our latest grab, captured when it was announced. Request()
-    // is answered from here and never from the live clipboard: QEMU waits for
-    // the reply synchronously in its main loop, so a slow source application
-    // would stall the whole VM for as long as it takes to deliver.
-    QString m_offeredText;
-    bool m_offeredIsSecret = false;
-
     bool m_filterPasswords = true;
-    static bool isSecret(const QMimeData *mimeData);
-    void withdrawOffer();
+    bool m_sharePrimary = false;
+
+    std::array<State, KemuAgentProtocol::SelectionCount> m_states;
+    QHash<quint64, Inbound> m_inbound;
+    QList<Outbound> m_outbound;
+    qsizetype m_nextOutbound = 0;
+    bool m_pumping = false;
+    quint64 m_nextRequestId = 0;
+    QTimer m_timeouts;
 };

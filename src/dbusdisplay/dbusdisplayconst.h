@@ -19,7 +19,6 @@ inline const QString ServiceName = u"org.qemu"_s;
 inline constexpr auto VmPath = "/org/qemu/Display1/VM"_L1;
 inline constexpr auto ConsolePathPrefix = "/org/qemu/Display1/Console_"_L1;
 inline constexpr auto AudioPath = "/org/qemu/Display1/Audio"_L1;
-inline constexpr auto ClipboardPath = "/org/qemu/Display1/Clipboard"_L1;
 
 inline constexpr auto ListenerIface = "org.qemu.Display1.Listener"_L1;
 inline constexpr auto ListenerUnixMapIface = "org.qemu.Display1.Listener.Unix.Map"_L1;
@@ -30,7 +29,6 @@ inline constexpr auto ConsoleIface = "org.qemu.Display1.Console"_L1;
 inline constexpr auto KeyboardIface = "org.qemu.Display1.Keyboard"_L1;
 inline constexpr auto MouseIface = "org.qemu.Display1.Mouse"_L1;
 inline constexpr auto AudioIface = "org.qemu.Display1.Audio"_L1;
-inline constexpr auto ClipboardIface = "org.qemu.Display1.Clipboard"_L1;
 
 // Object paths that we (the viewer) export back to QEMU
 inline constexpr auto ListenerPath = "/org/qemu/Display1/Listener"_L1;

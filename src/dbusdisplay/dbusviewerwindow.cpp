@@ -216,28 +216,20 @@ void DbusViewerWindow::setSecondaryDisplayPlacement(MultiheadMouseMapping::Secon
     }
 }
 
-void DbusViewerWindow::setSecondaryPlacementByGuestAgent(bool byGuestAgent)
+void DbusViewerWindow::setDisplayLayoutFromAgent(bool fromAgent)
 {
-    m_secondaryPlacementByGuestAgent = byGuestAgent;
+    m_layoutFromAgent = fromAgent;
     updateSecondaryPlacementMenu();
     updateMouseStatus();
-}
-
-void DbusViewerWindow::showGuestAgentPointerMisplaced()
-{
-    showOsd(i18nc("@info:status", "Pointer misplaced in the guest"), 5000);
-    statusBar()->showMessage(i18nc("@info:status",
-                                   "spice-vdagent places the pointer off target. Set the same display scale for all monitors in the guest."),
-                             30000);
 }
 
 void DbusViewerWindow::updateSecondaryPlacementMenu()
 {
     if (!m_secondaryPlacementMenu)
         return;
-    // The agent follows the guest's own arrangement, there is nothing to choose.
-    m_secondaryPlacementMenu->setTitle(m_secondaryPlacementByGuestAgent ? i18n("Display 2 Position: Set by Guest Agent") : i18n("Display 2 Position"));
-    m_secondaryPlacementMenu->menuAction()->setEnabled(!m_secondaryPlacementByGuestAgent);
+    // The agent reports the guest's own arrangement, there is nothing to choose.
+    m_secondaryPlacementMenu->setTitle(m_layoutFromAgent ? i18n("Display 2 Position: Reported by kemu-agent") : i18n("Display 2 Position"));
+    m_secondaryPlacementMenu->menuAction()->setEnabled(!m_layoutFromAgent);
 }
 
 void DbusViewerWindow::setSecondaryDisplayPosition(const QPoint &position)
@@ -250,7 +242,7 @@ void DbusViewerWindow::showLayoutDetectionFailed()
     // The status bar is hidden in fullscreen, the OSD only fits a short line.
     showOsd(i18nc("@info:status", "Monitor arrangement not detected"), 5000);
     statusBar()->showMessage(i18nc("@info:status",
-                                   "The monitor arrangement of the guest could not be detected. Install spice-vdagent in the guest "
+                                   "The monitor arrangement of the guest could not be detected. Install kemu-agent in the guest "
                                    "or choose View → Displays → Display 2 Position."),
                              30000);
 }
@@ -458,6 +450,12 @@ void DbusViewerWindow::createActions()
     m_actClipFilterPasswords->setChecked(m_prefs.clipboardFilterPasswords); // before connect(): no spurious toggle
     connect(m_actClipFilterPasswords, &QAction::toggled, this, &DbusViewerWindow::onToggleClipboardFilterPasswords);
 
+    m_actClipPrimary = new QAction(i18nc("@action:inmenu", "Share Selection (Middle Click)"), this);
+    m_actClipPrimary->setCheckable(true);
+    m_actClipPrimary->setStatusTip(i18nc("@info:status", "Share selected text as well, for pasting with the middle mouse button"));
+    m_actClipPrimary->setChecked(m_prefs.clipboardPrimary);
+    connect(m_actClipPrimary, &QAction::toggled, this, &DbusViewerWindow::onToggleClipboardPrimary);
+
     // -- Devices: Network ---
     m_actNetworkLink = new QAction(i18nc("@action:inmenu", "&Network Connected"), this);
     m_actNetworkLink->setCheckable(true);
@@ -566,6 +564,7 @@ void DbusViewerWindow::createMenus()
     m_clipMenu->addAction(m_actClipBoth);
     m_clipMenu->addSeparator();
     m_clipMenu->addAction(m_actClipFilterPasswords);
+    m_clipMenu->addAction(m_actClipPrimary);
 
     devicesMenu->addSeparator();
     devicesMenu->addAction(m_actNetworkLink);
@@ -724,20 +723,40 @@ void DbusViewerWindow::updateStatusBar()
     }
 
     // Clipboard. Emblem convention: down = towards the host, up = towards the
-    // guest; bidirectional needs no arrow.
+    // guest; bidirectional needs no arrow. Dimmed while kemu-agent cannot
+    // carry it.
+    QString clipEmblem;
+    QString clipText;
     switch (m_clipDirection) {
     case ClipboardDirection::Off:
-        m_indClipboard->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Clipboard sharing off - click to change"));
         break;
     case ClipboardDirection::ToHost:
-        m_indClipboard->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Clipboard: guest to host"), u"go-down"_s);
+        clipEmblem = u"go-down"_s;
+        clipText = i18nc("@info:tooltip", "Clipboard: guest to host");
         break;
     case ClipboardDirection::ToGuest:
-        m_indClipboard->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Clipboard: host to guest"), u"go-up"_s);
+        clipEmblem = u"go-up"_s;
+        clipText = i18nc("@info:tooltip", "Clipboard: host to guest");
         break;
     case ClipboardDirection::Both:
-        m_indClipboard->setStatus(StatusIndicator::Active, i18nc("@info:tooltip", "Clipboard: bidirectional"));
+        clipText = i18nc("@info:tooltip", "Clipboard: bidirectional");
         break;
+    }
+    if (!m_kemuAgent) {
+        m_indClipboard->setStatus(StatusIndicator::Unavailable, i18nc("@info:tooltip", "Clipboard sharing is not available for this machine type"));
+    } else if (m_clipDirection == ClipboardDirection::Off) {
+        m_indClipboard->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Clipboard sharing off - click to change"));
+    } else if (!m_kemuAgent->hasSession()) {
+        m_indClipboard->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "%1\nWaiting for kemu-agent in the guest", clipText), clipEmblem);
+    } else if (!m_kemuAgent->hasCapability(KemuAgentProtocol::Capability::Clipboard) || m_kemuAgent->agentInfo().clipboardBackend == u"none"_s) {
+        m_indClipboard->setStatus(StatusIndicator::Inactive,
+                                  i18nc("@info:tooltip", "%1\nkemu-agent cannot reach the clipboard of the guest session", clipText),
+                                  clipEmblem);
+    } else {
+        const KemuAgentClient::AgentInfo info = m_kemuAgent->agentInfo();
+        m_indClipboard->setStatus(StatusIndicator::Active,
+                                  info.version.isEmpty() ? clipText : i18nc("@info:tooltip", "%1\nkemu-agent %2", clipText, info.version),
+                                  clipEmblem);
     }
 
     // Network
@@ -960,60 +979,42 @@ void DbusViewerWindow::onClipboardBoth()
 
 void DbusViewerWindow::setupClipboard(ClipboardDirection dir)
 {
-    m_clipDirection = dir; // effective state (may revert on failure)
-    m_prefs.clipboard = dir; // intended state (persisted)
+    m_clipDirection = dir;
+    m_prefs.clipboard = dir;
     Q_EMIT devicePrefsChanged(m_prefs);
 
-    // QEMU accepts one clipboard peer per connection, so a direction change
-    // keeps the existing registration.
-    bool ok = true;
     if (m_clipboard) {
         m_clipboard->setDirection(dir);
     } else {
-        m_clipboard = new QemuClipboardManager(m_ctrl, dir, this);
-        m_clipboard->setFilterPasswords(m_prefs.clipboardFilterPasswords); // before setup(): it offers the host content
-        connect(m_clipboard, &QemuClipboardManager::registrationFailed, this, &DbusViewerWindow::onClipboardRegistrationFailed);
-        ok = m_clipboard->setup();
+        m_clipboard = new AgentClipboard(dir, this);
+        // Before setAgent(): it offers the host content right away.
+        m_clipboard->setFilterPasswords(m_prefs.clipboardFilterPasswords);
+        m_clipboard->setSharePrimary(m_prefs.clipboardPrimary);
+        m_clipboard->setAgent(m_kemuAgent);
     }
 
-    if (!ok) {
-        statusBar()->showMessage(i18n("Clipboard sharing could not be set up"), 5000);
-        delete m_clipboard;
-        m_clipboard = nullptr;
-        m_clipDirection = ClipboardDirection::Off;
-        m_actClipOff->setChecked(true);
-    } else {
-        QString dirStr;
-        switch (dir) {
-        case ClipboardDirection::ToHost:
-            dirStr = i18n("Guest -> Host");
-            break;
-        case ClipboardDirection::ToGuest:
-            dirStr = i18n("Host -> Guest");
-            break;
-        case ClipboardDirection::Both:
-            dirStr = i18n("<-> Bidirectional");
-            break;
-        default:
-            break;
-        }
+    QString dirStr;
+    switch (dir) {
+    case ClipboardDirection::ToHost:
+        dirStr = i18n("Guest -> Host");
+        break;
+    case ClipboardDirection::ToGuest:
+        dirStr = i18n("Host -> Guest");
+        break;
+    case ClipboardDirection::Both:
+        dirStr = i18n("<-> Bidirectional");
+        break;
+    default:
+        break;
+    }
+    if (!m_kemuAgent)
+        statusBar()->showMessage(i18n("Clipboard sharing is not available for this machine type"), 5000);
+    else if (!m_kemuAgent->hasSession())
+        statusBar()->showMessage(i18n("Clipboard enabled: %1 - waiting for kemu-agent in the guest", dirStr), 5000);
+    else
         statusBar()->showMessage(i18n("Clipboard enabled: %1", dirStr), 3000);
-    }
 
     updateStatusBar();
-}
-
-void DbusViewerWindow::onClipboardRegistrationFailed(const QString &error)
-{
-    // Emitted from within the manager's reply handler: defer the deletion.
-    if (m_clipboard) {
-        m_clipboard->deleteLater();
-        m_clipboard = nullptr;
-    }
-    m_clipDirection = ClipboardDirection::Off;
-    m_actClipOff->setChecked(true);
-    updateStatusBar();
-    statusBar()->showMessage(i18n("Clipboard sharing unavailable: %1", error), 5000);
 }
 
 void DbusViewerWindow::onToggleClipboardFilterPasswords(bool checked)
@@ -1025,12 +1026,37 @@ void DbusViewerWindow::onToggleClipboardFilterPasswords(bool checked)
     Q_EMIT devicePrefsChanged(m_prefs);
 }
 
+void DbusViewerWindow::onToggleClipboardPrimary(bool checked)
+{
+    m_prefs.clipboardPrimary = checked;
+    if (m_clipboard)
+        m_clipboard->setSharePrimary(checked);
+    statusBar()->showMessage(checked ? i18n("The selection is shared as well") : i18n("Only the clipboard is shared"), 3000);
+    Q_EMIT devicePrefsChanged(m_prefs);
+}
+
 void DbusViewerWindow::teardownClipboard()
 {
-    if (m_clipboard) {
-        delete m_clipboard;
-        m_clipboard = nullptr;
+    // Its destructor tells the agent that sharing stopped.
+    delete m_clipboard;
+    m_clipboard = nullptr;
+}
+
+void DbusViewerWindow::setKemuAgent(KemuAgentClient *agent)
+{
+    if (m_kemuAgent)
+        m_kemuAgent->disconnect(this);
+    m_kemuAgent = agent;
+    if (m_clipboard)
+        m_clipboard->setAgent(agent);
+    if (agent) {
+        // The indicator tells whether the agent can carry the clipboard.
+        connect(agent, &KemuAgentClient::statusChanged, this, &DbusViewerWindow::updateStatusBar);
+        connect(agent, &KemuAgentClient::agentInfoChanged, this, &DbusViewerWindow::updateStatusBar);
+        connect(agent, &KemuAgentClient::sessionStarted, this, &DbusViewerWindow::updateStatusBar);
+        connect(agent, &KemuAgentClient::sessionEnded, this, &DbusViewerWindow::updateStatusBar);
     }
+    updateStatusBar();
 }
 
 void DbusViewerWindow::setSuspended(bool suspended)
@@ -1111,11 +1137,10 @@ void DbusViewerWindow::updateMouseStatus()
     if (m_display->isGuestAbsolute()) {
         // Across several displays only the guest knows how they are arranged.
         QString tip = i18nc("@info:tooltip", "Absolute pointer - host and guest cursor are synced");
-        if (m_secondaryPlacementByGuestAgent)
-            tip = i18nc("@info:tooltip", "Absolute pointer - placed by spice-vdagent in the guest");
+        if (m_layoutFromAgent)
+            tip = i18nc("@info:tooltip", "Absolute pointer - the monitor arrangement is reported by kemu-agent");
         else if (!m_subDisplayActions.isEmpty())
-            tip = i18nc("@info:tooltip",
-                        "Absolute pointer - the monitor arrangement is estimated. Install spice-vdagent in the guest for exact placement.");
+            tip = i18nc("@info:tooltip", "Absolute pointer - the monitor arrangement is estimated. Install kemu-agent in the guest for exact placement.");
         m_indMouse->setStatus(StatusIndicator::Active, tip);
     } else {
         m_indMouse->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Pointer released - click into the display to capture"));

@@ -85,12 +85,12 @@ public:
     [[nodiscard]] QStringList vmNamesWithViewer() const;
 
     // Suspend bookkeeping: which VMs did KEMU pause for a system suspend?
-    // Asks QMP whether the guest has the agent's port open.
-    void refreshGuestAgentPort(const QString &vmName);
+    // Asks QMP whether the guest has the ports of the agents open.
+    void refreshAgentPorts(const QString &vmName);
 
     // The guest clock fell behind (resume, host wake, reverted snapshot):
     // set it through the guest agent, now or once it connects. @p resync
-    // first brings the agent stream back in step.
+    // first brings the streams of both agents back in step.
     void requestGuestTimeSync(const QString &vmName, bool resync = false);
 
     void clearPausedBySuspend();

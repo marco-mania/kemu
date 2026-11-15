@@ -1318,17 +1318,20 @@ void EditVmDialog::onGpuDisplayChanged()
     monitorCountSpin->setEnabled(multiheadAvailable);
     monitorCountLabel->setEnabled(multiheadAvailable);
     // The Windows virtio-gpu driver drives a single output. Elsewhere only
-    // spice-vdagent knows how the guest arranged the monitors.
+    // the guest knows how it arranged the monitors; kemu-agent tells KEMU on
+    // Linux.
     QString monitorText;
     QString monitorToolTip;
     if (multiheadAvailable && monitorCountSpin->value() > 1) {
         if (isWindows) {
             monitorText = i18n("Multiple monitor support is experimental. Windows guests currently support only a single monitor.");
-        } else {
-            monitorText = i18n("Multiple monitor support is experimental. For accurate pointer tracking, install spice-vdagent in the guest.");
+        } else if (osFamily == VMSpecs::OsFamily::Linux) {
+            monitorText = i18n("Multiple monitor support is experimental. For accurate pointer tracking, install kemu-agent in the guest.");
             monitorToolTip = i18n(
-                "When using multiple monitors, spice-vdagent ensures accurate pointer positioning in the guest. "
-                "Without it, KEMU estimates the guest display layout.");
+                "When using multiple monitors, kemu-agent reports the monitor arrangement of the guest, so the pointer lands where it "
+                "should. Without it, KEMU estimates the guest display layout.");
+        } else {
+            monitorText = i18n("Multiple monitor support is experimental. KEMU estimates how the guest arranged the monitors.");
         }
     }
     monitorMessage->setToolTip(monitorToolTip);

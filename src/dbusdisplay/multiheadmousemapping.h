@@ -18,6 +18,8 @@
 #include <optional>
 #include <utility>
 
+#include "utils/kemuagentprotocol.h"
+
 class MultiheadMouseMapping : public QObject
 {
     Q_OBJECT
@@ -53,14 +55,12 @@ public:
     std::optional<QRect> displayGeometry(uint head) const;
     static QRect secondaryGeometry(const QSize &primary, const QSize &secondary, SecondaryPlacement placement, const QPoint &customPosition = {});
 
-    // spice-vdagent in the guest knows the layout and places the pointer from
-    // positions on each head's own console. Mapping and detection then rest.
-    void setGuestAgentPointer(bool active);
-    bool hasGuestAgentPointer() const;
-    // The guest should then show the pointer where it was sent. It does not
-    // when the guest scales its displays differently: spice-vdagent reads the
-    // layout from XWayland, which scales all displays alike.
-    void noteAgentPointerSent(uint head, const QPoint &position, qint64 msecs);
+    // The layout kemu-agent reported. With one that names the heads, the
+    // pointer is mapped from it - on any number of displays and whatever
+    // scale each one uses - and detection rests (section 8 of
+    // docs/kemu-agent-protocol.md).
+    void setAgentLayout(const std::optional<KemuAgentProtocol::Layout> &layout);
+    bool hasAgentLayout() const;
 
     std::optional<QPoint> mapToPrimary(uint head, const QPoint &position) const;
     const QString &primaryConsolePath() const;
@@ -81,9 +81,8 @@ public:
 
 Q_SIGNALS:
     void cursorHeadsChanged();
-    void guestAgentPointerChanged(bool active);
-    // Most recent positions missed. Reported again after a run of hits.
-    void guestAgentPointerMisplaced();
+    // Whether the pointer is mapped from kemu-agent's layout.
+    void agentLayoutChanged(bool active);
     void secondaryPositionDetected(const QPoint &position);
     // Enough samples, but no position of display 2 explains them, e.g.
     // because the guest scales its displays. Reported once per attempt.
@@ -98,17 +97,11 @@ private:
         PointerSample sample;
         uint head = 0;
     };
-    struct AgentPointer {
-        uint head = 0;
-        QPoint position;
-    };
 
     void storeDisplaySize(uint head, const QSize &size);
     void acceptPendingSample(qint64 msecs);
     void detectSecondaryPosition();
-    void noteAgentReport(uint head, const QPoint &position, qint64 msecs);
-    void acceptPendingAgentSample(qint64 msecs);
-    void resetAgentChecks();
+    std::optional<QPoint> mapWithAgentLayout(uint head, const QPoint &position) const;
 
     QString m_primaryConsolePath;
     QMap<uint, QSize> m_displaySizes;
@@ -120,12 +113,7 @@ private:
     qint64 m_lastTabletMsecs = 0;
     std::optional<QPoint> m_detectedPosition;
     bool m_relearning = false;
-    bool m_guestAgentPointer = false;
-    std::optional<AgentPointer> m_agentSent;
-    qint64 m_agentSentMsecs = 0;
-    std::optional<std::pair<QPoint, QPoint>> m_pendingAgentSample;
-    QList<bool> m_agentHits;
-    bool m_agentMissReported = false;
+    std::optional<KemuAgentProtocol::Layout> m_agentLayout;
     int m_failedFits = 0;
     bool m_failureReported = false;
     SecondaryPlacement m_secondaryPlacement = SecondaryPlacement::Right;

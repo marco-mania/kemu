@@ -10,6 +10,7 @@
 #include <cmath>
 
 #include "dbusdisplay/multiheadmousemapping.h"
+#include "utils/kemuagentprotocol.h"
 
 using namespace Qt::StringLiterals;
 
@@ -620,25 +621,116 @@ private Q_SLOTS:
                  QRect(1920, 0, 1280, 1024));
     }
 
-    void guestAgentPointerPausesMapping()
+    // The guest's side of an agent layout: the tablet value QEMU makes of a
+    // primary-console position, spread by libinput over the layout's space.
+    static QPoint guestPoint(const MultiheadMouseMapping &mapping, const KemuAgentProtocol::Layout &layout, const QPoint &primaryPosition)
+    {
+        const QPoint value = tablet(mapping, primaryPosition);
+        return layout.space.topLeft()
+            + QPoint(int(std::floor(value.x() * double(layout.space.width()) / 0x8000)), int(std::floor(value.y() * double(layout.space.height()) / 0x8000)));
+    }
+
+    static KemuAgentProtocol::DisplayOutput output(uint head, const QRect &geometry, const QSize &mode, const QString &transform = u"normal"_s)
+    {
+        KemuAgentProtocol::DisplayOutput output;
+        output.name = u"Virtual-%1"_s.arg(head + 1);
+        output.head = head;
+        output.geometry = geometry;
+        output.modeSize = mode;
+        output.scale = double(mode.width()) / geometry.width();
+        output.transform = transform;
+        return output;
+    }
+
+    static KemuAgentProtocol::Layout layoutOf(const QList<KemuAgentProtocol::DisplayOutput> &outputs)
+    {
+        KemuAgentProtocol::Layout layout;
+        layout.generation = 1;
+        for (const auto &output : outputs) {
+            layout.outputs.append(output);
+            layout.space = layout.space.united(output.geometry);
+        }
+        return layout;
+    }
+
+    // Every framebuffer pixel lands on its own output, within one step of
+    // the right place, whatever the scales and positions.
+    void agentLayoutMapsEveryHead_data()
+    {
+        QTest::addColumn<QList<KemuAgentProtocol::DisplayOutput>>("outputs");
+        // Appendix D.5: display 2 at 200 %.
+        QTest::newRow("mixed scales") << QList{output(0, QRect(0, 0, 1920, 1080), QSize(1920, 1080)), output(1, QRect(1920, 0, 1280, 720), QSize(2560, 1440))};
+        QTest::newRow("left and below") << QList{output(0, QRect(0, 0, 1920, 1080), QSize(1920, 1080)),
+                                                 output(1, QRect(-1440, 300, 1440, 900), QSize(1440, 900)),
+                                                 output(2, QRect(200, 1080, 1024, 768), QSize(1536, 1152))};
+        QTest::newRow("fractional") << QList{output(0, QRect(0, 0, 1536, 864), QSize(1920, 1080)), output(1, QRect(1536, 0, 1920, 1080), QSize(1920, 1080))};
+    }
+
+    void agentLayoutMapsEveryHead()
+    {
+        QFETCH(QList<KemuAgentProtocol::DisplayOutput>, outputs);
+        const KemuAgentProtocol::Layout layout = layoutOf(outputs);
+        MultiheadMouseMapping mapping(u"/org/qemu/Display1/Console_0"_s);
+        for (const auto &output : outputs)
+            mapping.setDisplaySize(*output.head, output.modeSize);
+        mapping.setAgentLayout(layout);
+        QVERIFY(mapping.hasAgentLayout());
+
+        const QSize primary = mapping.displaySize(0);
+        const int stepX = int(std::ceil(double(layout.space.width()) / primary.width())) + 1;
+        const int stepY = int(std::ceil(double(layout.space.height()) / primary.height())) + 1;
+        for (const auto &output : outputs) {
+            const QSize framebuffer = output.modeSize;
+            for (int i = 0; i <= 8; ++i) {
+                const QPoint pixel(i * (framebuffer.width() - 1) / 8, (8 - i) * (framebuffer.height() - 1) / 8);
+                const auto position = mapping.mapToPrimary(*output.head, pixel);
+                QVERIFY(position);
+                const QPoint guest = guestPoint(mapping, layout, *position);
+                QVERIFY2(output.geometry.contains(guest), qPrintable(u"%1,%2 is off output %3"_s.arg(guest.x()).arg(guest.y()).arg(output.name)));
+                const QPointF expected(output.geometry.x() + (pixel.x() + 0.5) * output.geometry.width() / framebuffer.width(),
+                                       output.geometry.y() + (pixel.y() + 0.5) * output.geometry.height() / framebuffer.height());
+                QVERIFY2(qAbs(guest.x() - expected.x()) <= stepX && qAbs(guest.y() - expected.y()) <= stepY,
+                         qPrintable(u"%1,%2 instead of %3,%4"_s.arg(guest.x()).arg(guest.y()).arg(expected.x()).arg(expected.y())));
+            }
+        }
+    }
+
+    void agentLayoutRotatedOutput()
+    {
+        // Display 2 turned to portrait: its framebuffer stays landscape.
+        const auto layout =
+            layoutOf({output(0, QRect(0, 0, 1920, 1080), QSize(1920, 1080)), output(1, QRect(1920, 0, 1080, 1920), QSize(1920, 1080), u"90"_s)});
+        MultiheadMouseMapping mapping(u"/org/qemu/Display1/Console_0"_s);
+        mapping.setDisplaySize(0, QSize(1920, 1080));
+        mapping.setDisplaySize(1, QSize(1920, 1080));
+        mapping.setAgentLayout(layout);
+
+        // Content turned 90 degrees counter-clockwise: the framebuffer's top
+        // left corner shows the output's top right, its top right the
+        // output's bottom right.
+        const QPoint topLeft = guestPoint(mapping, layout, *mapping.mapToPrimary(1, QPoint(0, 0)));
+        const QPoint topRight = guestPoint(mapping, layout, *mapping.mapToPrimary(1, QPoint(1919, 0)));
+        QVERIFY2((topLeft - QPoint(1920 + 1079, 0)).manhattanLength() <= 6, qPrintable(u"%1,%2"_s.arg(topLeft.x()).arg(topLeft.y())));
+        QVERIFY2((topRight - QPoint(1920 + 1079, 1919)).manhattanLength() <= 6, qPrintable(u"%1,%2"_s.arg(topRight.x()).arg(topRight.y())));
+    }
+
+    void agentLayoutPausesDetection()
     {
         MultiheadMouseMapping mapping(u"/org/qemu/Display1/Console_0"_s);
         mapping.setDisplaySize(0, QSize(1920, 1080));
         mapping.setDisplaySize(1, QSize(1280, 1024));
         mapping.setSecondaryPlacement(MultiheadMouseMapping::SecondaryPlacement::Automatic);
-        QSignalSpy changed(&mapping, &MultiheadMouseMapping::guestAgentPointerChanged);
+        QSignalSpy changed(&mapping, &MultiheadMouseMapping::agentLayoutChanged);
         QSignalSpy detected(&mapping, &MultiheadMouseMapping::secondaryPositionDetected);
         QSignalSpy failed(&mapping, &MultiheadMouseMapping::layoutDetectionFailed);
 
-        mapping.setGuestAgentPointer(true);
-        mapping.setGuestAgentPointer(true);
+        const auto layout = layoutOf({output(0, QRect(0, 0, 1920, 1080), QSize(1920, 1080)), output(1, QRect(-1280, 0, 1280, 1024), QSize(1280, 1024))});
+        mapping.setAgentLayout(layout);
+        mapping.setAgentLayout(layout);
         QCOMPARE(changed.count(), 1);
-        QVERIFY(mapping.hasGuestAgentPointer());
-        QVERIFY(!mapping.mapToPrimary(0, QPoint(100, 100)));
-        QVERIFY(!mapping.mapToPrimary(1, QPoint(100, 100)));
+        QCOMPARE(changed.last().at(0).toBool(), true);
 
-        // Display 1 still sends to the primary console, but its positions
-        // are no tablet values any more.
+        // Reports that would teach the heuristics something else are ignored.
         qint64 msecs = 0;
         for (int i = 0; i < 6; ++i) {
             mapping.notePointerSent(QPoint(300 + 250 * i, 200 + 120 * i), msecs);
@@ -649,7 +741,8 @@ private Q_SLOTS:
         QVERIFY(detected.isEmpty());
         QVERIFY(failed.isEmpty());
 
-        mapping.setGuestAgentPointer(false);
+        // Without a layout, the heuristics take over again.
+        mapping.setAgentLayout(std::nullopt);
         QCOMPARE(changed.count(), 2);
         QCOMPARE(changed.last().at(0).toBool(), false);
         const Guest guest{QSize(1920, 1080), QRect(-1280, 0, 1280, 1024)};
@@ -661,77 +754,25 @@ private Q_SLOTS:
         QVERIFY((*mapping.detectedPosition() - QPoint(-1280, 0)).manhattanLength() <= 2);
     }
 
-    void guestAgentPointerMisplaced_data()
-    {
-        QTest::addColumn<double>("guestScale");
-        QTest::addColumn<bool>("expectedMisplaced");
-
-        QTest::newRow("same scale") << 1.0 << false;
-        // Display 1 at 100 % next to one at 105 %: XWayland is 2016 wide.
-        QTest::newRow("mixed scales") << 1920.0 / 2016.0 << true;
-    }
-
-    void guestAgentPointerMisplaced()
-    {
-        QFETCH(double, guestScale);
-        QFETCH(bool, expectedMisplaced);
-
-        MultiheadMouseMapping mapping(u"/org/qemu/Display1/Console_0"_s);
-        mapping.setDisplaySize(0, QSize(1920, 1080));
-        mapping.setDisplaySize(1, QSize(1440, 900));
-        mapping.setGuestAgentPointer(true);
-        QSignalSpy misplaced(&mapping, &MultiheadMouseMapping::guestAgentPointerMisplaced);
-
-        qint64 msecs = 0;
-        for (int round = 0; round < 3; ++round) {
-            for (int i = 0; i < 8; ++i) {
-                const QPoint sent(100 + 220 * i, 80 + 120 * i);
-                mapping.noteAgentPointerSent(0, sent, msecs);
-                // Truncating twice may lose a pixel.
-                mapping.noteGuestPointer(0, QPoint(int(sent.x() * guestScale) - 1, int(sent.y() * guestScale)), msecs + 16);
-                msecs += 500;
-            }
-        }
-        mapping.noteAgentPointerSent(0, QPoint(), msecs);
-        QCOMPARE(misplaced.count(), expectedMisplaced ? 1 : 0);
-    }
-
-    void guestAgentChecksNeedRestingPointer()
+    void agentLayoutNeedsHeads()
     {
         MultiheadMouseMapping mapping(u"/org/qemu/Display1/Console_0"_s);
         mapping.setDisplaySize(0, QSize(1920, 1080));
-        mapping.setDisplaySize(1, QSize(1440, 900));
-        mapping.setGuestAgentPointer(true);
-        QSignalSpy misplaced(&mapping, &MultiheadMouseMapping::guestAgentPointerMisplaced);
+        mapping.setDisplaySize(1, QSize(1280, 1024));
 
-        // Reports trail a moving pointer, come late, or show up on the
-        // other head: none of it counts.
-        qint64 msecs = 0;
-        for (int i = 0; i < 20; ++i) {
-            const QPoint sent(100 + 80 * i, 100 + 40 * i);
-            mapping.noteAgentPointerSent(0, sent, msecs);
-            mapping.noteGuestPointer(0, sent - QPoint(40, 20), msecs + 8);
-            msecs += 16;
-        }
-        for (int i = 0; i < 10; ++i) {
-            mapping.noteAgentPointerSent(0, QPoint(1000 + i, 500), msecs);
-            mapping.noteGuestPointer(0, QPoint(900, 400), msecs + 400);
-            mapping.noteGuestPointer(1, QPoint(700, 400), msecs + 16);
-            msecs += 1000;
-        }
-        mapping.noteAgentPointerSent(0, QPoint(), msecs);
-        QVERIFY(misplaced.isEmpty());
+        // Connector names the agent could not map to heads.
+        auto layout = layoutOf({output(0, QRect(0, 0, 1920, 1080), QSize(1920, 1080)), output(1, QRect(1920, 0, 1280, 1024), QSize(1280, 1024))});
+        for (auto &output : layout.outputs)
+            output.head.reset();
+        mapping.setAgentLayout(layout);
+        QVERIFY(!mapping.hasAgentLayout());
+        verifyPosition(mapping, 1, QPoint(640, 512), QPoint(1920 + 640, 512));
 
-        // Switching back and forth starts over.
-        for (int i = 0; i < 4; ++i) {
-            mapping.noteAgentPointerSent(0, QPoint(1000 + 100 * i, 500), msecs);
-            mapping.noteGuestPointer(0, QPoint(950 + 100 * i, 480), msecs + 16);
-            msecs += 500;
-        }
-        mapping.setGuestAgentPointer(false);
-        mapping.setGuestAgentPointer(true);
-        mapping.noteAgentPointerSent(0, QPoint(), msecs);
-        QVERIFY(misplaced.isEmpty());
+        // A head missing from the layout falls back to the heuristics.
+        layout.outputs[0].head = 0;
+        mapping.setAgentLayout(layout);
+        QVERIFY(mapping.hasAgentLayout());
+        QVERIFY(mapping.mapToPrimary(1, QPoint(640, 512)));
     }
 
     void invalidGeometry()

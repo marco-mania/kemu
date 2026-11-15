@@ -25,10 +25,11 @@ socket file. No special guest drivers are required for video or input.
   through QEMU's `audiodev=dbus`, with Qt Multimedia (PipeWire) handling audio
   on the host.
 - **Clipboard:** Choose off, guest → host, host → guest or bidirectional
-  sharing from the viewer's *Devices* menu. The guest requires the SPICE
-  vdagent. *Filter Passwords* (on by default) keeps entries that password
-  managers such as KeePassXC mark as secret on the host; switched off, they
-  reach the guest like any other text.
+  sharing from the viewer's *Devices* menu. The guest requires kemu-agent
+  (see below). *Filter Passwords* (on by default) keeps entries that password
+  managers such as KeePassXC mark as secret on their side, in both
+  directions; switched off, they cross like any other text. *Share Selection
+  (Middle Click)* shares the primary selection as well.
 - **Pointer capture:** Locks the pointer to the viewer for guests using
   relative mouse input. The compositor must support the pointer constraints
   and relative pointer protocols. Guests using a tablet pointer do not need
@@ -44,39 +45,33 @@ socket file. No special guest drivers are required for video or input.
 saver is inhibited: whenever a viewer is open, while it is in fullscreen
 mode, or while it captures the pointer.
 
-## Clipboard with Wayland guests
+## kemu-agent
 
-Clipboard sharing from a Wayland guest to the host may fail because the
-agent often relies on X11 (`xclip`/`xsel`). Some guest environments do not
-synchronise their native Wayland clipboard with X11. As a workaround, run a
-small script inside the guest to copy Wayland clipboard contents to X11:
+kemu-agent is KEMU's guest agent for Linux, maintained as a separate project.
+It runs in the user's graphical session and
 
-```sh
-#!/bin/sh
-# clip-bridge.sh: copy the Wayland clipboard to the X11 clipboard
-new=$(cat; printf x); new=${new%x}
-cur=$(xclip -selection clipboard -o -t UTF8_STRING 2>/dev/null; printf x); cur=${cur%x}
-[ "$new" = "$cur" ] && exit 0
-printf %s "$new" | xclip -selection clipboard -i -t UTF8_STRING
-```
+- shares the clipboard, and optionally the primary selection, in every format
+  an application offers: text, HTML, images and application formats;
+- reports how the guest arranged its monitors, so the pointer lands on the
+  right spot of every monitor, whatever its scaling factor.
 
-Run it with `wl-paste --type text --watch /path/to/clip-bridge.sh`, or set it
-up as a user service at `~/.config/systemd/user/wl-clip-bridge.service`:
+It works on Wayland (KDE Plasma, wlroots compositors such as Sway and
+Hyprland, GNOME through Xwayland) and on X11 desktops. It replaces
+spice-vdagent, which KEMU no longer supports; the QEMU guest agent stays and
+runs beside it.
 
-```ini
-[Unit]
-Description=Wayland to X11 Clipboard Bridge
-After=graphical-session.target
+KEMU gives every VM with the integrated viewer and a PCI bus a virtio-serial
+port named `org.kde.kemu.agent.0` for the agent. Existing VMs need no change:
+the port appears at their next start. The clipboard indicator in the viewer's
+status bar is dimmed while no agent is connected; its tooltip tells why.
 
-[Service]
-ExecStart=/usr/bin/wl-paste --type text --watch /path/to/clip-bridge.sh
-Restart=on-failure
+Some limits of the current version:
 
-[Install]
-WantedBy=graphical-session.target
-```
+- Clipboard content is copied as soon as one side offers it, up to 32 MiB per
+  copy. Larger content stays where it was copied.
+- Files are not transferred; `file:` URIs are removed from copied file lists.
+- Windows and BSD guests have no agent yet, so they have no clipboard
+  sharing.
 
-```sh
-systemctl --user daemon-reload
-systemctl --user enable --now wl-clip-bridge.service
-```
+The protocol between KEMU and the agent is specified in
+[kemu-agent-protocol.md](kemu-agent-protocol.md).

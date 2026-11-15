@@ -111,6 +111,10 @@ target_sources(
           utils/qmpclient.h
           utils/guestagentclient.cpp
           utils/guestagentclient.h
+          utils/kemuagentclient.cpp
+          utils/kemuagentclient.h
+          utils/kemuagentprotocol.cpp
+          utils/kemuagentprotocol.h
           utils/externaltools.cpp
           utils/externaltools.h
           utils/qemucommandbuilder.cpp

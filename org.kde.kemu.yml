@@ -197,14 +197,6 @@ modules:
           project-id: 15968
           url-template: https://gitlab.freedesktop.org/virgl/virglrenderer/-/archive/$version/virglrenderer-$version.tar.gz
 
-  # --- SPICE protocol headers for QEMU's built-in vdagent ----------------------
-  - name: spice-protocol
-    buildsystem: meson
-    sources:
-      - type: archive
-        url: https://www.spice-space.org/download/releases/spice-protocol-0.14.5.tar.xz
-        sha256: baf58449f6e89d19f475899ad5fb9196fdc46c03cc53233f4e39cf2978f9cff7
-
   # --- QEMU -------------------------------------------------------------------
   # The options marked "required" are not optional niceties: leaving one of them
   # to auto-detection would let a missing library silently turn a KEMU feature
@@ -223,8 +215,9 @@ modules:
       - --enable-seccomp
       # required: KEMU's integrated viewer (-display dbus).
       - --enable-dbus-display
-      # required: built-in guest clipboard agent (-chardev qemu-vdagent).
-      - --enable-spice-protocol
+      # The clipboard goes through kemu-agent on a plain virtio-serial port;
+      # neither the qemu-vdagent chardev nor SPICE is needed.
+      - --disable-spice-protocol
       - --disable-spice
       - --enable-opengl
       - --enable-virglrenderer
