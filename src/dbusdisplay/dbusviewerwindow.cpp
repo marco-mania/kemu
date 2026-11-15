@@ -9,9 +9,12 @@
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QSpinBox>
 #include <QStandardPaths>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 #include <KStandardAction>
 #include <KToggleAction>
@@ -634,6 +637,13 @@ void DbusViewerWindow::createStatusBar()
         statusBar()->showMessage(i18n("%1 copied to clipboard", m_guestAgent.addresses.first()), 3000);
     });
 
+    m_indKemuAgent = new StatusIndicator(this);
+    // KEMU's own icon for its own agent, beside the QEMU logo of qemu-ga.
+    const QString kemuIcon = QIcon::hasThemeIcon(u"org.kde.kemu"_s) ? u"org.kde.kemu"_s : u"preferences-desktop-display"_s;
+    m_indKemuAgent->setIconNames(kemuIcon, kemuIcon);
+    m_indKemuAgent->setAccessibleName(i18nc("@info:whatsthis", "kemu-agent"));
+    m_indKemuAgent->setVisible(false); // until setKemuAgent() brings a channel
+
     m_indClipboard = new StatusIndicator(this);
     m_indClipboard->setIconNames(u"edit-paste"_s, u"edit-paste"_s);
     m_indClipboard->setAccessibleName(i18nc("@info:whatsthis", "Clipboard sharing"));
@@ -668,6 +678,7 @@ void DbusViewerWindow::createStatusBar()
     statusBar()->addPermanentWidget(m_indAudioOut);
     statusBar()->addPermanentWidget(m_indMouse);
     statusBar()->addPermanentWidget(m_indKeyboardShortcutsInhibit);
+    statusBar()->addPermanentWidget(m_indKemuAgent);
     statusBar()->addPermanentWidget(m_indGuestAgent);
 
     updateStatusBar();
@@ -742,6 +753,7 @@ void DbusViewerWindow::updateStatusBar()
         clipText = i18nc("@info:tooltip", "Clipboard: bidirectional");
         break;
     }
+    updateKemuAgentIndicator();
     if (!m_kemuAgent) {
         m_indClipboard->setStatus(StatusIndicator::Unavailable, i18nc("@info:tooltip", "Clipboard sharing is not available for this machine type"));
     } else if (m_clipDirection == ClipboardDirection::Off) {
@@ -1042,6 +1054,68 @@ void DbusViewerWindow::teardownClipboard()
     m_clipboard = nullptr;
 }
 
+void DbusViewerWindow::updateKemuAgentIndicator()
+{
+    if (!m_indKemuAgent)
+        return;
+    // Without a channel (no PCI bus) there is nothing to wait for.
+    m_indKemuAgent->setVisible(!m_kemuAgent.isNull());
+    if (!m_kemuAgent)
+        return;
+
+    switch (m_kemuAgent->status()) {
+    case KemuAgentClient::Status::Waiting:
+        m_indKemuAgent->setStatus(StatusIndicator::Inactive,
+                                  i18nc("@info:tooltip",
+                                        "kemu-agent: not running in the guest\n"
+                                        "Install it in Linux guests for clipboard sharing and exact pointer placement on several monitors."));
+        return;
+    case KemuAgentClient::Status::Connecting:
+        m_indKemuAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "kemu-agent: connecting…"));
+        return;
+    case KemuAgentClient::Status::Unresponsive:
+        m_indKemuAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "kemu-agent: not responding"), u"dialog-warning"_s);
+        return;
+    case KemuAgentClient::Status::Connected:
+        break;
+    }
+
+    const KemuAgentClient::AgentInfo info = m_kemuAgent->agentInfo();
+    QStringList lines{info.version.isEmpty() ? i18nc("@info:tooltip", "kemu-agent connected")
+                                             : i18nc("@info:tooltip", "kemu-agent %1 connected", info.version)};
+
+    QStringList session;
+    if (!info.sessionType.isEmpty())
+        session << (info.sessionType == u"wayland"_s ? u"Wayland"_s : info.sessionType == u"x11"_s ? u"X11"_s : info.sessionType);
+    if (!info.desktop.isEmpty())
+        session << info.desktop;
+    if (!info.osPrettyName.isEmpty() && !session.isEmpty())
+        lines << i18nc("@info:tooltip guest OS, then session type and desktop", "Guest: %1 (%2)", info.osPrettyName, session.join(u", "_s));
+    else if (!info.osPrettyName.isEmpty())
+        lines << i18nc("@info:tooltip", "Guest: %1", info.osPrettyName);
+
+    // What the agent can do in this session; a gap gets a warning emblem.
+    QString emblem;
+    const bool clipboard = m_kemuAgent->hasCapability(KemuAgentProtocol::Capability::Clipboard) && info.clipboardBackend != u"none"_s;
+    if (clipboard) {
+        lines << i18nc("@info:tooltip %1 is the clipboard backend in the guest", "Clipboard: available (%1)", info.clipboardBackend);
+    } else {
+        lines << i18nc("@info:tooltip", "Clipboard: no access in the guest session");
+        emblem = u"dialog-warning"_s;
+    }
+    if (m_kemuAgent->hasCapability(KemuAgentProtocol::Capability::DisplayLayout)) {
+        if (const auto layout = m_kemuAgent->layout()) {
+            const int monitors = int(std::count_if(layout->outputs.cbegin(), layout->outputs.cend(), [](const KemuAgentProtocol::DisplayOutput &output) {
+                return output.enabled;
+            }));
+            lines << i18ncp("@info:tooltip", "Monitor arrangement: %1 monitor reported", "Monitor arrangement: %1 monitors reported", monitors);
+        } else {
+            lines << i18nc("@info:tooltip", "Monitor arrangement: waiting for the first report");
+        }
+    }
+    m_indKemuAgent->setStatus(StatusIndicator::Active, lines.join(u'\n'), emblem);
+}
+
 void DbusViewerWindow::setKemuAgent(KemuAgentClient *agent)
 {
     if (m_kemuAgent)
@@ -1055,6 +1129,7 @@ void DbusViewerWindow::setKemuAgent(KemuAgentClient *agent)
         connect(agent, &KemuAgentClient::agentInfoChanged, this, &DbusViewerWindow::updateStatusBar);
         connect(agent, &KemuAgentClient::sessionStarted, this, &DbusViewerWindow::updateStatusBar);
         connect(agent, &KemuAgentClient::sessionEnded, this, &DbusViewerWindow::updateStatusBar);
+        connect(agent, &KemuAgentClient::layoutChanged, this, &DbusViewerWindow::updateKemuAgentIndicator);
     }
     updateStatusBar();
 }

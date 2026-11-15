@@ -35,8 +35,8 @@ socket file. No special guest drivers are required for video or input.
   and relative pointer protocols. Guests using a tablet pointer do not need
   capture.
 - **Status bar:** Shows CD/DVD, floppy and USB devices; network status (click
-  to connect or disconnect the cable); guest-agent status (click to copy the
-  guest's address); clipboard sharing; microphone and audio output; and
+  to connect or disconnect the cable); kemu-agent status; guest-agent status
+  (click to copy the guest's address); clipboard sharing; microphone and audio output; and
   pointer capture.
 - **Headless operation:** Closing the viewer leaves the VM running. Reopen
   it with *Show Display* from the VM or system tray menu.
@@ -62,8 +62,10 @@ runs beside it.
 
 KEMU gives every VM with the integrated viewer and a PCI bus a virtio-serial
 port named `org.kde.kemu.agent.0` for the agent. Existing VMs need no change:
-the port appears at their next start. The clipboard indicator in the viewer's
-status bar is dimmed while no agent is connected; its tooltip tells why.
+the port appears at their next start. The KEMU icon in the viewer's status
+bar shows whether the agent runs: dimmed while it does not, with a warning
+emblem when it has no access to the guest's clipboard. Its tooltip names the
+agent version, the guest session and what the agent can do there.
 
 Some limits of the current version:
 

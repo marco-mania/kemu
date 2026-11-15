@@ -217,6 +217,7 @@ private:
     void popupIndicatorMenu(StatusIndicator *indicator, QMenu *menu);
     void showOsd(const QString &text, int holdMs = 2500);
     void setupClipboard(ClipboardDirection dir);
+    void updateKemuAgentIndicator();
     void teardownClipboard();
     Q_INVOKABLE void updateWindowAndDisplaySize();
     void fitContentToWindow();
@@ -301,6 +302,7 @@ private:
     StatusIndicator *m_indKeyboardShortcutsInhibit = nullptr;
     StatusIndicator *m_indUsb = nullptr;
     StatusIndicator *m_indGuestAgent = nullptr;
+    StatusIndicator *m_indKemuAgent = nullptr;
 
     int m_usbAttached = 0;
 
