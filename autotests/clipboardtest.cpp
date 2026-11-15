@@ -11,7 +11,9 @@
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QMimeData>
+#include <QTemporaryDir>
 #include <QTest>
+#include <QUrl>
 
 #include <memory>
 #include <sys/socket.h>
@@ -646,6 +648,203 @@ private Q_SLOTS:
         const QCborMap clipboard = Fields::map(policy->body, "clipboard"_L1).value();
         QCOMPARE(Fields::boolean(clipboard, "to_host"_L1), std::optional(false));
         QCOMPARE(Fields::boolean(clipboard, "to_guest"_L1), std::optional(false));
+    }
+
+    // --- Files (section 6.8) ---
+
+    static void writeFile(const QString &path, const QByteArray &content)
+    {
+        QDir().mkpath(QFileInfo(path).absolutePath());
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write(content);
+    }
+
+    static const QStringList &fileCaps()
+    {
+        static const QStringList caps{u"clipboard"_s, u"clipboard.files"_s};
+        return caps;
+    }
+
+    void filesAreOffByDefault()
+    {
+        QTemporaryDir dir;
+        writeFile(dir.filePath(u"a.txt"_s), "alpha");
+        auto *copied = new QMimeData;
+        copied->setUrls({QUrl::fromLocalFile(dir.filePath(u"a.txt"_s))});
+        copied->setText(u"a.txt"_s);
+        hostClipboard()->setMimeData(copied);
+
+        Rig rig = makeRig();
+        rig.agent->hello(fileCaps());
+        QVERIFY(rig.agent->next(Welcome));
+        const auto policy = rig.agent->next(Policy);
+        QVERIFY(policy);
+        QCOMPARE(Fields::boolean(Fields::map(policy->body, "clipboard"_L1).value(), "files"_L1), std::optional(false));
+        const auto first = rig.agent->next(ClipboardOffer);
+        QVERIFY(first);
+        QVERIFY(!first->body.contains("files"_L1));
+        QVERIFY(!typesOf(*first).contains(u"text/uri-list"_s));
+
+        // A guest that sends files anyway gets them ignored, and may not read ours.
+        rig.agent->send(ClipboardFileList, QCborMap{{u"id"_s, 3}, {u"selection"_s, 0}, {u"serial"_s, 1}});
+        const auto fail = rig.agent->next(ClipboardFail);
+        QVERIFY(fail);
+        QCOMPARE(Fields::text(fail->body, "reason"_L1), std::optional(QString(Reason::Denied)));
+        QCborMap guestOffer = offer(1, 1, {{QString(Mime::Utf8Text), 2}});
+        guestOffer.insert(u"files"_s, QCborMap{{u"count"_s, 1}, {u"size"_s, 5}});
+        rig.agent->send(ClipboardOffer, guestOffer);
+        QVERIFY(rig.agent->next(ClipboardRequest));
+        QVERIFY(!rig.agent->has(ClipboardFileList));
+    }
+
+    void hostFilesAreOfferedAndServed()
+    {
+        QTemporaryDir dir;
+        writeFile(dir.filePath(u"docs/a.txt"_s), "alpha");
+        writeFile(dir.filePath(u"docs/b.bin"_s), QByteArray(300 * 1024, 'b'));
+        auto *copied = new QMimeData;
+        copied->setUrls({QUrl::fromLocalFile(dir.filePath(u"docs"_s))});
+        copied->setText(u"docs"_s);
+        hostClipboard()->setMimeData(copied);
+
+        Rig rig = makeRig();
+        rig.clipboard->setShareFiles(true);
+        rig.clipboard->setFilesLimit(1024 * 1024);
+        rig.agent->hello(fileCaps());
+        QVERIFY(rig.agent->next(Welcome));
+        const auto policy = rig.agent->next(Policy);
+        QVERIFY(policy);
+        const QCborMap clipboard = Fields::map(policy->body, "clipboard"_L1).value();
+        QCOMPARE(Fields::boolean(clipboard, "files"_L1), std::optional(true));
+        QCOMPARE(Fields::uint(clipboard, "files_limit"_L1), std::optional<quint64>(1024 * 1024));
+
+        const auto first = rig.agent->next(ClipboardOffer);
+        QVERIFY(first);
+        const QCborMap files = Fields::map(first->body, "files"_L1).value();
+        QCOMPARE(Fields::uint(files, "count"_L1), std::optional<quint64>(3));
+        QCOMPARE(Fields::uint(files, "size"_L1), std::optional<quint64>(300 * 1024 + 5));
+        QVERIFY(!typesOf(*first).contains(u"text/uri-list"_s)); // host paths stay home
+        QVERIFY(rig.clipboard->offersFiles(Selection::Clipboard));
+
+        rig.agent->send(ClipboardFileList, QCborMap{{u"id"_s, 1}, {u"selection"_s, 0}, {u"serial"_s, 1}});
+        const auto entries = rig.agent->next(ClipboardFileEntries);
+        QVERIFY(entries);
+        const QCborArray list = entries->body.value("entries"_L1).toArray();
+        QCOMPARE(list.size(), 3);
+        QCOMPARE(list.at(1).toMap().value("path"_L1).toString(), u"docs/a.txt"_s);
+
+        rig.agent->send(ClipboardFileRead,
+                        QCborMap{{u"id"_s, 2}, {u"selection"_s, 0}, {u"serial"_s, 1}, {u"file"_s, 1}, {u"offset"_s, 0}, {u"length"_s, 1000}});
+        const auto chunk = rig.agent->next(ClipboardFileData);
+        QVERIFY(chunk);
+        QCOMPARE(Fields::bytes(chunk->body, "data"_L1), std::optional(QByteArray("alpha")));
+
+        // The same copy announced again is not offered again.
+        auto *again = new QMimeData;
+        again->setUrls({QUrl::fromLocalFile(dir.filePath(u"docs"_s))});
+        again->setText(u"docs"_s);
+        hostClipboard()->setMimeData(again);
+        QTest::qWait(60);
+        QVERIFY(!rig.agent->has(ClipboardOffer));
+
+        // Above the limit: offered without files.
+        rig.clipboard->setFilesLimit(1000);
+        QVERIFY(rig.agent->next(Policy));
+        const auto small = rig.agent->next(ClipboardOffer);
+        QVERIFY(small);
+        QVERIFY(!small->body.contains("files"_L1));
+        rig.agent->send(ClipboardFileRead, QCborMap{{u"id"_s, 3}, {u"selection"_s, 0}, {u"serial"_s, 2}, {u"file"_s, 1}, {u"offset"_s, 0}, {u"length"_s, 10}});
+        const auto fail = rig.agent->next(ClipboardFail);
+        QVERIFY(fail);
+        QCOMPARE(Fields::text(fail->body, "reason"_L1), std::optional(QString(Reason::NotOffered)));
+
+        // Switched off in the menu: POLICY says so.
+        rig.clipboard->setShareFiles(false);
+        const auto off = rig.agent->next(Policy);
+        QVERIFY(off);
+        QCOMPARE(Fields::boolean(Fields::map(off->body, "clipboard"_L1).value(), "files"_L1), std::optional(false));
+    }
+
+    void guestFilesReachHost()
+    {
+        QTemporaryDir root;
+        AgentClipboard::Config config = fastConfig();
+        config.stagingRoot = root.path();
+        config.stagingGraceMs = 50;
+        Rig rig = makeRig(ClipboardDirection::Both, config);
+        rig.clipboard->setShareFiles(true);
+        QVERIFY(startSession(rig, fileCaps()));
+
+        QCborMap guestOffer = offer(1, 0, {});
+        guestOffer.insert(u"files"_s, QCborMap{{u"count"_s, 2}, {u"size"_s, 300000}});
+        rig.agent->send(ClipboardOffer, guestOffer);
+        const auto list = rig.agent->next(ClipboardFileList);
+        QVERIFY(list);
+        rig.agent->send(ClipboardFileEntries,
+                        QCborMap{{u"id"_s, qint64(*Fields::uint(list->body, "id"_L1))},
+                                 {u"total"_s, 2},
+                                 {u"entries"_s,
+                                  QCborArray{QCborMap{{u"path"_s, u"from guest"_s}, {u"type"_s, u"dir"_s}},
+                                             QCborMap{{u"path"_s, u"from guest/data.bin"_s}, {u"type"_s, u"file"_s}, {u"size"_s, 300000}}}}});
+        const QByteArray content(300000, 'g');
+        for (int reads = 0; reads < 2; ++reads) {
+            const auto read = rig.agent->next(ClipboardFileRead);
+            QVERIFY(read);
+            QVERIFY(!hostHasProxy()); // nothing before the files are complete
+            const qint64 offset = qint64(*Fields::uint(read->body, "offset"_L1));
+            const qint64 length = qint64(*Fields::uint(read->body, "length"_L1));
+            rig.agent->send(ClipboardFileData, QCborMap{{u"id"_s, qint64(*Fields::uint(read->body, "id"_L1))}, {u"data"_s, content.mid(offset, length)}});
+        }
+        QTRY_VERIFY(hostHasProxy());
+        const QString staged = rig.clipboard->stagedDirectory(Selection::Clipboard);
+        QVERIFY(staged.startsWith(root.path()));
+        QCOMPARE(hostClipboard()->mimeData()->urls(), QList<QUrl>{QUrl::fromLocalFile(staged + u"/from guest"_s)});
+        QFile copy(staged + u"/from guest/data.bin"_s);
+        QVERIFY(copy.open(QIODevice::ReadOnly));
+        QCOMPARE(copy.readAll(), content);
+
+        // A clipboard manager takes the files over without our marker:
+        // still the guest's, not offered back.
+        auto *echo = new QMimeData;
+        echo->setUrls({QUrl::fromLocalFile(staged + u"/from guest"_s)});
+        hostClipboard()->setMimeData(echo);
+        QTest::qWait(60);
+        QVERIFY(!rig.agent->has(ClipboardOffer));
+        QVERIFY(QFileInfo::exists(staged));
+
+        // The next guest copy replaces them; the old copies go after the grace time.
+        putGuestText(rig, 2, "text now");
+        QTRY_VERIFY(!QFileInfo::exists(staged));
+    }
+
+    void hostileGuestListingWritesNothing()
+    {
+        QTemporaryDir root;
+        AgentClipboard::Config config = fastConfig();
+        config.stagingRoot = root.path();
+        Rig rig = makeRig(ClipboardDirection::Both, config);
+        rig.clipboard->setShareFiles(true);
+        QVERIFY(startSession(rig, fileCaps()));
+
+        QCborMap guestOffer = offer(1, 0, {{QString(Mime::Utf8Text), 5}});
+        guestOffer.insert(u"files"_s, QCborMap{{u"count"_s, 1}, {u"size"_s, 4}});
+        rig.agent->send(ClipboardOffer, guestOffer);
+        const auto request = rig.agent->next(ClipboardRequest);
+        const auto list = rig.agent->next(ClipboardFileList);
+        QVERIFY(request && list);
+        rig.agent->send(ClipboardFileEntries,
+                        QCborMap{{u"id"_s, qint64(*Fields::uint(list->body, "id"_L1))},
+                                 {u"total"_s, 1},
+                                 {u"entries"_s, QCborArray{QCborMap{{u"path"_s, u"../../.bashrc"_s}, {u"type"_s, u"file"_s}, {u"size"_s, 4}}}}});
+        rig.agent->send(ClipboardData, data(Fields::uint(request->body, "id"_L1).value(), "guest"));
+        // The text still arrives; no file was written anywhere.
+        QTRY_VERIFY(hostHasProxy());
+        QCOMPARE(hostClipboard()->text(), u"guest"_s);
+        QVERIFY(!hostClipboard()->mimeData()->hasUrls());
+        QVERIFY(rig.clipboard->stagedDirectory(Selection::Clipboard).isEmpty());
+        QVERIFY(!QFileInfo::exists(root.filePath(u".bashrc"_s)));
+        QVERIFY(!QFileInfo::exists(root.path() + u"/../.bashrc"_s));
     }
 
     void survivesClientGoingAway()

@@ -19,6 +19,7 @@ namespace
 const QStringList kCapabilities{
     QString(Capability::Clipboard),
     QString(Capability::ClipboardPrimary),
+    QString(Capability::ClipboardFiles),
     QString(Capability::DisplayLayout),
 };
 } // namespace
@@ -246,6 +247,10 @@ void KemuAgentClient::handleFrame(const Frame &frame)
     case ClipboardData:
     case ClipboardFail:
     case ClipboardCancel:
+    case ClipboardFileList:
+    case ClipboardFileEntries:
+    case ClipboardFileRead:
+    case ClipboardFileData:
         Q_EMIT message(frame.type, frame.body);
         return;
     default:
@@ -369,6 +374,9 @@ void KemuAgentClient::sendHelloRequest()
 void KemuAgentClient::sendPolicy()
 {
     QCborMap clipboard{{u"to_host"_s, m_policy.toHost}, {u"to_guest"_s, m_policy.toGuest}, {u"primary"_s, m_policy.primary}};
+    // Agents without clipboard.files ignore these.
+    clipboard.insert("files"_L1, m_policy.files);
+    clipboard.insert("files_limit"_L1, qint64(m_policy.files ? m_policy.filesLimit : 0));
     write(KemuAgentProtocol::Policy, QCborMap{{u"clipboard"_s, clipboard}});
 }
 

@@ -46,6 +46,14 @@ QLatin1StringView messageName(quint16 type)
         return "CLIPBOARD_FAIL"_L1;
     case ClipboardCancel:
         return "CLIPBOARD_CANCEL"_L1;
+    case ClipboardFileList:
+        return "CLIPBOARD_FILE_LIST"_L1;
+    case ClipboardFileEntries:
+        return "CLIPBOARD_FILE_ENTRIES"_L1;
+    case ClipboardFileRead:
+        return "CLIPBOARD_FILE_READ"_L1;
+    case ClipboardFileData:
+        return "CLIPBOARD_FILE_DATA"_L1;
     case DisplayLayout:
         return "DISPLAY_LAYOUT"_L1;
     case DisplayLayoutQuery:

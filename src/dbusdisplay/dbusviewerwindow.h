@@ -66,6 +66,8 @@ struct ViewerDevicePrefs {
     ClipboardDirection clipboard = ClipboardDirection::Off; // default: off
     bool clipboardFilterPasswords = true; // password manager entries stay on the host
     bool clipboardPrimary = false; // the selection (middle click) as well
+    bool clipboardFiles = false; // copied files and folders as well
+    int clipboardFilesLimitMiB = 256; // per copy
     bool networkLinkUp = true; // virtual cable plugged in
 };
 
@@ -200,6 +202,8 @@ private Q_SLOTS:
     void onClipboardBoth();
     void onToggleClipboardFilterPasswords(bool checked);
     void onToggleClipboardPrimary(bool checked);
+    void onToggleClipboardFiles(bool checked);
+    void onClipboardFilesLimit(int limitMiB);
     void onScanoutChanged(int width, int height);
     void onQemuDisconnected();
     void onAbout();
@@ -275,6 +279,8 @@ private:
     QAction *m_actClipBoth = nullptr;
     QAction *m_actClipFilterPasswords = nullptr;
     QAction *m_actClipPrimary = nullptr;
+    QAction *m_actClipFiles = nullptr;
+    QMenu *m_clipFilesLimitMenu = nullptr;
     QAction *m_actGrabMouse = nullptr;
     QAction *m_actKeyboardShortcutsInhibit = nullptr;
     QAction *m_actNetworkLink = nullptr;

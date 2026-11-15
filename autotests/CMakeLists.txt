@@ -99,9 +99,17 @@ ecm_qt_declare_logging_category(kemuagentclienttest
                                 IDENTIFIER "KEMU"
                                 CATEGORY_NAME "org.kde.kemu")
 
+# Files on the clipboard: listing, reads, receiver and staging.
+ecm_add_test(clipboardfilestest.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/clipboardfiles.cpp
+             TEST_NAME clipboardfilestest
+             LINK_LIBRARIES Qt6::Core Qt6::Test)
+target_include_directories(clipboardfilestest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 # Clipboard sharing through kemu-agent, against a scripted agent.
 ecm_add_test(clipboardtest.cpp
              ${CMAKE_SOURCE_DIR}/src/dbusdisplay/clipboard.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/clipboardfiles.cpp
              ${CMAKE_SOURCE_DIR}/src/utils/kemuagentclient.cpp
              ${CMAKE_SOURCE_DIR}/src/utils/kemuagentprotocol.cpp
              TEST_NAME clipboardtest

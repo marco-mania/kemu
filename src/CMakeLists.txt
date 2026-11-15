@@ -109,6 +109,8 @@ target_sources(
           utils/vmconfig.h
           utils/qmpclient.cpp
           utils/qmpclient.h
+          utils/clipboardfiles.cpp
+          utils/clipboardfiles.h
           utils/guestagentclient.cpp
           utils/guestagentclient.h
           utils/kemuagentclient.cpp

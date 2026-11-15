@@ -459,6 +459,32 @@ void DbusViewerWindow::createActions()
     m_actClipPrimary->setChecked(m_prefs.clipboardPrimary);
     connect(m_actClipPrimary, &QAction::toggled, this, &DbusViewerWindow::onToggleClipboardPrimary);
 
+    // Off by default: with it, the guest writes files on the host.
+    m_actClipFiles = new QAction(i18nc("@action:inmenu", "Share Files"), this);
+    m_actClipFiles->setCheckable(true);
+    m_actClipFiles->setStatusTip(i18nc("@info:status", "Copy files and folders in the guest and paste them on the host, and the other way round"));
+    m_actClipFiles->setChecked(m_prefs.clipboardFiles);
+    connect(m_actClipFiles, &QAction::toggled, this, &DbusViewerWindow::onToggleClipboardFiles);
+
+    m_clipFilesLimitMenu = new QMenu(i18nc("@title:menu", "File Size Limit"), this);
+    auto *limitGroup = new QActionGroup(this);
+    QList<int> limits{64, 256, 1024, 4096};
+    if (!limits.contains(m_prefs.clipboardFilesLimitMiB)) {
+        limits.append(m_prefs.clipboardFilesLimitMiB); // set by hand in the configuration
+        std::sort(limits.begin(), limits.end());
+    }
+    for (const int limit : std::as_const(limits)) {
+        QAction *action = m_clipFilesLimitMenu->addAction(limit >= 1024 && limit % 1024 == 0 ? i18nc("@action:inmenu", "%1 GiB per Copy", limit / 1024)
+                                                                                             : i18nc("@action:inmenu", "%1 MiB per Copy", limit));
+        action->setCheckable(true);
+        action->setChecked(limit == m_prefs.clipboardFilesLimitMiB);
+        limitGroup->addAction(action);
+        connect(action, &QAction::triggered, this, [this, limit] {
+            onClipboardFilesLimit(limit);
+        });
+    }
+    m_clipFilesLimitMenu->setEnabled(m_prefs.clipboardFiles);
+
     // -- Devices: Network ---
     m_actNetworkLink = new QAction(i18nc("@action:inmenu", "&Network Connected"), this);
     m_actNetworkLink->setCheckable(true);
@@ -568,6 +594,9 @@ void DbusViewerWindow::createMenus()
     m_clipMenu->addSeparator();
     m_clipMenu->addAction(m_actClipFilterPasswords);
     m_clipMenu->addAction(m_actClipPrimary);
+    m_clipMenu->addSeparator();
+    m_clipMenu->addAction(m_actClipFiles);
+    m_clipMenu->addMenu(m_clipFilesLimitMenu);
 
     devicesMenu->addSeparator();
     devicesMenu->addAction(m_actNetworkLink);
@@ -1002,6 +1031,8 @@ void DbusViewerWindow::setupClipboard(ClipboardDirection dir)
         // Before setAgent(): it offers the host content right away.
         m_clipboard->setFilterPasswords(m_prefs.clipboardFilterPasswords);
         m_clipboard->setSharePrimary(m_prefs.clipboardPrimary);
+        m_clipboard->setFilesLimit(quint64(m_prefs.clipboardFilesLimitMiB) * 1024 * 1024);
+        m_clipboard->setShareFiles(m_prefs.clipboardFiles);
         m_clipboard->setAgent(m_kemuAgent);
     }
 
@@ -1044,6 +1075,32 @@ void DbusViewerWindow::onToggleClipboardPrimary(bool checked)
     if (m_clipboard)
         m_clipboard->setSharePrimary(checked);
     statusBar()->showMessage(checked ? i18n("The selection is shared as well") : i18n("Only the clipboard is shared"), 3000);
+    Q_EMIT devicePrefsChanged(m_prefs);
+}
+
+void DbusViewerWindow::onToggleClipboardFiles(bool checked)
+{
+    m_prefs.clipboardFiles = checked;
+    m_clipFilesLimitMenu->setEnabled(checked);
+    if (m_clipboard)
+        m_clipboard->setShareFiles(checked);
+    if (!checked)
+        statusBar()->showMessage(i18n("Files are not shared"), 3000);
+    else if (m_clipDirection == ClipboardDirection::Off)
+        statusBar()->showMessage(i18n("Files are shared once clipboard sharing is switched on"), 5000);
+    else if (m_kemuAgent && m_kemuAgent->hasSession() && !m_kemuAgent->hasCapability(KemuAgentProtocol::Capability::ClipboardFiles))
+        statusBar()->showMessage(i18n("The kemu-agent in the guest is too old to share files"), 5000);
+    else
+        statusBar()->showMessage(i18n("Copied files and folders are shared as well"), 3000);
+    updateKemuAgentIndicator();
+    Q_EMIT devicePrefsChanged(m_prefs);
+}
+
+void DbusViewerWindow::onClipboardFilesLimit(int limitMiB)
+{
+    m_prefs.clipboardFilesLimitMiB = limitMiB;
+    if (m_clipboard)
+        m_clipboard->setFilesLimit(quint64(limitMiB) * 1024 * 1024);
     Q_EMIT devicePrefsChanged(m_prefs);
 }
 
@@ -1103,6 +1160,12 @@ void DbusViewerWindow::updateKemuAgentIndicator()
         lines << i18nc("@info:tooltip", "Clipboard: no access in the guest session");
         emblem = u"dialog-warning"_s;
     }
+    if (clipboard && !m_kemuAgent->hasCapability(KemuAgentProtocol::Capability::ClipboardFiles))
+        lines << i18nc("@info:tooltip", "Files: not supported by this kemu-agent");
+    else if (clipboard && m_prefs.clipboardFiles && m_clipDirection != ClipboardDirection::Off)
+        lines << i18nc("@info:tooltip", "Files: shared, up to %1 MiB per copy", m_prefs.clipboardFilesLimitMiB);
+    else if (clipboard)
+        lines << i18nc("@info:tooltip", "Files: not shared");
     if (m_kemuAgent->hasCapability(KemuAgentProtocol::Capability::DisplayLayout)) {
         if (const auto layout = m_kemuAgent->layout()) {
             const int monitors = int(std::count_if(layout->outputs.cbegin(), layout->outputs.cend(), [](const KemuAgentProtocol::DisplayOutput &output) {

@@ -72,6 +72,8 @@ public:
         bool toHost = false;
         bool toGuest = false;
         bool primary = false;
+        bool files = false; // section 6.8
+        quint64 filesLimit = 0;
 
         bool operator==(const Policy &) const = default;
     };

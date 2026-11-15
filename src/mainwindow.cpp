@@ -5687,6 +5687,8 @@ ViewerDevicePrefs MainWindow::loadViewerPrefs(const QString &vmName) const
     prefs.clipboard = clipboardDirFromString(grp.readEntry(u"Clipboard"_s, clipboardDirToString(prefs.clipboard)));
     prefs.clipboardFilterPasswords = grp.readEntry(u"ClipboardFilterPasswords"_s, prefs.clipboardFilterPasswords);
     prefs.clipboardPrimary = grp.readEntry(u"ClipboardPrimary"_s, prefs.clipboardPrimary);
+    prefs.clipboardFiles = grp.readEntry(u"ClipboardFiles"_s, prefs.clipboardFiles);
+    prefs.clipboardFilesLimitMiB = qBound(1, grp.readEntry(u"ClipboardFilesLimitMiB"_s, prefs.clipboardFilesLimitMiB), 1024 * 1024);
     prefs.networkLinkUp = grp.readEntry(u"NetworkLinkUp"_s, prefs.networkLinkUp);
     return prefs;
 }
@@ -5701,6 +5703,8 @@ void MainWindow::saveViewerPrefs(const QString &vmName, const ViewerDevicePrefs 
     grp.writeEntry(u"Clipboard"_s, clipboardDirToString(prefs.clipboard));
     grp.writeEntry(u"ClipboardFilterPasswords"_s, prefs.clipboardFilterPasswords);
     grp.writeEntry(u"ClipboardPrimary"_s, prefs.clipboardPrimary);
+    grp.writeEntry(u"ClipboardFiles"_s, prefs.clipboardFiles);
+    grp.writeEntry(u"ClipboardFilesLimitMiB"_s, prefs.clipboardFilesLimitMiB);
     grp.writeEntry(u"NetworkLinkUp"_s, prefs.networkLinkUp);
 
     config->sync();

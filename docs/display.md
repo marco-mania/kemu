@@ -30,6 +30,10 @@ socket file. No special guest drivers are required for video or input.
   managers such as KeePassXC mark as secret on their side, in both
   directions; switched off, they cross like any other text. *Share Selection
   (Middle Click)* shares the primary selection as well.
+  *Share Files* (off by default) lets files and folders copied on one side be
+  pasted on the other, up to the *File Size Limit* per copy (256 MiB by
+  default). With it, the guest can place files in KEMU's cache directory on
+  the host; they are never executable and are removed when the viewer closes.
 - **Pointer capture:** Locks the pointer to the viewer for guests using
   relative mouse input. The compositor must support the pointer constraints
   and relative pointer protocols. Guests using a tablet pointer do not need
@@ -71,7 +75,10 @@ Some limits of the current version:
 
 - Clipboard content is copied as soon as one side offers it, up to 32 MiB per
   copy. Larger content stays where it was copied.
-- Files are not transferred; `file:` URIs are removed from copied file lists.
+- Files and folders travel only with *Share Files* switched on (see above).
+  They are copied when they are copied to the clipboard, not when they are
+  pasted, so each copy is limited in size; symbolic links are left out, and
+  cut works like copy.
 - Windows and BSD guests have no agent yet, so they have no clipboard
   sharing.
 

@@ -18,8 +18,10 @@
 #include <QTimer>
 
 #include <array>
+#include <memory>
 #include <optional>
 
+#include "utils/clipboardfiles.h"
 #include "utils/kemuagentclient.h"
 #include "utils/kemuagentprotocol.h"
 
@@ -71,6 +73,10 @@ public:
         qsizetype pacingThreshold = 128 * 1024;
         int maxOpenRequests = 8;
         int maxServing = 8;
+        // Files (section 6.8). An empty root means KEMU's cache directory.
+        QString stagingRoot;
+        int stagingGraceMs = 10 * 60 * 1000;
+        int fileWindow = 3;
     };
 
     enum class Owner {
@@ -104,12 +110,18 @@ public:
     void setFilterPasswords(bool filter);
     // Share the primary selection (select, middle-click) as well.
     void setSharePrimary(bool share);
+    // Share copied files and folders as well (section 6.8), up to @p limit
+    // bytes per copy. Off by default: the guest then writes files on the host.
+    void setShareFiles(bool share);
+    void setFilesLimit(quint64 limit);
 
     // Inspection, for the tests and the logs.
     [[nodiscard]] Owner owner(KemuAgentProtocol::Selection selection) const;
     [[nodiscard]] quint64 localSerial(KemuAgentProtocol::Selection selection) const;
     [[nodiscard]] quint64 peerSerial(KemuAgentProtocol::Selection selection) const;
     [[nodiscard]] bool isFetching(KemuAgentProtocol::Selection selection) const;
+    [[nodiscard]] bool offersFiles(KemuAgentProtocol::Selection selection) const;
+    [[nodiscard]] QString stagedDirectory(KemuAgentProtocol::Selection selection) const;
 
 private:
     using Content = QList<std::pair<QString, QByteArray>>;
@@ -132,6 +144,9 @@ private:
         QStringList queue;
         Content done;
         qint64 bytes = 0;
+        std::unique_ptr<ClipboardFiles::Receiver> files;
+        bool filesPending = false;
+        QStringList filePaths; // staged top-level entries, once complete
     };
     struct State {
         quint64 localSerial = 0;
@@ -139,6 +154,8 @@ private:
         Owner owner = Owner::None;
         Content offered; // snapshot of the host's offer in force
         bool offeredSecret = false;
+        std::optional<ClipboardFiles::Listing> listing; // files of that offer
+        QString stagedDirectory; // the guest's files on the host clipboard
         QByteArray sharedHash; // content already on both sides
         QByteArray peerText; // UTF-8 text of the guest's content, to spot echoes
         QStringList peerTypes;
@@ -151,6 +168,8 @@ private:
     [[nodiscard]] KemuAgentClient::Policy policyFor(ClipboardDirection direction, bool sharePrimary) const;
     [[nodiscard]] bool mayOffer(KemuAgentProtocol::Selection selection, const KemuAgentClient::Policy &policy) const;
     [[nodiscard]] bool acceptsPeer(KemuAgentProtocol::Selection selection, const KemuAgentClient::Policy &policy) const;
+    [[nodiscard]] bool mayOfferFiles(KemuAgentProtocol::Selection selection, const KemuAgentClient::Policy &policy) const;
+    [[nodiscard]] bool acceptsFiles(KemuAgentProtocol::Selection selection, const KemuAgentClient::Policy &policy) const;
     void applyPolicy(const KemuAgentClient::Policy &previous);
 
     void onSessionStarted();
@@ -161,10 +180,18 @@ private:
     // Host to guest
     void examineHost(KemuAgentProtocol::Selection selection, bool force);
     std::optional<Content> snapshot(const QMimeData *data) const;
-    void sendOffer(KemuAgentProtocol::Selection selection, const Content &content, bool secret, const QByteArray &hash);
+    void sendOffer(KemuAgentProtocol::Selection selection,
+                   const Content &content,
+                   bool secret,
+                   const QByteArray &hash,
+                   std::optional<ClipboardFiles::Listing> listing);
     void sendRelease(KemuAgentProtocol::Selection selection);
     void handleRequest(const QCborMap &body);
     void handleCancel(const QCborMap &body);
+    void handleFileList(const QCborMap &body);
+    void handleFileRead(const QCborMap &body);
+    [[nodiscard]] QStringList localFilePaths(const QMimeData *data) const;
+    [[nodiscard]] bool isStagedEcho(const QStringList &paths) const;
     void pumpOutbound();
 
     // Guest to host
@@ -172,7 +199,14 @@ private:
     void handleRelease(const QCborMap &body);
     void handleData(const QCborMap &body);
     void handleFail(const QCborMap &body);
-    void startFetch(KemuAgentProtocol::Selection selection, const QCborMap &sizes);
+    void startFetch(KemuAgentProtocol::Selection selection, const QCborMap &sizes, const QCborMap &files);
+    void startFileFetch(KemuAgentProtocol::Selection selection, quint64 count, quint64 size);
+    void fileFetchEnded(KemuAgentProtocol::Selection selection, bool complete);
+    void dropFiles(Fetch &fetch, bool discard);
+    void retireStaged(State &s);
+    [[nodiscard]] ClipboardFiles::Receiver *receiverOf(quint64 id) const;
+    [[nodiscard]] int openFileRequests() const;
+    ClipboardFiles::Staging *staging();
     void pumpFetch();
     void cancelFetch(KemuAgentProtocol::Selection selection);
     void cancelInbound(quint64 id);
@@ -194,6 +228,8 @@ private:
     ClipboardDirection m_direction;
     bool m_filterPasswords = true;
     bool m_sharePrimary = false;
+    bool m_shareFiles = false;
+    quint64 m_filesLimit = 256ull * 1024 * 1024;
 
     std::array<State, KemuAgentProtocol::SelectionCount> m_states;
     QHash<quint64, Inbound> m_inbound;
@@ -202,4 +238,5 @@ private:
     bool m_pumping = false;
     quint64 m_nextRequestId = 0;
     QTimer m_timeouts;
+    std::unique_ptr<ClipboardFiles::Staging> m_staging;
 };

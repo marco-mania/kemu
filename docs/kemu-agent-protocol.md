@@ -1,6 +1,6 @@
 # KEMU Agent Protocol — Specification (Version 1, Draft)
 
-Draft of 2026-11-14.
+Nov 14, 2026 · @Marco
 
 ## 1. Introduction
 
@@ -19,7 +19,7 @@ Status: draft. Version 1 is not frozen. Message numbers and field names may chan
 ### 1.2 Non-goals for version 1
 
 - Windows and BSD guests. The protocol does not rule them out, but version 1 implementations target Linux only.
-- File transfer and display configuration. Section 9 reserves them.
+- Drag and drop of files, file transfers beyond the clipboard's size limit, and display configuration. Section 9 reserves them.
 - Anything that needs root, such as shutdown, setting the clock, freezing file systems or reading network addresses. qemu-guest-agent stays responsible for these, and KEMU keeps supporting it in full.
 - Compatibility with the SPICE agent protocol. KEMU drops spice-vdagent and QEMU's `qemu-vdagent` chardev.
 
@@ -57,22 +57,7 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are used as described i
 
 The protocol runs between the host and one agent, over one virtio-serial port. QEMU carries the bytes without reading them. qemu-guest-agent runs beside the agent on its own port and is not part of this protocol.
 
-```
- Host: KEMU                       QEMU                              Guest (Linux)
-
- Guest agent client   <-socket->  virtserialport          <-virtio->  qemu-guest-agent
- shutdown, time, IPs              org.qemu.guest_agent.0              root, system service
-
- Agent port client *  <-socket->  virtserialport *        <-virtio->  kemu-agent *
- clipboard, layout                org.kde.kemu.agent.0                user, active session
-        |                                                                   ^
-        | layout                                                            | clipboard, layout
-        v                                                                   v
- Viewer               --D-Bus-->  USB or virtio tablet    --input-->  Compositor
- maps pointer by layout           absolute, 0 to 0x7FFF               Wayland or X11
-
- * new in this specification; the qemu-guest-agent path stays as it is
-```
+&#91;embedded content: kemu-agent architecture · host, QEMU, guest\]
 
 The new port carries clipboard and layout. The pointer still reaches the guest through QEMU's tablet; only its mapping on the host uses the layout.
 
@@ -277,6 +262,8 @@ A reset on either side drops: clipboard ownership and serials, outstanding clipb
 | `clipboard.to_host` | `bool` | yes | The host accepts offers from the guest. |
 | `clipboard.to_guest` | `bool` | yes | The host offers its own clipboard to the guest. |
 | `clipboard.primary` | `bool` | yes | PRIMARY is shared too, in the directions allowed above. |
+| `clipboard.files` | `bool` | no | Files are shared too (Section 6.8), in the directions allowed above. Default `false`. |
+| `clipboard.files_limit` | `uint` | no | Largest total size in bytes of the files of one offer. Default 0. |
 
 - Until the first POLICY, every field counts as false.
 - The agent MUST NOT send offers that the policy does not allow. The host MUST ignore such offers anyway.
@@ -401,8 +388,9 @@ In a conflict, the copy made in the guest is replaced by the host's. Both sides 
 | `selection` | `uint` | yes | Section 6.1. |
 | `serial` | `uint` | yes | Strictly increasing per sender and selection, starting at 1 in each session. |
 | `seen` | `uint` | yes | The peer serial the sender last accepted, 0 if none. |
-| `types` | `[tstr]` | yes | 1 to 64 MIME types, in the source's order of preference. |
+| `types` | `[tstr]` | yes | 1 to 64 MIME types, in the source's order of preference. May be empty if `files` is present. |
 | `sizes` | `{tstr: uint}` | no | Sizes in bytes of types the sender already knows, for example prefetched text. |
+| `files` | `{count: uint, size: uint}` | no | The selection holds files the sender serves (Section 6.8): number of entries and total size of the files in bytes. |
 
 ### 6.4 CLIPBOARD\_RELEASE
 
@@ -466,7 +454,7 @@ Rules:
 - Text: if any text is available, the offer MUST include `text/plain;charset=utf-8`, and its data MUST be UTF-8. Other text types MAY be offered too.
 - Images: if any image is available, the offer SHOULD include `image/png`, converted on request if the source lacks it.
 - Types that start with `application/x-kemu-` are private to an implementation, for example markers against echoes. They MUST NOT be offered.
-- Version 1 does not transfer files. Senders MUST NOT offer types that describe local file operations: `x-special/gnome-copied-files`, `application/x-kde-cutselection`, `application/vnd.portal.files` and `application/vnd.portal.filetransfer`.
+- Files travel as Section 6.8 describes. Senders MUST NOT offer types that describe local file operations: `x-special/gnome-copied-files`, `application/x-kde-cutselection`, `application/vnd.portal.files` and `application/vnd.portal.filetransfer`.
 - When serving `text/uri-list`, the owner MUST remove `file:` URIs. If none remain, it answers `unavailable`.
 - `x-kde-passwordManagerHint` passes like any other type. It lets the receiver apply its own policy; KEMU uses it for its password filter.
 
@@ -476,6 +464,135 @@ The one type without a `/` that MUST pass is `x-kde-passwordManagerHint`, becaus
 
 - PRIMARY changes with every text selection. A sender MUST NOT send more than one PRIMARY offer per 250 milliseconds and SHOULD send the latest state once the selection has stayed unchanged for that long.
 - Some applications set the clipboard twice in a row. A sender SHOULD wait 50 milliseconds for the CLIPBOARD selection to settle before it offers it.
+
+### 6.8 Files
+
+Capability `clipboard.files`; needs `clipboard`. Files and folders copied on one side can be pasted on the other. The side that holds them lists them and serves their content on request; the receiving side copies them into a directory of its own and puts `file:` URIs to those copies on its clipboard.
+
+Files are shared only while POLICY `clipboard.files` is true, in the directions POLICY allows, and only if the whole selection fits `clipboard.files_limit`.
+
+#### 6.8.1 Offering files
+
+A selection holds files when its `text/uri-list` contains `file:` URIs. The owner then builds a listing:
+
+- one entry per regular file and per directory, directories with everything below them;
+- symbolic links, devices, sockets and FIFOs are left out, and links are never followed;
+- every entry has a path relative to the listing. Top-level names are the names of the copied items; where two are equal, the owner renames one, for example `notes (2).txt`.
+
+Path rules, for the owner and checked again by the requester:
+
+- components are separated by `/`; no component is empty, `.` or `..`, contains `/` or NUL, or is longer than 255 bytes;
+- a path is valid UTF-8, at most 1024 bytes and at most 32 components;
+- a directory comes before the entries below it, and no path appears twice.
+
+The owner adds `files` to CLIPBOARD\_OFFER (Section 6.3) only if all of these hold:
+
+- both sides listed `clipboard.files`, and POLICY allows files in this direction;
+- every name can be sent under the path rules;
+- the listing has at most 10,000 entries, and the sizes of its files add up to at most `clipboard.files_limit`.
+
+Otherwise the offer goes out without `files`, as if the selection held none. An offer with `files` MAY have an empty `types` list. `text/uri-list` is still served without `file:` URIs (Section 6.6); paths of one side mean nothing on the other.
+
+Cut counts as copy: the source files stay where they are.
+
+#### 6.8.2 Messages
+
+**CLIPBOARD\_FILE\_LIST** (0x0110, both) asks for a part of the listing.
+
+| Field | Type | Req. | Meaning |
+| --- | --- | --- | --- |
+| `id` | `uint` | yes | Request id, from the same sequence as CLIPBOARD\_REQUEST. |
+| `selection` | `uint` | yes | Section 6.1. |
+| `serial` | `uint` | yes | The serial of the offer. |
+| `start` | `uint` | no | Index of the first entry wanted. Default 0. |
+
+**CLIPBOARD\_FILE\_ENTRIES** (0x0111, both) answers it.
+
+| Field | Type | Req. | Meaning |
+| --- | --- | --- | --- |
+| `id` | `uint` | yes | The request id. |
+| `total` | `uint` | yes | Number of entries in the whole listing. |
+| `entries` | `[map]` | yes | Up to 256 entries, beginning at `start`. Empty only if `start` ≥ `total`. |
+
+An entry:
+
+| Field | Type | Req. | Meaning |
+| --- | --- | --- | --- |
+| `path` | `tstr` | yes | Relative path (Section 6.8.1). |
+| `type` | `tstr` | yes | `file` or `dir`. Entries of any other type MUST be ignored. |
+| `size` | `uint` | for `file` | Size in bytes. |
+| `mtime` | `int` | no | Modification time in seconds since 1970-01-01 UTC. |
+
+The index of an entry is its position in the listing, counted from 0. The listing does not change while the offer is current.
+
+**CLIPBOARD\_FILE\_READ** (0x0112, both) asks for a part of one file.
+
+| Field | Type | Req. | Meaning |
+| --- | --- | --- | --- |
+| `id` | `uint` | yes | Request id. |
+| `selection` | `uint` | yes | Section 6.1. |
+| `serial` | `uint` | yes | The serial of the offer. |
+| `file` | `uint` | yes | Index of an entry of type `file`. |
+| `offset` | `uint` | yes | Position in the file, in bytes. |
+| `length` | `uint` | yes | Bytes wanted, 1 to 262,144. |
+
+**CLIPBOARD\_FILE\_DATA** (0x0113, both) answers it.
+
+| Field | Type | Req. | Meaning |
+| --- | --- | --- | --- |
+| `id` | `uint` | yes | The request id. |
+| `data` | `bstr` | yes | The bytes from `offset` on, at most `length`. Shorter only where the file ends; empty at or past its end. |
+
+Rules:
+
+- Each request gets exactly one answer: ENTRIES or DATA, or CLIPBOARD\_FAIL with the request's id. CLIPBOARD\_CANCEL and the limit of 8 open requests (Section 6.5) apply to these requests too.
+- Reads are independent of each other and may come in any order. This lets a later revision read files only when they are pasted, without new messages.
+- The owner answers `stale` once the serial is no longer current, `denied` when POLICY no longer allows files, `not-offered` when the offer had no `files` or `file` is not the index of a file, and `unavailable` when it cannot read the file.
+- The owner reads from the file itself, not from a copy. If a file's size or modification time no longer matches the listing, it answers `changed`.
+- File data counts neither against `limits.max_transfer` nor against the budget of Section 6.5; `clipboard.files_limit` bounds it instead.
+- Like CLIPBOARD\_DATA, file data MUST let other queued messages pass (Section 6.5).
+
+#### 6.8.3 Receiving files
+
+When an offer with `files` arrives and POLICY allows it, the receiver:
+
+1. checks `files.size` against `clipboard.files_limit` and against the free space of its staging directory, and stops here if it does not fit;
+2. fetches the listing and checks every path, the order and the limits of Section 6.8.1, and that the sizes add up to no more than `files.size`. One violation ends the whole transfer;
+3. creates the directories and reads the files, front to back, into a new directory for this offer;
+4. puts the offer on its clipboard once every file is complete: the fetched types, plus `text/uri-list` with `file:` URIs of the top-level entries. It MAY add what its desktop expects for copied files, such as `x-special/gnome-copied-files`.
+
+Rules:
+
+- All or nothing: if one file fails, with `changed` or otherwise, the receiver deletes what it staged and puts the offer on its clipboard without files.
+- A file never grows beyond its listed `size`; a read that returns less than asked before that size is reached ends the transfer.
+- A newer offer, a CLIPBOARD\_RELEASE or a copy on the receiver's own side cancels the transfer; open requests are cancelled and the staged files deleted.
+- The staging directory belongs to the user alone (mode 0700). Staged files are created without execute permission; owner, group and mode of the source are not transferred, `mtime` MAY be.
+- Staged files of an offer stay for at least 10 minutes after a newer offer replaced it, since a paste may still be copying them. The receiver deletes all staged files when it starts and when it ends.
+- URIs that point into its own staging directory are never offered back as files, with or without the proxy marker (Section 11.6).
+
+#### 6.8.4 Example
+
+The user copies a folder with two files in the guest; the host allows files up to 256 MiB.
+
+```
+H→G POLICY {"clipboard": {"to_host": true, "to_guest": true, "primary": false,
+                           "files": true, "files_limit": 268435456}}
+G→H CLIPBOARD_OFFER {"selection": 0, "serial": 7, "seen": 2,
+                     "types": ["text/plain;charset=utf-8"],
+                     "files": {"count": 3, "size": 1300000}}
+H→G CLIPBOARD_FILE_LIST {"id": 31, "selection": 0, "serial": 7}
+G→H CLIPBOARD_FILE_ENTRIES {"id": 31, "total": 3, "entries": [
+        {"path": "report", "type": "dir"},
+        {"path": "report/draft.odt", "type": "file", "size": 1250000, "mtime": 1794720000},
+        {"path": "report/notes.txt", "type": "file", "size": 50000, "mtime": 1794720300}]}
+H→G CLIPBOARD_FILE_READ {"id": 32, "selection": 0, "serial": 7, "file": 1, "offset": 0, "length": 262144}
+H→G CLIPBOARD_FILE_READ {"id": 33, "selection": 0, "serial": 7, "file": 1, "offset": 262144, "length": 262144}
+G→H CLIPBOARD_FILE_DATA {"id": 32, "data": h'…'}          (262144 bytes)
+G→H CLIPBOARD_FILE_DATA {"id": 33, "data": h'…'}
+...
+```
+
+Once `report/notes.txt` is complete, the host clipboard holds `text/uri-list` with `file:///…/clipboard/7/report`, and a paste in a file manager copies the folder from there.
 
 ## 7. Display layout
 
@@ -587,6 +704,8 @@ Open questions: who wins when the guest user changes the settings, and whether t
 
 ### 9.2 File transfer
 
+Section 6.8 already carries files on the clipboard, up to a size limit and on the control port. What stays reserved here are transfers without that limit and drag and drop.
+
 Capability `file.transfer`, with data on the port `org.kde.kemu.agent.bulk.0`. Files and folders move in both directions, through the clipboard (`text/uri-list`, cut and copy) and through drag and drop.
 
 - Control messages stay on the control port. Data uses the bulk port, so a large transfer does not hold up clipboard and layout.
@@ -621,9 +740,19 @@ The host treats everything from the guest as untrusted input. The agent trusts t
 - Neither side logs clipboard content. Logs may contain types and sizes.
 - HELLO carries the OS and desktop names, but no user name.
 
+### 10.4 Files
+
+Files on the clipboard (Section 6.8) let the guest write files on the host and read the files the host user copied.
+
+- Sharing files is off until the host user switches it on, separately from the clipboard itself.
+- The receiver chooses where files land: one directory of its own. It checks every path, never follows links and creates nothing outside that directory.
+- The size limit and the entry limit bound what a hostile peer can make the receiver store. The receiver also checks free space before it starts.
+- Staged files are never executable. They are still untrusted content: the user decides what to open.
+- The owner serves only the files of the current offer, by index. A peer cannot name a path, so it cannot ask for other files.
+
 ## 11. Implementation notes: Linux guest
 
-The guest package ships one user program, one udev rule, one systemd user unit and one autostart entry. It needs Qt 6 and KGuiAddons, a Tier 1 framework that depends only on Qt.
+The guest package ships one user program, one udev rule, one systemd user unit and one autostart entry. It needs Qt 6 (Core, Gui, DBus) and libwayland-client, no KDE libraries.
 
 ### 11.1 Port access
 
@@ -663,12 +792,12 @@ WantedBy=graphical-session.target
 
 | Environment | Backend | Note |
 | --- | --- | --- |
-| KDE Plasma, Wayland | ext-data-control or wlr-data-control through KSystemClipboard | KWin offers data-control to clients outside a sandbox. KGuiAddons speaks ext-data-control from 6.14 on and prefers it; with an older KGuiAddons or a KWin that offers only the wlr protocol (Debian 13) the agent uses wlr-data-control. |
-| wlroots compositors (Sway, Hyprland, labwc, Wayfire) | ext-data-control or wlr-data-control through KSystemClipboard | KGuiAddons falls back to the wlr protocol. |
+| KDE Plasma, Wayland | ext-data-control, else wlr-data-control | KWin offers data-control to clients outside a sandbox; some versions only the wlr protocol (Debian 13). |
+| wlroots compositors (Sway, Hyprland, labwc) | ext-data-control, else wlr-data-control |  |
 | GNOME, Wayland | X11 through Xwayland (`QT_QPA_PLATFORM=xcb`) | Mutter offers no data-control. It bridges X11 and Wayland selections without focus; spice-vdagent relies on the same. |
 | X11 desktops (Xfce, Cinnamon, MATE, Plasma X11) | `QClipboard` on xcb | XFixes reports selection changes without focus. |
 
-The agent picks the backend at start, before Qt chooses a platform, from the protocols the compositor offers and the KGuiAddons version it was built with. A `QT_QPA_PLATFORM=wayland` set for the session is overridden where it would leave the agent without a clipboard. The agent reports its choice in HELLO `backends.clipboard`.
+The agent picks the backend at start, before Qt chooses a platform, from the protocols the compositor offers. It speaks data-control on a Wayland connection of its own, so Qt needs no display then. A `QT_QPA_PLATFORM=wayland` set for the session does not change the choice. The agent reports it in HELLO `backends.clipboard`.
 
 ### 11.4 Heads
 
@@ -691,6 +820,7 @@ On GNOME the agent uses X11 for the clipboard, but it MUST NOT take the layout f
 
 - The agent adds the private type `application/x-kemu-agent-proxy` to every proxy it installs. A clipboard change that carries this type is not offered.
 - Right after a local copy, the agent prefetches text types up to 64 KiB. It keeps them for later requests and lists them in `sizes`.
+- Files from the host are staged below `$XDG_CACHE_HOME/kemu-agent/clipboard`, in a directory per agent process, and offered as `text/uri-list` and `x-special/gnome-copied-files`. Paths inside that directory are never offered back as files.
 
 ### 11.7 Testing
 
@@ -724,6 +854,7 @@ KEMU replaces the `qemu-vdagent` chardev and the D-Bus clipboard path with one n
 - Guest offers are fetched as soon as they arrive, up to 32 MiB per offer, and then placed on the host clipboard. `QMimeData` hands data to pasting applications synchronously, so the host cannot wait for the guest during a paste. Larger content stays in the guest.
 - Host content is read into a snapshot when it is offered, within the same budget, and requests are served from it. Identical content is not offered again, since Wayland announces the selection anew on every focus change.
 - The primary selection is shared only when the user switches it on and the host session has one.
+- Files are shared only with *Share Files* switched on in that menu (default: off), up to the limit chosen there (default: 256 MiB per copy). Files from the guest are staged below KEMU's cache directory, in a directory per viewer, and removed when the viewer closes.
 
 ### 12.4 Removing SPICE support
 
@@ -750,6 +881,10 @@ KEMU replaces the `qemu-vdagent` chardev and the D-Bus clipboard path with one n
 | 0x0103 | CLIPBOARD\_DATA | both | `clipboard` | 6.5 |
 | 0x0104 | CLIPBOARD\_FAIL | both | `clipboard` | 6.5 |
 | 0x0105 | CLIPBOARD\_CANCEL | both | `clipboard` | 6.5 |
+| 0x0110 | CLIPBOARD\_FILE\_LIST | both | `clipboard.files` | 6.8 |
+| 0x0111 | CLIPBOARD\_FILE\_ENTRIES | both | `clipboard.files` | 6.8 |
+| 0x0112 | CLIPBOARD\_FILE\_READ | both | `clipboard.files` | 6.8 |
+| 0x0113 | CLIPBOARD\_FILE\_DATA | both | `clipboard.files` | 6.8 |
 | 0x0200 | DISPLAY\_LAYOUT | G→H | `display.layout` | 7.1 |
 | 0x0201 | DISPLAY\_LAYOUT\_QUERY | H→G | `display.layout` | 7.4 |
 
@@ -759,6 +894,7 @@ KEMU replaces the `qemu-vdagent` chardev and the D-Bus clipboard path with one n
 | --- | --- | --- |
 | `clipboard` | defined | CLIPBOARD selection (Section 6) |
 | `clipboard.primary` | defined | PRIMARY selection; needs `clipboard` |
+| `clipboard.files` | defined | Files on the clipboard (Section 6.8); needs `clipboard` |
 | `display.layout` | defined | Layout reports (Section 7) |
 | `display.configure` | reserved | Section 9.1 |
 | `file.transfer` | reserved | Section 9.2 |
@@ -776,6 +912,7 @@ KEMU replaces the `qemu-vdagent` chardev and the D-Bus clipboard path with one n
 | `unavailable` | CLIPBOARD\_FAIL | The source application did not deliver, or nothing shareable remains. |
 | `denied` | CLIPBOARD\_FAIL | The owner's policy forbids this transfer. |
 | `busy` | CLIPBOARD\_FAIL | Too many open requests. |
+| `changed` | CLIPBOARD\_FAIL | A file no longer matches the listing (Section 6.8). |
 
 ## Appendix D. Examples
 

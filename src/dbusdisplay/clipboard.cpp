@@ -13,6 +13,7 @@
 #include <QImage>
 #include <QMimeData>
 #include <QScopeGuard>
+#include <QStandardPaths>
 
 #include "kemu_dbusdisplay_debug.h"
 
@@ -47,6 +48,8 @@ ClipboardDirection clipboardDirFromString(const QString &s)
 namespace
 {
 constexpr std::array kSelections{Selection::Clipboard, Selection::Primary};
+// What file managers of GTK desktops read when files are pasted.
+constexpr auto GnomeCopiedFiles = "x-special/gnome-copied-files"_L1;
 
 QClipboard::Mode toMode(Selection selection)
 {
@@ -174,6 +177,111 @@ void AgentClipboard::setSharePrimary(bool share)
     applyPolicy(previous);
 }
 
+void AgentClipboard::setShareFiles(bool share)
+{
+    if (m_shareFiles == share)
+        return;
+    const KemuAgentClient::Policy previous = policyFor(m_direction, m_sharePrimary);
+    m_shareFiles = share;
+    applyPolicy(previous);
+}
+
+void AgentClipboard::setFilesLimit(quint64 limit)
+{
+    if (m_filesLimit == limit)
+        return;
+    const KemuAgentClient::Policy previous = policyFor(m_direction, m_sharePrimary);
+    m_filesLimit = limit;
+    applyPolicy(previous);
+}
+
+bool AgentClipboard::offersFiles(Selection selection) const
+{
+    return state(selection).listing.has_value();
+}
+
+QString AgentClipboard::stagedDirectory(Selection selection) const
+{
+    return state(selection).stagedDirectory;
+}
+
+bool AgentClipboard::mayOfferFiles(Selection selection, const KemuAgentClient::Policy &policy) const
+{
+    return mayOffer(selection, policy) && m_agent->hasCapability(Capability::ClipboardFiles) && policy.files && policy.filesLimit > 0;
+}
+
+bool AgentClipboard::acceptsFiles(Selection selection, const KemuAgentClient::Policy &policy) const
+{
+    return acceptsPeer(selection, policy) && m_agent->hasCapability(Capability::ClipboardFiles) && policy.files && policy.filesLimit > 0;
+}
+
+ClipboardFiles::Staging *AgentClipboard::staging()
+{
+    if (!m_staging) {
+        const QString root =
+            m_config.stagingRoot.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + u"/clipboard"_s : m_config.stagingRoot;
+        m_staging = std::make_unique<ClipboardFiles::Staging>(root, m_config.stagingGraceMs);
+        if (!m_staging->isUsable())
+            qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: cannot use" << root << "for files from the guest";
+    }
+    return m_staging.get();
+}
+
+// A receiver may be the sender of the signal that brings us here.
+void AgentClipboard::dropFiles(Fetch &fetch, bool discard)
+{
+    if (!fetch.files)
+        return;
+    ClipboardFiles::Receiver *receiver = fetch.files.release();
+    receiver->disconnect(this);
+    receiver->cancel();
+    if (discard && m_staging)
+        m_staging->discard(receiver->directory());
+    receiver->deleteLater();
+    fetch.filesPending = false;
+}
+
+// The guest's files leave the host clipboard; a paste may still read them.
+void AgentClipboard::retireStaged(State &s)
+{
+    if (m_staging)
+        m_staging->retire(s.stagedDirectory);
+    s.stagedDirectory.clear();
+}
+
+ClipboardFiles::Receiver *AgentClipboard::receiverOf(quint64 id) const
+{
+    for (const State &s : m_states) {
+        if (s.fetch.files && s.fetch.files->owns(id))
+            return s.fetch.files.get();
+    }
+    return nullptr;
+}
+
+int AgentClipboard::openFileRequests() const
+{
+    int open = 0;
+    for (const State &s : m_states) {
+        if (s.fetch.files && s.fetch.filesPending)
+            open += m_config.fileWindow;
+    }
+    return open;
+}
+
+QStringList AgentClipboard::localFilePaths(const QMimeData *data) const
+{
+    if (!data || !data->hasFormat(Mime::UriList))
+        return {};
+    return ClipboardFiles::localFiles(data->data(Mime::UriList));
+}
+
+bool AgentClipboard::isStagedEcho(const QStringList &paths) const
+{
+    return !paths.isEmpty() && m_staging && std::all_of(paths.cbegin(), paths.cend(), [this](const QString &path) {
+        return m_staging->contains(path);
+    });
+}
+
 void AgentClipboard::setFilterPasswords(bool filter)
 {
     if (m_filterPasswords == filter)
@@ -200,6 +308,8 @@ KemuAgentClient::Policy AgentClipboard::policyFor(ClipboardDirection direction, 
     policy.toGuest = direction == ClipboardDirection::ToGuest || direction == ClipboardDirection::Both;
     // Not every host session has a selection to share (section 6.7).
     policy.primary = sharePrimary && direction != ClipboardDirection::Off && m_clipboard->supportsSelection();
+    policy.files = m_shareFiles && direction != ClipboardDirection::Off && m_filesLimit > 0;
+    policy.filesLimit = policy.files ? m_filesLimit : 0;
     return policy;
 }
 
@@ -232,12 +342,20 @@ void AgentClipboard::applyPolicy(const KemuAgentClient::Policy &previous)
         if (acceptsPeer(selection, previous) && !acceptsPeer(selection, current) && s.owner == Owner::Peer) {
             cancelFetch(selection);
             s.owner = Owner::None;
+        } else if (s.fetch.filesPending && !acceptsFiles(selection, current)) {
+            fileFetchEnded(selection, false);
         }
     }
     if (m_agent)
         m_agent->setPolicy(current);
+    const bool filesChanged = previous.files != current.files || previous.filesLimit != current.filesLimit;
     for (const Selection selection : kSelections) {
-        if (!mayOffer(selection, previous) && mayOffer(selection, current))
+        if (!mayOffer(selection, current))
+            continue;
+        // Files switched on or off, or another limit: an offer in force
+        // may gain or lose its files.
+        const bool renew = filesChanged && (state(selection).listing || !localFilePaths(m_clipboard->mimeData(toMode(selection))).isEmpty());
+        if (!mayOffer(selection, previous) || renew)
             examineHost(selection, true);
     }
 }
@@ -263,10 +381,13 @@ void AgentClipboard::resetState()
         s.peerSerial = 0;
         s.owner = Owner::None;
         s.offered.clear();
+        s.listing.reset();
         s.offeredSecret = false;
         s.sharedHash.clear();
         s.peerTypes.clear();
+        dropFiles(s.fetch, true);
         s.fetch = Fetch();
+        retireStaged(s);
     }
     m_inbound.clear();
     m_outbound.clear();
@@ -296,6 +417,25 @@ void AgentClipboard::onMessage(quint16 type, const QCborMap &body)
     case ClipboardCancel:
         handleCancel(body);
         break;
+    case ClipboardFileList:
+        handleFileList(body);
+        break;
+    case ClipboardFileRead:
+        handleFileRead(body);
+        break;
+    case ClipboardFileEntries:
+    case ClipboardFileData: {
+        const auto id = Fields::uint(body, "id"_L1);
+        if (!id) {
+            badMessage(type);
+        } else if (ClipboardFiles::Receiver *receiver = receiverOf(*id)) {
+            if (type == ClipboardFileEntries)
+                receiver->handleEntries(*id, body);
+            else
+                receiver->handleData(*id, body);
+        }
+        break;
+    }
     default:
         break;
     }
@@ -426,24 +566,47 @@ void AgentClipboard::examineHost(Selection selection, bool force)
     if (data->hasFormat(ProxyMarker))
         return; // the guest's content, put there by us
 
+    // Files (section 6.8). The guest's files, staged here and taken over by
+    // a clipboard manager without our marker, are still the guest's.
+    const QStringList filePaths = localFilePaths(data);
+    if (isStagedEcho(filePaths)) {
+        qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: host holds the guest's files again, not offered";
+        return;
+    }
+    std::optional<ClipboardFiles::Listing> listing;
+    if (!filePaths.isEmpty() && mayOfferFiles(selection, policyFor(m_direction, m_sharePrimary))) {
+        QString why;
+        listing = ClipboardFiles::Listing::build(filePaths, m_filesLimit, &why);
+        if (!listing)
+            qCInfo(KEMU_DBUSDISPLAY).noquote() << "Clipboard: the copied files are not shared:" << why;
+    }
+
     const auto content = snapshot(data);
-    if (!content || content->isEmpty()) {
+    if ((!content || content->isEmpty()) && !listing) {
         qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: nothing to share on the host" << selectionName(selection);
         if (s.owner == Owner::Local)
             sendRelease(selection);
         return;
     }
+    const Content shared = content.value_or(Content());
 
     // Wayland announces the selection again on every focus change, and
     // clipboard managers such as Klipper take over what we put there
     // without our marker: content already on both sides is not offered again.
-    const QByteArray hash = contentHash(*content);
+    QByteArray hash = contentHash(shared);
+    if (listing) {
+        // Same files, same hash: what Wayland announces again is not new.
+        QCryptographicHash combined(QCryptographicHash::Sha256);
+        combined.addData(hash);
+        combined.addData(listing->digest());
+        hash = combined.result();
+    }
     if (!force && hash == s.sharedHash) {
         qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: host" << selectionName(selection) << "unchanged";
         return;
     }
     if (s.owner == Owner::Peer && !s.peerText.isNull()) {
-        for (const auto &[type, bytes] : *content) {
+        for (const auto &[type, bytes] : shared) {
             if (type == Mime::Utf8Text && bytes == s.peerText) {
                 qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: host holds the guest's content again, not offered";
                 return;
@@ -451,7 +614,7 @@ void AgentClipboard::examineHost(Selection selection, bool force)
         }
     }
 
-    const bool secret = isSecret(*content);
+    const bool secret = isSecret(shared);
     if (secret && m_filterPasswords) {
         // What the guest was offered before is no longer on the host
         // (section 6.2); the password itself stays here.
@@ -464,10 +627,11 @@ void AgentClipboard::examineHost(Selection selection, bool force)
     // New host content: whatever the guest offered before is outdated.
     if (s.fetch.active)
         cancelFetch(selection);
-    sendOffer(selection, *content, secret, hash);
+    retireStaged(s);
+    sendOffer(selection, shared, secret, hash, std::move(listing));
 }
 
-void AgentClipboard::sendOffer(Selection selection, const Content &content, bool secret, const QByteArray &hash)
+void AgentClipboard::sendOffer(Selection selection, const Content &content, bool secret, const QByteArray &hash, std::optional<ClipboardFiles::Listing> listing)
 {
     State &s = state(selection);
     ++s.localSerial;
@@ -475,6 +639,7 @@ void AgentClipboard::sendOffer(Selection selection, const Content &content, bool
     s.offered = content;
     s.offeredSecret = secret;
     s.sharedHash = hash;
+    s.listing = std::move(listing);
 
     QCborArray types;
     QCborMap sizes;
@@ -488,7 +653,10 @@ void AgentClipboard::sendOffer(Selection selection, const Content &content, bool
     body.insert("seen"_L1, toCbor(s.peerSerial));
     body.insert("types"_L1, types);
     body.insert("sizes"_L1, sizes);
-    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: offering host" << selectionName(selection) << s.localSerial << types.toVariantList();
+    if (s.listing)
+        body.insert("files"_L1, QCborMap{{u"count"_s, s.listing->count()}, {u"size"_s, toCbor(s.listing->size())}});
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: offering host" << selectionName(selection) << s.localSerial << types.toVariantList()
+                              << (s.listing ? u"and %1 files and folders"_s.arg(s.listing->count()) : QString());
     m_agent->send(ClipboardOffer, body);
 }
 
@@ -499,6 +667,7 @@ void AgentClipboard::sendRelease(Selection selection)
         m_agent->send(ClipboardRelease, QCborMap{{u"selection"_s, int(selection)}, {u"serial"_s, toCbor(s.localSerial)}});
     s.owner = Owner::None;
     s.offered.clear();
+    s.listing.reset();
     s.offeredSecret = false;
 }
 
@@ -533,6 +702,66 @@ void AgentClipboard::handleRequest(const QCborMap &body)
 
     m_outbound.append(Outbound{*id, it->second, 0});
     pumpOutbound();
+}
+
+// CLIPBOARD_FILE_LIST and CLIPBOARD_FILE_READ: one answer each, at once.
+void AgentClipboard::handleFileList(const QCborMap &body)
+{
+    const auto id = Fields::uint(body, "id"_L1);
+    const auto selection = selectionOf(body);
+    const auto serial = Fields::uint(body, "serial"_L1);
+    if (!id || !selection || !serial) {
+        badMessage(ClipboardFileList);
+        return;
+    }
+    const State &s = state(*selection);
+    QLatin1StringView reason;
+    if (!mayOfferFiles(*selection, policyFor(m_direction, m_sharePrimary)))
+        reason = Reason::Denied;
+    else if (s.owner != Owner::Local || *serial != s.localSerial)
+        reason = Reason::Stale;
+    else if (!s.listing)
+        reason = Reason::NotOffered;
+    if (!reason.isEmpty()) {
+        m_agent->send(ClipboardFail, QCborMap{{u"id"_s, toCbor(*id)}, {u"reason"_s, QString(reason)}});
+        return;
+    }
+    QCborMap answer = s.listing->entriesBody(Fields::uint(body, "start"_L1).value_or(0));
+    answer.insert("id"_L1, toCbor(*id));
+    m_agent->send(ClipboardFileEntries, answer);
+}
+
+void AgentClipboard::handleFileRead(const QCborMap &body)
+{
+    const auto id = Fields::uint(body, "id"_L1);
+    const auto selection = selectionOf(body);
+    const auto serial = Fields::uint(body, "serial"_L1);
+    const auto file = Fields::uint(body, "file"_L1);
+    const auto offset = Fields::uint(body, "offset"_L1);
+    const auto length = Fields::uint(body, "length"_L1);
+    if (!id || !selection || !serial || !file || !offset || !length) {
+        badMessage(ClipboardFileRead);
+        return;
+    }
+    const State &s = state(*selection);
+    QLatin1StringView reason;
+    QByteArray data;
+    if (!mayOfferFiles(*selection, policyFor(m_direction, m_sharePrimary))) {
+        reason = Reason::Denied;
+    } else if (s.owner != Owner::Local || *serial != s.localSerial) {
+        reason = Reason::Stale;
+    } else if (!s.listing) {
+        reason = Reason::NotOffered;
+    } else {
+        ClipboardFiles::Listing::ReadResult result = s.listing->read(*file, *offset, *length);
+        reason = result.failure;
+        data = std::move(result.data);
+    }
+    if (!reason.isEmpty()) {
+        m_agent->send(ClipboardFail, QCborMap{{u"id"_s, toCbor(*id)}, {u"reason"_s, QString(reason)}});
+        return;
+    }
+    m_agent->send(ClipboardFileData, QCborMap{{u"id"_s, toCbor(*id)}, {u"data"_s, data}});
 }
 
 void AgentClipboard::handleCancel(const QCborMap &body)
@@ -623,6 +852,7 @@ void AgentClipboard::handleOffer(const QCborMap &body)
     s.peerSerial = *serial;
     s.owner = Owner::Peer;
     s.offered.clear();
+    s.listing.reset();
     s.offeredSecret = false;
     s.peerTypes.clear();
     for (const QString &type : *types) {
@@ -630,7 +860,7 @@ void AgentClipboard::handleOffer(const QCborMap &body)
             s.peerTypes.append(type);
     }
     qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: the guest offers" << selectionName(*selection) << *serial << s.peerTypes;
-    startFetch(*selection, Fields::map(body, "sizes"_L1).value_or(QCborMap()));
+    startFetch(*selection, Fields::map(body, "sizes"_L1).value_or(QCborMap()), Fields::map(body, "files"_L1).value_or(QCborMap()));
 }
 
 void AgentClipboard::handleRelease(const QCborMap &body)
@@ -660,10 +890,11 @@ void AgentClipboard::removeProxy(Selection selection, std::optional<quint64> ser
     if (serial && current->data(ProxyMarker) != QByteArray::number(*serial))
         return;
     qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: guest content removed from the host" << selectionName(selection);
+    retireStaged(state(selection));
     m_clipboard->clear(toMode(selection));
 }
 
-void AgentClipboard::startFetch(Selection selection, const QCborMap &sizes)
+void AgentClipboard::startFetch(Selection selection, const QCborMap &sizes, const QCborMap &files)
 {
     cancelFetch(selection);
     State &s = state(selection);
@@ -687,7 +918,80 @@ void AgentClipboard::startFetch(Selection selection, const QCborMap &sizes)
             continue;
         fetch.queue.append(type);
     }
+
+    const auto fileCount = Fields::uint(files, "count"_L1);
+    const auto fileSize = Fields::uint(files, "size"_L1);
+    if (fileCount && fileSize && acceptsFiles(selection, policyFor(m_direction, m_sharePrimary)))
+        startFileFetch(selection, *fileCount, *fileSize);
+
     pumpFetch();
+    inboundDone(selection);
+}
+
+void AgentClipboard::startFileFetch(Selection selection, quint64 count, quint64 size)
+{
+    ClipboardFiles::Staging *stage = staging();
+    if (count == 0 || count > quint64(ClipboardFiles::MaxEntries) || size > m_filesLimit) {
+        qCInfo(KEMU_DBUSDISPLAY) << "Clipboard: the guest's files exceed the limits, not fetched";
+        return;
+    }
+    if (!stage->isUsable() || quint64(stage->freeBytes()) < size) {
+        qCWarning(KEMU_DBUSDISPLAY) << "Clipboard: no room for" << size << "bytes of files from the guest";
+        return;
+    }
+    const QString directory = stage->create();
+    if (directory.isEmpty())
+        return;
+
+    Fetch &fetch = state(selection).fetch;
+    const quint64 serial = fetch.serial;
+    ClipboardFiles::Receiver::Config config;
+    config.sizeLimit = m_filesLimit;
+    config.window = m_config.fileWindow;
+    config.timeoutMs = m_config.requestTimeoutMs;
+    fetch.files = std::make_unique<ClipboardFiles::Receiver>(
+        directory,
+        count,
+        size,
+        config,
+        [this, selection, serial](ClipboardFiles::Receiver::Kind kind, const QCborMap &fields) {
+            const quint64 id = ++m_nextRequestId;
+            QCborMap body = fields;
+            body.insert("id"_L1, toCbor(id));
+            body.insert("selection"_L1, int(selection));
+            body.insert("serial"_L1, toCbor(serial));
+            if (m_agent)
+                m_agent->send(kind == ClipboardFiles::Receiver::Kind::List ? ClipboardFileList : ClipboardFileRead, body);
+            return id;
+        },
+        [this](quint64 id) {
+            if (m_agent)
+                m_agent->send(ClipboardCancel, QCborMap{{u"id"_s, toCbor(id)}});
+        });
+    fetch.filesPending = true;
+    connect(fetch.files.get(), &ClipboardFiles::Receiver::finished, this, [this, selection] {
+        fileFetchEnded(selection, true);
+    });
+    connect(fetch.files.get(), &ClipboardFiles::Receiver::failed, this, [this, selection](const QString &why) {
+        qCInfo(KEMU_DBUSDISPLAY).noquote() << "Clipboard: the guest's files did not arrive:" << why;
+        fileFetchEnded(selection, false);
+    });
+    qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: fetching" << count << "files and folders," << size << "bytes";
+    fetch.files->start();
+}
+
+void AgentClipboard::fileFetchEnded(Selection selection, bool complete)
+{
+    Fetch &fetch = state(selection).fetch;
+    if (!fetch.files)
+        return;
+    if (complete) {
+        fetch.filePaths = fetch.files->topLevelPaths();
+        fetch.filesPending = false;
+    } else {
+        // All or nothing: the offer goes on without files.
+        dropFiles(fetch, true);
+    }
     inboundDone(selection);
 }
 
@@ -697,7 +1001,8 @@ void AgentClipboard::pumpFetch()
         return;
     for (const Selection selection : kSelections) {
         Fetch &fetch = state(selection).fetch;
-        while (fetch.active && !fetch.queue.isEmpty() && m_inbound.size() < m_config.maxOpenRequests) {
+        // File reads share the limit of open requests (section 6.8.2).
+        while (fetch.active && !fetch.queue.isEmpty() && m_inbound.size() < std::max(1, m_config.maxOpenRequests - openFileRequests())) {
             const QString type = fetch.queue.takeFirst();
             const quint64 id = ++m_nextRequestId;
             Inbound inbound{selection, type, {}, false, {}};
@@ -721,6 +1026,7 @@ void AgentClipboard::cancelFetch(Selection selection)
         if (m_agent)
             m_agent->send(ClipboardCancel, QCborMap{{u"id"_s, toCbor(id)}});
     }
+    dropFiles(state(selection).fetch, true);
     state(selection).fetch = Fetch();
     if (m_inbound.isEmpty())
         m_timeouts.stop();
@@ -786,6 +1092,10 @@ void AgentClipboard::handleFail(const QCborMap &body)
         badMessage(ClipboardFail);
         return;
     }
+    if (ClipboardFiles::Receiver *receiver = receiverOf(*id)) {
+        receiver->handleFail(*id, Fields::text(body, "reason"_L1).value_or(QString()));
+        return;
+    }
     const auto it = m_inbound.constFind(*id);
     if (it == m_inbound.constEnd())
         return;
@@ -801,7 +1111,7 @@ void AgentClipboard::inboundDone(Selection selection)
     if (m_inbound.isEmpty())
         m_timeouts.stop();
     const Fetch &fetch = state(selection).fetch;
-    if (!fetch.active || !fetch.queue.isEmpty())
+    if (!fetch.active || !fetch.queue.isEmpty() || fetch.filesPending)
         return;
     for (const Inbound &inbound : std::as_const(m_inbound)) {
         if (inbound.selection == selection)
@@ -813,8 +1123,19 @@ void AgentClipboard::inboundDone(Selection selection)
 void AgentClipboard::finishFetch(Selection selection)
 {
     State &s = state(selection);
-    const Fetch fetch = std::exchange(s.fetch, Fetch());
-    if (fetch.done.isEmpty()) {
+    Fetch fetch = std::exchange(s.fetch, Fetch());
+    // The receiver may have sent the signal that brought us here.
+    QString stagedDirectory;
+    if (ClipboardFiles::Receiver *receiver = fetch.files.release()) {
+        stagedDirectory = receiver->directory();
+        receiver->deleteLater();
+    }
+    // Whatever keeps the offer off the host clipboard takes its files along.
+    auto discardStaged = qScopeGuard([this, &stagedDirectory] {
+        if (m_staging)
+            m_staging->discard(stagedDirectory);
+    });
+    if (fetch.done.isEmpty() && fetch.filePaths.isEmpty()) {
         qCDebug(KEMU_DBUSDISPLAY) << "Clipboard: nothing of the guest's offer arrived";
         return;
     }
@@ -854,7 +1175,21 @@ void AgentClipboard::finishFetch(Selection selection)
     }
     if (!text.isNull() && !data->hasFormat(Mime::PlainText))
         data->setText(QString::fromUtf8(text));
+    if (!fetch.filePaths.isEmpty()) {
+        // The staged copies, ahead of whatever other URIs the guest sent.
+        const QByteArray uris = ClipboardFiles::uriList(fetch.filePaths);
+        data->setData(Mime::UriList, uris + data->data(Mime::UriList));
+        data->setData(GnomeCopiedFiles, "copy\n" + uris.trimmed().replace("\r\n", "\n"));
+    }
     data->setData(ProxyMarker, QByteArray::number(fetch.serial));
+    retireStaged(s);
+    discardStaged.dismiss();
+    if (fetch.filePaths.isEmpty()) {
+        if (m_staging)
+            m_staging->discard(stagedDirectory);
+    } else {
+        s.stagedDirectory = stagedDirectory;
+    }
 
     s.peerText = text;
     s.sharedHash = contentHash(fetch.done);
@@ -867,6 +1202,10 @@ bool AgentClipboard::hostHoldsNewContent(Selection selection) const
     const QMimeData *data = m_clipboard->mimeData(toMode(selection));
     if (!data || data->formats().isEmpty() || data->hasFormat(ProxyMarker))
         return false;
+    // Files alone are new content as well, unless they are the guest's own.
+    const QStringList filePaths = localFilePaths(data);
+    if (!filePaths.isEmpty())
+        return !isStagedEcho(filePaths);
     const auto content = snapshot(data);
     return content && !content->isEmpty() && contentHash(*content) != state(selection).sharedHash;
 }

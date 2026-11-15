@@ -58,6 +58,10 @@ enum MessageType : quint16 {
     ClipboardData = 0x0103,
     ClipboardFail = 0x0104,
     ClipboardCancel = 0x0105,
+    ClipboardFileList = 0x0110,
+    ClipboardFileEntries = 0x0111,
+    ClipboardFileRead = 0x0112,
+    ClipboardFileData = 0x0113,
 
     DisplayLayout = 0x0200,
     DisplayLayoutQuery = 0x0201,
@@ -69,6 +73,7 @@ namespace Capability
 {
 inline constexpr auto Clipboard = "clipboard"_L1;
 inline constexpr auto ClipboardPrimary = "clipboard.primary"_L1;
+inline constexpr auto ClipboardFiles = "clipboard.files"_L1;
 inline constexpr auto DisplayLayout = "display.layout"_L1;
 }
 
@@ -88,6 +93,7 @@ inline constexpr auto TooLarge = "too-large"_L1;
 inline constexpr auto Unavailable = "unavailable"_L1;
 inline constexpr auto Denied = "denied"_L1;
 inline constexpr auto Busy = "busy"_L1;
+inline constexpr auto Changed = "changed"_L1;
 
 inline constexpr auto UnsupportedVersion = "unsupported-version"_L1;
 inline constexpr auto BadMessage = "bad-message"_L1;

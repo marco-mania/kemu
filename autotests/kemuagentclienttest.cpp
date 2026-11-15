@@ -105,13 +105,17 @@ private Q_SLOTS:
         QCOMPARE(Fields::bytes(welcome.body, "nonce"_L1), std::optional(ScriptedAgentDefaults::Nonce));
         QCOMPARE(Fields::uint(welcome.body, "version"_L1), std::optional<quint64>(1));
         QCOMPARE(Fields::text(Fields::map(welcome.body, "host"_L1).value(), "name"_L1), std::optional(u"KEMU"_s));
-        QCOMPARE(Fields::textList(welcome.body, "capabilities"_L1), std::optional(QStringList{u"clipboard"_s, u"clipboard.primary"_s, u"display.layout"_s}));
+        QCOMPARE(Fields::textList(welcome.body, "capabilities"_L1),
+                 std::optional(QStringList{u"clipboard"_s, u"clipboard.primary"_s, u"clipboard.files"_s, u"display.layout"_s}));
         QCOMPARE(Fields::uint(Fields::map(welcome.body, "limits"_L1).value(), "max_transfer"_L1), std::optional<quint64>(KemuAgentClient::kMaxTransfer));
 
         const QCborMap clipboard = Fields::map(pair.agent->frames.at(1).body, "clipboard"_L1).value();
         QCOMPARE(Fields::boolean(clipboard, "to_host"_L1), std::optional(true));
         QCOMPARE(Fields::boolean(clipboard, "to_guest"_L1), std::optional(false));
         QCOMPARE(Fields::boolean(clipboard, "primary"_L1), std::optional(true));
+        // Files are off unless the viewer switches them on.
+        QCOMPARE(Fields::boolean(clipboard, "files"_L1), std::optional(false));
+        QCOMPARE(Fields::uint(clipboard, "files_limit"_L1), std::optional<quint64>(0));
 
         QCOMPARE(pair.client->status(), KemuAgentClient::Status::Connected);
         QVERIFY(pair.client->hasSession());
