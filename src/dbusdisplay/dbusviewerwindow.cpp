@@ -627,7 +627,7 @@ void DbusViewerWindow::createStatusBar()
         m_indGuestAgent->setIconNames(u"user-online"_s, u"user-offline"_s);
     else
         m_indGuestAgent->setIconNames(qemuLogo, qemuLogo);
-    m_indGuestAgent->setAccessibleName(i18nc("@info:whatsthis", "Guest agent"));
+    m_indGuestAgent->setAccessibleName(i18nc("@info:whatsthis", "QEMU guest agent"));
     m_indGuestAgent->setVisible(false); // until setGuestAgentState() says otherwise
     connect(m_indGuestAgent, &StatusIndicator::activated, this, [this] {
         // The address is what one usually needs from here, e.g. for ssh.
@@ -641,7 +641,7 @@ void DbusViewerWindow::createStatusBar()
     // KEMU's own icon for its own agent, beside the QEMU logo of qemu-ga.
     const QString kemuIcon = QIcon::hasThemeIcon(u"org.kde.kemu"_s) ? u"org.kde.kemu"_s : u"preferences-desktop-display"_s;
     m_indKemuAgent->setIconNames(kemuIcon, kemuIcon);
-    m_indKemuAgent->setAccessibleName(i18nc("@info:whatsthis", "kemu-agent"));
+    m_indKemuAgent->setAccessibleName(i18nc("@info:whatsthis", "KEMU agent"));
     m_indKemuAgent->setVisible(false); // until setKemuAgent() brings a channel
 
     m_indClipboard = new StatusIndicator(this);
@@ -1067,22 +1067,22 @@ void DbusViewerWindow::updateKemuAgentIndicator()
     case KemuAgentClient::Status::Waiting:
         m_indKemuAgent->setStatus(StatusIndicator::Inactive,
                                   i18nc("@info:tooltip",
-                                        "kemu-agent: not running in the guest\n"
-                                        "Install it in Linux guests for clipboard sharing and exact pointer placement on several monitors."));
+                                        "KEMU agent: not running in the guest\n"
+                                        "Install kemu-agent in Linux guests for clipboard sharing and exact pointer placement on several monitors."));
         return;
     case KemuAgentClient::Status::Connecting:
-        m_indKemuAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "kemu-agent: connecting…"));
+        m_indKemuAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "KEMU agent: connecting…"));
         return;
     case KemuAgentClient::Status::Unresponsive:
-        m_indKemuAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "kemu-agent: not responding"), u"dialog-warning"_s);
+        m_indKemuAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "KEMU agent: not responding"), u"dialog-warning"_s);
         return;
     case KemuAgentClient::Status::Connected:
         break;
     }
 
     const KemuAgentClient::AgentInfo info = m_kemuAgent->agentInfo();
-    QStringList lines{info.version.isEmpty() ? i18nc("@info:tooltip", "kemu-agent connected")
-                                             : i18nc("@info:tooltip", "kemu-agent %1 connected", info.version)};
+    QStringList lines{info.version.isEmpty() ? i18nc("@info:tooltip", "KEMU agent connected")
+                                             : i18nc("@info:tooltip", "KEMU agent %1 connected", info.version)};
 
     QStringList session;
     if (!info.sessionType.isEmpty())
@@ -1445,17 +1445,17 @@ void DbusViewerWindow::setGuestAgentState(const GuestAgentView &view)
     case GuestAgentView::State::Absent:
         break;
     case GuestAgentView::State::Waiting:
-        m_indGuestAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Guest agent: not running in the guest"));
+        m_indGuestAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "QEMU guest agent: not running in the guest"));
         break;
     case GuestAgentView::State::Connecting:
-        m_indGuestAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Guest agent: connecting…"));
+        m_indGuestAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "QEMU guest agent: connecting…"));
         break;
     case GuestAgentView::State::Unresponsive:
-        m_indGuestAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "Guest agent: not responding"), u"dialog-warning"_s);
+        m_indGuestAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "QEMU guest agent: not responding"), u"dialog-warning"_s);
         break;
     case GuestAgentView::State::Connected: {
-        QStringList lines{view.version.isEmpty() ? i18nc("@info:tooltip", "Guest agent connected")
-                                                 : i18nc("@info:tooltip", "Guest agent %1 connected", view.version)};
+        QStringList lines{view.version.isEmpty() ? i18nc("@info:tooltip", "QEMU guest agent connected")
+                                                 : i18nc("@info:tooltip", "QEMU guest agent %1 connected", view.version)};
         if (!view.hostName.isEmpty())
             lines << i18nc("@info:tooltip", "Host name: %1", view.hostName);
         if (!view.osName.isEmpty())
