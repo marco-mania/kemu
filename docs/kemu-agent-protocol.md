@@ -663,12 +663,12 @@ WantedBy=graphical-session.target
 
 | Environment | Backend | Note |
 | --- | --- | --- |
-| KDE Plasma, Wayland | ext-data-control through KSystemClipboard | KWin offers data-control to clients outside a sandbox. |
+| KDE Plasma, Wayland | ext-data-control or wlr-data-control through KSystemClipboard | KWin offers data-control to clients outside a sandbox. KGuiAddons speaks ext-data-control from 6.14 on and prefers it; with an older KGuiAddons or a KWin that offers only the wlr protocol (Debian 13) the agent uses wlr-data-control. |
 | wlroots compositors (Sway, Hyprland, labwc, Wayfire) | ext-data-control or wlr-data-control through KSystemClipboard | KGuiAddons falls back to the wlr protocol. |
 | GNOME, Wayland | X11 through Xwayland (`QT_QPA_PLATFORM=xcb`) | Mutter offers no data-control. It bridges X11 and Wayland selections without focus; spice-vdagent relies on the same. |
 | X11 desktops (Xfce, Cinnamon, MATE, Plasma X11) | `QClipboard` on xcb | XFixes reports selection changes without focus. |
 
-The agent picks the backend at start, before Qt chooses a platform. It reports its choice in HELLO `backends.clipboard`.
+The agent picks the backend at start, before Qt chooses a platform, from the protocols the compositor offers and the KGuiAddons version it was built with. A `QT_QPA_PLATFORM=wayland` set for the session is overridden where it would leave the agent without a clipboard. The agent reports its choice in HELLO `backends.clipboard`.
 
 ### 11.4 Heads
 
