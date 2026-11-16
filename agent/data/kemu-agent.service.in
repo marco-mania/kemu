@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[Unit]
+Description=KEMU guest session agent
+PartOf=graphical-session.target
+After=graphical-session.target
+ConditionPathExists=/dev/virtio-ports/org.kde.kemu.agent.0
+
+[Service]
+ExecStart=@KDE_INSTALL_FULL_BINDIR@/kemu-agent
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

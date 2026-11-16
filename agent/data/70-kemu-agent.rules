@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Marco Nelles <marco@maniatek.de>
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The KEMU agent port belongs to the user of the active session; logind moves
+# the ACL along when the session changes. Must sort before 73-seat-late.rules.
+SUBSYSTEM=="virtio-ports", ATTR{name}=="org.kde.kemu.agent.0", TAG+="uaccess"

@@ -2,7 +2,9 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-build/
+build*/
+__pycache__
+agent/__pycache__
 .cache
 .kdev4
 *.kdev4

@@ -21,6 +21,10 @@ ctest --test-dir build -N
 ctest --test-dir build -R '^dbusdisplaytest$' --output-on-failure
 ```
 
+The guest agent (`agent/`) is built and tested only with
+`-DKEMU_BUILD_AGENT=ON`; its tests are named `agent…test`. See `agent/README.md`
+for the end-to-end tests, which need a guest-like environment.
+
 Use `ctest --test-dir build -V` for verbose output. To build only the D-Bus
 viewer test, run `cmake --build build --target dbusdisplaytest`.
 The normal KEMU development dependencies and Qt6 Test are required.

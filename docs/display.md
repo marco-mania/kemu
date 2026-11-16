@@ -57,8 +57,8 @@ mode, or while it captures the pointer.
 
 ## kemu-agent
 
-kemu-agent is KEMU's guest agent for Linux, maintained as a separate project.
-It runs in the user's graphical session and
+kemu-agent is KEMU's guest agent for Linux. Its source is in the `agent/`
+directory of this repository. It runs in the user's graphical session and
 
 - shares the clipboard, and optionally the primary selection, in every format
   an application offers: text, HTML, images and application formats;

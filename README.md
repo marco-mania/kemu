@@ -169,11 +169,28 @@ Pointer capture relies on a private Qt API to access the viewer window's
 Wayland surface. KEMU therefore needs to be rebuilt after upgrading to a new
 Qt minor version.
 
+#### The guest agent
+
+The source of kemu-agent, the agent for Linux guests, is in the `agent/`
+directory. It is not part of the KEMU installation: it runs inside the
+virtual machine and is built there, on its own and without KDE libraries:
+
+```sh
+cmake -S agent -B build-agent -DCMAKE_INSTALL_PREFIX=/usr
+cmake --build build-agent
+sudo cmake --install build-agent
+```
+
+See [agent/README.md](agent/README.md) for its requirements and what it
+installs. Configuring KEMU with `-DKEMU_BUILD_AGENT=ON` builds the agent in
+the KEMU build tree as well, for its tests; it is not installed then.
+
 ### Automated tests
 
 The source tree includes regression tests for VM metadata, storage, templates
-and the D-Bus viewer. See [docs/testing.md](docs/testing.md) for build
-instructions and coverage details.
+and the D-Bus viewer, and, with `-DKEMU_BUILD_AGENT=ON`, for the guest agent.
+See [docs/testing.md](docs/testing.md) for build instructions and coverage
+details.
 
 ## Using KEMU
 

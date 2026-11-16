@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=KEMU Guest Agent
+Comment=Shares the clipboard with the KEMU host and reports the display layout
+Exec=@KDE_INSTALL_FULL_BINDIR@/kemu-agent
+NoDisplay=true
+X-KDE-StartupNotify=false
+# Sessions with systemd user units start kemu-agent.service instead.
+X-systemd-skip=true

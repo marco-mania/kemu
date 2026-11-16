@@ -11,6 +11,9 @@ endif()
 project(kemu VERSION 0.8.0)
 
 option(KEMU_SELF_CONTAINED "Application ships its own external tools" OFF)
+option(KEMU_BUILD_AGENT
+       "Build kemu-agent (agent/) and its tests; it is installed in the guest, not with KEMU"
+       OFF)
 
 add_compile_definitions(APP_VERSION=\"${PROJECT_VERSION}\" APP_NAME=\"KEMU\"
                         TRANSLATION_DOMAIN=\"kemu\")
@@ -102,6 +105,10 @@ pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
 find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
 
 add_subdirectory(src)
+
+if(KEMU_BUILD_AGENT)
+  add_subdirectory(agent)
+endif()
 
 if(BUILD_TESTING)
   find_package(Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED COMPONENTS Test)
