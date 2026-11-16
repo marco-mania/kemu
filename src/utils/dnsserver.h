@@ -68,7 +68,7 @@ private:
     void answerArp(const QByteArray &frame);
     void handleQuery(const QByteArray &frame);
     void sendResponse(const QByteArray &clientMac, quint32 clientIp, quint16 clientPort, const QByteArray &dnsPayload);
-    void forwardQuery(const QByteArray &clientMac, quint32 clientIp, quint16 clientPort, const QByteArray &dnsPayload, int questionEnd);
+    void forwardQuery(const QByteArray &clientMac, quint32 clientIp, quint16 clientPort, const QByteArray &dnsPayload, qsizetype questionEnd);
     void onUpstreamReadyRead();
 
     /// A record for hostname if it has a valid lease, 0 otherwise.

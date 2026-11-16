@@ -59,17 +59,17 @@ void put16(QByteArray &buf, quint16 value)
     buf.append(b, 2);
 }
 
-quint32 get32(const char *p)
+quint32 get32(QByteArrayView data, qsizetype offset)
 {
     quint32 value;
-    memcpy(&value, p, 4);
+    memcpy(&value, data.data() + offset, 4);
     return qFromBigEndian(value);
 }
 
-quint16 get16(const char *p)
+quint16 get16(QByteArrayView data, qsizetype offset)
 {
     quint16 value;
-    memcpy(&value, p, 2);
+    memcpy(&value, data.data() + offset, 2);
     return qFromBigEndian(value);
 }
 
@@ -117,13 +117,13 @@ void DhcpServer::answerArp(const QByteArray &frame)
     // this server directly for unicast lease renewals.
     if (!m_ownAddress)
         return;
-    if (frame.size() < 14 + 28 || get16(frame.constData() + 12) != kEtherTypeArp)
+    if (frame.size() < 14 + 28 || get16(frame, 12) != kEtherTypeArp)
         return;
 
-    const char *arp = frame.constData() + 14;
-    if (get16(arp + 0) != 1 || get16(arp + 2) != kEtherTypeIpv4 || static_cast<quint8>(arp[4]) != 6 || static_cast<quint8>(arp[5]) != 4)
+    const QByteArrayView arp = QByteArrayView(frame).sliced(14);
+    if (get16(arp, 0) != 1 || get16(arp, 2) != kEtherTypeIpv4 || static_cast<quint8>(arp[4]) != 6 || static_cast<quint8>(arp[5]) != 4)
         return;
-    if (get16(arp + 6) != 1 || get32(arp + 24) != m_serverIp) // request for us?
+    if (get16(arp, 6) != 1 || get32(arp, 24) != m_serverIp)
         return;
 
     qCDebug(KEMU) << "DhcpServer: answering ARP for" << ipString(m_serverIp) << "to" << QByteArray(frame.constData() + 6, 6).toHex(':');
@@ -139,7 +139,7 @@ void DhcpServer::answerArp(const QByteArray &frame)
     reply.append(m_serverMac);
     put32(reply, m_serverIp);
     reply.append(frame.constData() + 6, 6);
-    reply.append(arp + 14, 4); // requester IP
+    reply.append(arp.sliced(14, 4)); // requester IP
 
     Q_EMIT frameReady(reply);
 }
@@ -148,62 +148,64 @@ void DhcpServer::receiveFrame(const QByteArray &frame)
 {
     answerArp(frame);
 
+    const QByteArrayView view(frame);
+
     // Ethernet + IPv4 + UDP/67 filter.
-    if (frame.size() < 14 + 20 + 8 + 240)
+    if (view.size() < 14 + 20 + 8 + 240)
         return;
-    if (get16(frame.constData() + 12) != kEtherTypeIpv4)
+    if (get16(view, 12) != kEtherTypeIpv4)
         return;
 
-    const char *ip = frame.constData() + 14;
+    const QByteArrayView ip = view.sliced(14);
     const int ihl = (ip[0] & 0x0f) * 4;
-    if (ihl < 20 || frame.size() < 14 + ihl + 8 + 240)
+    if (ihl < 20 || view.size() < 14 + ihl + 8 + 240)
         return;
     if (static_cast<quint8>(ip[9]) != kIpProtoUdp)
         return;
 
-    const char *udp = ip + ihl;
-    if (get16(udp + 0) != kDhcpClientPort || get16(udp + 2) != kDhcpServerPort)
+    const QByteArrayView udp = ip.sliced(ihl);
+    if (get16(udp, 0) != kDhcpClientPort || get16(udp, 2) != kDhcpServerPort)
         return;
 
-    const char *bootp = udp + 8;
+    const QByteArrayView bootp = udp.sliced(8);
     if (static_cast<quint8>(bootp[0]) != 1) // BOOTREQUEST
         return;
     if (static_cast<quint8>(bootp[1]) != 1 || static_cast<quint8>(bootp[2]) != 6) // Ethernet, 6-byte MAC
         return;
-    if (get32(bootp + 236) != kBootpMagicCookie)
+    if (get32(bootp, 236) != kBootpMagicCookie)
         return;
 
-    const quint32 xid = get32(bootp + 4);
-    const quint16 flags = get16(bootp + 10);
-    const quint32 ciaddr = get32(bootp + 12);
-    const QByteArray clientMac = QByteArray(bootp + 28, 6);
+    const quint32 xid = get32(bootp, 4);
+    const quint16 flags = get16(bootp, 10);
+    const quint32 ciaddr = get32(bootp, 12);
+    const QByteArray clientMac = bootp.sliced(28, 6).toByteArray();
 
     // No relay support: chaddr must be the sender, or one guest could
     // drain the pool with invented client addresses.
-    if (clientMac != frame.mid(6, 6))
+    if (clientMac != view.sliced(6, 6))
         return;
 
     // Options.
     quint8 msgType = 0;
     quint32 requestedIp = 0;
-    const char *opt = bootp + 240;
-    const char *end = frame.constData() + frame.size();
-    while (opt < end) {
-        const quint8 code = static_cast<quint8>(*opt++);
+    const QByteArrayView options = bootp.sliced(240);
+    qsizetype pos = 0;
+    while (pos < options.size()) {
+        const quint8 code = static_cast<quint8>(options[pos++]);
         if (code == 0)
             continue; // pad
         if (code == 255)
             break;
-        if (opt >= end)
+        if (pos >= options.size())
             break;
-        const quint8 len = static_cast<quint8>(*opt++);
-        if (opt + len > end)
+        const quint8 len = static_cast<quint8>(options[pos++]);
+        if (pos + len > options.size())
             break;
         if (code == 53 && len == 1)
-            msgType = static_cast<quint8>(*opt);
+            msgType = static_cast<quint8>(options[pos]);
         else if (code == 50 && len == 4)
-            requestedIp = get32(opt);
-        opt += len;
+            requestedIp = get32(options, pos);
+        pos += len;
     }
 
     expireLeases();

@@ -71,42 +71,42 @@ void put16(QByteArray &buf, quint16 value)
     buf.append(b, 2);
 }
 
-quint32 get32(const char *p)
+quint32 get32(QByteArrayView data, qsizetype offset = 0)
 {
     quint32 value;
-    memcpy(&value, p, 4);
+    memcpy(&value, data.data() + offset, 4);
     return qFromBigEndian(value);
 }
 
-quint16 get16(const char *p)
+quint16 get16(QByteArrayView data, qsizetype offset = 0)
 {
     quint16 value;
-    memcpy(&value, p, 2);
+    memcpy(&value, data.data() + offset, 2);
     return qFromBigEndian(value);
 }
 
 /// Parses a possibly compressed DNS name at offset into a dotted lowercase
 /// string. endOffset receives the position right after the name's first
 /// (uncompressed) occurrence, i.e. where QTYPE begins in a question.
-bool parseDnsName(const char *data, int size, int offset, QString *name, int *endOffset)
+bool parseDnsName(QByteArrayView data, qsizetype offset, QString *name, qsizetype *endOffset)
 {
     QStringList labels;
-    int pos = offset;
+    qsizetype pos = offset;
     int jumps = 0;
     bool jumped = false;
 
     while (true) {
-        if (pos >= size)
+        if (pos >= data.size())
             return false;
         const quint8 len = static_cast<quint8>(data[pos]);
         if ((len & 0xc0) == 0xc0) { // compression pointer
-            if (pos + 1 >= size)
+            if (pos + 1 >= data.size())
                 return false;
-            const int target = ((len & 0x3f) << 8) | static_cast<quint8>(data[pos + 1]);
+            const qsizetype target = ((len & 0x3f) << 8) | static_cast<quint8>(data[pos + 1]);
             if (!jumped)
                 *endOffset = pos + 2;
             jumped = true;
-            if (++jumps > 16 || target >= size)
+            if (++jumps > 16 || target >= data.size())
                 return false;
             pos = target;
             continue;
@@ -119,9 +119,9 @@ bool parseDnsName(const char *data, int size, int offset, QString *name, int *en
                 *endOffset = pos;
             break;
         }
-        if (pos + len > size)
+        if (pos + len > data.size())
             return false;
-        labels << QString::fromLatin1(data + pos, len).toLower();
+        labels << QString::fromLatin1(data.sliced(pos, len)).toLower();
         pos += len;
     }
 
@@ -129,13 +129,12 @@ bool parseDnsName(const char *data, int size, int offset, QString *name, int *en
     return true;
 }
 
-/// Offset right after the (possibly compressed) name at offset, -1 if malformed.
-int skipDnsName(const char *data, int size, int offset)
+qsizetype skipDnsName(QByteArrayView data, qsizetype offset)
 {
-    while (offset < size) {
+    while (offset < data.size()) {
         const quint8 len = static_cast<quint8>(data[offset]);
         if ((len & 0xc0) == 0xc0)
-            return offset + 2 <= size ? offset + 2 : -1;
+            return offset + 2 <= data.size() ? offset + 2 : -1;
         if (len & 0xc0)
             return -1;
         offset += 1 + len;
@@ -145,30 +144,28 @@ int skipDnsName(const char *data, int size, int offset)
     return -1;
 }
 
-/// Lowers the advertised EDNS UDP payload size of a query to kMaxEdnsPayload.
 void clampEdnsPayloadSize(QByteArray &msg)
 {
     if (msg.size() < 12)
         return;
-    char *data = msg.data();
-    const int size = msg.size();
-    const int answerRecords = get16(data + 6) + get16(data + 8);
-    const int records = answerRecords + get16(data + 10);
+    const QByteArrayView view(msg);
+    const int answerRecords = get16(view, 6) + get16(view, 8);
+    const int records = answerRecords + get16(view, 10);
 
-    int offset = 12;
-    for (int i = 0; i < get16(data + 4); ++i) {
-        offset = skipDnsName(data, size, offset);
+    qsizetype offset = 12;
+    for (int i = 0; i < get16(view, 4); ++i) {
+        offset = skipDnsName(view, offset);
         if (offset < 0)
             return;
         offset += 4;
     }
     for (int i = 0; i < records; ++i) {
-        offset = skipDnsName(data, size, offset);
-        if (offset < 0 || offset + 10 > size)
+        offset = skipDnsName(view, offset);
+        if (offset < 0 || offset + 10 > view.size())
             return;
-        if (i >= answerRecords && get16(data + offset) == kDnsTypeOpt && get16(data + offset + 2) > kMaxEdnsPayload)
-            qToBigEndian(kMaxEdnsPayload, data + offset + 2);
-        offset += 10 + get16(data + offset + 8);
+        if (i >= answerRecords && get16(view, offset) == kDnsTypeOpt && get16(view, offset + 2) > kMaxEdnsPayload)
+            qToBigEndian(kMaxEdnsPayload, msg.data() + offset + 2);
+        offset += 10 + get16(view, offset + 8);
     }
 }
 
@@ -220,8 +217,8 @@ void DnsServer::configure(quint32 serverIp, const QString &zone, bool forwardUps
         connect(m_upstream, &QUdpSocket::readyRead, this, &DnsServer::onUpstreamReadyRead);
     }
 
-    qCDebug(KEMU) << "DnsServer: configured, address" << QHostAddress(m_serverIp).toString() << "zone" << m_zone
-                  << "upstream" << (m_upstreamIp != 0 ? QHostAddress(m_upstreamIp).toString() : u"none"_s);
+    qCDebug(KEMU) << "DnsServer: configured, address" << QHostAddress(m_serverIp).toString() << "zone" << m_zone << "upstream"
+                  << (m_upstreamIp != 0 ? QHostAddress(m_upstreamIp).toString() : u"none"_s);
 }
 
 void DnsServer::setDhcpServer(DhcpServer *dhcp)
@@ -269,17 +266,18 @@ QString DnsServer::hostForAddress(quint32 ip) const
 
 void DnsServer::answerArp(const QByteArray &frame)
 {
-    if (frame.size() < 14 + 28 || get16(frame.constData() + 12) != kEtherTypeArp)
+    const QByteArrayView view(frame);
+    if (view.size() < 14 + 28 || get16(view, 12) != kEtherTypeArp)
         return;
 
-    const char *arp = frame.constData() + 14;
-    if (get16(arp + 0) != 1 || get16(arp + 2) != kEtherTypeIpv4 || static_cast<quint8>(arp[4]) != 6 || static_cast<quint8>(arp[5]) != 4)
+    const QByteArrayView arp = view.sliced(14);
+    if (get16(arp, 0) != 1 || get16(arp, 2) != kEtherTypeIpv4 || static_cast<quint8>(arp[4]) != 6 || static_cast<quint8>(arp[5]) != 4)
         return;
-    if (get16(arp + 6) != 1 || get32(arp + 24) != m_serverIp) // request for us?
+    if (get16(arp, 6) != 1 || get32(arp, 24) != m_serverIp) // request for us?
         return;
 
     QByteArray reply;
-    reply.append(frame.constData() + 6, 6); // dst = requester MAC
+    reply.append(view.sliced(6, 6)); // dst = requester MAC
     reply.append(m_serverMac);
     put16(reply, kEtherTypeArp);
     put16(reply, 1); // Ethernet
@@ -288,8 +286,8 @@ void DnsServer::answerArp(const QByteArray &frame)
     put16(reply, 2); // reply
     reply.append(m_serverMac);
     put32(reply, m_serverIp);
-    reply.append(frame.constData() + 6, 6);
-    reply.append(arp + 14, 4); // requester IP
+    reply.append(view.sliced(6, 6));
+    reply.append(arp.sliced(14, 4)); // requester IP
 
     Q_EMIT frameReady(reply);
 }
@@ -301,23 +299,24 @@ void DnsServer::receiveFrame(const QByteArray &frame)
     if (m_serverIp == 0)
         return;
 
+    const QByteArrayView view(frame);
     // Ethernet + IPv4 + UDP/53 addressed to us.
-    if (frame.size() < 14 + 20 + 8 + 12)
+    if (view.size() < 14 + 20 + 8 + 12)
         return;
-    if (get16(frame.constData() + 12) != kEtherTypeIpv4)
+    if (get16(view, 12) != kEtherTypeIpv4)
         return;
 
-    const char *ip = frame.constData() + 14;
+    const QByteArrayView ip = view.sliced(14);
     const int ihl = (ip[0] & 0x0f) * 4;
-    if (ihl < 20 || frame.size() < 14 + ihl + 8 + 12)
+    if (ihl < 20 || view.size() < 14 + ihl + 8 + 12)
         return;
     if (static_cast<quint8>(ip[9]) != kIpProtoUdp)
         return;
-    if (get32(ip + 16) != m_serverIp)
+    if (get32(ip, 16) != m_serverIp)
         return;
 
-    const char *udp = ip + ihl;
-    if (get16(udp + 2) != kDnsPort)
+    const QByteArrayView udp = ip.sliced(ihl);
+    if (get16(udp, 2) != kDnsPort)
         return;
 
     handleQuery(frame);
@@ -325,34 +324,34 @@ void DnsServer::receiveFrame(const QByteArray &frame)
 
 void DnsServer::handleQuery(const QByteArray &frame)
 {
-    const char *ip = frame.constData() + 14;
+    const QByteArrayView view(frame);
+    const QByteArrayView ip = view.sliced(14);
     const int ihl = (ip[0] & 0x0f) * 4;
-    const char *udp = ip + ihl;
-    const char *dns = udp + 8;
-    const int dnsSize = frame.size() - 14 - ihl - 8;
+    const QByteArrayView udp = ip.sliced(ihl);
+    const QByteArrayView dns = udp.sliced(8);
 
-    const QByteArray clientMac = frame.mid(6, 6);
-    const quint32 clientIp = get32(ip + 12);
-    const quint16 clientPort = get16(udp + 0);
+    const QByteArray clientMac = view.sliced(6, 6).toByteArray();
+    const quint32 clientIp = get32(ip, 12);
+    const quint16 clientPort = get16(udp, 0);
 
-    const quint16 flags = get16(dns + 2);
+    const quint16 flags = get16(dns, 2);
     if (flags & 0x8000) // not a query
         return;
-    if (get16(dns + 4) != 1) // exactly one question
+    if (get16(dns, 4) != 1) // exactly one question
         return;
 
     QString qname;
-    int questionEnd = 0;
-    if (!parseDnsName(dns, dnsSize, 12, &qname, &questionEnd) || questionEnd + 4 > dnsSize)
+    qsizetype questionEnd = 0;
+    if (!parseDnsName(dns, 12, &qname, &questionEnd) || questionEnd + 4 > dns.size())
         return;
-    const quint16 qtype = get16(dns + questionEnd);
-    const quint16 qclass = get16(dns + questionEnd + 2);
+    const quint16 qtype = get16(dns, questionEnd);
+    const quint16 qclass = get16(dns, questionEnd + 2);
 
     qCDebug(KEMU) << "DnsServer: query" << qname << "type" << qtype << "from" << QHostAddress(clientIp).toString();
 
     // Response scaffold: header + echoed question section.
     const auto buildResponse = [&](quint16 rcode, bool authoritative, const QByteArray &answers, int answerCount) {
-        QByteArray response = QByteArray(dns, questionEnd + 4);
+        QByteArray response = dns.first(questionEnd + 4).toByteArray();
         quint16 rflags = 0x8000 | (flags & 0x0100); // QR, preserve RD
         if (authoritative)
             rflags |= 0x0400;
@@ -400,19 +399,19 @@ void DnsServer::handleQuery(const QByteArray &frame)
                 }
             }
         }
-        forwardQuery(clientMac, clientIp, clientPort, QByteArray(dns, dnsSize), questionEnd);
+        forwardQuery(clientMac, clientIp, clientPort, dns.toByteArray(), questionEnd);
         return;
     }
 
     if (qclass != kDnsClassIn && qclass != kDnsClassAny) {
-        forwardQuery(clientMac, clientIp, clientPort, QByteArray(dns, dnsSize), questionEnd);
+        forwardQuery(clientMac, clientIp, clientPort, dns.toByteArray(), questionEnd);
         return;
     }
 
     // Local zone: "<label>.<zone>".
     const bool inZone = qname == m_zone || qname.endsWith(u'.' + m_zone);
     if (!inZone) {
-        forwardQuery(clientMac, clientIp, clientPort, QByteArray(dns, dnsSize), questionEnd);
+        forwardQuery(clientMac, clientIp, clientPort, dns.toByteArray(), questionEnd);
         return;
     }
 
@@ -459,16 +458,16 @@ void DnsServer::handleQuery(const QByteArray &frame)
     buildResponse(0, true, answers, count);
 }
 
-void DnsServer::forwardQuery(const QByteArray &clientMac, quint32 clientIp, quint16 clientPort, const QByteArray &dnsPayload, int questionEnd)
+void DnsServer::forwardQuery(const QByteArray &clientMac, quint32 clientIp, quint16 clientPort, const QByteArray &dnsPayload, qsizetype questionEnd)
 {
-    const quint16 id = get16(dnsPayload.constData());
+    const quint16 id = get16(dnsPayload);
 
     if (!m_upstream || m_upstreamIp == 0) {
         // REFUSED on isolated networks, SERVFAIL if no resolver was found.
         const quint16 rcode = m_forwardUpstream ? 2 : 5;
         qCDebug(KEMU) << "DnsServer: not forwarding query id" << id << "- rcode" << rcode;
         QByteArray response = dnsPayload;
-        quint16 rflags = get16(response.constData() + 2);
+        quint16 rflags = get16(response, 2);
         rflags = (rflags & 0x0100) | 0x8000 | rcode;
         qToBigEndian(rflags, response.data() + 2);
         sendResponse(clientMac, clientIp, clientPort, response);
