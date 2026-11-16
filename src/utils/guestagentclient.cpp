@@ -54,7 +54,6 @@ GuestAgentClient::~GuestAgentClient()
 {
     // Callbacks may point into objects that are going away as well.
     m_queue.clear();
-    m_inFlight.reset();
 }
 
 void GuestAgentClient::connectToVm(int socketFd)
