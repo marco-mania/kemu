@@ -86,6 +86,14 @@ ecm_add_wayland_client_protocol(kemu-agent
 target_compile_definitions(kemu-agent PRIVATE KEMU_AGENT_VERSION="${PROJECT_VERSION}")
 target_link_libraries(kemu-agent PRIVATE kemuagent_core Qt6::DBus Wayland::Client)
 
+# With a static Qt (the portable bundle, see packaging/bundle) the platform
+# plugins are part of the executable and have to be named: the agent picks
+# xcb or offscreen at run time.
+get_target_property(kemu_agent_qt_type Qt6::Core TYPE)
+if(kemu_agent_qt_type STREQUAL "STATIC_LIBRARY")
+    qt_import_plugins(kemu-agent INCLUDE Qt6::QXcbIntegrationPlugin Qt6::QOffscreenIntegrationPlugin)
+endif()
+
 if(KEMU_AGENT_INSTALL)
     install(TARGETS kemu-agent ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
 
@@ -101,11 +109,26 @@ if(KEMU_AGENT_INSTALL)
         install(CODE "
             file(MAKE_DIRECTORY \"\$ENV{DESTDIR}${wants}\")
             execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink ../kemu-agent.service \"\$ENV{DESTDIR}${wants}/kemu-agent.service\")
+            # The link is created here, not by install(FILES): list it in the
+            # manifest, or the uninstall target leaves it behind.
+            list(APPEND CMAKE_INSTALL_MANIFEST_FILES \"${wants}/kemu-agent.service\")
         ")
     endif()
     configure_file(data/org.kde.kemu.agent.desktop.in ${CMAKE_CURRENT_BINARY_DIR}/org.kde.kemu.agent.desktop @ONLY)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.kde.kemu.agent.desktop DESTINATION ${KDE_INSTALL_AUTOSTARTDIR})
 endif()
+
+# The portable bundle: kemu-agent built in a container against an old glibc and
+# a static Qt, for the installer medium. Needs podman or docker; see
+# README.md ("Portable bundle").
+set(KEMU_AGENT_BUNDLE_ARCH "x86_64" CACHE STRING "Architecture of the bundle: x86_64 or aarch64")
+set(KEMU_AGENT_BUNDLE_GLIBC "2.28" CACHE STRING "Oldest glibc the bundle runs on: 2.28 or 2.34")
+add_custom_target(agent-bundle
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/packaging/bundle/build-bundle.sh
+            --arch ${KEMU_AGENT_BUNDLE_ARCH} --glibc ${KEMU_AGENT_BUNDLE_GLIBC}
+            --out ${CMAKE_CURRENT_BINARY_DIR}/bundle
+    COMMENT "Building the portable kemu-agent bundle in a container"
+    USES_TERMINAL VERBATIM)
 
 if(BUILD_TESTING)
     find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Test)

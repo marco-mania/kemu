@@ -141,6 +141,19 @@ sudo dnf install edk2-ovmf swtpm swtpm-tools virtiofsd   # optional
 
 #### Build, install, uninstall
 
+The source tree holds two programs: KEMU, which runs on the host, and
+kemu-agent in `agent/`, which runs inside Linux guests and provides clipboard
+sharing and the monitor layout (see [docs/display.md](docs/display.md)). There
+are three ways to build them:
+
+| You want                 | Build it on | Configure                                | What `install` installs |
+| ------------------------ | ----------- | ---------------------------------------- | ----------------------- |
+| 1. KEMU only (default)   | the host    | `cmake -B build`                         | KEMU                    |
+| 2. kemu-agent only       | the guest   | `cmake -S agent -B build-agent`          | kemu-agent              |
+| 3. Both, in one build    | the host    | `cmake -B build -DKEMU_BUILD_AGENT=ON`   | KEMU only               |
+
+##### 1. KEMU only
+
 Build KEMU and run it from the build directory:
 
 ```sh
@@ -169,21 +182,49 @@ Pointer capture relies on a private Qt API to access the viewer window's
 Wayland surface. KEMU therefore needs to be rebuilt after upgrading to a new
 Qt minor version.
 
-#### The guest agent
+##### 2. kemu-agent only
 
-The source of kemu-agent, the agent for Linux guests, is in the `agent/`
-directory. It is not part of the KEMU installation: it runs inside the
-virtual machine and is built there, on its own and without KDE libraries:
+This builds just the agent, in the guest. It needs neither KEMU's requirements
+nor any KDE libraries: Qt ≥ 6.5 (Core, Gui, DBus), libwayland-client ≥ 1.20,
+Extra CMake Modules, `wayland-scanner` and wayland-protocols. See
+[agent/README.md](agent/README.md) for the details and for what it installs.
 
 ```sh
 cmake -S agent -B build-agent -DCMAKE_INSTALL_PREFIX=/usr
 cmake --build build-agent
 sudo cmake --install build-agent
+sudo cmake --build build-agent --target uninstall    # to remove it again
 ```
 
-See [agent/README.md](agent/README.md) for its requirements and what it
-installs. Configuring KEMU with `-DKEMU_BUILD_AGENT=ON` builds the agent in
-the KEMU build tree as well, for its tests; it is not installed then.
+Install it under `/usr`, not in your home directory: it brings a udev rule and
+a systemd user unit. Reload udev (`sudo udevadm control --reload && sudo udevadm trigger`)
+or reboot the guest afterwards. The portable bundle from case 3 is meant for
+guests without build tools; an installer for it is not part of the tree yet.
+
+##### 3. KEMU and the agent in one build
+
+```sh
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DKEMU_BUILD_AGENT=ON
+cmake --build build
+sudo cmake --build build --target install            # installs KEMU only
+```
+
+The agent is built along with KEMU and its tests run with `ctest`, but
+`install` leaves it out: it belongs in the guest, and installing it on the
+host would enable its user unit for every user there.
+
+The same build tree can produce the agent in a form that needs nothing in the
+guest: a *portable bundle*, a tarball with the agent and the few libraries it
+needs, built in a container (podman or docker) against an old glibc and a static
+Qt. It runs on guests with glibc 2.28 or newer, without Qt or development
+packages:
+
+```sh
+cmake --build build --target agent-bundle
+# build/agent/bundle/kemu-agent-<version>-linux-x86_64.tar.gz
+```
+
+See [agent/README.md](agent/README.md#portable-bundle) for the options.
 
 ### Automated tests
 

@@ -1,0 +1,72 @@
+# SPDX-FileCopyrightText: 2026 Marco Nelles
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Toolchain for the portable kemu-agent bundle: an old glibc (the manylinux
+# image, AlmaLinux based), a recent GCC, and a minimal static Qt built from
+# source, because the distributions of that age ship Qt older than 6.5.
+#
+# Built by build-bundle.sh. The expensive layer is Qt; it is rebuilt only when
+# one of these arguments changes.
+
+ARG BASE=quay.io/pypa/manylinux_2_28_x86_64
+FROM ${BASE}
+
+ARG QT_VERSION=6.11.2
+ARG ECM_VERSION=6.22.0
+ARG XCB_UTIL_CURSOR_VERSION=0.1.4
+
+ENV PKG_CONFIG_PATH=/opt/deps/lib/pkgconfig:/opt/deps/lib64/pkgconfig
+
+RUN dnf -y install dnf-plugins-core \
+ && (dnf config-manager --set-enabled powertools || dnf config-manager --set-enabled PowerTools || true) \
+ && dnf -y install \
+        libxcb-devel xcb-util-devel xcb-util-image-devel xcb-util-keysyms-devel \
+        xcb-util-renderutil-devel xcb-util-wm-devel \
+        libxkbcommon-devel libxkbcommon-x11-devel \
+        wayland-devel wayland-protocols-devel libffi-devel \
+        perl python3 xz which \
+ && dnf clean all
+
+RUN PY="$(ls -d /opt/python/cp31*-cp31* | sort -V | tail -1)" \
+ && "$PY/bin/pip" install --no-cache-dir cmake ninja patchelf \
+ && for t in cmake ctest ninja patchelf; do ln -sf "$PY/bin/$t" /usr/local/bin/$t; done
+
+# Qt >= 6.5 needs libxcb-cursor for its xcb platform plugin; neither the old
+# distributions nor many current ones ship it, so it is built here and goes
+# into the bundle.
+RUN set -eux; cd /tmp; \
+    curl -fsSLO "https://xorg.freedesktop.org/archive/individual/lib/xcb-util-cursor-${XCB_UTIL_CURSOR_VERSION}.tar.xz"; \
+    tar xf "xcb-util-cursor-${XCB_UTIL_CURSOR_VERSION}.tar.xz"; \
+    cd "xcb-util-cursor-${XCB_UTIL_CURSOR_VERSION}"; \
+    ./configure --prefix=/opt/deps --disable-static; \
+    make -j"$(nproc)"; make install; \
+    cd /tmp; rm -rf xcb-util-cursor-*
+
+# Extra CMake Modules, newer than any distribution of that age has.
+RUN set -eux; cd /tmp; \
+    curl -fsSLO "https://download.kde.org/stable/frameworks/${ECM_VERSION%.*}/extra-cmake-modules-${ECM_VERSION}.tar.xz"; \
+    tar xf "extra-cmake-modules-${ECM_VERSION}.tar.xz"; \
+    cmake -S "extra-cmake-modules-${ECM_VERSION}" -B ecm-build -G Ninja \
+        -DCMAKE_INSTALL_PREFIX=/opt/deps -DBUILD_TESTING=OFF \
+        -DBUILD_HTML_DOCS=OFF -DBUILD_MAN_DOCS=OFF -DBUILD_QTHELP_DOCS=OFF; \
+    cmake --install ecm-build; \
+    rm -rf /tmp/ecm-build /tmp/extra-cmake-modules-*
+
+# Qt: only qtbase, static, without what a background agent never uses
+# (widgets, OpenGL, fontconfig, ICU, GLib, the network module). D-Bus is
+# loaded at run time, so that a system without libdbus-1 does not stop the
+# agent from starting.
+RUN set -eux; cd /tmp; MM="${QT_VERSION%.*}"; \
+    curl -fsSLO "https://download.qt.io/official_releases/qt/${MM}/${QT_VERSION}/submodules/qtbase-everywhere-src-${QT_VERSION}.tar.xz"; \
+    tar xf "qtbase-everywhere-src-${QT_VERSION}.tar.xz"; \
+    mkdir qtbase-build; cd qtbase-build; \
+    "../qtbase-everywhere-src-${QT_VERSION}/configure" -prefix /opt/qt \
+        -static -release -opensource -confirm-license \
+        -nomake examples -nomake tests \
+        -xcb -no-xcb-xlib -dbus-runtime \
+        -no-opengl -no-icu -no-glib -no-fontconfig \
+        -no-feature-widgets -no-feature-sql -no-feature-network \
+        -qt-freetype -qt-harfbuzz -qt-libpng -qt-pcre -qt-zlib; \
+    cmake --build . --parallel "$(nproc)"; \
+    cmake --install .; \
+    cd /tmp; rm -rf qtbase-*

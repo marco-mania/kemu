@@ -14,12 +14,13 @@ The agent communicates with KEMU via a dedicated virtio-serial port (`org.kde.ke
 
 No KDE libraries are required at runtime, making the agent suitable for GNOME, Xfce, and other desktop environments in addition to Plasma.
 
-## Building and installing
+## Building and (un)installing
 
 ```bash
 cmake -S agent -B build -DCMAKE_INSTALL_PREFIX=/usr
 cmake --build build
 sudo cmake --install build
+sudo cmake --build build --target uninstall    # to remove it again
 ```
 
 The agent resides in the `agent/` directory of KEMU's source tree and builds standalone without requiring KEMU's other sources or KDE Frameworks. To include it in KEMU's build for testing, configure KEMU with `-DKEMU_BUILD_AGENT=ON`. Because the agent belongs inside the guest, nothing is installed by default unless `-DKEMU_AGENT_INSTALL=ON` is also set.
@@ -35,6 +36,21 @@ Installation places the following files:
 | `/etc/xdg/autostart/org.kde.kemu.agent.desktop` | Autostarts the agent in sessions without systemd user units (e.g., Xfce) |
 
 After installation, reload udev rules (`sudo udevadm control --reload && sudo udevadm trigger`) or reboot the guest. If the virtio-serial port is absent, the agent exits silently, allowing the package to be safely installed on any system.
+
+## Portable bundle
+
+For guests where building the agent on-site is undesired or impossible, it can be packaged once into a self-contained bundle. The build links against an older glibc (2.28 by default, supporting RHEL 8, Debian 10, Ubuntu 18.10, and newer), statically embeds a minimal Qt, and bundles remaining non-glibc dependencies (such as `libxcb-cursor` for Qt 6.5+). As a result, the guest needs neither Qt nor development packages.
+
+```bash
+cmake --build build --target agent-bundle      # or: packaging/bundle/build-bundle.sh
+```
+
+Building requires Podman or Docker. It creates and caches a manylinux-based toolchain image (the initial Qt compilation takes a while), builds the agent inside it and outputs `kemu-agent-<version>-linux-<arch>.tar.gz` alongside a `.sha256` file.
+
+* `-DKEMU_AGENT_BUNDLE_ARCH=aarch64`: Cross-compiles for ARM (runs via QEMU user-mode emulation/binfmt on x86_64, where the first Qt build takes hours).
+* `-DKEMU_AGENT_BUNDLE_GLIBC=2.34`: Raises the baseline compatibility to RHEL 9 and newer.
+
+The archive mirrors the target guest layout (`usr/bin/kemu-agent`, bundled libraries in `usr/lib/kemu-agent/`, the udev rule, systemd user unit, and autostart entry) plus `MANIFEST` and `SHA256SUMS` files. During the build—or manually on an unpacked bundle—`packaging/bundle/check-bundle.sh` verifies the output and fails if any binary requires a newer glibc, a dynamic `libstdc++`, or an unbundled library.
 
 ## How it works in the guest
 
