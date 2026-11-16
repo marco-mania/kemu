@@ -52,10 +52,17 @@ RUN set -eux; cd /tmp; \
     cmake --install ecm-build; \
     rm -rf /tmp/ecm-build /tmp/extra-cmake-modules-*
 
-# Qt: only qtbase, static, without what a background agent never uses
-# (widgets, OpenGL, fontconfig, ICU, GLib, the network module). D-Bus is
-# loaded at run time, so that a system without libdbus-1 does not stop the
-# agent from starting.
+# Qt: only qtbase, static, without what a background agent never uses:
+# widgets, OpenGL, EGL, Vulkan, fontconfig, ICU, GLib, the network, XML and
+# concurrent modules, the platform plugins other than xcb and offscreen,
+# input devices, accessibility, tablet and gesture events, rich text and
+# movies. D-Bus is loaded at run time, so that a system without libdbus-1
+# does not stop the agent from starting. Image conversion for the clipboard
+# keeps PNG and BMP (and whatever else Qt has built in).
+#
+# The xcb plugin needs libxcb-cursor and some fifteen more X11 libraries
+# whatever is switched off here; they are bundled (or, later, linked
+# statically).
 RUN set -eux; cd /tmp; MM="${QT_VERSION%.*}"; \
     curl -fsSLO "https://download.qt.io/official_releases/qt/${MM}/${QT_VERSION}/submodules/qtbase-everywhere-src-${QT_VERSION}.tar.xz"; \
     tar xf "qtbase-everywhere-src-${QT_VERSION}.tar.xz"; \
@@ -66,6 +73,13 @@ RUN set -eux; cd /tmp; MM="${QT_VERSION%.*}"; \
         -xcb -no-xcb-xlib -dbus-runtime \
         -no-opengl -no-icu -no-glib -no-fontconfig \
         -no-feature-widgets -no-feature-sql -no-feature-network \
+        -no-feature-concurrent -no-feature-xml \
+        -no-feature-vnc -no-feature-linuxfb -no-feature-eglfs -no-feature-kms \
+        -no-feature-vulkan -no-feature-egl \
+        -no-feature-evdev -no-feature-libinput -no-feature-tslib -no-feature-mtdev \
+        -no-feature-accessibility -no-feature-tabletevent -no-feature-gestures \
+        -no-feature-texthtmlparser -no-feature-textmarkdownreader \
+        -no-feature-textmarkdownwriter -no-feature-textodfwriter -no-feature-movie \
         -qt-freetype -qt-harfbuzz -qt-libpng -qt-pcre -qt-zlib; \
     cmake --build . --parallel "$(nproc)"; \
     cmake --install .; \
