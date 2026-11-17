@@ -94,6 +94,10 @@ if(kemu_agent_qt_type STREQUAL "STATIC_LIBRARY")
     qt_import_plugins(kemu-agent INCLUDE Qt6::QXcbIntegrationPlugin Qt6::QOffscreenIntegrationPlugin)
 endif()
 
+# Start-up files (section 11.2), also used by the bundle installer's test.
+configure_file(data/kemu-agent.service.in ${CMAKE_CURRENT_BINARY_DIR}/kemu-agent.service @ONLY)
+configure_file(data/org.kde.kemu.agent.desktop.in ${CMAKE_CURRENT_BINARY_DIR}/org.kde.kemu.agent.desktop @ONLY)
+
 if(KEMU_AGENT_INSTALL)
     install(TARGETS kemu-agent ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
 
@@ -102,7 +106,6 @@ if(KEMU_AGENT_INSTALL)
 
     # Start-up (section 11.2): a systemd user unit, and an autostart entry for
     # sessions that start no user units.
-    configure_file(data/kemu-agent.service.in ${CMAKE_CURRENT_BINARY_DIR}/kemu-agent.service @ONLY)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kemu-agent.service DESTINATION ${KDE_INSTALL_SYSTEMDUSERUNITDIR})
     if(KEMU_AGENT_ENABLE_USER_UNIT)
         set(wants "${KDE_INSTALL_FULL_SYSTEMDUSERUNITDIR}/graphical-session.target.wants")
@@ -114,7 +117,6 @@ if(KEMU_AGENT_INSTALL)
             list(APPEND CMAKE_INSTALL_MANIFEST_FILES \"${wants}/kemu-agent.service\")
         ")
     endif()
-    configure_file(data/org.kde.kemu.agent.desktop.in ${CMAKE_CURRENT_BINARY_DIR}/org.kde.kemu.agent.desktop @ONLY)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.kde.kemu.agent.desktop DESTINATION ${KDE_INSTALL_AUTOSTARTDIR})
 endif()
 
@@ -136,4 +138,20 @@ if(BUILD_TESTING)
     # A guest application for tests/e2e/e2e-x11.py.
     add_executable(clipboardtool tests/tools/clipboardtool.cpp)
     target_link_libraries(clipboardtool PRIVATE Qt6::Gui)
+
+    # install.sh and uninstall.sh of the portable bundle, against a system
+    # tree in a temporary directory; with dash as well where it exists, since
+    # /bin/sh is dash on Debian and Ubuntu.
+    set(kemu_agent_bundle_files
+        $<TARGET_FILE:kemu-agent>
+        ${CMAKE_CURRENT_BINARY_DIR}/kemu-agent.service
+        ${CMAKE_CURRENT_SOURCE_DIR}/data/70-kemu-agent.rules
+        ${CMAKE_CURRENT_BINARY_DIR}/org.kde.kemu.agent.desktop)
+    add_test(NAME agentbundleinstalltest
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/packaging/bundle/test-install.sh sh ${kemu_agent_bundle_files})
+    find_program(KEMU_AGENT_DASH dash)
+    if(KEMU_AGENT_DASH)
+        add_test(NAME agentbundleinstalltest-dash
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/packaging/bundle/test-install.sh ${KEMU_AGENT_DASH} ${kemu_agent_bundle_files})
+    endif()
 endif()

@@ -65,6 +65,8 @@ echo "== check"
 "$exe" --version
 
 echo "== pack"
+cp "$here/install.sh" "$here/uninstall.sh" "$root/"
+chmod 0755 "$root/install.sh" "$root/uninstall.sh"
 cat > "$root/BUNDLE-INFO" << INFO
 kemu-agent ${version}
 architecture ${arch}
