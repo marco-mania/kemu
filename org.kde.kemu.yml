@@ -21,7 +21,7 @@ sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
 
 finish-args:
-  # Display. QEMU's own SDL window and KEMU's viewer both need it.
+  # Display. KEMU's viewer and the SDL window of exported qemu.sh need it.
   - --share=ipc
   - --socket=wayland
   # GPU for Virtio-GL (virglrenderer) and /dev/kvm for hardware virtualization.
@@ -223,7 +223,7 @@ modules:
       - --enable-virglrenderer
       # required: user-mode networking.
       - --enable-slirp
-      # required: KEMU's other display, QEMU's own window.
+      # required: the window of exported qemu.sh scripts.
       - --enable-sdl
       - --enable-libusb
       - --enable-virtfs

@@ -1,11 +1,8 @@
 # Display
 
-KEMU provides two display backends per VM (*Edit… → Hardware → Display*):
+KEMU shows every VM in its integrated D-Bus viewer, with 3D acceleration, bidirectional audio, clipboard sharing, and pointer capture. While stable, the viewer remains under active development and its behaviour may change between releases.
 
-- **SDL:** Opens QEMU's own window with optional OpenGL-based 3D acceleration and routes audio directly to the host via PipeWire.
-- **D-Bus:** Displays the VM in KEMU's integrated viewer with 3D acceleration, bidirectional audio, clipboard sharing, and pointer capture.
-
-While stable, the D-Bus viewer remains under active development and its behaviour may change between releases.
+Only the exported `qemu.sh` script, which runs without KEMU, opens QEMU's own SDL window instead, with audio routed directly to the host via PipeWire.
 
 ## How the D-Bus viewer works
 
@@ -22,7 +19,7 @@ KEMU launches QEMU with `-display dbus,p2p=on` and passes one end of a Unix `soc
 - **Status bar:** Displays CD/DVD, floppy, and USB devices; network status (click to connect or disconnect the cable); `kemu-agent` status; guest-agent status (click to copy the guest's address); clipboard sharing; microphone and audio output; and pointer capture.
 - **Headless operation:** Closing the viewer leaves the VM running; reopen it via *Show Display* in the VM or system tray menu.
 
-*Settings → Display* controls the default resolution and when the screensaver is inhibited: whenever a viewer is open, while it is in fullscreen mode, or while it captures the pointer.
+*Settings → Display* sets the initial resolution of all VMs, which applies until the guest's graphics driver runs and the viewer window takes over, and when the screensaver is inhibited: whenever a viewer is open, while it is in fullscreen mode, or while it captures the pointer.
 
 ## kemu-agent
 

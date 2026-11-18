@@ -29,8 +29,7 @@ KEMU requires a native Wayland session on the host; X11 and XWayland cannot be u
 
 **Display and devices**
 
-- Integrated QEMU D-Bus viewer
-- Alternativly QEMU's native SDL window
+- Integrated QEMU viewer
 - Experimental second monitor in a separate window
 - Hot-swapping of ISO and floppy images
 - USB passthrough
@@ -75,7 +74,7 @@ For sandbox-specific behaviour and additional permissions, see [docs/flatpak.md]
 - Qt ≥ 6.8 (Core, Gui, Widgets, Network, Svg, DBus, Multimedia, OpenGL) and its private headers
 - Qt Wayland platform plugin (required at runtime)
 - KDE Frameworks ≥ 6.13: CoreAddons, Config, ConfigWidgets, Crash, DBusAddons, I18n, IconThemes, JobWidgets, KIO, Notifications, NotifyConfig, StatusNotifierItem, TextTemplate, Wallet, WidgetsAddons, WindowSystem, XmlGui
-- QEMU ≥ 7.2 (with Wayland-enabled SDL if using the SDL display backend)
+- QEMU ≥ 7.2 with the D-Bus display (and Wayland-enabled SDL for running exported `qemu.sh` scripts)
 - libarchive, libslirp ≥ 4.7, libisofs, libudev, EGL, Wayland (client library, protocols, `wayland-scanner`)
 - Podman or Docker – builds kemu-agent, the agent for Linux guests, in a container (not needed with `-DKEMU_AGENT_BUNDLE=OFF`; see below)
 
@@ -232,7 +231,7 @@ Install under `/usr` rather than your home directory, as it includes a udev rule
 
 ### Automated tests
 
-The source tree includes regression tests for VM metadata, storage, templates, the D-Bus viewer, and the guest agent. See [docs/testing.md](docs/testing.md) for build instructions and coverage details.
+The source tree includes regression tests for VM metadata, storage, templates, the viewer, and the guest agent. See [docs/testing.md](docs/testing.md) for build instructions and coverage details.
 
 ## Using KEMU
 
@@ -243,17 +242,6 @@ The source tree includes regression tests for VM metadata, storage, templates, t
 Alternatively, install from an ISO image or start with a blank disk. In Dolphin, selecting *New Virtual Machine from This Image…* on a disc image opens the dialog with that image preselected.
 
 Manage templates under *Settings → Templates* (format documented in [docs/templates.md](docs/templates.md)).
-
-### Display
-
-Each VM uses one of two display backends:
-
-| Backend   | Window              | 3D acceleration | Audio              | Clipboard |
-| --------- | ------------------- | --------------- | ------------------ | --------- |
-| **D-Bus** | KEMU's viewer       | Yes (Virtio)    | Through the viewer | Yes       |
-| **SDL**   | QEMU's own window   | Yes (Virtio)    | System (PipeWire)  | No        |
-
-Closing the viewer leaves the VM running headless; select *Show Display* to reopen it. Clipboard sharing requires `kemu-agent` in Linux guests; see [docs/display.md](docs/display.md).
 
 ### Installing kemu-agent in guests
 
@@ -361,7 +349,7 @@ VMs created by older KEMU versions may lack a UUID. KEMU does not assign one aut
 | Category                   | Covers                                                                |
 | -------------------------- | --------------------------------------------------------------------- |
 | `org.kde.kemu`             | Application, VM lifecycle, networking, QMP, guest agent, snapshots    |
-| `org.kde.kemu.dbusdisplay` | Integrated D-Bus viewer (frame-level traffic)                         |
+| `org.kde.kemu.dbusdisplay` | Integrated viewer (frame-level traffic)                         |
 
 By default, only warnings are logged. To collect detailed output for a bug report:
 
@@ -398,7 +386,7 @@ Each UEFI VM stores its NVRAM in a separate `OVMF_VARS.fd`, created from a match
 
 ### Screenshots
 
-In the D-Bus viewer, *Machine → Save Screenshot…* captures the guest display at its native resolution, including Virtio-GL (using the optional Wayland zero-copy path when the DMA-BUF can also be imported through EGL). The main window's screenshot action uses the viewer when connected and falls back to QEMU's `screendump` for 2D VMs without a viewer or with SDL. For a headless 3D VM, open the D-Bus viewer before taking a screenshot.
+In the viewer, *Machine → Save Screenshot…* captures the guest display at its native resolution, including Virtio-GL (using the optional Wayland zero-copy path when the DMA-BUF can also be imported through EGL). The main window's screenshot action uses the viewer when connected and falls back to QEMU's `screendump` for 2D VMs without a viewer. For a headless 3D VM, open the viewer before taking a screenshot.
 
 ### QEMU sandbox
 

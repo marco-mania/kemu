@@ -6,7 +6,7 @@ Because sandboxed applications cannot run host executables directly, the Flatpak
 
 | Permission                                               | Purpose                                           |
 | -------------------------------------------------------- | ------------------------------------------------- |
-| `--socket=wayland`, `--share=ipc`                        | Native Wayland viewer and QEMU's SDL window       |
+| `--socket=wayland`, `--share=ipc`                        | Native Wayland viewer, SDL window of `qemu.sh`    |
 | `--device=dri`                                           | 3D acceleration (`virglrenderer`)                 |
 | `--device=kvm`                                           | Hardware virtualization                           |
 | `--share=network`                                        | User-mode networking and NAT for virtual networks |
