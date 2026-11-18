@@ -4,137 +4,137 @@ Nov 14, 2026 · @Marco
 
 ## 1. Introduction
 
-kemu-agent is a session agent for Linux guests of KEMU. It shares the clipboard with the host and reports the guest display layout over one virtio-serial port. KEMU speaks the protocol directly; QEMU only carries the bytes.
+`kemu-agent` is a session agent for Linux guests running under KEMU. It shares the clipboard with the host and reports the guest display layout over a single virtio-serial port. KEMU speaks the protocol directly; QEMU merely transports the byte stream.
 
-Status: draft. Version 1 is not frozen. Message numbers and field names may change until the first release of kemu-agent.
+**Status:** Draft. Version 1 is not frozen; message numbers and field names may change until the first release of `kemu-agent`.
 
 ### 1.1 Goals
 
-- Share every clipboard format an application offers, in both directions, for the CLIPBOARD and PRIMARY selections.
-- Tell the host the real guest display layout, so that it can place the pointer on any monitor.
-- Run without root in the guest: one user process per graphical session.
-- Recover without user action from restarts on either side and from stale bytes on the port.
-- Leave room for display configuration and file transfer without breaking version 1.
+- Share all application-provided clipboard formats bidirectionally for both CLIPBOARD and PRIMARY selections.
+- Report the actual guest display layout so the host can map the pointer accurately across all monitors.
+- Run unprivileged in the guest as one user process per graphical session.
+- Recover automatically from restarts on either side and from stale bytes on the port.
+- Reserve protocol space for future display configuration and file transfer without breaking version 1.
 
 ### 1.2 Non-goals for version 1
 
-- Windows and BSD guests. The protocol does not rule them out, but version 1 implementations target Linux only.
-- Drag and drop of files, file transfers beyond the clipboard's size limit, and display configuration. Section 9 reserves them.
-- Anything that needs root, such as shutdown, setting the clock, freezing file systems or reading network addresses. qemu-guest-agent stays responsible for these, and KEMU keeps supporting it in full.
-- Compatibility with the SPICE agent protocol. KEMU drops spice-vdagent and QEMU's `qemu-vdagent` chardev.
+- Windows and BSD guests (not precluded by the protocol, though version 1 targets Linux only).
+- Drag-and-drop, file transfers exceeding the clipboard size limit, and display configuration (reserved in Section 9).
+- Operations requiring root privileges—such as shutdown, clock synchronisation, filesystem freezing, or reading network addresses—which remain handled by `qemu-guest-agent`.
+- Compatibility with the SPICE agent protocol; KEMU drops `spice-vdagent` and QEMU's `qemu-vdagent` chardev.
 
 ### 1.3 Why KEMU leaves the SPICE agent
 
-- Formats: the VD agent protocol knows a fixed list of clipboard types (UTF-8 text, PNG, BMP, TIFF, JPEG and a file list that needs a SPICE WebDAV channel). QEMU's clipboard core and its D-Bus bridge carry UTF-8 text only.
-- Privileges: spice-vdagent needs a root daemon (spice-vdagentd) that injects the pointer through uinput, plus a session agent that talks to it.
-- Layout: the session agent reads the layout from XWayland, which scales all monitors alike. With per-monitor scaling the pointer lands in the wrong place.
-- Wayland: under KDE Plasma, an X11-only session agent sees clipboard changes only while an X11 window has focus.
+- **Formats:** The VD agent protocol supports only a fixed set of clipboard types (UTF-8 text, PNG, BMP, TIFF, JPEG, and a file list requiring a SPICE WebDAV channel), while QEMU's clipboard core and D-Bus bridge carry UTF-8 text only.
+- **Privileges:** `spice-vdagent` requires a root daemon (`spice-vdagentd`) to inject pointer events via `uinput`, alongside a session agent.
+- **Layout:** The session agent reads the layout from XWayland, which applies a single uniform scale across all monitors, causing pointer offsets under per-monitor scaling.
+- **Wayland:** Under KDE Plasma, an X11-only session agent observes clipboard changes only while an X11 window has focus.
 
 ### 1.4 Terminology
 
 The key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are used as described in RFC 2119 and RFC 8174 when, and only when, they appear in capitals.
 
-| Term | Meaning |
-| --- | --- |
-| Host | The KEMU process that runs the virtual machine and owns the host end of the port. |
-| Agent | The kemu-agent process in one graphical session of the guest. |
-| Port | The virtio-serial port named `org.kde.kemu.agent.0`. |
-| Frame | One header plus one message body on the port (Section 4). |
-| Session | The state shared by host and agent from an accepted WELCOME until the next reset (Section 5). |
-| Selection | CLIPBOARD (copy and paste) or PRIMARY (select and middle-click). |
-| Offer | An announcement that one side holds a selection, with the list of formats it can deliver. |
-| Owner | The side whose latest offer for a selection is in force. |
-| Head | The zero-based scanout index of the guest display device. For virtio-gpu it matches QEMU's console `head` property. |
+| Term      | Meaning                                                                                                 |
+| --------- | ------------------------------------------------------------------------------------------------------- |
+| Host      | The KEMU process running the virtual machine and owning the host end of the port.                       |
+| Agent     | The `kemu-agent` process in one graphical session of the guest.                                         |
+| Port      | The virtio-serial port named `org.kde.kemu.agent.0`.                                                    |
+| Frame     | One header plus one message body on the port (Section 4).                                               |
+| Session   | The state shared by host and agent from an accepted WELCOME until the next reset (Section 5).           |
+| Selection | CLIPBOARD (copy and paste) or PRIMARY (select and middle-click).                                        |
+| Offer     | An announcement that one side holds a selection, listing the formats it can deliver.                    |
+| Owner     | The side whose latest offer for a selection is currently in force.                                      |
+| Head      | The zero-based scanout index of the guest display device (matches QEMU's console `head` on virtio-gpu). |
 
 ### 1.5 Conventions
 
 - Integers in the frame header are little-endian.
-- Message bodies are CBOR (RFC 8949). Examples use CBOR diagnostic notation.
-- KiB means 1024 bytes and MiB means 1024 KiB.
-- "G→H" marks a message the agent sends to the host, "H→G" the reverse, "both" either direction.
+- Message bodies are CBOR (RFC 8949); examples use CBOR diagnostic notation.
+- KiB means 1024 bytes; MiB means 1024 KiB.
+- "G→H" denotes a message sent from agent to host, "H→G" from host to agent, and "both" either direction.
 
 ## 2. Architecture
 
-The protocol runs between the host and one agent, over one virtio-serial port. QEMU carries the bytes without reading them. qemu-guest-agent runs beside the agent on its own port and is not part of this protocol.
+The protocol runs between the host and one agent over a single virtio-serial port, with QEMU forwarding the byte stream without inspecting it. `qemu-guest-agent` runs alongside the agent on its own port and is outside this specification.
 
 &#91;embedded content: kemu-agent architecture · host, QEMU, guest\]
 
-The new port carries clipboard and layout. The pointer still reaches the guest through QEMU's tablet; only its mapping on the host uses the layout.
+The port carries clipboard data and display layout; pointer events still reach the guest through QEMU's tablet device, using the reported layout for host-side coordinate mapping.
 
-| Component | Runs as | Role |
-| --- | --- | --- |
-| KEMU (host) | host user | Creates the port, owns its host end, speaks this protocol, connects it to the host clipboard and the viewer's pointer handling. |
-| QEMU | host user | Provides `virtio-serial-pci` and a `virtserialport` backed by a chardev whose other end KEMU owns. Reports guest open and close through the QMP event `VSERPORT_CHANGE`. |
-| kemu-agent (guest) | the user of the active graphical session | Opens the port, talks to the compositor or X server for clipboard and layout, speaks this protocol. |
-| qemu-guest-agent (guest) | root | Unchanged. Uses its own port `org.qemu.guest_agent.0`. |
+| Component                  | Runs as                                | Role                                                                                                                    |
+| -------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| KEMU (host)                | Host user                              | Creates the port, owns its host end, speaks this protocol, and bridges it to the host clipboard and viewer pointer.     |
+| QEMU                       | Host user                              | Provides `virtio-serial-pci` and a `virtserialport` backed by KEMU's chardev; reports open/close via `VSERPORT_CHANGE`. |
+| `kemu-agent` (guest)       | Active graphical session user          | Opens the port, interacts with the compositor or X server for clipboard and layout, and speaks this protocol.           |
+| `qemu-guest-agent` (guest) | Root                                   | Unchanged; uses its own port `org.qemu.guest_agent.0`.                                                                  |
 
 ### 2.1 Ports
 
-| Port name | Status | Purpose |
-| --- | --- | --- |
-| `org.kde.kemu.agent.0` | defined | Control port: everything in this specification. |
-| `org.kde.kemu.agent.bulk.0` | reserved | Bulk data such as file transfer (Section 9). |
-| `org.qemu.guest_agent.0` | external | QEMU guest agent protocol, not covered here. |
+| Port name                   | Status   | Purpose                                                 |
+| --------------------------- | -------- | ------------------------------------------------------- |
+| `org.kde.kemu.agent.0`      | defined  | Control port covering everything in this specification. |
+| `org.kde.kemu.agent.bulk.0` | reserved | Bulk data such as file transfers (Section 9).           |
+| `org.qemu.guest_agent.0`    | external | QEMU guest agent protocol (not covered here).           |
 
 ### 2.2 Privilege model
 
-No part of this protocol runs as root in the guest. The agent runs as the session user. A udev rule tags the port with `uaccess`, so logind grants access to the user of the active session on the seat (Section 11.1).
+No part of this protocol runs as root in the guest. The agent runs as the session user, and a udev rule tags the port with `uaccess` so `logind` grants device access to the active session user on the seat (Section 11.1).
 
 ### 2.3 One agent at a time
 
-Linux lets only one process open a virtio-serial port at a time; a second `open()` fails with `EBUSY`. So only the agent of the active session holds the port. An agent MUST close the port when its session becomes inactive, so that the agent of the next active session can open it (Section 3.4).
+Linux allows only one process to open a virtio-serial port at a time; a second `open()` fails with `EBUSY`. Consequently, only the active session's agent holds the port, and an agent MUST close the port when its session becomes inactive so the next active session can open it (Section 3.4).
 
 ### 2.4 What the host does with it
 
-- Clipboard: the host keeps the host clipboard and the guest clipboard in step, within the policy the user set (Section 6).
-- Pointer: the host sends absolute pointer positions to a USB or virtio tablet. With several monitors it maps each position into the guest's global coordinates, using the layout the agent reports (Sections 7 and 8).
+- **Clipboard:** Synchronises host and guest clipboards within the user-configured policy (Section 6).
+- **Pointer:** Sends absolute pointer positions to a USB or virtio tablet, mapping coordinates into the guest's global coordinate space using the reported layout across multiple monitors (Sections 7 and 8).
 
 ## 3. Transport
 
-The port is a reliable, ordered byte stream while both ends are connected. It has no message boundaries, and bytes written while the other end is away can arrive in a later session.
+While both ends are connected, the port acts as a reliable, ordered byte stream without message boundaries; bytes written while the peer is disconnected may arrive in a later session.
 
 ### 3.1 Guest side
 
 - The agent opens `/dev/virtio-ports/org.kde.kemu.agent.0` with `O_RDWR | O_NONBLOCK | O_CLOEXEC`.
-- Linux exposes whether the host end is connected. While it is not, `poll()` reports `POLLHUP`, a write would block (`EAGAIN`), and `read()` returns 0 once no data is left.
-- When `POLLHUP` clears, the agent starts the handshake (Section 5).
+- While the host end is disconnected, `poll()` reports `POLLHUP`, writes fail with `EAGAIN`, and `read()` returns 0 once buffered data is drained.
+- Once `POLLHUP` clears, the agent initiates the handshake (Section 5).
 
 ### 3.2 Host side
 
-KEMU adds the port next to the existing one for qemu-guest-agent, on the same `virtio-serial-pci` controller:
+KEMU attaches the port alongside `qemu-guest-agent` on the same `virtio-serial-pci` controller:
 
 ```
 -chardev socket,id=kemuagent,fd=<fd of a socketpair end>
 -device virtserialport,id=kemuagent0,chardev=kemuagent,name=org.kde.kemu.agent.0
 ```
 
-- The guest sees the host as connected while the chardev is connected. With a socketpair, that is as long as KEMU keeps its end open.
-- QEMU reports the guest opening and closing the port as `VSERPORT_CHANGE` with `id` = `kemuagent0` and `open` = true or false.
-- The VM needs no `qemu-vdagent` chardev and no `com.redhat.spice.0` port.
+- The guest sees the host as connected for as long as KEMU keeps its socketpair end open.
+- QEMU reports guest open and close transitions via QMP `VSERPORT_CHANGE` (`id` = `kemuagent0`, `open` = `true` or `false`).
+- Neither a `qemu-vdagent` chardev nor a `com.redhat.spice.0` port is required.
 
 ### 3.3 Stale data
 
-- While the guest has the port closed, QEMU does not read from the chardev. Bytes the host writes stay in the socket buffer and reach the next agent that opens the port.
-- Bytes from an agent that dies in the middle of a frame reach the host ahead of the next agent's first frame.
-- The host SHOULD NOT write while the port is closed on the guest side. Both sides MUST still handle stale bytes as described in Section 5.3.
+- While the guest has the port closed, QEMU stops reading from the chardev; any bytes written by the host remain in the socket buffer and are delivered to the next agent that opens the port.
+- Partial frames left behind by a crashed agent arrive at the host ahead of the next agent's initial frame.
+- The host SHOULD NOT write while the port is closed on the guest side. Both sides MUST handle stale bytes as specified in Section 5.3.
 
 ### 3.4 Session handover
 
-- The agent MUST watch the `Active` property of its own logind session.
+- The agent MUST monitor the `Active` property of its `logind` session.
 - When the session becomes inactive, the agent SHOULD send GOODBYE with reason `session-inactive` and MUST then close the port.
 - When the session becomes active again, the agent reopens the port and runs the handshake.
-- logind removes the device ACL when the session changes, but that does not revoke a file descriptor that is already open. Closing the port is therefore the agent's duty.
-- If `open()` fails with `EBUSY` or `EACCES`, the agent retries every 2 seconds while its session is active.
+- Because `logind` revokes device ACLs on session switch without invalidating already-open file descriptors, closing the port explicitly is the agent's responsibility.
+- If `open()` fails with `EBUSY` or `EACCES`, the agent retries every 2 seconds while its session remains active.
 
 ### 3.5 Flow control
 
-- virtio-serial does not lose or reorder bytes while both ends are connected. The protocol therefore has no checksums or retransmission.
-- Flow control is back-pressure: a writer blocks while the reader does not read.
-- Both sides MUST use non-blocking I/O and MUST keep reading while output is pending. Otherwise two sides sending large data at the same time can deadlock.
+- Because virtio-serial guarantees lossless, in-order delivery while connected, the protocol omits checksums and retransmissions.
+- Flow control relies on back-pressure: writers block when the peer stops reading.
+- Both sides MUST use non-blocking I/O and MUST continue reading while output is pending to avoid deadlocks during simultaneous large transfers.
 
 ## 4. Framing and encoding
 
-Every message is one frame: a 12-byte header followed by a CBOR body. The header lets a receiver find frame boundaries and skip unknown types without decoding CBOR.
+Each message consists of a 12-byte header followed by a CBOR body, allowing receivers to locate frame boundaries and skip unknown message types without decoding CBOR.
 
 ### 4.1 Frame header
 
@@ -147,432 +147,420 @@ offset  size  field   value
 12      n     body    CBOR, exactly `length` bytes
 ```
 
-- Senders MUST set `flags` to 0. Receivers MUST ignore `flags` in version 1.
-- `length` MUST NOT exceed 1 MiB (1 048 576). A larger value is a framing error.
+- Senders MUST set `flags` to 0; receivers MUST ignore `flags` in version 1.
+- `length` MUST NOT exceed 1 MiB (1,048,576 bytes); larger values constitute a framing error.
 
 ### 4.2 Body
 
-- The body is exactly one CBOR data item, and it is a map. A zero-length body means an empty map.
-- Map keys are text strings. Receivers MUST ignore keys they do not know. Senders MUST NOT repeat a key.
-- Allowed items: unsigned and negative integers, byte strings, UTF-8 text strings, arrays, maps, `true`, `false`, `null` and floats.
-- Not allowed: indefinite-length items, tags, `undefined` and other simple values. Maps and arrays nest at most 8 levels deep.
-- An optional field may be absent. Receivers treat `null` like an absent field.
-- Text strings are at most 4096 bytes unless a field says otherwise.
+- The body is a single CBOR data item representing a map (a zero-length body denotes an empty map).
+- Map keys are text strings; receivers MUST ignore unknown keys, and senders MUST NOT repeat keys.
+- Permitted CBOR items: unsigned and negative integers, byte strings, UTF-8 text strings, arrays, maps, `true`, `false`, `null`, and floats.
+- Disallowed CBOR items: indefinite-length items, tags, `undefined`, and other simple values. Nesting of maps and arrays MUST NOT exceed 8 levels.
+- Optional fields may be omitted; receivers treat `null` identically to an omitted field.
+- Text strings MUST NOT exceed 4096 bytes unless specified otherwise for a field.
 
 ### 4.3 Field types
 
-The message tables in later sections use these types.
+| Type     | CBOR                         | Notes                                                                                  |
+| -------- | ---------------------------- | -------------------------------------------------------------------------------------- |
+| `uint`   | unsigned integer             | Up to $2^{64} - 1$. Counters start at 1 per session and never wrap in practice.        |
+| `int`    | unsigned or negative integer | Signed coordinates or timestamps.                                                      |
+| `float`  | half, single, or double      | Receivers accept all three widths.                                                     |
+| `bool`   | `true` or `false`            |                                                                                        |
+| `tstr`   | text string                  | UTF-8.                                                                                 |
+| `bstr`   | byte string                  | Raw bytes (never Base64).                                                              |
+| `[T]`    | array of `T`                 |                                                                                        |
+| `{…}`    | map                          | Contains the fields specified in the message table.                                    |
 
-| Type | CBOR | Notes |
-| --- | --- | --- |
-| `uint` | unsigned integer | Up to 2^64 − 1. Counters start at 1 in each session and never wrap in practice. |
-| `int` | unsigned or negative integer | Coordinates, which can be negative. |
-| `float` | half, single or double float | Receivers accept all three widths. |
-| `bool` | `true` or `false` |  |
-| `tstr` | text string | UTF-8. |
-| `bstr` | byte string | Raw data, never Base64. |
-| `[T]` | array of T |  |
-| `{…}` | map | Fields as listed in the table. |
-
-A dotted field name such as `clipboard.to_host` means the field `to_host` inside the map `clipboard`.
+Dotted names such as `clipboard.to_host` refer to the `to_host` field inside the `clipboard` map.
 
 ### 4.4 Unknown message types
 
-- A receiver MUST read and discard the body of a frame whose type it does not know. This is not an error.
-- A sender MUST NOT send messages of a capability the peer did not announce (Section 5.2). The core messages in Section 5 are always allowed.
-- Types 0x8000 to 0xFFFF are for experiments and MUST NOT appear in released software.
+- A receiver MUST read and discard the body of any frame with an unrecognised type; this is not an error.
+- A sender MUST NOT transmit messages belonging to a capability the peer did not advertise (Section 5.2). Core messages (Section 5) are always permitted.
+- Types `0x8000`–`0xFFFF` are reserved for experimentation and MUST NOT appear in released software.
 
 ### 4.5 Malformed input
 
-- These are framing errors: wrong magic, `length` above the limit, a body that is not well-formed CBOR or not a map, and a partial frame that gets no further byte for 2 seconds.
-- On a framing error the receiver discards its input buffer and resynchronises (Section 5.3).
-- A well-formed frame with a missing or mistyped required field is not a framing error. The receiver SHOULD answer with ERROR `bad-message` and otherwise ignore the frame.
+- Framing errors comprise: invalid magic, `length` exceeding 1 MiB, a body that is not well-formed CBOR or not a map, and a partial frame receiving no further bytes for 2 seconds.
+- Upon a framing error, the receiver discards its input buffer and resynchronises (Section 5.3).
+- A well-formed frame with a missing or mistyped required field is not a framing error; the receiver SHOULD reply with ERROR `bad-message` and otherwise ignore the frame.
 
 ## 5. Connection lifecycle
 
-The agent always starts a session with HELLO; the host answers with WELCOME and then POLICY. A random nonce in HELLO, echoed in WELCOME, separates the new session from stale bytes.
+The agent always initiates a session with HELLO, to which the host responds with WELCOME followed by POLICY. A random nonce in HELLO—echoed in WELCOME—distinguishes the new session from stale bytes.
 
 ### 5.1 Handshake
 
-1. The agent opens the port and waits until the host end is connected (Section 3.1).
-2. The agent draws a fresh 16-byte random nonce, sends HELLO and enters HANDSHAKE.
-3. The host, on a valid HELLO, resets its session state, chooses the version, and sends WELCOME followed by POLICY. The host is now READY.
-4. The agent, on a WELCOME that carries its current nonce, is READY. It then sends DISPLAY\_LAYOUT if negotiated. Once POLICY has arrived, it sends a CLIPBOARD\_OFFER for each selection it holds and the policy allows.
-5. Without a matching WELCOME, the agent sends a new HELLO with a new nonce after 2 seconds, then doubles the wait up to 30 seconds.
+1. The agent opens the port and waits until the host end connects (Section 3.1).
+2. The agent generates a fresh 16-byte random nonce, sends HELLO, and enters HANDSHAKE.
+3. Upon receiving a valid HELLO, the host resets its session state, selects the protocol version, sends WELCOME followed by POLICY, and enters READY.
+4. Upon receiving a WELCOME matching its current nonce, the agent enters READY, sends DISPLAY\_LAYOUT if negotiated, and—once POLICY arrives—sends a CLIPBOARD\_OFFER for each held selection permitted by policy.
+5. If no matching WELCOME arrives, the agent resends HELLO with a new nonce after 2 seconds, doubling the backoff interval up to 30 seconds.
 
 **HELLO** (0x0001, G→H)
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `nonce` | `bstr`, 16 bytes | yes | Random, fresh for every HELLO. |
-| `versions` | `[uint]` | yes | Protocol versions the agent supports, for example `[1]`. |
-| `agent` | `{name: tstr, version: tstr}` | yes | For example `{"name": "kemu-agent", "version": "0.2.0"}`. |
-| `capabilities` | `[tstr]` | yes | Appendix B. |
-| `os` | `{id: tstr, version_id: tstr, pretty_name: tstr}` | no | Copied from `/etc/os-release`. |
-| `session` | `{type: tstr, desktop: tstr}` | no | `type` is `wayland` or `x11`; `desktop` is `XDG_CURRENT_DESKTOP`. |
-| `backends` | `{clipboard: tstr}` | no | `ext-data-control`, `wlr-data-control`, `x11` or `none`. Lets the host explain a missing feature. |
-| `limits` | `{max_transfer: uint}` | no | Largest clipboard item the agent accepts, in bytes. Default 64 MiB. |
+| Field          | Type                                                 | Req. | Meaning                                                                                        |
+| -------------- | ---------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------- |
+| `nonce`        | `bstr`, 16 bytes                                     | yes  | Fresh random value generated for every HELLO.                                                  |
+| `versions`     | `[uint]`                                             | yes  | Supported protocol versions, e.g., `[1]`.                                                      |
+| `agent`        | `{name: tstr, version: tstr}`                        | yes  | Agent identifier, e.g., `{"name": "kemu-agent", "version": "0.2.0"}`.                          |
+| `capabilities` | `[tstr]`                                             | yes  | Advertised capabilities (Appendix B).                                                          |
+| `os`           | `{id: tstr, version_id: tstr, pretty_name: tstr}`    | no   | Values copied from `/etc/os-release`.                                                          |
+| `session`      | `{type: tstr, desktop: tstr}`                        | no   | `type` is `wayland` or `x11`; `desktop` is `XDG_CURRENT_DESKTOP`.                              |
+| `backends`     | `{clipboard: tstr}`                                  | no   | `ext-data-control`, `wlr-data-control`, `x11`, or `none` (helps explain unavailable features). |
+| `limits`       | `{max_transfer: uint}`                               | no   | Maximum clipboard item size in bytes accepted by the agent (default 64 MiB).                   |
 
 **WELCOME** (0x0002, H→G)
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `nonce` | `bstr` | yes | The nonce of the HELLO it answers. |
-| `version` | `uint` | yes | The chosen version, the highest one both support. |
-| `host` | `{name: tstr, version: tstr}` | yes | For example `{"name": "KEMU", "version": "1.4.0"}`. |
-| `capabilities` | `[tstr]` | yes | Appendix B. |
-| `limits` | `{max_transfer: uint}` | no | Largest clipboard item the host accepts. Default 64 MiB. |
+| Field          | Type                          | Req. | Meaning                                                                     |
+| -------------- | ----------------------------- | ---- | --------------------------------------------------------------------------- |
+| `nonce`        | `bstr`                        | yes  | Echoes the `nonce` from the corresponding HELLO.                            |
+| `version`      | `uint`                        | yes  | Selected protocol version (highest version supported by both sides).        |
+| `host`         | `{name: tstr, version: tstr}` | yes  | Host identifier, e.g., `{"name": "KEMU", "version": "1.4.0"}`.              |
+| `capabilities` | `[tstr]`                      | yes  | Advertised capabilities (Appendix B).                                       |
+| `limits`       | `{max_transfer: uint}`        | no   | Maximum clipboard item size in bytes accepted by the host (default 64 MiB). |
 
-Without a common version, the host sends ERROR `unsupported-version` instead of WELCOME. It carries the fields `versions`, listing the host's own, and `nonce`, echoing the HELLO. The host keeps waiting for HELLO. The agent SHOULD log the mismatch and wait at least 5 minutes before the next HELLO.
+If no common version exists, the host sends ERROR `unsupported-version` (with `versions` listing its supported versions and `nonce` echoing HELLO) instead of WELCOME and continues waiting for HELLO. The agent SHOULD log the mismatch and wait at least 5 minutes before sending another HELLO.
 
 ### 5.2 Versions and capabilities
 
-- The version is a single number. Incompatible changes get a new version.
-- Compatible additions get a new capability or a new optional field.
-- A feature is in use only when both sides list its capability. Capabilities stay fixed for the session.
+- The version is a single integer; incompatible changes require a new version.
+- Backwards-compatible extensions use a new capability or optional field.
+- A capability is active only when advertised by both sides, and negotiated capabilities remain fixed for the session.
 
 ### 5.3 Resynchronisation
 
-In scan mode a receiver searches the input for the magic and reads the header behind it. It considers only the frames it expects during the handshake:
+In scan mode, a receiver searches incoming bytes for the frame magic and reads the subsequent header, accepting only handshake-valid frame types with `length` ≤ 4096 (HELLO, WELCOME, and ERROR MUST therefore never exceed 4096 bytes):
 
-- the agent: WELCOME, ERROR and HELLO\_REQUEST;
-- the host: HELLO;
-- in both cases only with `length` at most 4096. HELLO, WELCOME and ERROR MUST therefore stay within 4096 bytes.
+- **Agent:** WELCOME, ERROR, and HELLO\_REQUEST.
+- **Host:** HELLO.
 
-For any other candidate it moves one byte past the start of the magic and keeps searching, without waiting for the body. The agent accepts a WELCOME only if it carries the agent's current nonce.
+For any other candidate, the receiver advances one byte past the start of the magic and continues scanning without waiting for a body. The agent accepts a WELCOME or ERROR only if it carries the agent's current nonce; HELLO\_REQUEST carries no nonce and is always accepted.
 
-The agent accepts a WELCOME or an ERROR only if it carries the agent's current nonce. HELLO\_REQUEST carries no nonce and is always accepted.
+Because each direction is FIFO, stale bytes always precede the first frame of the new session. Since the host writes WELCOME only after reading HELLO, all data following the accepted WELCOME belongs to the current session. If the host accepts a stale HELLO from a terminated agent, the new agent ignores the mismatched WELCOME and resets the host with its own HELLO (Section 5.9).
 
-This is safe because each direction is FIFO. Stale bytes always arrive ahead of the first frame of the new session. The host writes WELCOME only after it has read the HELLO, so everything after the accepted WELCOME belongs to the current session.
-
-The host may accept a stale HELLO from an agent that died right after sending it. The new agent ignores the WELCOME, because the nonce differs, and its next HELLO resets the host (Section 5.9).
-
-**HELLO\_REQUEST** (0x0003, H→G) has an empty body. The agent answers in any state with a new HELLO and a new nonce, at most once per second. A READY agent first resets its session state.
+**HELLO\_REQUEST** (0x0003, H→G) has an empty body. The agent responds in any state with a new HELLO and fresh nonce (rate-limited to at most once per second), resetting its session state first if currently READY.
 
 ### 5.4 Session state
 
-A reset on either side drops: clipboard ownership and serials, outstanding clipboard requests, and the layout generation. The host keeps the last reported layout for pointer mapping until a new one arrives (Section 8).
+A session reset clears clipboard ownership, serials, pending clipboard requests, and the layout generation. The host retains the last reported display layout for pointer mapping until a new one arrives (Section 8).
 
 ### 5.5 POLICY
 
-**POLICY** (0x0010, H→G) is sent right after WELCOME and again whenever the user changes a setting.
+**POLICY** (0x0010, H→G) is sent immediately after WELCOME and whenever the user changes a policy setting.
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `clipboard.to_host` | `bool` | yes | The host accepts offers from the guest. |
-| `clipboard.to_guest` | `bool` | yes | The host offers its own clipboard to the guest. |
-| `clipboard.primary` | `bool` | yes | PRIMARY is shared too, in the directions allowed above. |
-| `clipboard.files` | `bool` | no | Files are shared too (Section 6.8), in the directions allowed above. Default `false`. |
-| `clipboard.files_limit` | `uint` | no | Largest total size in bytes of the files of one offer. Default 0. |
+| Field                   | Type   | Req. | Meaning                                                                                        |
+| ----------------------- | ------ | ---- | ---------------------------------------------------------------------------------------------- |
+| `clipboard.to_host`     | `bool` | yes  | Host accepts clipboard offers from the guest.                                                  |
+| `clipboard.to_guest`    | `bool` | yes  | Host offers its clipboard to the guest.                                                        |
+| `clipboard.primary`     | `bool` | yes  | PRIMARY selection is shared in the allowed directions.                                         |
+| `clipboard.files`       | `bool` | no   | Files are shared in the allowed directions (Section 6.8; default `false`).                     |
+| `clipboard.files_limit` | `uint` | no   | Maximum combined byte size of files in a single offer (default 0).                             |
 
-- Until the first POLICY, every field counts as false.
-- The agent MUST NOT send offers that the policy does not allow. The host MUST ignore such offers anyway.
-- When a direction becomes allowed, the side that holds the selection SHOULD offer it at once, so the user does not have to copy again.
-- When `to_host` becomes false, the host drops the guest's offers. When `to_guest` becomes false, the host sends CLIPBOARD\_RELEASE for its own offers.
+- Before the first POLICY arrives, all fields default to `false`.
+- The agent MUST NOT send offers disallowed by policy, and the host MUST ignore any disallowed offers.
+- When a direction becomes enabled, the side currently holding the selection SHOULD offer it immediately so the user need not copy again.
+- When `to_host` becomes `false`, the host drops guest offers; when `to_guest` becomes `false`, the host sends CLIPBOARD\_RELEASE for its active offers.
 
 ### 5.6 PING and PONG
 
-**PING** (0x0004, both) and **PONG** (0x0005, both) carry one field, `id` (`uint`). A PONG echoes the `id` of the PING it answers.
+**PING** (0x0004, both) and **PONG** (0x0005, both) carry a single `id` (`uint`) field; PONG echoes the `id` of the PING it answers.
 
-- The receiver of a PING MUST answer promptly.
-- The host SHOULD send a PING after 10 seconds without input. Without a PONG within 10 more seconds it marks the agent as unresponsive in its interface, but keeps the session.
+- Receivers MUST respond to PING promptly.
+- The host SHOULD send a PING after 10 seconds without incoming traffic and mark the agent as unresponsive in the UI if no PONG arrives within another 10 seconds, while keeping the session open.
 
 ### 5.7 GOODBYE
 
-**GOODBYE** (0x0006, both) announces the end of the session.
+**GOODBYE** (0x0006, both) signals session termination.
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `reason` | `tstr` | yes | `session-inactive`, `shutdown`, `restart`, `disabled` or `error`. |
-| `message` | `tstr` | no | Text for logs. |
+| Field     | Type   | Req. | Meaning                                                              |
+| --------- | ------ | ---- | -------------------------------------------------------------------- |
+| `reason`  | `tstr` | yes  | `session-inactive`, `shutdown`, `restart`, `disabled`, or `error`.   |
+| `message` | `tstr` | no   | Optional diagnostic text for logs.                                   |
 
-- After GOODBYE the sender sends nothing more in this session.
-- An agent closes the port after its GOODBYE.
-- A GOODBYE from the host means the host does not want an agent right now, for example because the user switched the integration off. The agent resets and waits for HELLO\_REQUEST or a new host connection. It MUST NOT send HELLO before that.
+- After sending GOODBYE, the sender transmits nothing further in that session.
+- An agent closes the port immediately after sending GOODBYE.
+- When the host sends GOODBYE (e.g., because the user disabled integration), the agent resets to IDLE and waits for HELLO\_REQUEST or a new host connection; it MUST NOT send HELLO before then.
 
 ### 5.8 ERROR
 
-**ERROR** (0x0007, both) reports a problem without ending the session.
+**ERROR** (0x0007, both) reports a non-fatal error without terminating the session.
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `code` | `tstr` | yes | Appendix C. |
-| `message` | `tstr` | no | Text for logs. |
-| `type` | `uint` | no | The message type the error refers to. |
-| `id` | `uint` | no | The request the error refers to. |
-| `nonce` | `bstr` | no | With `unsupported-version`: the nonce of the HELLO it answers. |
-| `versions` | `[uint]` | no | With `unsupported-version`: the versions the host supports. |
+| Field      | Type     | Req. | Meaning                                                          |
+| ---------- | -------- | ---- | ---------------------------------------------------------------- |
+| `code`     | `tstr`   | yes  | Error code (Appendix C).                                         |
+| `message`  | `tstr`   | no   | Optional diagnostic text for logs.                               |
+| `type`     | `uint`   | no   | Message type that triggered the error.                           |
+| `id`       | `uint`   | no   | Request ID that triggered the error.                             |
+| `nonce`    | `bstr`   | no   | With `unsupported-version`: `nonce` of the rejected HELLO.       |
+| `versions` | `[uint]` | no   | With `unsupported-version`: protocol versions supported by host. |
 
 ### 5.9 State machines
 
-Agent:
+**Agent:**
 
-| State | Event | Action | Next state |
-| --- | --- | --- | --- |
-| CLOSED | Session active, `open()` succeeds | — | WAITING |
-| WAITING | `POLLHUP` clears | Send HELLO | HANDSHAKE |
-| HANDSHAKE | WELCOME with current nonce | Send DISPLAY\_LAYOUT and offers | READY |
-| HANDSHAKE | No WELCOME in time, or HELLO\_REQUEST | Send new HELLO | HANDSHAKE |
-| HANDSHAKE | ERROR `unsupported-version` | Log; new HELLO after 5 minutes at the earliest | HANDSHAKE |
-| READY | Framing error or HELLO\_REQUEST | Reset, send new HELLO | HANDSHAKE |
-| READY | GOODBYE from the host | Reset | IDLE |
-| IDLE | HELLO\_REQUEST | Send HELLO | HANDSHAKE |
-| any open state | `POLLHUP` | Reset | WAITING |
-| any open state | Session inactive | Send GOODBYE, close port | CLOSED |
+| State           | Event                                      | Action                                             | Next state |
+| --------------- | ------------------------------------------ | -------------------------------------------------- | ---------- |
+| CLOSED          | Session active, `open()` succeeds          | —                                                  | WAITING    |
+| WAITING         | `POLLHUP` clears                           | Send HELLO                                         | HANDSHAKE  |
+| HANDSHAKE       | WELCOME with current nonce                 | Send DISPLAY\_LAYOUT and offers                    | READY      |
+| HANDSHAKE       | Timeout or HELLO\_REQUEST                  | Send new HELLO                                     | HANDSHAKE  |
+| HANDSHAKE       | ERROR `unsupported-version`                | Log; send new HELLO after 5 minutes at earliest    | HANDSHAKE  |
+| READY           | Framing error or HELLO\_REQUEST            | Reset, send new HELLO                              | HANDSHAKE  |
+| READY           | GOODBYE from host                          | Reset                                              | IDLE       |
+| IDLE            | HELLO\_REQUEST                             | Send HELLO                                         | HANDSHAKE  |
+| any open state  | `POLLHUP`                                  | Reset                                              | WAITING    |
+| any open state  | Session inactive                           | Send GOODBYE, close port                           | CLOSED     |
 
-Host:
+**Host:**
 
-| State | Event | Action | Next state |
-| --- | --- | --- | --- |
-| WAIT\_HELLO | Valid HELLO | Send WELCOME, POLICY | READY |
-| WAIT\_HELLO | No HELLO 1 second after `VSERPORT_CHANGE` open | Send HELLO\_REQUEST | WAIT\_HELLO |
-| READY | HELLO | Reset, send WELCOME, POLICY | READY |
-| READY | Framing error | Reset, send HELLO\_REQUEST | WAIT\_HELLO |
-| READY | GOODBYE from the agent | Reset | WAIT\_HELLO |
-| any | `VSERPORT_CHANGE` closed | Reset, stop writing | WAIT\_HELLO |
+| State       | Event                                           | Action                       | Next state  |
+| ----------- | ----------------------------------------------- | ---------------------------- | ----------- |
+| WAIT\_HELLO | Valid HELLO                                     | Send WELCOME, POLICY         | READY       |
+| WAIT\_HELLO | No HELLO 1 second after `VSERPORT_CHANGE` open  | Send HELLO\_REQUEST          | WAIT\_HELLO |
+| READY       | HELLO                                           | Reset, send WELCOME, POLICY  | READY       |
+| READY       | Framing error                                   | Reset, send HELLO\_REQUEST   | WAIT\_HELLO |
+| READY       | GOODBYE from agent                              | Reset                        | WAIT\_HELLO |
+| any         | `VSERPORT_CHANGE` closed                        | Reset, stop writing          | WAIT\_HELLO |
 
 ## 6. Clipboard
 
-Each side announces what it holds with an offer: a list of MIME types, no data. The other side fetches a format only when an application asks for it. Serials order the offers and settle the case where both sides copy at the same moment: the host wins.
+Each side advertises clipboard contents via an offer containing MIME types without payload data; the peer fetches a format only when requested. Monotonic serials order offers and resolve simultaneous copies deterministically in favour of the host.
 
-Capabilities: `clipboard` for CLIPBOARD, `clipboard.primary` for PRIMARY.
+Capabilities: `clipboard` (for CLIPBOARD) and `clipboard.primary` (for PRIMARY).
 
 ### 6.1 Selections
 
-| Value | Selection | Needs |
-| --- | --- | --- |
-| 0 | CLIPBOARD | capability `clipboard` |
-| 1 | PRIMARY | capability `clipboard.primary` and POLICY `clipboard.primary` |
+| Value | Selection | Requirements                                                    |
+| ----- | --------- | --------------------------------------------------------------- |
+| 0     | CLIPBOARD | Capability `clipboard`                                          |
+| 1     | PRIMARY   | Capability `clipboard.primary` and POLICY `clipboard.primary`   |
 
-Other values are reserved. Receivers ignore clipboard messages with an unknown selection.
+All other values are reserved; receivers ignore clipboard messages for unknown selections.
 
 ### 6.2 Ownership and serials
 
-For each selection, each side keeps three values:
+For each selection, both sides track three state variables:
 
-- `local_serial`: the serial of the last offer it sent, 0 if none;
-- `peer_serial`: the serial of the last peer offer it accepted, 0 if none;
-- `owner`: `local`, `peer` or `none`.
+- `local_serial`: serial of the last sent offer (0 if none).
+- `peer_serial`: serial of the last accepted peer offer (0 if none).
+- `owner`: `local`, `peer`, or `none`.
 
-Sending an offer:
+**Sending an offer:**
 
 1. Increment `local_serial`.
 2. Send CLIPBOARD\_OFFER with `serial` = `local_serial` and `seen` = `peer_serial`.
 3. Set `owner` = `local`.
 
-Receiving an offer with serial `s` and seen `x`:
+**Receiving an offer with serial `s` and `seen` = `x`:**
 
-1. If `s` ≤ `peer_serial`, the offer is stale: ignore it.
-2. If `owner` = `local` and `x` < `local_serial`, the peer made its offer before it saw ours. This is a conflict, and the host wins:
-   - the host ignores the agent's offer, but sets `peer_serial` = `s`;
-   - the agent accepts the host's offer as in step 3.
-3. Otherwise accept it: set `peer_serial` = `s` and `owner` = `peer`, and put a proxy for the offered types on the local clipboard.
+1. If `s` ≤ `peer_serial`, ignore the stale offer.
+2. If `owner` = `local` and `x` < `local_serial`, the peer sent its offer before seeing ours. In this conflict, the host wins:
+   - The host ignores the agent's offer and sets `peer_serial` = `s`.
+   - The agent accepts the host's offer as in step 3.
+3. Otherwise accept the offer: set `peer_serial` = `s`, set `owner` = `peer`, and install a local clipboard proxy for the offered types.
 
-A side that refuses an offer for its own policy reasons, for example the host's password filter, still sets `peer_serial` = `s`. If `owner` = `peer`, it also sets `owner` = `none` and removes its proxy, because the peer no longer holds that older content.
+If a side rejects an offer due to local policy (such as the host's password filter), it still updates `peer_serial` = `s`; if `owner` was `peer`, it sets `owner` = `none` and removes its proxy because the peer no longer holds the previous content.
 
-Local changes:
+**Local changes:**
 
-- When a local application takes the selection, the side sends an offer if the policy allows it and at least one type may be shared (Section 6.6).
-- If it may not share the new content but `owner` = `local`, it sends CLIPBOARD\_RELEASE for its last offer instead.
-- When the local selection is cleared and `owner` = `local`, it sends CLIPBOARD\_RELEASE and sets `owner` = `none`.
-- Putting a proxy on the local clipboard changes that clipboard. A side MUST NOT answer that change with an offer of its own.
+- When a local application claims the selection, the side sends an offer if policy allows it and at least one type is shareable (Section 6.6).
+- If the new content cannot be shared and `owner` = `local`, it sends CLIPBOARD\_RELEASE instead.
+- When the local selection is cleared while `owner` = `local`, it sends CLIPBOARD\_RELEASE and sets `owner` = `none`.
+- Installing a local proxy modifies the local clipboard; a side MUST NOT respond to its own proxy update with a new offer.
 
-In a conflict, the copy made in the guest is replaced by the host's. Both sides end up with the host's content.
+In a simultaneous-copy conflict, the host's content replaces the guest's on both sides.
 
 ### 6.3 CLIPBOARD\_OFFER
 
 **CLIPBOARD\_OFFER** (0x0100, both)
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `selection` | `uint` | yes | Section 6.1. |
-| `serial` | `uint` | yes | Strictly increasing per sender and selection, starting at 1 in each session. |
-| `seen` | `uint` | yes | The peer serial the sender last accepted, 0 if none. |
-| `types` | `[tstr]` | yes | 1 to 64 MIME types, in the source's order of preference. May be empty if `files` is present. |
-| `sizes` | `{tstr: uint}` | no | Sizes in bytes of types the sender already knows, for example prefetched text. |
-| `files` | `{count: uint, size: uint}` | no | The selection holds files the sender serves (Section 6.8): number of entries and total size of the files in bytes. |
+| Field       | Type                        | Req. | Meaning                                                                                                |
+| ----------- | --------------------------- | ---- | ------------------------------------------------------------------------------------------------------ |
+| `selection` | `uint`                      | yes  | Selection ID (Section 6.1).                                                                            |
+| `serial`    | `uint`                      | yes  | Strictly increasing per sender and selection, starting at 1 per session.                               |
+| `seen`      | `uint`                      | yes  | Last peer serial accepted by the sender (0 if none).                                                   |
+| `types`     | `[tstr]`                    | yes  | 1 to 64 MIME types in preference order (may be empty if `files` is present).                           |
+| `sizes`     | `{tstr: uint}`              | no   | Known byte sizes for specific MIME types (e.g., prefetched text).                                      |
+| `files`     | `{count: uint, size: uint}` | no   | Present when the selection holds shared files (Section 6.8): entry count and total file size in bytes. |
 
 ### 6.4 CLIPBOARD\_RELEASE
 
-**CLIPBOARD\_RELEASE** (0x0101, both) withdraws the sender's offer. The sender then sets `owner` = `none`.
+**CLIPBOARD\_RELEASE** (0x0101, both) withdraws a previous offer; the sender sets `owner` = `none`.
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `selection` | `uint` | yes | Section 6.1. |
-| `serial` | `uint` | yes | The serial of the offer withdrawn. |
+| Field       | Type   | Req. | Meaning                        |
+| ----------- | ------ | ---- | ------------------------------ |
+| `selection` | `uint` | yes  | Selection ID (Section 6.1).    |
+| `serial`    | `uint` | yes  | Serial of the withdrawn offer. |
 
-The receiver acts only if `owner` = `peer` and `peer_serial` = `serial`. It then sets `owner` = `none` and removes its proxy, if the proxy is still on the local clipboard.
+The receiver acts only if `owner` = `peer` and `peer_serial` = `serial`, setting `owner` = `none` and removing its proxy if still active.
 
 ### 6.5 Fetching data
 
-The side that wants data sends CLIPBOARD\_REQUEST to the owner. The owner answers with one or more CLIPBOARD\_DATA, or with one CLIPBOARD\_FAIL.
+The requester sends CLIPBOARD\_REQUEST to the owner, which responds with one or more CLIPBOARD\_DATA frames or a single CLIPBOARD\_FAIL.
 
 **CLIPBOARD\_REQUEST** (0x0102, both)
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `id` | `uint` | yes | Request id, increasing per requester, unique in the session. |
-| `selection` | `uint` | yes | Section 6.1. |
-| `serial` | `uint` | yes | The serial of the offer the request refers to. |
-| `type` | `tstr` | yes | One of the offered types. |
+| Field       | Type   | Req. | Meaning                                                            |
+| ----------- | ------ | ---- | ------------------------------------------------------------------ |
+| `id`        | `uint` | yes  | Monotonically increasing request ID, unique per requester/session. |
+| `selection` | `uint` | yes  | Selection ID (Section 6.1).                                        |
+| `serial`    | `uint` | yes  | Serial of the target offer.                                        |
+| `type`      | `tstr` | yes  | One of the MIME types listed in the offer.                         |
 
 **CLIPBOARD\_DATA** (0x0103, both)
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `id` | `uint` | yes | The request id. |
-| `data` | `bstr` | yes | The next chunk, at most 256 KiB. May be empty. |
-| `size` | `uint` | no | Total size in bytes, in the first chunk, if known. |
-| `last` | `bool` | no | `true` on the final chunk. Default `false`. |
+| Field  | Type   | Req. | Meaning                                                             |
+| ------ | ------ | ---- | ------------------------------------------------------------------- |
+| `id`   | `uint` | yes  | Matching request ID.                                                |
+| `data` | `bstr` | yes  | Next data chunk, at most 256 KiB (may be empty).                    |
+| `size` | `uint` | no   | Total payload size in bytes (included on the first chunk if known). |
+| `last` | `bool` | no   | `true` on the final chunk (default `false`).                        |
 
 **CLIPBOARD\_FAIL** (0x0104, both)
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `id` | `uint` | yes | The request id. |
-| `reason` | `tstr` | yes | `stale`, `not-offered`, `too-large`, `unavailable`, `denied` or `busy` (Appendix C). |
-| `message` | `tstr` | no | Text for logs. |
+| Field     | Type   | Req. | Meaning                                                                               |
+| --------- | ------ | ---- | ------------------------------------------------------------------------------------- |
+| `id`      | `uint` | yes  | Matching request ID.                                                                  |
+| `reason`  | `tstr` | yes  | `stale`, `not-offered`, `too-large`, `unavailable`, `denied`, or `busy` (Appendix C). |
+| `message` | `tstr` | no   | Optional diagnostic text for logs.                                                    |
 
-**CLIPBOARD\_CANCEL** (0x0105, both) carries one field, `id` (`uint`). The requester sends it to abandon a request.
+**CLIPBOARD\_CANCEL** (0x0105, both) carries a single `id` (`uint`) field to abort an in-flight request.
 
-Rules:
+**Transfer rules:**
 
-- Chunks arrive in order. Their concatenation is the data.
-- The total MUST NOT exceed the receiver's `limits.max_transfer`. If it would, the owner sends CLIPBOARD\_FAIL `too-large`, also in the middle of a transfer. The requester then discards what it has received.
+- Chunks arrive in order and concatenate to form the complete payload.
+- The total payload MUST NOT exceed the receiver's `limits.max_transfer`; otherwise, the owner aborts with CLIPBOARD\_FAIL `too-large` (even mid-transfer), and the requester discards partial data.
 - Chunks SHOULD be 64 KiB.
-- A side with several transfers SHOULD alternate between them. It MUST let other queued messages pass between two chunks, so that PING or DISPLAY\_LAYOUT is not held up.
-- A requester keeps at most 8 requests open. The owner MAY answer more with `busy`.
-- After CANCEL the owner MUST stop and sends no answer. The requester ignores DATA and FAIL that still arrive for that id.
-- The requester SHOULD cancel a request that receives nothing for 10 seconds.
-- A request MAY be sent at any time while the offer is current, not only when an application pastes. The agent uses this to prefetch small text, so that it survives the source application quitting.
-- After a new offer, the owner MAY still answer requests for the previous serial if it has the content. Otherwise it answers `stale`.
+- With multiple concurrent transfers, the sender SHOULD interleave chunks across requests and MUST allow other queued control messages (such as PING or DISPLAY\_LAYOUT) to pass between chunks.
+- A requester may keep at most 8 requests open simultaneously; the owner MAY reject additional requests with `busy`.
+- Upon receiving CLIPBOARD\_CANCEL, the owner MUST stop sending and emit no further response; the requester ignores any trailing DATA or FAIL frames for that ID.
+- The requester SHOULD cancel any request that receives no data for 10 seconds.
+- Requests MAY be issued proactively at any time while an offer is current (used by the agent to prefetch small text before the source application exits).
+- After a new offer supersedes an old one, the owner MAY still serve requests for the previous serial if cached, or respond with `stale`.
 
 ### 6.6 MIME types
 
-- A type is a MIME type as the source system names it: printable ASCII, at most 255 bytes, normally with a `/`.
-- X11 targets that are not MIME types, such as `TARGETS`, `MULTIPLE`, `TIMESTAMP`, `SAVE_TARGETS`, `UTF8_STRING`, `STRING` and `TEXT`, MUST NOT be sent.
-- Text: if any text is available, the offer MUST include `text/plain;charset=utf-8`, and its data MUST be UTF-8. Other text types MAY be offered too.
-- Images: if any image is available, the offer SHOULD include `image/png`, converted on request if the source lacks it.
-- Types that start with `application/x-kemu-` are private to an implementation, for example markers against echoes. They MUST NOT be offered.
-- Files travel as Section 6.8 describes. Senders MUST NOT offer types that describe local file operations: `x-special/gnome-copied-files`, `application/x-kde-cutselection`, `application/vnd.portal.files` and `application/vnd.portal.filetransfer`.
-- When serving `text/uri-list`, the owner MUST remove `file:` URIs. If none remain, it answers `unavailable`.
-- `x-kde-passwordManagerHint` passes like any other type. It lets the receiver apply its own policy; KEMU uses it for its password filter.
-
-The one type without a `/` that MUST pass is `x-kde-passwordManagerHint`, because KDE names it that way.
+- Types MUST be printable ASCII MIME names up to 255 bytes, normally containing `/`.
+- Non-MIME X11 targets (`TARGETS`, `MULTIPLE`, `TIMESTAMP`, `SAVE_TARGETS`, `UTF8_STRING`, `STRING`, `TEXT`) MUST NOT be sent.
+- **Text:** If any text format is available, the offer MUST include `text/plain;charset=utf-8` with valid UTF-8 data; additional text types MAY also be offered.
+- **Images:** If any image format is available, the offer SHOULD include `image/png` (converted on demand if necessary).
+- Private implementation types prefixed with `application/x-kemu-` (such as echo-prevention markers) MUST NOT be offered.
+- File transfers follow Section 6.8; senders MUST NOT offer local file-operation types (`x-special/gnome-copied-files`, `application/x-kde-cutselection`, `application/vnd.portal.files`, `application/vnd.portal.filetransfer`).
+- When serving `text/uri-list`, the owner MUST strip `file:` URIs and respond with `unavailable` if none remain.
+- `x-kde-passwordManagerHint` is the sole permitted type without `/` and passes through like any other type so receivers (such as KEMU's password filter) can enforce their own policy.
 
 ### 6.7 Rate limits
 
-- PRIMARY changes with every text selection. A sender MUST NOT send more than one PRIMARY offer per 250 milliseconds and SHOULD send the latest state once the selection has stayed unchanged for that long.
-- Some applications set the clipboard twice in a row. A sender SHOULD wait 50 milliseconds for the CLIPBOARD selection to settle before it offers it.
+- Because PRIMARY updates continuously during text selection, a sender MUST NOT emit more than one PRIMARY offer per 250 ms and SHOULD send the final state once the selection settles for 250 ms.
+- Because some applications update CLIPBOARD twice in rapid succession, a sender SHOULD debounce CLIPBOARD changes by 50 ms before sending an offer.
 
 ### 6.8 Files
 
-Capability `clipboard.files`; needs `clipboard`. Files and folders copied on one side can be pasted on the other. The side that holds them lists them and serves their content on request; the receiving side copies them into a directory of its own and puts `file:` URIs to those copies on its clipboard.
+Requires capabilities `clipboard.files` and `clipboard`. Files and directories copied on one side are listed and served on demand by the owner, staged into a local directory by the receiver, and exposed on the receiver's clipboard as `file:` URIs.
 
-Files are shared only while POLICY `clipboard.files` is true, in the directions POLICY allows, and only if the whole selection fits `clipboard.files_limit`.
+File sharing is active only when POLICY `clipboard.files` is `true`, in the policy-permitted directions, and when the total selection fits within `clipboard.files_limit`.
 
 #### 6.8.1 Offering files
 
-A selection holds files when its `text/uri-list` contains `file:` URIs. The owner then builds a listing:
+When a selection's `text/uri-list` contains `file:` URIs, the owner builds a file listing:
 
-- one entry per regular file and per directory, directories with everything below them;
-- symbolic links, devices, sockets and FIFOs are left out, and links are never followed;
-- every entry has a path relative to the listing. Top-level names are the names of the copied items; where two are equal, the owner renames one, for example `notes (2).txt`.
+- Includes one entry per regular file and directory recursively.
+- Omits symbolic links, device nodes, sockets, and FIFOs without following links.
+- Assigns each entry a relative path rooted at the copied top-level names, deduplicating colliding top-level names (e.g., `notes (2).txt`).
 
-Path rules, for the owner and checked again by the requester:
+**Path validation rules (enforced by both owner and requester):**
 
-- components are separated by `/`; no component is empty, `.` or `..`, contains `/` or NUL, or is longer than 255 bytes;
-- a path is valid UTF-8, at most 1024 bytes and at most 32 components;
-- a directory comes before the entries below it, and no path appears twice.
+- Components are `/` separated; no component may be empty, `.`, `..`, contain `/` or NUL, or exceed 255 bytes.
+- Full paths must be valid UTF-8, at most 1024 bytes, and contain at most 32 components.
+- Parent directories precede their descendants, and all paths are unique.
 
-The owner adds `files` to CLIPBOARD\_OFFER (Section 6.3) only if all of these hold:
+The owner includes `files` in CLIPBOARD\_OFFER (Section 6.3) only if:
 
-- both sides listed `clipboard.files`, and POLICY allows files in this direction;
-- every name can be sent under the path rules;
-- the listing has at most 10,000 entries, and the sizes of its files add up to at most `clipboard.files_limit`.
+- Both sides advertised `clipboard.files` and POLICY permits files in that direction.
+- All paths satisfy the path validation rules.
+- The listing contains at most 10,000 entries and total file bytes do not exceed `clipboard.files_limit`.
 
-Otherwise the offer goes out without `files`, as if the selection held none. An offer with `files` MAY have an empty `types` list. `text/uri-list` is still served without `file:` URIs (Section 6.6); paths of one side mean nothing on the other.
-
-Cut counts as copy: the source files stay where they are.
+Otherwise, the offer is sent without `files`. Offers with `files` MAY have an empty `types` list; `text/uri-list` continues to strip `file:` URIs (Section 6.6). Cut operations are treated identically to copy operations, leaving source files untouched.
 
 #### 6.8.2 Messages
 
-**CLIPBOARD\_FILE\_LIST** (0x0110, both) asks for a part of the listing.
+**CLIPBOARD\_FILE\_LIST** (0x0110, both) requests a slice of the file listing.
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `id` | `uint` | yes | Request id, from the same sequence as CLIPBOARD\_REQUEST. |
-| `selection` | `uint` | yes | Section 6.1. |
-| `serial` | `uint` | yes | The serial of the offer. |
-| `start` | `uint` | no | Index of the first entry wanted. Default 0. |
+| Field       | Type   | Req. | Meaning                                                          |
+| ----------- | ------ | ---- | ---------------------------------------------------------------- |
+| `id`        | `uint` | yes  | Request ID (from the same sequence as CLIPBOARD\_REQUEST).       |
+| `selection` | `uint` | yes  | Selection ID (Section 6.1).                                      |
+| `serial`    | `uint` | yes  | Serial of the target offer.                                      |
+| `start`     | `uint` | no   | Zero-based index of the first requested entry (default 0).       |
 
-**CLIPBOARD\_FILE\_ENTRIES** (0x0111, both) answers it.
+**CLIPBOARD\_FILE\_ENTRIES** (0x0111, both) returns listing entries.
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `id` | `uint` | yes | The request id. |
-| `total` | `uint` | yes | Number of entries in the whole listing. |
-| `entries` | `[map]` | yes | Up to 256 entries, beginning at `start`. Empty only if `start` ≥ `total`. |
+| Field     | Type    | Req. | Meaning                                                                   |
+| --------- | ------- | ---- | ------------------------------------------------------------------------- |
+| `id`      | `uint`  | yes  | Matching request ID.                                                      |
+| `total`   | `uint`  | yes  | Total number of entries in the listing.                                   |
+| `entries` | `[map]` | yes  | Up to 256 entries starting at `start` (empty only if `start` ≥ `total`).  |
 
-An entry:
+**Entry map fields:**
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `path` | `tstr` | yes | Relative path (Section 6.8.1). |
-| `type` | `tstr` | yes | `file` or `dir`. Entries of any other type MUST be ignored. |
-| `size` | `uint` | for `file` | Size in bytes. |
-| `mtime` | `int` | no | Modification time in seconds since 1970-01-01 UTC. |
+| Field   | Type   | Req.       | Meaning                                                                |
+| ------- | ------ | ---------- | ---------------------------------------------------------------------- |
+| `path`  | `tstr` | yes        | Relative path (Section 6.8.1).                                         |
+| `type`  | `tstr` | yes        | `file` or `dir` (entries with any other type MUST be ignored).         |
+| `size`  | `uint` | for `file` | File size in bytes.                                                    |
+| `mtime` | `int`  | no         | Modification time in seconds since 1970-01-01 UTC.                     |
 
-The index of an entry is its position in the listing, counted from 0. The listing does not change while the offer is current.
+Entry indices are zero-based positions in the listing, which remains immutable while the offer is active.
 
-**CLIPBOARD\_FILE\_READ** (0x0112, both) asks for a part of one file.
+**CLIPBOARD\_FILE\_READ** (0x0112, both) reads a byte range from a file.
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `id` | `uint` | yes | Request id. |
-| `selection` | `uint` | yes | Section 6.1. |
-| `serial` | `uint` | yes | The serial of the offer. |
-| `file` | `uint` | yes | Index of an entry of type `file`. |
-| `offset` | `uint` | yes | Position in the file, in bytes. |
-| `length` | `uint` | yes | Bytes wanted, 1 to 262,144. |
+| Field       | Type   | Req. | Meaning                                             |
+| ----------- | ------ | ---- | --------------------------------------------------- |
+| `id`        | `uint` | yes  | Request ID.                                         |
+| `selection` | `uint` | yes  | Selection ID (Section 6.1).                         |
+| `serial`    | `uint` | yes  | Serial of the target offer.                         |
+| `file`      | `uint` | yes  | Zero-based index of an entry with `type` = `file`.  |
+| `offset`    | `uint` | yes  | Byte offset within the file.                        |
+| `length`    | `uint` | yes  | Requested byte count (`1` to `262,144`).            |
 
-**CLIPBOARD\_FILE\_DATA** (0x0113, both) answers it.
+**CLIPBOARD\_FILE\_DATA** (0x0113, both) returns file bytes.
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `id` | `uint` | yes | The request id. |
-| `data` | `bstr` | yes | The bytes from `offset` on, at most `length`. Shorter only where the file ends; empty at or past its end. |
+| Field  | Type   | Req. | Meaning                                                                                        |
+| ------ | ------ | ---- | ---------------------------------------------------------------------------------------------- |
+| `id`   | `uint` | yes  | Matching request ID.                                                                           |
+| `data` | `bstr` | yes  | Bytes starting at `offset` (up to `length`; shorter only at EOF, empty at or past EOF).        |
 
-Rules:
+**File transfer rules:**
 
-- Each request gets exactly one answer: ENTRIES or DATA, or CLIPBOARD\_FAIL with the request's id. CLIPBOARD\_CANCEL and the limit of 8 open requests (Section 6.5) apply to these requests too.
-- Reads are independent of each other and may come in any order. This lets a later revision read files only when they are pasted, without new messages.
-- The owner answers `stale` once the serial is no longer current, `denied` when POLICY no longer allows files, `not-offered` when the offer had no `files` or `file` is not the index of a file, and `unavailable` when it cannot read the file.
-- The owner reads from the file itself, not from a copy. If a file's size or modification time no longer matches the listing, it answers `changed`.
-- File data counts neither against `limits.max_transfer` nor against the budget of Section 6.5; `clipboard.files_limit` bounds it instead.
-- Like CLIPBOARD\_DATA, file data MUST let other queued messages pass (Section 6.5).
+- Each request receives exactly one response (ENTRIES, DATA, or CLIPBOARD\_FAIL); CLIPBOARD\_CANCEL and the 8-request concurrency limit (Section 6.5) apply.
+- Read requests are stateless and may arrive in any order (allowing future revisions to fetch files lazily on paste without protocol changes).
+- The owner responds with `stale` if the serial is outdated, `denied` if policy disallows files, `not-offered` if the offer lacks `files` or `file` does not index a file entry, `unavailable` if the file cannot be read, and `changed` if the file's size or `mtime` no longer matches the listing.
+- File transfers are governed by `clipboard.files_limit` rather than `limits.max_transfer`.
+- Like CLIPBOARD\_DATA, file responses MUST yield to queued control messages (Section 6.5).
 
 #### 6.8.3 Receiving files
 
-When an offer with `files` arrives and POLICY allows it, the receiver:
+Upon receiving a policy-permitted offer with `files`, the receiver:
 
-1. checks `files.size` against `clipboard.files_limit` and against the free space of its staging directory, and stops here if it does not fit;
-2. fetches the listing and checks every path, the order and the limits of Section 6.8.1, and that the sizes add up to no more than `files.size`. One violation ends the whole transfer;
-3. creates the directories and reads the files, front to back, into a new directory for this offer;
-4. puts the offer on its clipboard once every file is complete: the fetched types, plus `text/uri-list` with `file:` URIs of the top-level entries. It MAY add what its desktop expects for copied files, such as `x-special/gnome-copied-files`.
+1. Verifies that `files.size` fits within `clipboard.files_limit` and available free space in the staging directory, aborting immediately if not.
+2. Fetches the complete listing and validates every path, directory ordering, entry count, and cumulative size against `files.size` (any violation aborts the transfer).
+3. Creates the directory hierarchy and reads all files sequentially into a dedicated staging directory for that offer.
+4. Publishes the offer on its local clipboard once all files complete, including fetched MIME types, `text/uri-list` with `file:` URIs for top-level entries, and any desktop-specific formats (such as `x-special/gnome-copied-files`).
 
-Rules:
+**Staging rules:**
 
-- All or nothing: if one file fails, with `changed` or otherwise, the receiver deletes what it staged and puts the offer on its clipboard without files.
-- A file never grows beyond its listed `size`; a read that returns less than asked before that size is reached ends the transfer.
-- A newer offer, a CLIPBOARD\_RELEASE or a copy on the receiver's own side cancels the transfer; open requests are cancelled and the staged files deleted.
-- The staging directory belongs to the user alone (mode 0700). Staged files are created without execute permission; owner, group and mode of the source are not transferred, `mtime` MAY be.
-- Staged files of an offer stay for at least 10 minutes after a newer offer replaced it, since a paste may still be copying them. The receiver deletes all staged files when it starts and when it ends.
-- URIs that point into its own staging directory are never offered back as files, with or without the proxy marker (Section 11.6).
+- **All-or-nothing:** If any file fails (including `changed`), the receiver deletes all staged files for that offer and publishes the clipboard offer without files.
+- A file must never exceed its listed `size`, and a premature EOF aborts the transfer.
+- Any superseding offer, CLIPBOARD\_RELEASE, or local copy cancels active file requests and deletes staged files.
+- The staging directory is restricted to the user (`mode 0700`); staged files are created non-executable without preserving source ownership or permissions (`mtime` MAY be preserved).
+- Staged files remain for at least 10 minutes after being superseded by a newer offer so in-progress pastes can finish, and are purged completely on agent startup and exit.
+- URIs pointing into the local staging directory are never re-offered as files (Section 11.6).
 
 #### 6.8.4 Example
 
-The user copies a folder with two files in the guest; the host allows files up to 256 MiB.
+The guest user copies a directory containing two files; the host permits file sharing up to 256 MiB:
 
 ```
 H→G POLICY {"clipboard": {"to_host": true, "to_guest": true, "primary": false,
@@ -592,177 +580,148 @@ G→H CLIPBOARD_FILE_DATA {"id": 33, "data": h'…'}
 ...
 ```
 
-Once `report/notes.txt` is complete, the host clipboard holds `text/uri-list` with `file:///…/clipboard/7/report`, and a paste in a file manager copies the folder from there.
+Once `report/notes.txt` finishes transferring, the host clipboard exposes `text/uri-list` containing `file:///…/clipboard/7/report`.
 
 ## 7. Display layout
 
-The agent reports where each monitor sits in the guest's global coordinates, and which rectangle absolute pointer devices map onto. With that, the host can place the pointer on any monitor without guessing.
+The agent reports each monitor's geometry in the guest's global coordinate space alongside the bounding rectangle mapped by absolute pointer devices, allowing the host to position the pointer accurately across monitors.
 
 Capability: `display.layout`.
 
 ### 7.1 DISPLAY\_LAYOUT
 
-**DISPLAY\_LAYOUT** (0x0200, G→H) is sent after the handshake and whenever the layout changes. The agent SHOULD wait until the layout has stayed unchanged for 100 milliseconds.
+**DISPLAY\_LAYOUT** (0x0200, G→H) is sent after the handshake and whenever the layout changes (debounced by 100 ms).
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `generation` | `uint` | yes | Increases with every report in the session. |
-| `space` | `{x: int, y: int, width: uint, height: uint}` | yes | The rectangle, in global coordinates, onto which the compositor maps absolute pointer devices. |
-| `outputs` | `[output]` | yes | All outputs, enabled or not, at most 16. |
-| `source` | `tstr` | no | Where the layout came from, for logs: `kwin`, `wlroots`, `mutter`, `xdg-output` or `x11-randr`. |
+| Field        | Type                                          | Req. | Meaning                                                                                      |
+| ------------ | --------------------------------------------- | ---- | -------------------------------------------------------------------------------------------- |
+| `generation` | `uint`                                        | yes  | Monotonically increasing counter per session.                                                |
+| `space`      | `{x: int, y: int, width: uint, height: uint}` | yes  | Global-coordinate rectangle onto which the compositor maps absolute pointer devices.         |
+| `outputs`    | `[output]`                                    | yes  | All outputs (enabled or disabled), up to 16 entries.                                         |
+| `source`     | `tstr`                                        | no   | Diagnostic backend identifier: `kwin`, `wlroots`, `mutter`, `xdg-output`, or `x11-randr`.    |
 
-Each `output`:
+**Each `output` map:**
 
-| Field | Type | Req. | Meaning |
-| --- | --- | --- | --- |
-| `name` | `tstr` | yes | Connector name, for example `Virtual-1`. |
-| `head` | `uint` | no | Scanout index of the display device (Section 7.3). Absent if the agent cannot tell. |
-| `enabled` | `bool` | yes |  |
-| `x`, `y` | `int` | if enabled | Top-left corner in global coordinates. |
-| `width`, `height` | `uint` | if enabled | Size in global coordinates, after scaling and rotation. |
-| `mode` | `{width: uint, height: uint, refresh: uint}` | no | Current mode in pixels; `refresh` in millihertz. |
-| `scale` | `float` | no | Default 1.0. |
-| `transform` | `tstr` | no | `normal`, `90`, `180`, `270`, `flipped`, `flipped-90`, `flipped-180` or `flipped-270`, as in `wl_output`. Default `normal`. |
-| `primary` | `bool` | no | Default `false`. |
+| Field       | Type                                         | Req.       | Meaning                                                                                                    |
+| ----------- | -------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------- |
+| `name`      | `tstr`                                       | yes        | Connector name, e.g., `Virtual-1`.                                                                         |
+| `head`      | `uint`                                       | no         | Display device scanout index (Section 7.3; omitted if unknown).                                            |
+| `enabled`   | `bool`                                       | yes        | Whether the output is active.                                                                              |
+| `x`, `y`    | `int`                                        | if enabled | Top-left corner in global coordinates.                                                                     |
+| `width`, `height` | `uint`                                 | if enabled | Logical dimensions in global coordinates after scaling and rotation.                                       |
+| `mode`      | `{width: uint, height: uint, refresh: uint}` | no         | Current pixel mode (`refresh` in millihertz).                                                              |
+| `scale`     | `float`                                      | no         | Display scale factor (default `1.0`).                                                                      |
+| `transform` | `tstr`                                       | no         | `normal`, `90`, `180`, `270`, `flipped`, `flipped-90`, `flipped-180`, or `flipped-270` (default `normal`). |
+| `primary`   | `bool`                                       | no         | Whether this is the primary output (default `false`).                                                      |
 
 ### 7.2 Global coordinates
 
-- Wayland: the compositor's logical coordinates, as xdg-output reports them.
-- X11: pixels of the root window.
-- `space`: KWin maps absolute pointer devices onto the bounding rectangle of all outputs; an X server maps them onto the root window. If the agent cannot tell how its compositor does it, it reports the bounding rectangle of the enabled outputs.
+- **Wayland:** Logical compositor coordinates as reported by `xdg-output`.
+- **X11:** Root window pixel coordinates.
+- **`space`:** KWin maps absolute pointer devices to the bounding rectangle of all outputs, whereas X11 maps them to the root window. If unknown, the agent reports the bounding rectangle of enabled outputs.
 
 ### 7.3 Heads
 
-- The Linux virtio-gpu driver creates one DRM connector per scanout, in scanout order, all of type `Virtual`.
-- Connector numbers count per type across all DRM devices of the guest, so `Virtual-1` is not always head 0.
-- The agent therefore takes the connectors of the virtio-gpu device, sorts them by their number, and assigns heads 0, 1, 2 in that order (Section 11.4).
-- Compositors name outputs after the connector, for example `Virtual-2`. This links an output to its head.
-- The agent MUST leave out `head` when it cannot map an output with certainty.
-- The host maps a head to its D-Bus console through the console's `Head` property.
+- The Linux `virtio-gpu` driver creates one `Virtual` DRM connector per scanout in scanout order.
+- Because connector numbering increments per type across all guest DRM devices, `Virtual-1` is not guaranteed to be head 0.
+- The agent collects all connectors belonging to the `virtio-gpu` device, sorts them numerically, and assigns heads `0, 1, 2, …` in order (Section 11.4).
+- Compositors name outputs after the DRM connector (e.g., `Virtual-2`), linking each output to its head; if uncertain, the agent MUST omit `head`.
+- The host associates each head with its D-Bus display console via the console's `Head` property.
 
 ### 7.4 DISPLAY\_LAYOUT\_QUERY
 
-**DISPLAY\_LAYOUT\_QUERY** (0x0201, H→G) has an empty body. The agent answers with a DISPLAY\_LAYOUT, with a new `generation`, even if nothing changed.
+**DISPLAY\_LAYOUT\_QUERY** (0x0201, H→G) has an empty body; the agent responds with a DISPLAY\_LAYOUT carrying an incremented `generation`, even if unchanged.
 
 ## 8. Pointer mapping on the host (non-normative)
 
-With one tablet device and the reported layout, the host turns a pointer position on any monitor into one absolute tablet value. No pointer data crosses the agent port, and the guest needs no uinput and no root.
+Using a single tablet device and the reported layout, the host maps pointer coordinates on any monitor into global tablet coordinates without sending pointer events over the agent port or requiring `uinput` or root in the guest.
 
 ### 8.1 From viewer position to tablet value
 
-For a pointer at pixel (px, py) in the framebuffer of head h, the image the viewer shows:
+For a pointer at framebuffer pixel `(px, py)` on head `h`:
 
-1. Find the enabled output with `head` = h. Without one, the host falls back to its own placement (the configured one, or the detected one in KEMU today).
-2. Undo the output's `transform`, so that (px, py) refers to the output as the guest arranges it. For `normal` there is nothing to do.
-3. Scale into global coordinates: gx = x + px × width / mode.width and gy = y + py × height / mode.height. Without `mode`, use the framebuffer size.
-4. Convert into the tablet range: tx = (gx − space.x) × 32768 / space.width and ty = (gy − space.y) × 32768 / space.height, rounded down and limited to 0…32767.
+1. Locate the enabled output with `head` = `h` (falling back to KEMU's configured or heuristic layout if absent).
+2. Invert the output's `transform` so `(px, py)` aligns with the guest's logical orientation (no-op for `normal`).
+3. Map to global coordinates: $gx = x + px \times \text{width} / \text{mode.width}$ and $gy = y + py \times \text{height} / \text{mode.height}$ (substituting framebuffer dimensions if `mode` is omitted).
+4. Normalise to tablet range ($0\dots32767$, rounded down): $tx = (gx - \text{space.x}) \times 32768 / \text{space.width}$ and $ty = (gy - \text{space.y}) \times 32768 / \text{space.height}$.
 
-Step 4 is the inverse of what the guest does. QEMU's tablets report 0 to 0x7FFF, and libinput spreads those 32768 steps over the target size.
+Step 4 inverts QEMU's tablet scaling, where `0`–`0x7FFF` (32,768 steps) spans `space`.
 
 ### 8.2 Delivery to QEMU
 
-| Path | Resolution | Note |
-| --- | --- | --- |
-| QMP `input-send-event` with `abs` events | Full: 32768 steps over `space` | Takes the raw range 0 to 0x7FFF. One command per motion, so coalesce to the viewer's frame rate. |
-| D-Bus `SetAbsPosition` on the primary console | As many steps as the primary monitor is wide | QEMU scales by the primary console's size and refuses positions outside it. Two equal monitors side by side give 2-pixel steps. This is what KEMU's `MultiheadMouseMapping` uses today. |
+| Path                                           | Resolution                                   | Notes                                                                                                                                             |
+| ---------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| QMP `input-send-event` (`abs` events)          | Full: 32,768 steps across `space`            | Accepts raw `0`–`0x7FFF` values; coalesce motion events to the viewer frame rate to limit QMP traffic.                                            |
+| D-Bus `SetAbsPosition` on primary console      | Primary monitor pixel width                  | QEMU scales by the primary console size and rejects out-of-bounds coordinates (two equal side-by-side monitors yield 2-pixel steps; used today).  |
 
-Button and wheel events SHOULD take the same path as the motion they follow. Otherwise a click can overtake the motion before it.
+Button and scroll events SHOULD use the same transport path as preceding motion events so clicks cannot overtake cursor movement.
 
 ### 8.3 Lifetime of the layout
 
-- The host keeps the last layout across a new HELLO, because the monitors do not move with a protocol session.
-- It drops the layout when the guest closes the port. The agent left with the graphical session, and a login screen or the next session may arrange the monitors differently; until an agent reports again, the host falls back to its own detection.
-- A new session's first DISPLAY\_LAYOUT replaces it.
-- With a single monitor no mapping is needed.
+- The host retains the last layout across a new HELLO since physical monitor layout does not change across protocol handshakes.
+- When the guest closes the port, the host discards the layout (as the session ended and a login screen or subsequent session may use a different arrangement) and reverts to heuristic detection until a new DISPLAY\_LAYOUT arrives.
+- Single-monitor setups require no coordinate mapping.
 
 ## 9. Reserved extensions
 
-Version 1 reserves type ranges and capability names for two planned features. Neither is specified yet. Implementations MUST NOT use the reserved numbers until a later revision defines them.
+Version 1 reserves message ranges and capability names for two planned extensions; implementations MUST NOT use them until specified in a future revision.
 
-| Range | Use |
-| --- | --- |
-| 0x0001–0x00FF | Core messages (Section 5) |
-| 0x0100–0x01FF | Clipboard (Section 6) |
-| 0x0200–0x02FF | Display layout (Section 7) |
-| 0x0300–0x03FF | Reserved: display configuration |
-| 0x0400–0x04FF | Reserved: file transfer |
-| 0x0500–0x7FFF | Unassigned |
-| 0x8000–0xFFFF | Experiments, never in released software |
+| Range             | Allocation                        |
+| ----------------- | --------------------------------- |
+| `0x0001`–`0x00FF` | Core messages (Section 5)         |
+| `0x0100`–`0x01FF` | Clipboard (Section 6)             |
+| `0x0200`–`0x02FF` | Display layout (Section 7)        |
+| `0x0300`–`0x03FF` | Reserved: display configuration   |
+| `0x0400`–`0x04FF` | Reserved: file transfer           |
+| `0x0500`–`0x7FFF` | Unassigned                        |
+| `0x8000`–`0xFFFF` | Experimental (never in releases)  |
 
 ### 9.1 Display configuration
 
-Capability `display.configure`. The host asks the agent to apply modes, positions, scales or the primary output through the compositor's own interface:
-
-- KWin: its output management protocol;
-- wlroots compositors: `wlr-output-management`;
-- GNOME: Mutter's `org.gnome.Mutter.DisplayConfig`;
-- X11: RandR.
-
-The agent answers with the result and a new DISPLAY\_LAYOUT. Uses: resize the guest with the viewer window on desktops that do not follow the preferred mode from virtio-gpu, and keep the monitor arrangement the same on host and guest.
-
-Open questions: who wins when the guest user changes the settings, and whether the agent persists a configuration across guest reboots.
+Capability `display.configure`: allows the host to request mode, position, scale, or primary-output changes via the compositor's native interface (KWin output management, `wlr-output-management`, Mutter's `org.gnome.Mutter.DisplayConfig`, or X11 RandR), returning the status and updated DISPLAY\_LAYOUT. Open questions include conflict resolution with guest-initiated changes and persistence across guest reboots.
 
 ### 9.2 File transfer
 
-Section 6.8 already carries files on the clipboard, up to a size limit and on the control port. What stays reserved here are transfers without that limit and drag and drop.
-
-Capability `file.transfer`, with data on the port `org.kde.kemu.agent.bulk.0`. Files and folders move in both directions, through the clipboard (`text/uri-list`, cut and copy) and through drag and drop.
-
-- Control messages stay on the control port. Data uses the bulk port, so a large transfer does not hold up clipboard and layout.
-- Incoming files land in a directory of the user's session and are then offered as `file:` URIs.
-- Inside a shared folder (virtiofs), paths can be rewritten instead of copying the file.
-
-Already known requirements: progress and cancel, size limits, confirmation on the host for files coming from the guest, no path outside the target directory, and no following of symbolic links.
+Capability `file.transfer` (using data port `org.kde.kemu.agent.bulk.0`): enables unlimited file/folder transfers and drag-and-drop in both directions without blocking control traffic, supporting progress reporting, cancellation, host confirmation for guest-originated transfers, path traversal protection, symlink exclusion, and zero-copy path rewriting inside `virtiofs` shared folders.
 
 ## 10. Security considerations
 
-The host treats everything from the guest as untrusted input. The agent trusts the host, which controls the VM anyway, but version 1 gives the host nothing beyond clipboard and layout.
+The host treats all guest messages as untrusted input. While the agent trusts the host (which controls the VM), version 1 restricts host access strictly to clipboard and display layout.
 
 ### 10.1 Host
 
-- Limits are checked before memory is allocated: frame length, CBOR depth, string lengths, at most 64 types and 16 outputs.
-- A `size` field is a hint, never a reason to allocate. `max_transfer` is enforced on the bytes actually received.
-- Guest clipboard content reaches host applications. The user chooses the directions per VM, and the host enforces them whatever the agent does.
-- The host MAY drop any type from a guest offer before it puts the proxy on the host clipboard.
-- The host MAY coalesce a burst of guest offers and apply only the latest.
-- A false layout can only misplace the pointer inside the VM. The host still ignores sizes above 32768 and more than 16 outputs.
+- Validates all size and count limits before allocating memory (frame length, CBOR nesting depth, string lengths, max 64 MIME types, max 16 outputs).
+- Treats `size` fields as hints only and enforces `max_transfer` against actual received bytes.
+- Enforces user-configured transfer directions per VM regardless of agent behaviour, MAY strip arbitrary MIME types before publishing proxies, and MAY coalesce rapid guest offers.
+- Ignores layout dimensions above 32,768 or more than 16 outputs (a spoofed layout can at worst misplace pointer clicks inside the VM).
 
 ### 10.2 Guest
 
-- Only the user of the active session can open the port (Sections 2.2 and 3.4). Other local users cannot read the clipboard through it.
-- Limit: an agent whose session became inactive keeps its open file descriptor until it closes it. A hostile user in that session could hold the port and go on receiving host clipboard offers. Multi-user guests whose users do not trust each other are outside the threat model of version 1.
-- The agent runs with the user's rights. In version 1 it executes nothing for the host and writes no files.
-- Data the agent receives goes only to the clipboard of its own session.
+- Port access is restricted via `uaccess` to the active seat session user (Sections 2.2 and 3.4); other local users cannot access the port.
+- **Limitation:** Because an already-open file descriptor persists until closed, a malicious process in an inactive session could retain the port and continue receiving host offers. Multi-user guests with mutually untrusted users are outside version 1's threat model.
+- The agent runs unprivileged as the session user, executes no commands, writes no files (aside from clipboard file staging), and routes incoming data solely to its own session clipboard.
 
 ### 10.3 Secrets and logs
 
-- Password managers mark entries with `x-kde-passwordManagerHint` = `secret`. Both sides pass the hint on, and KEMU's password filter decides in both directions (default: on).
-- Neither side logs clipboard content. Logs may contain types and sizes.
-- HELLO carries the OS and desktop names, but no user name.
+- Entries marked with `x-kde-passwordManagerHint` = `secret` propagate that hint across both sides so KEMU's password filter can block them in both directions (enabled by default).
+- Neither side logs clipboard payloads (logs may record MIME types and byte sizes), and HELLO omits the guest username.
 
 ### 10.4 Files
 
-Files on the clipboard (Section 6.8) let the guest write files on the host and read the files the host user copied.
-
-- Sharing files is off until the host user switches it on, separately from the clipboard itself.
-- The receiver chooses where files land: one directory of its own. It checks every path, never follows links and creates nothing outside that directory.
-- The size limit and the entry limit bound what a hostile peer can make the receiver store. The receiver also checks free space before it starts.
-- Staged files are never executable. They are still untrusted content: the user decides what to open.
-- The owner serves only the files of the current offer, by index. A peer cannot name a path, so it cannot ask for other files.
+- File sharing is disabled by default and controlled independently from clipboard sharing.
+- Receivers stage files into a dedicated `0700` directory, validate all relative paths, never follow symlinks, strip executable permissions, and check free disk space as well as entry/size caps beforehand.
+- Owners serve files strictly by listing index for the active offer, preventing arbitrary path reads.
 
 ## 11. Implementation notes: Linux guest
 
-The guest package ships one user program, one udev rule, one systemd user unit and one autostart entry. It needs Qt 6 (Core, Gui, DBus) and libwayland-client, no KDE libraries.
+The Linux guest package installs one user binary, one udev rule, one systemd user unit, and one XDG autostart file, requiring Qt 6 (Core, Gui, DBus) and `libwayland-client` without KDE libraries.
 
 ### 11.1 Port access
 
-`/usr/lib/udev/rules.d/70-kemu-agent.rules`:
+`/usr/lib/udev/rules.d/70-kemu-agent.rules` (must sort before `73-seat-late.rules` so `uaccess` is applied):
 
 ```
 SUBSYSTEM=="virtio-ports", ATTR{name}=="org.kde.kemu.agent.0", TAG+="uaccess"
 ```
-
-The file name must sort before `73-seat-late.rules`, which applies `uaccess`.
 
 ### 11.2 Start-up
 
@@ -784,139 +743,136 @@ RestartSec=2
 WantedBy=graphical-session.target
 ```
 
-- An XDG autostart entry with `X-systemd-skip=true` covers sessions that do not start systemd user units.
-- The agent claims the session bus name `org.kde.kemu.Agent` and exits if another instance holds it.
-- If the port does not exist, the agent exits with status 0: the guest is not a KEMU VM.
+- An XDG autostart entry with `X-systemd-skip=true` launches the agent in desktop sessions without systemd user units.
+- The agent acquires the D-Bus session name `org.kde.kemu.Agent` (exiting if already owned) and exits cleanly with status `0` if `/dev/virtio-ports/org.kde.kemu.agent.0` is absent.
 
 ### 11.3 Clipboard backends
 
-| Environment | Backend | Note |
-| --- | --- | --- |
-| KDE Plasma, Wayland | ext-data-control, else wlr-data-control | KWin offers data-control to clients outside a sandbox; some versions only the wlr protocol (Debian 13). |
-| wlroots compositors (Sway, Hyprland, labwc) | ext-data-control, else wlr-data-control |  |
-| GNOME, Wayland | X11 through Xwayland (`QT_QPA_PLATFORM=xcb`) | Mutter offers no data-control. It bridges X11 and Wayland selections without focus; spice-vdagent relies on the same. |
-| X11 desktops (Xfce, Cinnamon, MATE, Plasma X11) | `QClipboard` on xcb | XFixes reports selection changes without focus. |
+| Environment                                       | Backend                                         | Notes                                                                                                               |
+| ------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| KDE Plasma (Wayland)                              | `ext-data-control`, fallback `wlr-data-control` | KWin exposes data-control to unsandboxed clients; older versions (e.g., Debian 13) provide `wlr-data-control` only. |
+| wlroots compositors (Sway, Hyprland, labwc)       | `ext-data-control`, fallback `wlr-data-control` |                                                                                                                     |
+| GNOME (Wayland)                                   | X11 via Xwayland (`QT_QPA_PLATFORM=xcb`)        | Mutter lacks data-control and bridges X11/Wayland selections without focus (same approach as `spice-vdagent`).      |
+| X11 desktops (Xfce, Cinnamon, MATE, Plasma X11)   | `QClipboard` on `xcb`                           | XFixes reports selection changes without window focus.                                                              |
 
-The agent picks the backend at start, before Qt chooses a platform, from the protocols the compositor offers. It speaks data-control on a Wayland connection of its own, so Qt needs no display then. A `QT_QPA_PLATFORM=wayland` set for the session does not change the choice. The agent reports it in HELLO `backends.clipboard`.
+The agent selects its backend at startup before Qt initialises a platform plugin (overriding any session-wide `QT_QPA_PLATFORM=wayland`), speaks `data-control` over its own Wayland connection, and reports the chosen backend in HELLO `backends.clipboard`.
 
 ### 11.4 Heads
 
-1. Find the DRM card whose `/sys/class/drm/cardN/device/driver` links to `virtio_gpu`.
-2. List its connectors, the entries `/sys/class/drm/cardN-Virtual-M`.
-3. Sort them by M. The k-th connector, counted from 0, is head k.
-4. If there is not exactly one virtio-gpu card, leave `head` out.
+1. Locate the DRM card whose `/sys/class/drm/cardN/device/driver` resolves to `virtio_gpu`.
+2. Enumerate its `/sys/class/drm/cardN-Virtual-M` connectors and sort them numerically by `M`.
+3. Assign zero-based head index `k` to the `k`-th connector (omitting `head` if there is not exactly one `virtio-gpu` card).
 
 ### 11.5 Layout sources
 
-| Environment | Source | `space` |
-| --- | --- | --- |
-| Wayland (KWin, wlroots) | `wl_output` name with xdg-output logical position and size | Bounding rectangle of the outputs |
-| GNOME, Wayland | As above, over a Wayland connection of the agent's own | Bounding rectangle of the outputs |
-| X11 | RandR outputs and CRTC geometry | Root window |
+| Environment              | Source                                                      | `space`                          |
+| ------------------------ | ----------------------------------------------------------- | -------------------------------- |
+| Wayland (KWin, wlroots)  | `wl_output` name with `xdg-output` logical position/size    | Bounding rectangle of outputs    |
+| GNOME (Wayland)          | Same as above, via a dedicated Wayland connection           | Bounding rectangle of outputs    |
+| X11                      | RandR outputs and CRTC geometry                             | Root window                      |
 
-On GNOME the agent uses X11 for the clipboard, but it MUST NOT take the layout from Xwayland's RandR, which reports all monitors with one scale.
+On GNOME Wayland, the agent MUST NOT read the display layout from XWayland's RandR, which reports uniform scaling across all monitors.
 
 ### 11.6 Echoes and prefetch
 
-- The agent adds the private type `application/x-kemu-agent-proxy` to every proxy it installs. A clipboard change that carries this type is not offered.
-- Right after a local copy, the agent prefetches text types up to 64 KiB. It keeps them for later requests and lists them in `sizes`.
-- Files from the host are staged below `$XDG_CACHE_HOME/kemu-agent/clipboard`, in a directory per agent process, and offered as `text/uri-list` and `x-special/gnome-copied-files`. Paths inside that directory are never offered back as files.
+- Every proxy installed by the agent carries the private MIME type `application/x-kemu-agent-proxy` to prevent re-offering echoed clipboard changes.
+- Immediately after a local copy, the agent prefetches text formats up to 64 KiB and advertises their sizes in `sizes`.
+- Host files are staged under `$XDG_CACHE_HOME/kemu-agent/clipboard/<pid>/`, published via `text/uri-list` and `x-special/gnome-copied-files`, and excluded from outgoing file offers.
 
 ### 11.7 Testing
 
-A host simulator that speaks this protocol over a pipe lets the agent be tested in CI against a headless compositor, such as `sway` or `kwin_wayland --virtual`.
+A pipe-connected host simulator enables automated CI testing of `kemu-agent` under headless compositors such as `sway` or `kwin_wayland --virtual`.
 
 ## 12. Implementation notes: KEMU host
 
-KEMU replaces the `qemu-vdagent` chardev and the D-Bus clipboard path with one new port client, built like `GuestAgentClient`. The pointer code keeps `MultiheadMouseMapping` and feeds it the reported layout instead of detecting it.
+KEMU replaces the `qemu-vdagent` chardev and D-Bus clipboard bridge with a dedicated port client modelled on `GuestAgentClient`, while feeding reported layouts into `MultiheadMouseMapping`.
 
 ### 12.1 What changes
 
-| Area | Today | With kemu-agent |
-| --- | --- | --- |
-| QEMU command line (`qemucommandbuilder.cpp`) | `qemu-vdagent` chardev with `clipboard=on`, `mouse=on` for several virtio-gpu monitors, port `com.redhat.spice.0` | Socket chardev and port `org.kde.kemu.agent.0` (Section 3.2) |
-| Clipboard (`QemuClipboardManager`, `org.qemu.Display1.Clipboard`) | UTF-8 text only; guest grabs without serial are dropped by QEMU | New client over this protocol: all MIME types, PRIMARY, password filter in both directions |
-| Pointer with several monitors (`MultiheadMouseMapping`) | Layout detected from cursor feedback; spice-vdagent places the pointer when `mouse=on` | Layout from DISPLAY\_LAYOUT; detection stays as the fallback without an agent |
-| QEMU capability check (`settingsdialog.cpp`) | Requires the `qemu-vdagent` chardev | Checks for `virtio-serial-pci` instead |
-| Guest hint (`editvmdialog.cpp`) | Names spice-vdagent for several monitors | Names kemu-agent for Linux guests |
-| Status in the viewer | — | The clipboard indicator shows whether kemu-agent carries the clipboard, with the agent version from HELLO |
+| Area                                                      | Previous implementation                                                                        | With `kemu-agent`                                                                                |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| QEMU command line (`qemucommandbuilder.cpp`)              | `qemu-vdagent` chardev (`clipboard=on`, `mouse=on` for multi-monitor) and `com.redhat.spice.0` | Socket chardev and `org.kde.kemu.agent.0` port (Section 3.2)                                     |
+| Clipboard (`QemuClipboardManager`, `Display1.Clipboard`)  | UTF-8 text only; guest grabs without serial dropped by QEMU                                    | Protocol client supporting all MIME types, PRIMARY, and bidirectional password filtering         |
+| Multi-monitor pointer (`MultiheadMouseMapping`)           | Heuristic layout from cursor feedback; `spice-vdagent` pointer positioning                     | Exact layout from DISPLAY\_LAYOUT (with heuristic detection retained as fallback)                |
+| QEMU capability check (`settingsdialog.cpp`)              | Required `qemu-vdagent` chardev                                                                | Checks for `virtio-serial-pci` instead                                                           |
+| Guest hint (`editvmdialog.cpp`)                           | Recommended `spice-vdagent` for multiple monitors                                              | Recommends `kemu-agent` for Linux guests                                                         |
+| Viewer status bar                                         | —                                                                                              | Clipboard indicator shows `kemu-agent` connection status and version from HELLO                  |
 
 ### 12.2 Port client
 
-- It owns one end of a socketpair; QEMU gets the other. Guest open and close come from `VSERPORT_CHANGE` for `kemuagent0`, as for qemu-guest-agent.
-- The parser works incrementally, with scan mode (Section 5.3) and the 2-second timer for partial frames (Section 4.5).
-- `QCborStreamReader` reads bodies and rejects items whose length is not known in advance. `QCborMap` writes them.
-- Clipboard chunks are paced: no new chunk is queued while 128 KiB or more wait for the socket, so a control message waits behind at most that and one chunk.
+- Owns one end of a Unix socketpair passed to QEMU and tracks guest open/close state via `VSERPORT_CHANGE` for `kemuagent0`.
+- Implements incremental framing with scan-mode resynchronisation (Section 5.3) and a 2-second partial-frame timeout (Section 4.5).
+- Decodes CBOR with `QCborStreamReader` (rejecting indefinite-length items) and encodes with `QCborMap`.
+- Paces outgoing clipboard chunks so no new chunk is queued while ≥ 128 KiB awaits socket write, bounding control-message latency.
 
 ### 12.3 Clipboard on the host
 
-- POLICY follows the Devices → Clipboard menu. The password filter stays on the host and also covers guest offers (Section 6.2).
-- Guest offers are fetched as soon as they arrive, up to 32 MiB per offer, and then placed on the host clipboard. `QMimeData` hands data to pasting applications synchronously, so the host cannot wait for the guest during a paste. Larger content stays in the guest.
-- Host content is read into a snapshot when it is offered, within the same budget, and requests are served from it. Identical content is not offered again, since Wayland announces the selection anew on every focus change.
-- The primary selection is shared only when the user switches it on and the host session has one.
-- Files are shared only with *Share Files* switched on in that menu (default: off), up to the limit chosen there (default: 256 MiB per copy). Files from the guest are staged below KEMU's cache directory, in a directory per viewer, and removed when the viewer closes.
+- Updates POLICY from *Devices → Clipboard* and enforces the password filter on both host and guest offers (Section 6.2).
+- Prefetches guest offers eagerly up to 32 MiB before updating the host clipboard because `QMimeData` serves pasting applications synchronously; larger payloads remain on the guest.
+- Snapshots host clipboard data upon offer within the same 32 MiB budget and deduplicates identical content (as Wayland re-announces selections on every focus change).
+- Shares PRIMARY only when enabled by the user and supported by the host session.
+- Shares files only when *Share Files* is enabled (default off) up to the configured limit (default 256 MiB), staging guest files in a per-viewer cache directory removed when the viewer closes.
 
 ### 12.4 Removing SPICE support
 
-- Remove the `qemu-vdagent` block, its capability check, `QemuClipboardManager` with its tests, and the spice-vdagent pointer path in `MultiheadMouseMapping` (`setGuestAgentPointer`).
-- Existing VMs need no configuration change: the port appears at the next start.
-- A guest with only spice-vdagent loses clipboard sharing until kemu-agent is installed.
-- KEMU MAY show a hint when no agent has connected 60 seconds after qemu-guest-agent did: the guest is up, but kemu-agent is missing.
+- Removes the `qemu-vdagent` configuration block, capability check, `QemuClipboardManager` (with tests), and `MultiheadMouseMapping::setGuestAgentPointer`.
+- Existing VMs require no manual changes and receive the new port automatically on next boot; guests running only `spice-vdagent` lose clipboard sharing until `kemu-agent` is installed.
+- KEMU MAY display a notification if `kemu-agent` has not connected within 60 seconds after `qemu-guest-agent` connects.
 
 ## Appendix A. Message types
 
-| Type | Name | Direction | Capability | Section |
-| --- | --- | --- | --- | --- |
-| 0x0001 | HELLO | G→H | core | 5.1 |
-| 0x0002 | WELCOME | H→G | core | 5.1 |
-| 0x0003 | HELLO\_REQUEST | H→G | core | 5.3 |
-| 0x0004 | PING | both | core | 5.6 |
-| 0x0005 | PONG | both | core | 5.6 |
-| 0x0006 | GOODBYE | both | core | 5.7 |
-| 0x0007 | ERROR | both | core | 5.8 |
-| 0x0010 | POLICY | H→G | core | 5.5 |
-| 0x0100 | CLIPBOARD\_OFFER | both | `clipboard` | 6.3 |
-| 0x0101 | CLIPBOARD\_RELEASE | both | `clipboard` | 6.4 |
-| 0x0102 | CLIPBOARD\_REQUEST | both | `clipboard` | 6.5 |
-| 0x0103 | CLIPBOARD\_DATA | both | `clipboard` | 6.5 |
-| 0x0104 | CLIPBOARD\_FAIL | both | `clipboard` | 6.5 |
-| 0x0105 | CLIPBOARD\_CANCEL | both | `clipboard` | 6.5 |
-| 0x0110 | CLIPBOARD\_FILE\_LIST | both | `clipboard.files` | 6.8 |
-| 0x0111 | CLIPBOARD\_FILE\_ENTRIES | both | `clipboard.files` | 6.8 |
-| 0x0112 | CLIPBOARD\_FILE\_READ | both | `clipboard.files` | 6.8 |
-| 0x0113 | CLIPBOARD\_FILE\_DATA | both | `clipboard.files` | 6.8 |
-| 0x0200 | DISPLAY\_LAYOUT | G→H | `display.layout` | 7.1 |
-| 0x0201 | DISPLAY\_LAYOUT\_QUERY | H→G | `display.layout` | 7.4 |
+| Type     | Name                     | Direction | Capability        | Section |
+| -------- | ------------------------ | --------- | ----------------- | ------- |
+| `0x0001` | HELLO                    | G→H       | core              | 5.1     |
+| `0x0002` | WELCOME                  | H→G       | core              | 5.1     |
+| `0x0003` | HELLO\_REQUEST           | H→G       | core              | 5.3     |
+| `0x0004` | PING                     | both      | core              | 5.6     |
+| `0x0005` | PONG                     | both      | core              | 5.6     |
+| `0x0006` | GOODBYE                  | both      | core              | 5.7     |
+| `0x0007` | ERROR                    | both      | core              | 5.8     |
+| `0x0010` | POLICY                   | H→G       | core              | 5.5     |
+| `0x0100` | CLIPBOARD\_OFFER         | both      | `clipboard`       | 6.3     |
+| `0x0101` | CLIPBOARD\_RELEASE       | both      | `clipboard`       | 6.4     |
+| `0x0102` | CLIPBOARD\_REQUEST       | both      | `clipboard`       | 6.5     |
+| `0x0103` | CLIPBOARD\_DATA          | both      | `clipboard`       | 6.5     |
+| `0x0104` | CLIPBOARD\_FAIL          | both      | `clipboard`       | 6.5     |
+| `0x0105` | CLIPBOARD\_CANCEL        | both      | `clipboard`       | 6.5     |
+| `0x0110` | CLIPBOARD\_FILE\_LIST    | both      | `clipboard.files` | 6.8     |
+| `0x0111` | CLIPBOARD\_FILE\_ENTRIES | both      | `clipboard.files` | 6.8     |
+| `0x0112` | CLIPBOARD\_FILE\_READ    | both      | `clipboard.files` | 6.8     |
+| `0x0113` | CLIPBOARD\_FILE\_DATA    | both      | `clipboard.files` | 6.8     |
+| `0x0200` | DISPLAY\_LAYOUT          | G→H       | `display.layout`  | 7.1     |
+| `0x0201` | DISPLAY\_LAYOUT\_QUERY   | H→G       | `display.layout`  | 7.4     |
 
 ## Appendix B. Capabilities
 
-| Capability | Status | Meaning |
-| --- | --- | --- |
-| `clipboard` | defined | CLIPBOARD selection (Section 6) |
-| `clipboard.primary` | defined | PRIMARY selection; needs `clipboard` |
-| `clipboard.files` | defined | Files on the clipboard (Section 6.8); needs `clipboard` |
-| `display.layout` | defined | Layout reports (Section 7) |
-| `display.configure` | reserved | Section 9.1 |
-| `file.transfer` | reserved | Section 9.2 |
+| Capability          | Status   | Meaning                                                 |
+| ------------------- | -------- | ------------------------------------------------------- |
+| `clipboard`         | defined  | CLIPBOARD selection sharing (Section 6).                |
+| `clipboard.primary` | defined  | PRIMARY selection sharing; requires `clipboard`.        |
+| `clipboard.files`   | defined  | File sharing over clipboard (Section 6.8); needs `clipboard`. |
+| `display.layout`    | defined  | Display layout reporting (Section 7).                   |
+| `display.configure` | reserved | Display configuration (Section 9.1).                    |
+| `file.transfer`     | reserved | Dedicated bulk file transfer (Section 9.2).             |
 
 ## Appendix C. Error codes
 
-| Code | Used in | Meaning |
-| --- | --- | --- |
-| `unsupported-version` | ERROR | No common protocol version. Carries `versions` and `nonce`. |
-| `bad-message` | ERROR | A required field is missing or has the wrong type. |
-| `internal` | ERROR | The sender failed in a way the peer cannot fix. |
-| `stale` | CLIPBOARD\_FAIL | The serial is no longer current, and the old content is gone. |
-| `not-offered` | CLIPBOARD\_FAIL | The type was not in the offer. |
-| `too-large` | CLIPBOARD\_FAIL | The data exceeds the requester's `max_transfer`. |
-| `unavailable` | CLIPBOARD\_FAIL | The source application did not deliver, or nothing shareable remains. |
-| `denied` | CLIPBOARD\_FAIL | The owner's policy forbids this transfer. |
-| `busy` | CLIPBOARD\_FAIL | Too many open requests. |
-| `changed` | CLIPBOARD\_FAIL | A file no longer matches the listing (Section 6.8). |
+| Code                  | Used in         | Meaning                                                                  |
+| --------------------- | --------------- | ------------------------------------------------------------------------ |
+| `unsupported-version` | ERROR           | No mutually supported protocol version (carries `versions` and `nonce`). |
+| `bad-message`         | ERROR           | Required field is missing or has an invalid type.                        |
+| `internal`            | ERROR           | Unrecoverable internal sender error.                                     |
+| `stale`               | CLIPBOARD\_FAIL | Offer serial is no longer current and cached data is unavailable.        |
+| `not-offered`         | CLIPBOARD\_FAIL | Requested MIME type or file index was not part of the offer.             |
+| `too-large`           | CLIPBOARD\_FAIL | Payload exceeds the requester's `limits.max_transfer`.                   |
+| `unavailable`         | CLIPBOARD\_FAIL | Source application failed to supply data or no shareable data remains.   |
+| `denied`              | CLIPBOARD\_FAIL | Transfer disallowed by the owner's active policy.                        |
+| `busy`                | CLIPBOARD\_FAIL | Concurrent open request limit exceeded.                                  |
+| `changed`             | CLIPBOARD\_FAIL | Target file size or `mtime` changed since the listing was built.         |
 
 ## Appendix D. Examples
 
-Bodies are in CBOR diagnostic notation; `h'…'` is a byte string.
+Bodies are shown in CBOR diagnostic notation; `h'…'` denotes a byte string.
 
 ### D.1 One frame, byte by byte
 
@@ -947,7 +903,7 @@ H→G POLICY {"clipboard": {"to_host": true, "to_guest": true, "primary": false}
 G→H DISPLAY_LAYOUT {… as in D.5 …}
 ```
 
-The host does not list `clipboard.primary`, so PRIMARY is not shared in this session.
+Because the host omits `clipboard.primary`, PRIMARY is not shared during this session.
 
 ### D.3 Copy in the guest, paste on the host
 
@@ -962,16 +918,16 @@ G→H CLIPBOARD_DATA {"id": 1, "data": h'48656c6c6f20776f726c64', "size": 11, "l
 
 ### D.4 Both sides copy at the same moment
 
-Before: the host owns CLIPBOARD with serial 5 and last accepted guest serial 2. The agent has accepted host serial 5; its own last serial is 2.
+Initial state: host owns CLIPBOARD (`local_serial` = 5, `peer_serial` = 2); agent has accepted host serial 5 (`peer_serial` = 5, `local_serial` = 2).
 
 ```
 H→G CLIPBOARD_OFFER {"selection": 0, "serial": 6, "seen": 2, "types": […]}
 G→H CLIPBOARD_OFFER {"selection": 0, "serial": 3, "seen": 5, "types": […]}
 ```
 
-- Host: it owns the selection, and seen 5 < its serial 6. Conflict, the host wins: it ignores the offer and sets its peer serial to 3.
-- Agent: it owns the selection, and seen 2 < its serial 3. Conflict: it accepts the host's offer and sets its peer serial to 6.
-- Both now hold the host's content.
+- **Host:** Owns the selection and sees `seen` (5) < `local_serial` (6). Host wins the conflict, ignores the offer, and sets `peer_serial` = 3.
+- **Agent:** Owns the selection and sees `seen` (2) < `local_serial` (3). Agent yields, accepts the host's offer, and sets `peer_serial` = 6.
+- Both sides end up holding the host's clipboard content.
 
 ### D.5 Two monitors with different scales
 
@@ -990,14 +946,14 @@ G→H DISPLAY_LAYOUT {"generation": 1,
   "source": "kwin"}
 ```
 
-The pointer at pixel (1280, 720) of head 1, following Section 8.1:
+For a pointer at framebuffer pixel `(1280, 720)` on head 1 (per Section 8.1):
 
-- gx = 1920 + 1280 × 1280 / 2560 = 2560 and gy = 720 × 720 / 1440 = 360;
-- tx = 2560 × 32768 / 3200 = 26214 and ty = 360 × 32768 / 1080 = 10922, rounded down.
+- $gx = 1920 + 1280 \times 1280 / 2560 = 2560$ and $gy = 720 \times 720 / 1440 = 360$.
+- $tx = 2560 \times 32768 / 3200 = 26214$ and $ty = 360 \times 32768 / 1080 = 10922$ (rounded down).
 
 ## References
 
 - [RFC 8949: Concise Binary Object Representation (CBOR)](https://www.rfc-editor.org/rfc/rfc8949)
 - [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119) and [RFC 8174](https://www.rfc-editor.org/rfc/rfc8174): requirement levels
 - [ext-data-control-v1](https://wayland.app/protocols/ext-data-control-v1): Wayland clipboard protocol for privileged clients
-- Checked in the sources (November 2026): Linux `drivers/char/virtio_console.c` (single open, `POLLHUP`, blocking writes) and `drivers/gpu/drm/virtio/virtgpu_display.c` (one connector per scanout); `drivers/gpu/drm/drm_connector.c` (connector numbers per type); QEMU `hw/char/virtio-console.c` and `hw/char/virtio-serial-bus.c` (open/close events, no reads while the guest port is closed), `qapi/ui.json` (`input-send-event` range 0 to 0x7FFF), `ui/dbus-console.c` (`SetAbsPosition` scaling), `ui/dbus-display1.xml` (console `Head` property); KWin `src/backends/libinput/connection.cpp` (absolute pointer mapped onto the workspace) and `src/backends/drm/drm_connector.cpp` (output names).
+- Checked in upstream sources (November 2026): Linux `drivers/char/virtio_console.c` (single open, `POLLHUP`, blocking writes), `drivers/gpu/drm/virtio/virtgpu_display.c` (one connector per scanout), and `drivers/gpu/drm/drm_connector.c` (per-type connector numbering); QEMU `hw/char/virtio-console.c` and `hw/char/virtio-serial-bus.c` (open/close events, paused reads while closed), `qapi/ui.json` (`input-send-event` range `0`–`0x7FFF`), `ui/dbus-console.c` (`SetAbsPosition` scaling), and `ui/dbus-display1.xml` (console `Head` property); KWin `src/backends/libinput/connection.cpp` (absolute pointer mapping onto workspace) and `src/backends/drm/drm_connector.cpp` (output naming).
