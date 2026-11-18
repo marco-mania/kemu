@@ -7,6 +7,7 @@
 #include "isoimagebuilder.h"
 
 #include <QFile>
+#include <QFileInfo>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QStringList>
@@ -77,6 +78,110 @@ QString errorText(int code)
     return parts.join(u"; "_s);
 }
 
+bool validComponent(const QString &component)
+{
+    return !component.isEmpty() && component != u"."_s && component != u".."_s;
+}
+
+/// The directory at path below root, made as needed. Null, and errorOut
+/// filled, when a component is odd or names a file.
+IsoDir *directory(IsoDir *root, const QStringList &path, QString &errorOut)
+{
+    IsoDir *dir = root;
+    for (const QString &component : path) {
+        if (!validComponent(component)) {
+            errorOut = i18n("Invalid path in the ISO image: %1", path.join(u'/'));
+            return nullptr;
+        }
+        const QByteArray name = component.toUtf8();
+        IsoNode *node = nullptr;
+        if (iso_dir_get_node(dir, name.constData(), &node) == 1) {
+            if (iso_node_get_type(node) != LIBISO_DIR) {
+                errorOut = i18n("%1 is a file and a directory in the ISO image", path.join(u'/'));
+                return nullptr;
+            }
+            dir = reinterpret_cast<IsoDir *>(node);
+            continue;
+        }
+        IsoDir *made = nullptr;
+        const int ret = iso_tree_add_new_dir(dir, name.constData(), &made);
+        if (ret < 0) {
+            errorOut = i18n("Could not add %1 to the ISO image: %2", path.join(u'/'), errorText(ret));
+            return nullptr;
+        }
+        dir = made;
+    }
+    return dir;
+}
+
+/// Adds one entry; fills errorOut and returns false on failure.
+bool addEntry(IsoImage *image, IsoDir *root, const IsoImageBuilder::Entry &entry, QString &errorOut)
+{
+    QStringList path = entry.name.split(u'/');
+    const QString leaf = path.takeLast();
+    if (!validComponent(leaf)) {
+        errorOut = i18n("Invalid path in the ISO image: %1", entry.name);
+        return false;
+    }
+    IsoDir *parent = directory(root, path, errorOut);
+    if (!parent)
+        return false;
+    const QByteArray leafName = leaf.toUtf8();
+
+    IsoNode *node = nullptr;
+    int ret = 0;
+    if (!entry.symlinkTarget.isEmpty()) {
+        IsoSymlink *link = nullptr;
+        ret = iso_tree_add_new_symlink(parent, leafName.constData(), entry.symlinkTarget.toUtf8().constData(), &link);
+        node = reinterpret_cast<IsoNode *>(link);
+    } else if (!entry.localPath.isEmpty()) {
+        const QFileInfo info(entry.localPath);
+        const QByteArray local = QFile::encodeName(entry.localPath);
+        if (info.isDir() && !info.isSymLink()) {
+            IsoDir *dir = directory(parent, {leaf}, errorOut);
+            if (!dir)
+                return false;
+            ret = iso_tree_add_dir_rec(image, dir, local.constData());
+            node = reinterpret_cast<IsoNode *>(dir);
+        } else {
+            ret = iso_tree_add_new_node(image, parent, leafName.constData(), local.constData(), &node);
+        }
+    } else {
+        // The stream takes over the buffer and frees it with free().
+        auto *buffer = static_cast<unsigned char *>(std::malloc(static_cast<size_t>(entry.content.size()) + 1));
+        if (!buffer) {
+            errorOut = i18n("Out of memory while building the ISO image.");
+            return false;
+        }
+        std::memcpy(buffer, entry.content.constData(), static_cast<size_t>(entry.content.size()));
+
+        IsoStream *stream = nullptr;
+        ret = iso_memory_stream_new(buffer, static_cast<size_t>(entry.content.size()), &stream);
+        if (ret < 0) {
+            std::free(buffer);
+        } else {
+            // Takes over the stream reference on success.
+            IsoFile *file = nullptr;
+            ret = iso_tree_add_new_file(parent, leafName.constData(), stream, &file);
+            if (ret < 0)
+                iso_stream_unref(stream);
+            node = reinterpret_cast<IsoNode *>(file);
+        }
+    }
+    if (ret < 0) {
+        errorOut = i18n("Could not add %1 to the ISO image: %2", entry.name, errorText(ret));
+        return false;
+    }
+
+    if (node && entry.symlinkTarget.isEmpty()) {
+        if (entry.mode >= 0)
+            iso_node_set_permissions(node, static_cast<mode_t>(entry.mode & 07777));
+        else if (entry.localPath.isEmpty())
+            iso_node_set_permissions(node, 0444);
+    }
+    return true;
+}
+
 } // namespace
 
 bool IsoImageBuilder::write(const QString &isoPath, const QString &volumeId, const QList<Entry> &entries, QString &errorOut)
@@ -98,32 +203,14 @@ bool IsoImageBuilder::write(const QString &isoPath, const QString &volumeId, con
     }
     iso_image_set_volume_id(image, volId.constData());
 
+    // Links stay links; FIFOs, sockets and device files are left out.
+    iso_tree_set_follow_symlinks(image, 0);
+    iso_tree_set_ignore_special(image, 1 | 2 | 4 | 8);
+
     IsoDir *root = iso_image_get_root(image);
     for (const Entry &entry : entries) {
-        // The stream takes over the buffer and frees it with free().
-        auto *buffer = static_cast<unsigned char *>(std::malloc(static_cast<size_t>(entry.content.size()) + 1));
-        if (!buffer) {
+        if (!addEntry(image, root, entry, errorOut)) {
             iso_image_unref(image);
-            errorOut = i18n("Out of memory while building the ISO image.");
-            return false;
-        }
-        std::memcpy(buffer, entry.content.constData(), static_cast<size_t>(entry.content.size()));
-
-        IsoStream *stream = nullptr;
-        ret = iso_memory_stream_new(buffer, static_cast<size_t>(entry.content.size()), &stream);
-        if (ret < 0) {
-            std::free(buffer);
-            iso_image_unref(image);
-            errorOut = i18n("Could not add %1 to the ISO image: %2", entry.name, errorText(ret));
-            return false;
-        }
-
-        // Takes over the stream reference on success.
-        ret = iso_tree_add_new_file(root, entry.name.toUtf8().constData(), stream, nullptr);
-        if (ret < 0) {
-            iso_stream_unref(stream);
-            iso_image_unref(image);
-            errorOut = i18n("Could not add %1 to the ISO image: %2", entry.name, errorText(ret));
             return false;
         }
     }
@@ -141,6 +228,12 @@ bool IsoImageBuilder::write(const QString &isoPath, const QString &volumeId, con
     iso_write_opts_set_iso_level(opts, 2);
     iso_write_opts_set_rockridge(opts, 1);
     iso_write_opts_set_joliet(opts, 1);
+    // Directories 0555 and owner root as in the profile, but the files keep
+    // the permissions set on them: executables stay executable.
+    iso_write_opts_set_replace_mode(opts, 1, 0, 1, 1);
+    // Rock Ridge readers see the whole tree; no relocation directory for
+    // trees deeper than ECMA-119's eight levels.
+    iso_write_opts_set_allow_deep_paths(opts, 1);
     // RRIP-1.10 ("RRIP_1991A"), the signature genisoimage wrote: readers that
     // check the extension reference instead of the SUSP entry still see RR.
     iso_write_opts_set_rrip_version_1_10(opts, 1);

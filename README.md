@@ -246,6 +246,16 @@ Each VM uses one of two display backends:
 
 Closing the viewer leaves the VM running headless; select *Show Display* to reopen it. Clipboard sharing requires `kemu-agent` in Linux guests; see [docs/display.md](docs/display.md).
 
+### Installing kemu-agent in guests
+
+*Insert kemu-agent CD Image…*—in the viewer's *Devices* menu or under *VM → Removable Media*—inserts a CD image with the agent into the VM's CD drive. In the guest, open a terminal and run:
+
+```sh
+sudo sh /run/media/$USER/KEMU_AGENT/install.sh    # Debian/Ubuntu: /media/$USER/KEMU_AGENT
+```
+
+This installs the agent to `/opt/kemu-agent` and starts it; a newer CD image updates it, and `sudo sh /opt/kemu-agent/uninstall.sh` removes it. KEMU builds the image from the kemu-agent bundles installed to `share/kemu/agent`—which a normal build does (see *Build, install, uninstall* above)—or from a bundle you choose when none is installed. See [docs/display.md](docs/display.md#installing-it-in-a-guest) for details.
+
 ### Multiple monitors (experimental)
 
 VMs using VirtIO graphics and the integrated viewer support two monitors (*Edit… → Hardware → Display → Monitors*). Display 2 opens in a separate window; closing it disconnects the monitor in the guest OS, and *View → Displays → Display 2* reconnects it.

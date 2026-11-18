@@ -35,6 +35,18 @@ It works on Wayland (KDE Plasma, wlroots compositors such as Sway and Hyprland, 
 
 KEMU attaches a virtio-serial port named `org.kde.kemu.agent.0` to every VM using the integrated viewer and a PCI bus; existing VMs receive the port automatically on their next start. The KEMU icon in the viewer's status bar reflects the agent's state—dimmed when disconnected, with a warning emblem when it lacks access to the guest's clipboard—and its tooltip lists the agent version, guest session, and supported capabilities.
 
+### Installing it in a guest
+
+*Insert kemu-agent CD Image…*—in the viewer's *Devices* menu, behind the kemu-agent icon in its status bar, and under *VM → Removable Media*—places a CD image with the agent in the VM's CD drive, as other hypervisors do with their guest tools. In the guest, open a terminal and run:
+
+```sh
+sudo sh /run/media/$USER/KEMU_AGENT/install.sh
+```
+
+On Debian and Ubuntu, the disc is mounted at `/media/$USER/KEMU_AGENT` instead; if the desktop has not mounted it, run `sudo mount -o ro /dev/sr0 /mnt && sudo sh /mnt/install.sh`. The installer places the agent in `/opt/kemu-agent` and starts it in running sessions; a newer CD image updates it, and `sudo sh /opt/kemu-agent/uninstall.sh` removes it. The command has to be typed, since there is no shared clipboard until the agent runs; a `README.txt` on the disc repeats these steps. After inserting the disc, KEMU shows them as well and, if an agent is already running, compares its version with the one on the disc.
+
+KEMU builds the CD image from kemu-agent bundles (see `agent/README.md`, "Portable bundle"): those installed to `share/kemu/agent/<arch>/`—which KEMU's build does by default (see the README, "Build, install, uninstall")—and one the user chose. If none matches the guest's architecture, KEMU explains where bundles come from and offers to choose a bundle tarball, remembering the choice. The image holds the newest bundle for each architecture plus an `install.sh` that runs the one matching the guest's `uname -m`. It is kept at `~/.local/share/kemu/agent-medium/kemu-agent.iso` and rebuilt only when the bundles change; a disc already in the drive is replaced only after confirmation. The entry is disabled for Windows, BSD, and DOS guests.
+
 Current version limits:
 
 - Clipboard content is fetched as soon as either side offers it, up to 32 MiB per copy; larger content remains on the originating side.

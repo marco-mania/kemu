@@ -140,6 +140,7 @@ private Q_SLOTS:
     void discardSavedState();
     void changeISO();
     void ejectISO();
+    void insertAgentMedium();
     void changeFloppy();
     void ejectFloppy();
     void shrinkDisk();
@@ -183,9 +184,13 @@ private:
     void saveStateVMByName(const QString &vmName, bool skipConfirm = false);
     void discardSavedStateForVm(const QString &vmName);
     void manageSnapshotsForVm(const QString &vmName);
-    // Asks for the image unless @p imagePath names it.
-    void changeISOForVm(const QString &vmName, const QString &imagePath = {});
+    // Asks for the image unless @p imagePath names it. False when nothing
+    // was inserted (cancelled, refused or failed).
+    bool changeISOForVm(const QString &vmName, const QString &imagePath = {});
     void ejectISOForVm(const QString &vmName);
+    // Makes the kemu-agent CD image from the bundles KEMU finds (or asks for
+    // one), inserts it and says how to install the agent in the guest.
+    void insertAgentMediumForVm(const QString &vmName);
     void changeFloppyForVm(const QString &vmName, const QString &imagePath = {});
     void ejectFloppyForVm(const QString &vmName);
     void pushMediaStateToViewer(const QString &vmName);

@@ -121,6 +121,9 @@ public:
     // No kemu-agent for the guest system (Windows, BSD, DOS): the clipboard
     // menu stays off and says why, unless an agent connects after all.
     void setKemuAgentUnsupported(const QString &reason);
+    // Why the kemu-agent CD image cannot be inserted (empty: it can). Devices
+    // menu and the kemu-agent indicator offer it.
+    void setAgentMediumUnavailable(const QString &reason);
 
     // Subsequent audio activation (after asynchronous D-Bus registration)
     void audioOutReady();
@@ -174,6 +177,7 @@ Q_SIGNALS:
     void ejectIsoRequested();
     void changeFloppyRequested();
     void ejectFloppyRequested();
+    void insertAgentMediumRequested();
 
     void networkLinkChangeRequested(bool up);
 
@@ -279,6 +283,8 @@ private:
     QAction *m_actChangeIso = nullptr;
     QAction *m_actEjectIso = nullptr;
     QAction *m_actChangeFloppy = nullptr;
+    QAction *m_actInsertAgentMedium = nullptr;
+    QMenu *m_kemuAgentMenu = nullptr; // behind the kemu-agent indicator
     QAction *m_actEjectFloppy = nullptr;
     QAction *m_actClipHint = nullptr; // why the settings do nothing yet
     QAction *m_clipHintSeparator = nullptr;

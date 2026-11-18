@@ -146,6 +146,8 @@ target_sources(
           utils/templatestore.h
           utils/isoimagebuilder.cpp
           utils/isoimagebuilder.h
+          utils/guestagentmedium.cpp
+          utils/guestagentmedium.h
           utils/virtualnetwork.h
           utils/virtualnetworkmanager.cpp
           utils/virtualnetworkmanager.h

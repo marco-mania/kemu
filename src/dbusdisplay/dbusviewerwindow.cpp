@@ -246,7 +246,7 @@ void DbusViewerWindow::showLayoutDetectionFailed()
     showOsd(i18nc("@info:status", "Monitor arrangement not detected"), 5000);
     statusBar()->showMessage(i18nc("@info:status",
                                    "The monitor arrangement of the guest could not be detected. Install kemu-agent in the guest "
-                                   "or choose View → Displays → Display 2 Position."),
+                                   "(Devices → Insert kemu-agent CD Image) or choose View → Displays → Display 2 Position."),
                              30000);
 }
 
@@ -412,6 +412,11 @@ void DbusViewerWindow::createActions()
     m_actEjectIso->setStatusTip(i18n("Eject the current CD/DVD image"));
     m_actEjectIso->setEnabled(false);
     connect(m_actEjectIso, &QAction::triggered, this, &DbusViewerWindow::ejectIsoRequested);
+
+    m_actInsertAgentMedium = new QAction(QIcon::fromTheme(u"media-optical"_s), i18n("&Insert kemu-agent CD Image…"), this);
+    m_actInsertAgentMedium->setStatusTip(i18n("Insert a CD image with kemu-agent, which shares the clipboard and reports the monitor layout of Linux guests"));
+    m_actInsertAgentMedium->setToolTip(m_actInsertAgentMedium->statusTip());
+    connect(m_actInsertAgentMedium, &QAction::triggered, this, &DbusViewerWindow::insertAgentMediumRequested);
 
     m_actChangeFloppy = new QAction(QIcon::fromTheme(u"media-floppy"_s), i18n("&Change Image…"), this);
     m_actChangeFloppy->setStatusTip(i18n("Insert or replace the floppy image"));
@@ -613,6 +618,9 @@ void DbusViewerWindow::createMenus()
     devicesMenu->addSeparator();
     devicesMenu->addAction(m_actNetworkLink);
 
+    devicesMenu->addSeparator();
+    devicesMenu->addAction(m_actInsertAgentMedium);
+
     // Help
     QMenu *helpMenu = menuBar()->addMenu(i18n("&Help"));
     helpMenu->addAction(m_actAbout);
@@ -684,6 +692,10 @@ void DbusViewerWindow::createStatusBar()
     m_indKemuAgent->setIconNames(kemuIcon, kemuIcon);
     m_indKemuAgent->setAccessibleName(i18nc("@info:whatsthis", "KEMU agent"));
     m_indKemuAgent->setVisible(false); // until setKemuAgent() brings a channel
+    m_kemuAgentMenu = new QMenu(this);
+    m_kemuAgentMenu->setToolTipsVisible(true);
+    m_kemuAgentMenu->addAction(m_actInsertAgentMedium);
+    m_indKemuAgent->setPopupMenu(m_kemuAgentMenu);
 
     m_indClipboard = new StatusIndicator(this);
     m_indClipboard->setIconNames(u"edit-paste"_s, u"edit-paste"_s);
@@ -1143,7 +1155,8 @@ void DbusViewerWindow::updateKemuAgentIndicator()
         m_indKemuAgent->setStatus(StatusIndicator::Inactive,
                                   i18nc("@info:tooltip",
                                         "KEMU agent: not running in the guest\n"
-                                        "Install kemu-agent in Linux guests for clipboard sharing and exact pointer placement on several monitors."));
+                                        "Install kemu-agent in Linux guests for clipboard sharing and exact pointer placement on several monitors "
+                                        "(click here, or Devices → Insert kemu-agent CD Image)."));
         return;
     case KemuAgentClient::Status::Connecting:
         m_indKemuAgent->setStatus(StatusIndicator::Inactive, i18nc("@info:tooltip", "KEMU agent: connecting…"));
@@ -1219,6 +1232,12 @@ void DbusViewerWindow::setKemuAgentUnsupported(const QString &reason)
 {
     m_kemuAgentUnsupported = reason;
     updateStatusBar();
+}
+
+void DbusViewerWindow::setAgentMediumUnavailable(const QString &reason)
+{
+    m_actInsertAgentMedium->setEnabled(reason.isEmpty());
+    m_actInsertAgentMedium->setToolTip(reason.isEmpty() ? m_actInsertAgentMedium->statusTip() : reason);
 }
 
 QString DbusViewerWindow::clipboardUnavailableReason(const ClipboardMenuState &state) const

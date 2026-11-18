@@ -157,6 +157,14 @@ check "uninstall removes the directories it made" [ "$(cd "$sys" && find . -mind
 
 check "uninstall without installation succeeds" [ "$(status_of "$shell" "$bundle/uninstall.sh" --root "$sys")" = 0 ]
 
+# An empty tree, as when preparing an image: install.sh makes /etc as well,
+# and uninstall.sh takes it away again.
+bare=$tmp/bare
+mkdir "$bare"
+check "install into an empty tree succeeds" [ "$(status_of "$shell" "$bundle/install.sh" --root "$bare" --no-start)" = 0 ]
+check "uninstall from an empty tree succeeds" [ "$(status_of "$shell" "$bare/opt/kemu-agent/uninstall.sh" --root "$bare")" = 0 ]
+check "uninstall from an empty tree leaves it empty" [ "$(cd "$bare" && find . -mindepth 1 | wc -l)" = 0 ]
+
 # A directory that existed before stays.
 mkdir -p "$sys/etc/xdg/autostart" && touch "$sys/etc/xdg/autostart/other.desktop"
 do_install > /dev/null

@@ -205,3 +205,26 @@ ecm_add_test(uefifirmwaretest.cpp ${CMAKE_SOURCE_DIR}/src/utils/uefifirmware.cpp
              TEST_NAME uefifirmwaretest
              LINK_LIBRARIES Qt6::Core Qt6::Test)
 target_include_directories(uefifirmwaretest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# The in-process ISO writer, read back with libisofs.
+ecm_add_test(isoimagebuildertest.cpp ${CMAKE_SOURCE_DIR}/src/utils/isoimagebuilder.cpp
+             TEST_NAME isoimagebuildertest
+             LINK_LIBRARIES Qt6::Core Qt6::Test KF6::I18n PkgConfig::ISOFS)
+target_include_directories(isoimagebuildertest PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR})
+ecm_qt_declare_logging_category(isoimagebuildertest
+                                HEADER "kemu_debug.h"
+                                IDENTIFIER "KEMU"
+                                CATEGORY_NAME "org.kde.kemu")
+
+# The kemu-agent medium: bundles in directories and tarballs, the image, and
+# the medium's install.sh (run with sh).
+ecm_add_test(guestagentmediumtest.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/guestagentmedium.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/isoimagebuilder.cpp
+             TEST_NAME guestagentmediumtest
+             LINK_LIBRARIES Qt6::Core Qt6::Test KF6::I18n PkgConfig::ISOFS LibArchive::LibArchive)
+target_include_directories(guestagentmediumtest PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR})
+ecm_qt_declare_logging_category(guestagentmediumtest
+                                HEADER "kemu_debug.h"
+                                IDENTIFIER "KEMU"
+                                CATEGORY_NAME "org.kde.kemu")

@@ -37,6 +37,7 @@
 #include "utils/diskencryption.h"
 #include "utils/diskimagecheck.h"
 #include "utils/diskkeystore.h"
+#include "utils/guestagentmedium.h"
 #include "utils/kemuagentclient.h"
 #include "utils/keyspecs.h"
 #include "utils/linkedclones.h"
@@ -105,6 +106,41 @@ void setVmWindowIcon(QWidget *window, const VmEntry *entry)
     if (entry)
         window->setWindowIcon(entry->config.icon(KEMUConst::DetailViewIconSize));
 }
+
+// The guest's architecture as "uname -m" names it, as kemu-agent bundles do.
+QString guestArchitectureName(VMSpecs::Architecture architecture)
+{
+    switch (architecture) {
+    case VMSpecs::Architecture::X86_64:
+        return u"x86_64"_s;
+    case VMSpecs::Architecture::I386:
+        return u"i686"_s;
+    case VMSpecs::Architecture::Aarch64:
+        return u"aarch64"_s;
+    case VMSpecs::Architecture::Riscv64:
+        return u"riscv64"_s;
+    }
+    return {};
+}
+
+// Why the kemu-agent CD image is not offered for a guest; empty when it is.
+// kemu-agent runs in Linux guests; "Other" may well be one.
+QString agentMediumBlocker(const VMConfig &config)
+{
+    switch (config.osFamily()) {
+    case VMSpecs::OsFamily::Windows:
+        return i18nc("@info:tooltip", "kemu-agent is not available for Windows guests yet");
+    case VMSpecs::OsFamily::BSD:
+        return i18nc("@info:tooltip", "kemu-agent is not available for BSD guests yet");
+    case VMSpecs::OsFamily::DOS:
+        return i18nc("@info:tooltip", "kemu-agent is not available for DOS guests");
+    case VMSpecs::OsFamily::Linux:
+    case VMSpecs::OsFamily::Other:
+        break;
+    }
+    return {};
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget *parent)
@@ -458,6 +494,8 @@ void MainWindow::setupUi()
                 if (type == VirtualEnvironmentItemDelegate::MediaType::Cd) {
                     menu.addAction(actionCollection()->action(u"vm_change_iso"_s));
                     menu.addAction(actionCollection()->action(u"vm_eject_iso"_s));
+                    menu.addSeparator();
+                    menu.addAction(actionCollection()->action(u"vm_insert_agent_medium"_s));
                 } else {
                     menu.addAction(actionCollection()->action(u"vm_change_floppy"_s));
                     menu.addAction(actionCollection()->action(u"vm_eject_floppy"_s));
@@ -500,6 +538,10 @@ void MainWindow::setupUi()
             QMenu menu(this);
             menu.addAction(actionCollection()->action(cd ? u"vm_change_iso"_s : u"vm_change_floppy"_s));
             menu.addAction(actionCollection()->action(cd ? u"vm_eject_iso"_s : u"vm_eject_floppy"_s));
+            if (cd) {
+                menu.addSeparator();
+                menu.addAction(actionCollection()->action(u"vm_insert_agent_medium"_s));
+            }
             menu.exec(anchor);
             return;
         }
@@ -778,6 +820,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                              case VMSpecs::OsFamily::Other:
                                  break;
                              }
+                             state.window->setAgentMediumUnavailable(agentMediumBlocker(cfgEntry->config));
                          }
                          state.window->setWindowTitle(vmName);
                          state.window->setAttribute(Qt::WA_DeleteOnClose, false);
@@ -886,6 +929,9 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
                          });
                          connect(state.window, &DbusViewerWindow::ejectIsoRequested, this, [this, vmName] {
                              ejectISOForVm(vmName);
+                         });
+                         connect(state.window, &DbusViewerWindow::insertAgentMediumRequested, this, [this, vmName] {
+                             insertAgentMediumForVm(vmName);
                          });
                          connect(state.window, &DbusViewerWindow::changeFloppyRequested, this, [this, vmName] {
                              changeFloppyForVm(vmName);
@@ -1402,6 +1448,11 @@ void MainWindow::setupActions()
     actionEjectISO->setText(i18n("Eject ISO Image"));
     connect(actionEjectISO, &QAction::triggered, this, &MainWindow::ejectISO);
 
+    auto *actionInsertAgentMedium = ac->addAction(u"vm_insert_agent_medium"_s);
+    actionInsertAgentMedium->setIcon(QIcon::fromTheme(u"media-optical"_s));
+    actionInsertAgentMedium->setText(i18n("Insert kemu-agent CD Image…"));
+    connect(actionInsertAgentMedium, &QAction::triggered, this, &MainWindow::insertAgentMedium);
+
     auto *actionChangeFloppy = ac->addAction(u"vm_change_floppy"_s);
     actionChangeFloppy->setIcon(QIcon::fromTheme(u"media-floppy"_s));
     actionChangeFloppy->setText(i18n("Floppy Image…"));
@@ -1645,6 +1696,14 @@ void MainWindow::updateActionStates()
     actionCollection()->action(u"vm_discard_saved_state"_s)->setEnabled(hasSaved && !isRunning && !isSaving);
     actionCollection()->action(u"vm_change_iso"_s)->setEnabled(canChangeMedia);
     actionCollection()->action(u"vm_eject_iso"_s)->setEnabled(canChangeMedia && !currentConfig.isoPath().isEmpty());
+    {
+        const QString blocker = hasSelection ? agentMediumBlocker(currentConfig) : QString();
+        QAction *insertAgent = actionCollection()->action(u"vm_insert_agent_medium"_s);
+        insertAgent->setEnabled(canChangeMedia && blocker.isEmpty());
+        insertAgent->setToolTip(blocker.isEmpty() ? i18n("Insert a CD image with kemu-agent, which shares the clipboard and reports the monitor "
+                                                         "layout of Linux guests")
+                                                  : blocker);
+    }
     actionCollection()->action(u"vm_change_floppy"_s)->setEnabled(canChangeMedia);
     actionCollection()->action(u"vm_eject_floppy"_s)->setEnabled(canChangeMedia && !currentConfig.floppyPath().isEmpty());
     actionCollection()->action(u"vm_shrink"_s)->setEnabled(hasSelection && !isBusy && linkBlocker.isEmpty());
@@ -2684,6 +2743,12 @@ void MainWindow::ejectISO()
         ejectISOForVm(currentConfig.name());
 }
 
+void MainWindow::insertAgentMedium()
+{
+    if (!currentConfig.name().isEmpty())
+        insertAgentMediumForVm(currentConfig.name());
+}
+
 void MainWindow::changeFloppy()
 {
     if (!currentConfig.name().isEmpty())
@@ -2696,11 +2761,11 @@ void MainWindow::ejectFloppy()
         ejectFloppyForVm(currentConfig.name());
 }
 
-void MainWindow::changeISOForVm(const QString &vmName, const QString &imagePath)
+bool MainWindow::changeISOForVm(const QString &vmName, const QString &imagePath)
 {
     const VmEntry *entry = veModel->entryByName(vmName);
     if (!entry || entry->isFrozen())
-        return;
+        return false;
 
     QWidget *parentW = dialogParentFor(vmName);
 
@@ -2710,14 +2775,16 @@ void MainWindow::changeISOForVm(const QString &vmName, const QString &imagePath)
         isoPath = QFileDialog::getOpenFileName(parentW, i18n("Select ISO Image"), startDir.absolutePath(), i18n("ISO Files (*.iso)"));
     }
     if (isoPath.isEmpty())
-        return;
+        return false;
 
-    m_lastMediaDir[vmName] = QFileInfo(isoPath).absolutePath();
+    // KEMU's own kemu-agent medium does not move the file dialog to its folder.
+    if (isoPath != GuestAgentMedium::defaultMediumPath())
+        m_lastMediaDir[vmName] = QFileInfo(isoPath).absolutePath();
 
     if (veModel->isRunning(vmName)) {
         if (!entry->qmpClient || !entry->qmpClient->isConnected()) {
             KMessageBox::error(parentW, monitorNotReadyText(vmName));
-            return;
+            return false;
         }
 
         const QMPResult result =
@@ -2729,10 +2796,10 @@ void MainWindow::changeISOForVm(const QString &vmName, const QString &imagePath)
                                          i18n("The guest has locked the CD/DVD drive, usually because the disc is mounted. KEMU has asked the "
                                               "guest to eject it. Once the disc is out, insert the new image again."),
                                          i18n("Changing ISO Failed"));
-                return;
+                return false;
             }
             KMessageBox::error(parentW, result.errorMessage, i18n("Changing ISO Failed"));
-            return;
+            return false;
         }
         statusBar()->showMessage(i18n("ISO changed successfully."));
     }
@@ -2750,6 +2817,155 @@ void MainWindow::changeISOForVm(const QString &vmName, const QString &imagePath)
         updateDetails();
     }
     pushMediaStateToViewer(vmName);
+    return true;
+}
+
+void MainWindow::insertAgentMediumForVm(const QString &vmName)
+{
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!entry || entry->isFrozen())
+        return;
+
+    QWidget *parentW = dialogParentFor(vmName);
+    const QString title = i18nc("@title:window", "kemu-agent CD Image");
+
+    if (const QString blocker = agentMediumBlocker(entry->config); !blocker.isEmpty()) {
+        KMessageBox::information(parentW, blocker, title);
+        return;
+    }
+    const QString architecture = guestArchitectureName(entry->config.architecture());
+
+    // The bundle the user chose before, then those installed with KEMU
+    // (share/kemu/agent); for each architecture the newest one counts.
+    KConfigGroup group = KSharedConfig::openConfig(u"kemurc"_s)->group(u"GuestAgent"_s);
+    const QString chosen = group.readEntry("Bundle", QString());
+    QStringList paths;
+    if (QFileInfo::exists(chosen)) {
+        paths << chosen;
+    } else if (!chosen.isEmpty()) {
+        group.deleteEntry("Bundle");
+        group.sync();
+    }
+    paths << GuestAgentMedium::installedBundlePaths();
+    QList<GuestAgentMedium::Bundle> bundles = GuestAgentMedium::findBundles(paths);
+
+    const auto bundleFor = [&architecture](const QList<GuestAgentMedium::Bundle> &list) -> std::optional<GuestAgentMedium::Bundle> {
+        for (const GuestAgentMedium::Bundle &bundle : GuestAgentMedium::newestPerArchitecture(list)) {
+            if (bundle.architecture == architecture)
+                return bundle;
+        }
+        return std::nullopt;
+    };
+
+    // None for this guest: say where bundles come from, and offer to pick one.
+    while (!bundleFor(bundles)) {
+        QStringList available;
+        for (const GuestAgentMedium::Bundle &bundle : GuestAgentMedium::newestPerArchitecture(bundles))
+            available << bundle.architecture;
+        const QString pattern = u"kemu-agent-<version>-linux-%1.tar.gz"_s.arg(architecture);
+        const QString text = available.isEmpty() ? xi18nc("@info",
+                                                          "<para>KEMU makes the kemu-agent CD image from a kemu-agent bundle, and none is installed.</para>"
+                                                          "<para>KEMU's build makes one and installs it to <filename>share/kemu/agent</filename>, "
+                                                          "unless it was configured with <command>-DKEMU_AGENT_BUNDLE=OFF</command> "
+                                                          "(see KEMU's README, \"Build, install, uninstall\"). "
+                                                          "You can also choose a bundle (<filename>%1</filename>) yourself.</para>",
+                                                          pattern)
+                                                 : xi18nc("@info %2 lists architectures",
+                                                          "<para>There is no kemu-agent bundle for %1 guests, only for %2.</para>"
+                                                          "<para>Choose a bundle for %1 (<filename>%3</filename>)?</para>",
+                                                          architecture,
+                                                          available.join(i18nc("@info separator of a list", ", ")),
+                                                          pattern);
+        if (KMessageBox::questionTwoActions(parentW, text, title, KGuiItem(i18n("Choose Bundle…"), u"document-open"_s), KStandardGuiItem::cancel())
+            != KMessageBox::PrimaryAction)
+            return;
+
+        const QString file = QFileDialog::getOpenFileName(parentW,
+                                                          i18nc("@title:window", "Choose a kemu-agent Bundle"),
+                                                          chosen.isEmpty() ? QDir::homePath() : QFileInfo(chosen).absolutePath(),
+                                                          i18n("kemu-agent bundles (kemu-agent-*.tar.gz kemu-agent-*.tar.xz BUNDLE-INFO)"));
+        if (file.isEmpty())
+            return;
+        QString error;
+        const std::optional<GuestAgentMedium::Bundle> bundle = GuestAgentMedium::readBundle(file, &error);
+        if (!bundle) {
+            KMessageBox::error(parentW, error, title);
+            continue;
+        }
+        if (bundle->architecture != architecture) {
+            KMessageBox::error(parentW, i18n("This bundle is for %1 guests, not for %2 guests.", bundle->architecture, architecture), title);
+            continue;
+        }
+        group.writeEntry("Bundle", file);
+        group.sync();
+        bundles.prepend(*bundle);
+    }
+    const QString mediumVersion = bundleFor(bundles)->version;
+
+    // The dialogs ran an event loop: the VM may be gone or busy by now.
+    entry = veModel->entryByName(vmName);
+    if (!entry || entry->isFrozen())
+        return;
+
+    // A disc the user inserted is replaced only when they agree.
+    const QString isoPath = GuestAgentMedium::defaultMediumPath();
+    const QString inserted = entry->config.isoPath();
+    if (!inserted.isEmpty() && QFileInfo(inserted).absoluteFilePath() != QFileInfo(isoPath).absoluteFilePath()) {
+        const QString question = i18n("The CD drive holds %1. Replace it with the kemu-agent CD image?", QFileInfo(inserted).fileName());
+        if (KMessageBox::questionTwoActions(parentW, question, title, KGuiItem(i18n("Replace"), u"media-optical"_s), KStandardGuiItem::cancel())
+            != KMessageBox::PrimaryAction)
+            return;
+    }
+
+    QString error;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const bool built = GuestAgentMedium::build(bundles, isoPath, error);
+    QApplication::restoreOverrideCursor();
+    if (!built) {
+        KMessageBox::error(parentW, i18n("Could not make the kemu-agent CD image: %1", error), title);
+        return;
+    }
+
+    const bool running = veModel->isRunning(vmName);
+    if (!changeISOForVm(vmName, isoPath))
+        return;
+    if (!running) {
+        statusBar()->showMessage(i18n("The kemu-agent CD image is inserted for the next start of '%1'.", vmName));
+        return;
+    }
+    statusBar()->showMessage(i18n("kemu-agent CD image inserted in '%1'.", vmName));
+
+    // How to go on in the guest, and what the guest runs now. The command has
+    // to be typed: there is no shared clipboard without the agent.
+    QString versionNote;
+    const VmRuntimeInfo *rt = m_runtimeManager ? m_runtimeManager->runtime(vmName) : nullptr;
+    const KemuAgentClient *agent = rt ? rt->kemuAgent.data() : nullptr;
+    if (agent && agent->status() == KemuAgentClient::Status::Connected && !agent->agentInfo().version.isEmpty()) {
+        const QString inGuest = agent->agentInfo().version;
+        switch (GuestAgentMedium::compareVersions(mediumVersion, inGuest)) {
+        case 1:
+            versionNote = xi18nc("@info", "<para>The guest runs kemu-agent %1; the installer updates it to %2.</para>", inGuest, mediumVersion);
+            break;
+        case 0:
+            versionNote = xi18nc("@info", "<para>The guest runs kemu-agent %1 already, the version on this disc.</para>", inGuest);
+            break;
+        default:
+            versionNote = xi18nc("@info", "<para>The guest runs kemu-agent %1, which is newer than the %2 on this disc.</para>", inGuest, mediumVersion);
+            break;
+        }
+    }
+    const QString text = xi18nc("@info %3 and %5 are shell commands",
+                                "<para>The CD drive of '%1' holds kemu-agent %2. To install the agent, open a terminal in the guest and run:</para>"
+                                "<para><command>%3</command></para>"
+                                "<para>On Debian and Ubuntu the disc is mounted at <filename>%4</filename> instead. "
+                                "If the guest has not mounted it, run <command>%5</command>.</para>",
+                                vmName,
+                                mediumVersion,
+                                GuestAgentMedium::installCommand(),
+                                u"/media/$USER/%1"_s.arg(QStringView(GuestAgentMedium::VolumeLabel)),
+                                u"sudo mount -o ro /dev/sr0 /mnt && sudo sh /mnt/install.sh"_s)
+        + versionNote;
+    KMessageBox::information(parentW, text, title, u"AgentMediumInstructions"_s);
 }
 
 void MainWindow::ejectISOForVm(const QString &vmName)

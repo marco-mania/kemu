@@ -52,7 +52,7 @@ allowed() {
     f:"$unit_dir/kemu-agent.service" | l:"$wants_dir/kemu-agent.service") return 0 ;;
     f:"$rules_dir/70-kemu-agent.rules" | f:"$autostart_dir/org.kde.kemu.agent.desktop") return 0 ;;
     d:"$prefix" | d:"$prefix"/*) return 0 ;;
-    d:/opt | d:/var/opt | d:/etc/systemd | d:"$unit_dir" | d:"$wants_dir") return 0 ;;
+    d:/etc | d:/opt | d:/var/opt | d:/etc/systemd | d:"$unit_dir" | d:"$wants_dir") return 0 ;;
     d:/etc/udev | d:"$rules_dir" | d:/etc/xdg | d:"$autostart_dir") return 0 ;;
     esac
     # A prefix's missing parents, as install.sh creates them.
