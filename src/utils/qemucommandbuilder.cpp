@@ -336,7 +336,7 @@ QStringList QemuCommandBuilder::buildArgs(const VMConfig &config,
     const bool effective3d =
         config.gpu3dAcceleration() && config.gpuType() == VMSpecs::GpuType::Virtio && QemuCapabilities::instance().hasDevice(u"virtio-vga-gl"_s);
 
-    const int mem = qBound(VMConfig::vgaMemMbLowerLimit(config.gpuType()), config.gpuMemMb(), VMConfig::vgaMemMbUpperLimit(config.gpuType()));
+    const int mem = VMConfig::normalizedVgaMemMb(config.gpuType(), config.gpuMemMb());
 
     if (config.gpuType() == VMSpecs::GpuType::Qxl) {
         args << u"-device"_s << u"qxl-vga,vgamem_mb=%1"_s.arg(mem);

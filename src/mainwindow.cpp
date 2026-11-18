@@ -1983,9 +1983,13 @@ void MainWindow::updateDetails()
     QString gpuVal = VMConfig::toUIString(currentConfig.gpuType());
     if (currentConfig.gpu3dAcceleration())
         gpuVal += i18n(" (3D)");
-    // The resolution follows the viewer window, so the card names the heads.
-    const QString monitorsVal = i18ncp("@info number of monitors", "%1 monitor", "%1 monitors", currentConfig.monitorCount());
-    VmOverview::Card display{u"video-display"_s, gpuVal, i18n("Display"), monitorsVal};
+    // The resolution follows the viewer window, so the card names the video
+    // memory QEMU gets and the heads.
+    const int vramMb = VMConfig::normalizedVgaMemMb(currentConfig.gpuType(), currentConfig.gpuMemMb());
+    const QString displayFacts = QStringList{i18nc("@info video memory in MiB", "%1 MiB VRAM", vramMb),
+                                             i18ncp("@info number of monitors", "%1 monitor", "%1 monitors", currentConfig.monitorCount())}
+                                     .join(u" · "_s);
+    VmOverview::Card display{u"video-display"_s, gpuVal, i18n("Display"), displayFacts};
     display.id = u"display"_s;
     content.hardware << display;
 

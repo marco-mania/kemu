@@ -27,6 +27,8 @@
 #include <QScopeGuard>
 #include <QStyle>
 
+#include <bit>
+
 namespace
 {
 // Select the combo entry whose userData matches the given enum value.
@@ -110,6 +112,24 @@ QString accel3dToolTip()
         "Enables GPU-accelerated 3D rendering via virtio-vga-gl.\n"
         "Requires VirtIO graphics; not available with Standard VGA or QXL.");
 }
+
+// Any size can be typed; the arrow buttons, keys and wheel move between
+// powers of two, the sizes adapters usually have.
+class PowerOfTwoSpinBox : public QSpinBox
+{
+public:
+    using QSpinBox::QSpinBox;
+
+    void stepBy(int steps) override
+    {
+        auto value = static_cast<unsigned>(qMax(1, this->value()));
+        for (; steps > 0 && value < static_cast<unsigned>(maximum()); --steps)
+            value = std::bit_floor(value) * 2;
+        for (; steps < 0; ++steps)
+            value = std::has_single_bit(value) ? value / 2 : std::bit_floor(value);
+        setValue(qBound(minimum(), static_cast<int>(value), maximum()));
+    }
+};
 
 QString missingInQemuText()
 {
@@ -468,8 +488,14 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::VgaISA), static_cast<int>(VMSpecs::GpuType::VgaISA));
     graphicsLayout->addRow(i18n("Adapter:"), gpuCombo);
 
-    gpuMemSpin = new QSpinBox();
+    // Typed sizes stay as typed, except on Cirrus VGA, which takes no others
+    // than 4, 8 and 16 MiB.
+    gpuMemSpin = new PowerOfTwoSpinBox();
     gpuMemSpin->setValue(64);
+    connect(gpuMemSpin, &QSpinBox::editingFinished, this, [this]() {
+        const auto gpu = static_cast<VMSpecs::GpuType>(gpuCombo->currentData().toInt());
+        gpuMemSpin->setValue(VMConfig::normalizedVgaMemMb(gpu, gpuMemSpin->value()));
+    });
     gpuMemSpin->setSuffix(i18n(" MiB"));
     vgaMemLabel = new QLabel(i18n("Memory:"));
     graphicsLayout->addRow(vgaMemLabel, gpuMemSpin);
@@ -1084,7 +1110,8 @@ void EditVmDialog::setConfig(const VMConfig &config)
     tpmCheck->setChecked(config.useTpm());
     secureBootCheck->setChecked(config.useSecureBoot());
     acpiCheck->setChecked(config.useAcpi());
-    gpuMemSpin->setValue(config.gpuMemMb() > 0 ? config.gpuMemMb() : 64);
+    // As QEMU will get it: within the adapter's range, Cirrus snapped.
+    gpuMemSpin->setValue(VMConfig::normalizedVgaMemMb(static_cast<VMSpecs::GpuType>(gpuCombo->currentData().toInt()), config.gpuMemMb()));
 
     applyModeConstraints();
     refreshDiskList();
@@ -1233,19 +1260,10 @@ void EditVmDialog::onGpuDisplayChanged()
     const bool isWindows = (osFamily == VMSpecs::OsFamily::Windows);
 
     gpuMemSpin->setRange(VMConfig::vgaMemMbLowerLimit(gpu), VMConfig::vgaMemMbUpperLimit(gpu));
-    if (gpu == VMSpecs::GpuType::CirrusGD5430 || gpu == VMSpecs::GpuType::CirrusGD5446) {
-        gpuMemSpin->setSingleStep(4);
-        // Snap to nearest valid value
-        const int val = gpuMemSpin->value();
-        if (val <= 4)
-            gpuMemSpin->setValue(4);
-        else if (val <= 8)
-            gpuMemSpin->setValue(8);
-        else
-            gpuMemSpin->setValue(16);
-    } else {
-        gpuMemSpin->setSingleStep(1);
-    }
+    gpuMemSpin->setValue(VMConfig::normalizedVgaMemMb(gpu, gpuMemSpin->value()));
+    const bool cirrus = gpu == VMSpecs::GpuType::CirrusGD5430 || gpu == VMSpecs::GpuType::CirrusGD5446;
+    gpuMemSpin->setToolTip(cirrus ? i18n("4, 8 or 16 MiB, the sizes Cirrus VGA takes.")
+                                  : i18n("%1 to %2 MiB. The arrows step through powers of two.", gpuMemSpin->minimum(), gpuMemSpin->maximum()));
     gpuMemSpin->setEnabled(true);
     vgaMemLabel->setEnabled(true);
 

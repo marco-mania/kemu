@@ -569,6 +569,9 @@ public:
     static int maxCoresForModel(VMSpecs::CpuModel type);
     static int vgaMemMbLowerLimit(const VMSpecs::GpuType &type);
     static int vgaMemMbUpperLimit(const VMSpecs::GpuType &type);
+    // A size the adapter takes: within the limits above, and 4, 8 or 16 MiB
+    // on Cirrus VGA, where QEMU refuses any other size.
+    [[nodiscard]] static int normalizedVgaMemMb(VMSpecs::GpuType type, int mb);
     static QString x86ArchHint(VMSpecs::CpuModel model);
 
     // --- Setter ---

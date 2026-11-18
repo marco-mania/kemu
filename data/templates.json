@@ -11,7 +11,7 @@
     "machine_type": "q35",
     "gpu_type": "virtio",
     "gpu_3d_acceleration": true,
-    "gpu_mem": 64,
+    "gpu_mem": 256,
     "monitor_count": 1,
     "audio_device": "hda",
     "disk_interface": "virtio",

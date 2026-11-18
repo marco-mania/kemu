@@ -141,6 +141,46 @@ private Q_SLOTS:
         QCOMPARE(shell.readAllStandardOutput(), encodedArgs(args));
     }
 
+    void vramSize_data()
+    {
+        QTest::addColumn<VMSpecs::GpuType>("gpu");
+        QTest::addColumn<int>("requested");
+        QTest::addColumn<QString>("expected");
+
+        QTest::newRow("vga-free") << VMSpecs::GpuType::Vga << 24 << u"VGA,vgamem_mb=24"_s;
+        QTest::newRow("vga-low") << VMSpecs::GpuType::Vga << 1 << u"VGA,vgamem_mb=4"_s;
+        QTest::newRow("isa-vga-dos") << VMSpecs::GpuType::VgaISA << 1 << u"isa-vga,vgamem_mb=1"_s;
+        QTest::newRow("isa-vga-qemu-default") << VMSpecs::GpuType::VgaISA << 8 << u"isa-vga,vgamem_mb=8"_s;
+        QTest::newRow("isa-vga-high") << VMSpecs::GpuType::VgaISA << 64 << u"isa-vga,vgamem_mb=16"_s;
+        QTest::newRow("qxl-low") << VMSpecs::GpuType::Qxl << 4 << u"qxl-vga,vgamem_mb=8"_s;
+        QTest::newRow("qxl-high") << VMSpecs::GpuType::Qxl << 1024 << u"qxl-vga,vgamem_mb=256"_s;
+        QTest::newRow("cirrus-snap-up") << VMSpecs::GpuType::CirrusGD5446 << 5 << u"cirrus-vga,vgamem_mb=8"_s;
+        QTest::newRow("cirrus-isa-snap") << VMSpecs::GpuType::CirrusGD5430 << 12 << u"isa-cirrus-vga,vgamem_mb=16"_s;
+        QTest::newRow("cirrus-low") << VMSpecs::GpuType::CirrusGD5446 << 1 << u"cirrus-vga,vgamem_mb=4"_s;
+        QTest::newRow("virtio-low") << VMSpecs::GpuType::Virtio << 1 << u",max_hostmem=16M"_s;
+        QTest::newRow("virtio-free") << VMSpecs::GpuType::Virtio << 100 << u",max_hostmem=100M"_s;
+    }
+
+    void vramSize()
+    {
+        QFETCH(VMSpecs::GpuType, gpu);
+        QFETCH(int, requested);
+        QFETCH(QString, expected);
+
+        // What QEMU accepts, also for sizes edited into config.json by hand.
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QDir vmDir(dir.path());
+        VMConfig config = testConfig(vmDir);
+        config.setMachineType(VMSpecs::MachineType::Pc);
+        config.setGpuType(gpu);
+        config.setGpu3dAcceleration(false);
+        config.setGpuMemMb(requested);
+        const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s));
+        QVERIFY2(std::any_of(args.cbegin(), args.cend(), [&expected](const QString &arg) { return arg.startsWith(expected) || arg.endsWith(expected); }),
+                 qPrintable(args.join(u' ')));
+    }
+
     void graphicsDevice_data()
     {
         QTest::addColumn<bool>("acceleration");

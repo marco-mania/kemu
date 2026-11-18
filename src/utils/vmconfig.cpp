@@ -92,14 +92,26 @@ VMSpecs::MachineType VMConfig::recommendedMachineType(VMSpecs::CpuModel type)
     }
 }
 
+// What QEMU 11 does with the size (vgamem_mb, for VirtIO max_hostmem):
+// - VGA, ISA VGA: clamps to 1-512 MiB and rounds up to a power of two.
+// - QXL: raises sizes below 8 MiB, caps at 256 and rounds up.
+// - Cirrus (PCI and ISA): 4, 8 or 16 MiB, anything else fails the start.
+// - VirtIO: any size; it limits the host memory of 2D resources.
+// The limits below are the sensible part of that.
 int VMConfig::vgaMemMbLowerLimit(const VMSpecs::GpuType &type)
 {
     switch (type) {
+    case VMSpecs::GpuType::VgaISA:
+        return 1; // plain VGA needs 256 KiB, VBE modes of DOS guests a few MiB
     case VMSpecs::GpuType::CirrusGD5430:
     case VMSpecs::GpuType::CirrusGD5446:
         return 4;
+    case VMSpecs::GpuType::Qxl:
+        return 8; // QEMU raises smaller sizes anyway
+    case VMSpecs::GpuType::Virtio:
+        return 16; // one 1080p framebuffer, double-buffered
     default:
-        return 1;
+        return 4; // standard VGA: 1024x768 in 32 bits
     }
 }
 
@@ -107,16 +119,23 @@ int VMConfig::vgaMemMbUpperLimit(const VMSpecs::GpuType &type)
 {
     switch (type) {
     case VMSpecs::GpuType::VgaISA:
-        return 2;
+        return 16; // QEMU defaults to 8; old guests use far less
     case VMSpecs::GpuType::CirrusGD5430:
-        return 16;
     case VMSpecs::GpuType::CirrusGD5446:
         return 16;
     case VMSpecs::GpuType::Virtio:
         return 2048;
     default:
-        return 256;
+        return 256; // standard VGA and QXL
     }
+}
+
+int VMConfig::normalizedVgaMemMb(VMSpecs::GpuType type, int mb)
+{
+    const int bounded = qBound(vgaMemMbLowerLimit(type), mb, vgaMemMbUpperLimit(type));
+    if (type == VMSpecs::GpuType::CirrusGD5430 || type == VMSpecs::GpuType::CirrusGD5446)
+        return bounded <= 4 ? 4 : bounded <= 8 ? 8 : 16;
+    return bounded;
 }
 
 QString VMConfig::x86ArchHint(VMSpecs::CpuModel model)
