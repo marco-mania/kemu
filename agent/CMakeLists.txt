@@ -6,8 +6,9 @@
 #   cmake -S agent -B build -DCMAKE_INSTALL_PREFIX=/usr && cmake --build build && sudo cmake --install build
 #
 # It is also part of KEMU's source tree. KEMU's top-level CMakeLists.txt adds
-# it with -DKEMU_BUILD_AGENT=ON, for the tests only: the agent belongs in the
-# guest, so nothing of it is installed then (see KEMU_AGENT_INSTALL).
+# it for its tests (with BUILD_TESTING): the agent belongs in the guest, so
+# nothing of it is installed then (see KEMU_AGENT_INSTALL). KEMU builds the
+# bundle for guests itself (KEMU_AGENT_BUNDLE, cmake/KemuAgentBundle.cmake).
 
 cmake_minimum_required(VERSION 3.22)
 project(kemu-agent VERSION 0.3.0 LANGUAGES C CXX)
@@ -122,15 +123,30 @@ endif()
 
 # The portable bundle: kemu-agent built in a container against an old glibc and
 # a static Qt, for the installer medium. Needs podman or docker; see
-# README.md ("Portable bundle").
-set(KEMU_AGENT_BUNDLE_ARCH "x86_64" CACHE STRING "Architecture of the bundle: x86_64 or aarch64")
-set(KEMU_AGENT_BUNDLE_GLIBC "2.28" CACHE STRING "Oldest glibc the bundle runs on: 2.28 or 2.34")
-add_custom_target(agent-bundle
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/packaging/bundle/build-bundle.sh
-            --arch ${KEMU_AGENT_BUNDLE_ARCH} --glibc ${KEMU_AGENT_BUNDLE_GLIBC}
-            --out ${CMAKE_CURRENT_BINARY_DIR}/bundle
-    COMMENT "Building the portable kemu-agent bundle in a container"
-    USES_TERMINAL VERBATIM)
+# README.md ("Portable bundle"). Within KEMU's build tree KEMU's own
+# agent-bundle target does this.
+if(kemu_agent_standalone)
+    string(TOLOWER "${CMAKE_HOST_SYSTEM_PROCESSOR}" kemu_agent_host)
+    if(kemu_agent_host MATCHES "^(aarch64|arm64)$")
+        set(kemu_agent_host aarch64)
+    else()
+        set(kemu_agent_host x86_64)
+    endif()
+    set(KEMU_AGENT_BUNDLE_ARCHS "${kemu_agent_host}" CACHE STRING
+        "Architectures to build bundles for: x86_64, aarch64 (default: the host's)")
+    set(KEMU_AGENT_BUNDLE_GLIBC "2.28" CACHE STRING "Oldest glibc the bundle runs on: 2.28 or 2.34")
+    set(kemu_agent_bundle_commands)
+    foreach(arch IN LISTS KEMU_AGENT_BUNDLE_ARCHS)
+        list(APPEND kemu_agent_bundle_commands
+            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/packaging/bundle/build-bundle.sh
+                    --arch ${arch} --glibc ${KEMU_AGENT_BUNDLE_GLIBC}
+                    --out ${CMAKE_CURRENT_BINARY_DIR}/bundle)
+    endforeach()
+    add_custom_target(agent-bundle
+        ${kemu_agent_bundle_commands}
+        COMMENT "Building the portable kemu-agent bundle in a container"
+        USES_TERMINAL VERBATIM)
+endif()
 
 if(BUILD_TESTING)
     find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Test)

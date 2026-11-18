@@ -5,7 +5,7 @@
 include(ECMAddTests)
 
 # The names are prefixed because KEMU's own tests live in the same build tree
-# when KEMU_BUILD_AGENT is on (clipboardfilestest exists on both sides).
+# with BUILD_TESTING (clipboardfilestest exists on both sides).
 
 ecm_add_tests(
     agentclipboardchoicetest.cpp

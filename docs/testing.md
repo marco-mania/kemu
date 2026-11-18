@@ -21,9 +21,16 @@ ctest --test-dir build -N
 ctest --test-dir build -R '^dbusdisplaytest$' --output-on-failure
 ```
 
-The guest agent (`agent/`) is built and tested only with
-`-DKEMU_BUILD_AGENT=ON`; its tests are named `agent…test`. See `agent/README.md`
+The guest agent (`agent/`) is built natively for its tests whenever
+`BUILD_TESTING` is on; its tests are named `agent…test`. See `agent/README.md`
 for the end-to-end tests, which need a guest-like environment.
+
+In CI, or anywhere without podman or docker, configure with
+`-DKEMU_AGENT_BUNDLE=OFF`: the kemu-agent bundle for guests is built in a
+container, and without one configuring stops. The agent's own tests still
+run. A pipeline that should produce bundles needs a job with a container
+engine (or, for another architecture, QEMU user-mode emulation) that runs
+`cmake --build build --target agent-bundle`.
 
 Use `ctest --test-dir build -V` for verbose output. To build only the D-Bus
 viewer test, run `cmake --build build --target dbusdisplaytest`.

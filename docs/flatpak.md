@@ -38,6 +38,30 @@ Grant additional access only when needed:
   or use `--system-talk-name=org.freedesktop.login1` for logind access. Without
   either permission, this option is disabled.
 
+## kemu-agent for guests
+
+The Flatpak is built without the kemu-agent bundle for guests
+(`-DKEMU_AGENT_BUNDLE=OFF` in `org.kde.kemu.yml`): `flatpak-builder` has no
+network access and no container engine, and the bundle is built in a
+container. To ship bundles in the Flatpak, build them outside it (or take
+released ones) and add each to the `kemu` module as a source, with
+`-DKEMU_AGENT_BUNDLES` naming it where flatpak-builder puts sources,
+`/run/build/kemu/`:
+
+```yaml
+    config-opts:
+      - -DKEMU_AGENT_BUNDLE=OFF
+      - -DKEMU_AGENT_BUNDLES=/run/build/kemu/kemu-agent-0.3.0-linux-x86_64.tar.gz
+    sources:
+      - type: file
+        path: build/agent/bundle/kemu-agent-0.3.0-linux-x86_64.tar.gz
+        only-arches: [x86_64]
+```
+
+For a released bundle, use `url:` and `sha256:` instead of `path:`. The
+bundles end up in `/app/share/kemu/agent/<arch>/`, which KEMU finds through
+the Flatpak's data directories.
+
 ## Differences
 
 - **Executables:** *Settings → System → Executables* is read-only. Bundled

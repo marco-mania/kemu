@@ -46,6 +46,15 @@ case "$glibc" in
 *) echo "build-bundle: no manylinux image for glibc $glibc (2.28 or 2.34)" >&2; exit 2 ;;
 esac
 
+# Through sudo the toolchain image would go to root's container storage and
+# the build directory would get files owned by root. (Plain root, as in CI
+# containers, is fine.)
+if [ "$(id -u)" = 0 ] && [ -n "${SUDO_USER:-}" ]; then
+    echo "build-bundle: do not build the bundle with sudo. Build as your user (cmake --build <build>)," >&2
+    echo "then install as root (sudo cmake --install <build>), which does not build anything." >&2
+    exit 1
+fi
+
 if [ -z "$engine" ]; then
     for e in podman docker; do
         command -v "$e" > /dev/null && { engine="$e"; break; }
