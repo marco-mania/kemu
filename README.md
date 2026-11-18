@@ -20,11 +20,20 @@ KEMU requires a native Wayland session on the host; X11 and XWayland cannot be u
 - LUKS encryption for the system disk and TPM state, with passwords stored in KWallet
 - TPM 2.0 (`swtpm`), UEFI with Secure Boot, and editable system identity (UUID, SMBIOS)
 
+**kemu-agent – KEMU's own guest agent for Linux guests**
+
+- Shares the clipboard with the host (optionally files)
+- Reports the guest's monitor arrangement
+- Works on Wayland and X11 desktops (replacing `spice-vdagent`, but `qemu-guest-agent` keeps running alongside it)
+- Ships with KEMU: *Insert kemu-agent CD Image…* puts it into a running VM (`install.sh` and `uninstall.sh`)
+
 **Display and devices**
 
-- Integrated QEMU D-Bus viewer with 3D acceleration, bidirectional audio, clipboard sharing, and pointer capture, or QEMU's native SDL window
+- Integrated QEMU D-Bus viewer
+- Alternativly QEMU's native SDL window
 - Experimental second monitor in a separate window
-- Hot-swapping of ISO and floppy images; USB passthrough
+- Hot-swapping of ISO and floppy images
+- USB passthrough
 - Shared folders via 9p (Linux/BSD) and virtio-fs (Windows)
 
 **Networking**
@@ -37,7 +46,7 @@ KEMU requires a native Wayland session on the host; X11 and XWayland cannot be u
 - Launch VMs directly from the application menu like native applications
 - Command-line startup via `kemu --start <vm>`
 - File associations for KEMU archives, OVA files, and template packages, plus a Dolphin action to create a VM from a disc image
-- QEMU guest agent integration: displays guest hostname, IP address, and OS; handles graceful shutdown, space reclamation, and clock synchronisation after host sleep
+- QEMU guest agent integration
 - Pauses VMs on host sleep and prevents the session from ending while VMs are running
 
 **Portability**
