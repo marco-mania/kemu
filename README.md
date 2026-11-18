@@ -132,7 +132,7 @@ The bundle is built in a container (Podman or Docker) against an old glibc (2.28
 | `"-DKEMU_AGENT_BUNDLE_ARCHS=x86_64;aarch64"`   | KEMU + agent bundles for x86_64 and aarch64 guests                        |
 | `-DKEMU_AGENT_BUNDLES=/path/to/bundle.tar.gz`  | additionally, bundles built elsewhere (also with `KEMU_AGENT_BUNDLE=OFF`) |
 
-Build KEMU and run it from the build directory:
+**Run from the build directory (development):**
 
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Debug
@@ -140,24 +140,34 @@ cmake --build build
 ./build/bin/kemu
 ```
 
-Install for the **current user** (no root required; ensure `~/.local/bin` is in `$PATH`):
+**Installation:**
+
+Always configure and compile as your regular user; root privileges are only needed when installing system-wide:
+
+| Installation | Prefix       | Root required | Details                                                       |
+| ------------ | ------------ | ------------- | ------------------------------------------------------------- |
+| **User**     | `~/.local`   | No            | Isolated to your account; requires `~/.local/bin` in `$PATH`. |
+| **System**   | `/usr/local` | Install only  | Available to all users; `/usr/local/bin` is in `$PATH`.       |
+
+**Current user:**
 
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=~/.local
 cmake --build build
 cmake --install build
+cmake --build build --target uninstall         # to remove
 ```
 
-Install **system-wide** (typically `/usr/local`) or uninstall—build as your user, install as root:
+**System-wide:**
 
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 sudo cmake --install build
-sudo cmake --build build --target uninstall
+sudo cmake --build build --target uninstall    # to remove
 ```
 
-`cmake --install` builds nothing. `sudo cmake --build build --target install` would build as root first; the agent bundle refuses to be built that way, since its toolchain image would end up in root's container storage.
+> **Note:** Use `cmake --install build` rather than `sudo cmake --build build --target install`. The latter compiles as root first, which the agent bundle rejects because its container toolchain image would end up in root's container storage.
 
 Because pointer capture relies on a private Qt API to access the viewer window's Wayland surface, KEMU must be rebuilt after upgrading to a new Qt minor version.
 
