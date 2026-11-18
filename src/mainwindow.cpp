@@ -1661,17 +1661,10 @@ void MainWindow::updateActionStates()
     startAction->setEnabled(hasSelection && (!isBusy || isSavedOnly) && linkBlocker.isEmpty());
     startAction->setToolTip(linkBlocker);
 
-    // SDL opens a real display or none at all - fixed at QEMU's start,
-    // with no way to attach one afterwards. Only the integrated viewer can
-    // be reconnected later, so only it may be started headless.
-    const bool supportsHeadless = entry && entry->config.displayType() == VMSpecs::DisplayType::Dbus;
-
+    // The integrated viewer can attach later, so every VM may start headless.
     QAction *startHeadlessAction = actionCollection()->action(u"vm_start_headless"_s);
-    startHeadlessAction->setEnabled(hasSelection && supportsHeadless && (!isBusy || isSavedOnly) && linkBlocker.isEmpty());
-    startHeadlessAction->setToolTip(supportsHeadless ? linkBlocker
-                                                     : i18n("Not available for the SDL display: once started without a "
-                                                            "window, none can be attached later. Switch to the integrated "
-                                                            "viewer in the VM's settings to use this."));
+    startHeadlessAction->setEnabled(hasSelection && entry && (!isBusy || isSavedOnly) && linkBlocker.isEmpty());
+    startHeadlessAction->setToolTip(linkBlocker);
 
     actionCollection()->action(u"vm_shutdown"_s)->setEnabled(hasSelection && (monitorReady || isDeploying));
     actionCollection()->action(u"vm_reset"_s)->setEnabled(hasSelection && monitorReady);
@@ -1732,7 +1725,7 @@ void MainWindow::updateActionStates()
     launcherAction->setEnabled(hasSelection && entry && m_launcher);
     launcherAction->setChecked(hasSelection && m_launcher && m_launcher->has(name));
     actionCollection()->action(u"vm_import"_s)->setEnabled(true);
-    const bool hasDbusViewer = hasSelection && entry && entry->config.displayType() == VMSpecs::DisplayType::Dbus && m_runtimeManager->hasViewer(name);
+    const bool hasDbusViewer = hasSelection && entry && m_runtimeManager->hasViewer(name);
     // The viewer captures its own picture; screendump needs the monitor.
     actionCollection()->action(u"vm_screenshot"_s)->setEnabled(hasSelection && isRunning && (hasDbusViewer || (vmSupportsScreendump() && monitorReady)));
 
@@ -1740,8 +1733,7 @@ void MainWindow::updateActionStates()
     const bool hasUsbController = hasSelection && entry && entry->config.usbController() != VMSpecs::UsbController::None;
     usbActionMenu->setEnabled(hasUsbController && monitorReady);
 
-    const bool canReconnect =
-        (isRunning || isDeploying) && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !m_runtimeManager->hasViewer(entry->config.name());
+    const bool canReconnect = (isRunning || isDeploying) && entry && !m_runtimeManager->hasViewer(entry->config.name());
     actionCollection()->action(u"vm_reconnect"_s)->setEnabled(hasSelection && canReconnect);
 }
 
@@ -1996,10 +1988,7 @@ void MainWindow::updateDetails()
     QString resolutionVal = u"%1×%2"_s.arg(currentConfig.displayResolution().width()).arg(currentConfig.displayResolution().height());
     if (currentConfig.monitorCount() > 1)
         resolutionVal = i18ncp("@info resolution, number of monitors", "%2, %1 monitor", "%2, %1 monitors", currentConfig.monitorCount(), resolutionVal);
-    const QString screenVal = currentConfig.displayType() == VMSpecs::DisplayType::Dbus
-        ? resolutionVal
-        : u"%1, %2"_s.arg(VMConfig::toUIString(currentConfig.displayType()), resolutionVal);
-    VmOverview::Card display{u"video-display"_s, gpuVal, i18n("Display"), screenVal};
+    VmOverview::Card display{u"video-display"_s, gpuVal, i18n("Display"), resolutionVal};
     display.id = u"display"_s;
     content.hardware << display;
 
@@ -2320,10 +2309,8 @@ QString MainWindow::saveStateBlockReason(const VmEntry *entry) const
         }))
         return i18n("an NVMe disk is attached");
 
-    // virtio-gpu cannot migrate its virgl state. A headless VM without the
-    // D-Bus display runs without 3D.
-    const bool virgl = entry->config.gpu3dAcceleration() && entry->config.gpuType() == VMSpecs::GpuType::Virtio
-        && (!entry->isHeadless || entry->config.displayType() == VMSpecs::DisplayType::Dbus);
+    // virtio-gpu cannot migrate its virgl state.
+    const bool virgl = entry->config.gpu3dAcceleration() && entry->config.gpuType() == VMSpecs::GpuType::Virtio;
     if (virgl)
         return i18n("3D acceleration is enabled");
 
@@ -3775,18 +3762,15 @@ void MainWindow::reconnectViewer()
     if (!entry || !m_runtimeManager->hasLiveQemu(vmName))
         return;
 
-    if (entry->config.displayType() == VMSpecs::DisplayType::Dbus) {
-        if (m_runtimeManager->hasViewer(vmName)) {
-            statusBar()->showMessage(i18n("Viewer is already running for '%1'.", vmName));
-            return;
-        }
-
-        // startDbusViewer() only reports that the handshake was initiated;
-        // finishDbusViewer() clears the headless flag once it succeeds.
-        statusBar()->showMessage(i18n("Connecting viewer to '%1'…", vmName));
-        startDbusViewer(vmName);
+    if (m_runtimeManager->hasViewer(vmName)) {
+        statusBar()->showMessage(i18n("Viewer is already running for '%1'.", vmName));
         return;
     }
+
+    // startDbusViewer() only reports that the handshake was initiated;
+    // finishDbusViewer() clears the headless flag once it succeeds.
+    statusBar()->showMessage(i18n("Connecting viewer to '%1'…", vmName));
+    startDbusViewer(vmName);
 }
 
 void MainWindow::onVmStarted(const QString &vmName, bool headless, bool deployment)
@@ -3815,7 +3799,7 @@ void MainWindow::onVmStarted(const QString &vmName, bool headless, bool deployme
 
     // Last: startDbusViewer() needs the QMP client to exist. Its retry loop
     // covers the asynchronous socket wait inside the manager.
-    if (!headless && entry->config.displayType() == VMSpecs::DisplayType::Dbus) {
+    if (!headless) {
         QTimer::singleShot(500, this, [this, vmName]() {
             startDbusViewer(vmName);
         });
@@ -3928,7 +3912,7 @@ void MainWindow::onTreeDoubleClicked(const QModelIndex &index)
     }
 
     // VM is running headless: reconnect viewer
-    if (entry->isHeadless && entry->config.displayType() == VMSpecs::DisplayType::Dbus && !m_runtimeManager->hasViewer(vmName))
+    if (entry->isHeadless && !m_runtimeManager->hasViewer(vmName))
         reconnectViewer();
 }
 
@@ -4161,21 +4145,14 @@ void MainWindow::continueStartVM(bool headless, const QByteArray &diskKey)
     // Reset failure-handling state from any previous attempt of this VM.
     m_runtimeManager->runtimeFor(vmName).resetRunState();
 
-    if (!headless && !VMConfig::isDisplayTypeAvailable(currentConfig.displayType())) {
-        const auto fallback = VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType::Dbus) ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Sdl;
-        const auto answer = KMessageBox::questionTwoActions(this,
-                                                            i18n("The display type configured for '%1' is not available in this build. "
-                                                                 "Switch this VM to '%2'?",
-                                                                 vmName,
-                                                                 VMConfig::toUIString(fallback)),
-                                                            i18n("Display Type Unavailable"),
-                                                            KGuiItem(i18n("Switch and Start"), u"video-display"_s),
-                                                            KStandardGuiItem::cancel());
-        if (answer != KMessageBox::PrimaryAction)
-            return;
-
-        currentConfig.setDisplayType(fallback);
-        saveVmConfig(vmDirPath, currentConfig);
+    // Headless or not, every VM runs with the D-Bus display.
+    if (!VMConfig::isViewerAvailable()) {
+        KMessageBox::error(this,
+                           i18n("'%1' cannot start: this QEMU lacks the D-Bus display that KEMU's viewer needs. "
+                                "Settings → System → Capabilities lists what it lacks.",
+                                vmName),
+                           i18n("Viewer Unavailable"));
+        return;
     }
 
     if (!VMConfig::isGpuTypeAvailable(currentConfig.gpuType())) {
@@ -6238,11 +6215,9 @@ void MainWindow::continueDeployment(const QString &vmName, const QByteArray &dis
     }
 
     // Headless is a cloud-init concept: the guest configures itself and signals
-    // completion by shutting down. An installer ISO needs a display, and so
-    // does SDL - "-display none" cannot be undone once QEMU has started, only
-    // the integrated viewer can attach later.
+    // completion by shutting down. An installer ISO needs a viewer.
     const bool unattended = isUnattendedDeployment(vmName);
-    const bool headless = unattended && config.displayType() == VMSpecs::DisplayType::Dbus;
+    const bool headless = unattended;
 
     chain->run([this, vmName, headless, unattended, resolvedNetworkFd, diskKey](bool ok) {
         if (!ok) {

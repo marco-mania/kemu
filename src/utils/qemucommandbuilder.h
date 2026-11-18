@@ -81,16 +81,29 @@ public:
      * @param monitorSocketPath      Path to the QMP socket.
      * @param networkContext         Network-mode-specific context (switch or user-mode socket).
      * @param relativePaths          Whether to emit relative paths.
-     * @param headless               Whether to start without a display window or viewer.
      * @param incomingSavestatePath  Path to file with saved state.
+     *
+     * The display is always KEMU's integrated viewer (-display dbus,p2p=on),
+     * whether a viewer is attached yet or not.
      */
     static QStringList build(const VMConfig &config,
                              const QDir &vmDir,
                              const QString &monitorSocketPath,
                              const QemuNetworkContext &networkContext = {},
                              const bool relativePaths = false,
-                             const bool headless = false,
                              const QString &incomingSavestatePath = {});
+
+    /**
+     * @brief The QEMU arguments of an exported script (buildShellScript()).
+     *
+     * As build(), but with QEMU's own SDL window instead of the integrated
+     * viewer: a script runs without KEMU as the viewer's peer.
+     */
+    static QStringList buildForScript(const VMConfig &config,
+                                      const QDir &vmDir,
+                                      const QString &monitorSocketPath,
+                                      const QemuNetworkContext &networkContext = {},
+                                      const bool relativePaths = false);
 
     /**
      * @brief Generates a complete, self-contained shell script to launch the VM.
@@ -138,4 +151,20 @@ public:
 
 private:
     QemuCommandBuilder() = delete;
+
+    /// Where the VM is shown: KEMU's integrated viewer, or QEMU's own SDL
+    /// window for exported scripts, which run without KEMU as the viewer's
+    /// peer.
+    enum class Frontend {
+        Viewer,
+        ScriptWindow,
+    };
+
+    static QStringList buildArgs(const VMConfig &config,
+                                 const QDir &vmDir,
+                                 const QString &monitorSocketPath,
+                                 const QemuNetworkContext &networkContext,
+                                 bool relativePaths,
+                                 const QString &incomingSavestatePath,
+                                 Frontend frontend);
 };

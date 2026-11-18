@@ -921,9 +921,6 @@ VMConfig NewVmDialog::getResult() const
             config.setArchitecture(VMConfig::parseArchitecture(hint));
         }
 
-        // templates.json asks for the D-Bus display, which needs dbus-daemon.
-        if (!VMConfig::isDisplayTypeAvailable(config.displayType()))
-            config.setDisplayType(VMSpecs::DisplayType::Sdl);
         // The Windows templates ask for QXL, which needs a QEMU with SPICE.
         if (!VMConfig::isGpuTypeAvailable(config.gpuType()))
             config.setGpuType(VMConfig::fallbackGpuType());

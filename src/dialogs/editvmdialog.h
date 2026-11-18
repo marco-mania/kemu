@@ -210,7 +210,6 @@ private:
     QCheckBox *bootFromFloppyCheck = nullptr;
     QLineEdit *extraArgsEdit = nullptr;
     QCheckBox *guestAgentCheck = nullptr;
-    QComboBox *displayCombo = nullptr;
 
     QComboBox *gpuCombo = nullptr;
     QSpinBox *monitorCountSpin = nullptr;

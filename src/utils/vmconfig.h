@@ -30,11 +30,6 @@ namespace VMSpecs
 
 Q_NAMESPACE
 
-enum class DisplayType {
-    Sdl,
-    Dbus
-};
-
 enum class GpuType {
     Vga, // PCI
     VgaISA, // ISA
@@ -148,7 +143,6 @@ enum class GuestShutdownAction {
     ShutdownHost // power off the host once the guest has powered itself off
 };
 
-Q_ENUM_NS(DisplayType)
 Q_ENUM_NS(GpuType)
 Q_ENUM_NS(AudioDevice)
 Q_ENUM_NS(DiskInterface)
@@ -180,7 +174,6 @@ struct Defaults {
     AudioDevice audioDevice = AudioDevice::Hda;
     DiskInterface diskInterface = DiskInterface::Virtio;
     NetworkCard networkCard = NetworkCard::Virtio;
-    DisplayType displayType = DisplayType::Dbus;
     UsbController usbController = UsbController::Xhci;
     PointerDevice pointerDevice = PointerDevice::UsbTablet;
     KeyboardDevice keyboardDevice = KeyboardDevice::Ps2;
@@ -404,10 +397,6 @@ public:
     /// Relative file names of all disks, system disk first.
     [[nodiscard]] QStringList diskFileNames() const;
 
-    [[nodiscard]] VMSpecs::DisplayType displayType() const
-    {
-        return m_displayType;
-    }
     [[nodiscard]] VMSpecs::GpuType gpuType() const
     {
         return m_gpuType;
@@ -692,10 +681,6 @@ public:
         m_extraDisks.append(disk);
     }
 
-    void setDisplayType(const VMSpecs::DisplayType type)
-    {
-        m_displayType = type;
-    }
     void setGpuType(const VMSpecs::GpuType type)
     {
         m_gpuType = type;
@@ -921,8 +906,8 @@ public:
 
     [[nodiscard]] static QString toQemuSystemBinary(VMSpecs::Architecture arch);
 
-    /// True if this build can actually provide the given display type.
-    [[nodiscard]] static bool isDisplayTypeAvailable(VMSpecs::DisplayType type);
+    /// True if this QEMU has the D-Bus display KEMU's viewer needs.
+    [[nodiscard]] static bool isViewerAvailable();
     /// True if the QEMU binary has the device behind this graphics adapter.
     [[nodiscard]] static bool isGpuTypeAvailable(VMSpecs::GpuType type);
     /// What to use instead of an unavailable graphics adapter.
@@ -934,7 +919,6 @@ public:
     [[nodiscard]] static QString toQemuString(VMSpecs::CpuModel model);
     [[nodiscard]] static QString toQemuString(VMSpecs::NetworkCard card);
     [[nodiscard]] static QString toQemuString(VMSpecs::DiskInterface interface);
-    [[nodiscard]] static QString toQemuString(VMSpecs::DisplayType type);
     [[nodiscard]] static QString toQemuString(VMSpecs::AudioDevice device);
 
     // --- UI Strings (i18n) ---
@@ -943,7 +927,6 @@ public:
     [[nodiscard]] static QString toUIString(VMSpecs::AudioDevice device);
     [[nodiscard]] static QString toUIString(VMSpecs::DiskInterface interface);
     [[nodiscard]] static QString toUIString(VMSpecs::GpuType type);
-    [[nodiscard]] static QString toUIString(VMSpecs::DisplayType type);
     [[nodiscard]] static QString toUIString(VMSpecs::UsbController controller);
     [[nodiscard]] static QString toUIString(VMSpecs::PointerDevice dev);
     [[nodiscard]] static QString toUIString(VMSpecs::KeyboardDevice dev);
@@ -957,7 +940,6 @@ public:
 
     // --- Common Strings ---
     [[nodiscard]] static QString toString(VMSpecs::CpuModel model);
-    [[nodiscard]] static QString toString(VMSpecs::DisplayType type);
     [[nodiscard]] static QString toString(VMSpecs::MachineType type);
     [[nodiscard]] static QString toString(VMSpecs::GpuType type);
     [[nodiscard]] static QString toString(VMSpecs::AudioDevice type);
@@ -978,7 +960,6 @@ public:
 
     // --- Parse Strings ---
     [[nodiscard]] static VMSpecs::CpuModel parseCpuModel(const QString &str);
-    [[nodiscard]] static VMSpecs::DisplayType parseDisplayType(const QString &str);
     [[nodiscard]] static VMSpecs::MachineType parseMachineType(const QString &str);
     [[nodiscard]] static VMSpecs::GpuType parseGpuType(const QString &str);
     [[nodiscard]] static VMSpecs::AudioDevice parseAudioDevice(const QString &str);
@@ -1036,7 +1017,6 @@ private:
     QString m_diskPath;
     QList<DiskConfig> m_extraDisks;
 
-    VMSpecs::DisplayType m_displayType = GlobalDefaults.displayType;
     VMSpecs::GpuType m_gpuType = GlobalDefaults.gpuType;
     bool m_gpu3dAcceleration = GlobalDefaults.gpu3dAcceleration;
     int m_gpuMemMb = GlobalDefaults.gpuMemMb;

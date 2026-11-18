@@ -82,8 +82,7 @@
         "pointer_device": "ps2",
         "use_uefi": false,
         "use_acpi": false,
-        "use_localtime": true,
-        "display_type": "sdl"
+        "use_localtime": true
       }
     },
     {

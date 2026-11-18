@@ -108,8 +108,7 @@ QString accel3dToolTip()
 {
     return i18n(
         "Enables GPU-accelerated 3D rendering via virtio-vga-gl.\n"
-        "Requires VirtIO GPU with the SDL display or the integrated viewer.\n"
-        "Not available with Standard VGA/QXL.");
+        "Requires VirtIO graphics; not available with Standard VGA or QXL.");
 }
 
 QString missingInQemuText()
@@ -491,26 +490,11 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     // Display
     const auto [displayGroup, displayLayout] = createFormGroup(i18n("Display"));
 
-    displayCombo = new QComboBox();
-    // Integrated Viewer first: it is the recommended default, SDL is the
-    // fallback for a QEMU build without dbus-display support, or for running
-    // the exported qemu.sh script standalone, without KEMU as its peer.
-    for (const auto type : {VMSpecs::DisplayType::Dbus, VMSpecs::DisplayType::Sdl}) {
-        if (VMConfig::isDisplayTypeAvailable(type))
-            displayCombo->addItem(VMConfig::toUIString(type), static_cast<int>(type));
-    }
-    ContextualHelp::addRow(displayLayout,
-                           i18n("Viewer:"),
-                           displayCombo,
-                           i18n("The integrated viewer is recommended for everyday use. SDL opens "
-                                "a native QEMU window outside KEMU - useful for the standalone qemu.sh "
-                                "script, or if your QEMU build lacks dbus-display support."));
-
     monitorCountSpin = new QSpinBox();
     monitorCountSpin->setRange(1, KEMUConst::SupportedMonitorCount);
     monitorCountSpin->setValue(GlobalDefaults.monitorCount);
     monitorCountSpin->setToolTip(
-        i18n("Multiple monitors require VirtIO graphics and the integrated D-Bus viewer. "
+        i18n("Multiple monitors require VirtIO graphics. "
              "The current implementation supports up to two monitors."));
     displayLayout->addRow(i18n("Monitors:"), monitorCountSpin);
     monitorCountLabel = qobject_cast<QLabel *>(displayLayout->labelForField(monitorCountSpin));
@@ -894,7 +878,6 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     connect(uefiCheck, &QCheckBox::toggled, this, updateSecureBootState);
     connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, updateSecureBootState);
     connect(gpuCombo, &QComboBox::currentIndexChanged, this, &EditVmDialog::onGpuDisplayChanged);
-    connect(displayCombo, &QComboBox::currentIndexChanged, this, &EditVmDialog::onGpuDisplayChanged);
     connect(accel3dCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
     connect(monitorCountSpin, &QSpinBox::valueChanged, this, &EditVmDialog::onGpuDisplayChanged);
     // The hints depend on the OS family set on the General tab.
@@ -1078,21 +1061,6 @@ void EditVmDialog::setConfig(const VMConfig &config)
     setCombo(machineCombo, config.machineType());
 
     updateDeviceAvailability();
-
-    if (!VMConfig::isDisplayTypeAvailable(config.displayType())) {
-        const auto configuredType = config.displayType();
-        // Prefer the integrated viewer; SDL only if that is missing too.
-        const auto fallbackType = VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType::Dbus) ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Sdl;
-        KMessageBox::information(this,
-                                 i18n("The configured display type '%1' is not available in this build.\n"
-                                      "KEMU will use '%2' instead.",
-                                      VMConfig::toUIString(configuredType),
-                                      VMConfig::toUIString(fallbackType)),
-                                 i18n("Display Type Unavailable"));
-        setCombo(displayCombo, fallbackType);
-    } else {
-        setCombo(displayCombo, config.displayType());
-    }
 
     if (!VMConfig::isGpuTypeAvailable(config.gpuType())) {
         const auto fallbackGpu = VMConfig::fallbackGpuType();
@@ -1314,7 +1282,7 @@ void EditVmDialog::onGpuDisplayChanged()
     resolutionCombo->setEnabled(isVirtio);
     resolutionLabel->setEnabled(isVirtio);
 
-    const bool multiheadAvailable = isVirtio && static_cast<VMSpecs::DisplayType>(displayCombo->currentData().toInt()) == VMSpecs::DisplayType::Dbus;
+    const bool multiheadAvailable = isVirtio;
     monitorCountSpin->setEnabled(multiheadAvailable);
     monitorCountLabel->setEnabled(multiheadAvailable);
     // The Windows virtio-gpu driver drives a single output. Elsewhere only
@@ -1560,7 +1528,6 @@ VMConfig EditVmDialog::getResult() const
     c.setUseAcpi(acpiCheck->isChecked());
     c.setSharedPath(sharedPathEdit->text());
     c.setSharedName(sharedNameEdit->text());
-    c.setDisplayType(static_cast<VMSpecs::DisplayType>(displayCombo->currentData().toInt()));
     c.setGpuType(static_cast<VMSpecs::GpuType>(gpuCombo->currentData().toInt()));
     c.setMonitorCount(monitorCountSpin->value());
     c.setGpu3dAcceleration(accel3dCheck->isChecked());
@@ -2455,7 +2422,6 @@ void EditVmDialog::resetToFactoryDefaults()
     setSystemDiskInterface(GlobalDefaults.diskInterface);
     refreshDiskList(); // the size of a new system disk, too
     setCombo(netCombo, GlobalDefaults.networkCard);
-    setCombo(displayCombo, GlobalDefaults.displayType);
     setCombo(usbCombo, GlobalDefaults.usbController);
     setCombo(mouseCombo, GlobalDefaults.pointerDevice);
     setCombo(keyboardCombo, GlobalDefaults.keyboardDevice);

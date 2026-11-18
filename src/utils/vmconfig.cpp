@@ -752,19 +752,11 @@ QString VMConfig::toQemuSystemBinary(VMSpecs::Architecture arch)
     return u"qemu-system-x86_64"_s;
 }
 
-bool VMConfig::isDisplayTypeAvailable(VMSpecs::DisplayType type)
+bool VMConfig::isViewerAvailable()
 {
-    // No default case: a new display type must not silently become
-    // unavailable when someone extends the enum.
-    switch (type) {
-    case VMSpecs::DisplayType::Dbus:
-        // The integrated viewer talks to QEMU peer-to-peer over a socketpair
-        // handed over via QMP add_client, so no bus daemon is involved.
-        return QemuCapabilities::instance().hasDisplay(u"dbus"_s);
-    case VMSpecs::DisplayType::Sdl:
-        return QemuCapabilities::instance().hasDisplay(toQemuString(type));
-    }
-    return false;
+    // The integrated viewer talks to QEMU peer-to-peer over a socketpair
+    // handed over via QMP add_client, so no bus daemon is involved.
+    return QemuCapabilities::instance().hasDisplay(u"dbus"_s);
 }
 
 bool VMConfig::isGpuTypeAvailable(VMSpecs::GpuType type)
@@ -876,17 +868,6 @@ QString VMConfig::toQemuString(VMSpecs::DiskInterface interface)
         return u"nvme"_s;
     case VMSpecs::DiskInterface::SataIde:
         return u"ide-hd"_s;
-    }
-    return {};
-}
-
-QString VMConfig::toQemuString(VMSpecs::DisplayType type)
-{
-    switch (type) {
-    case VMSpecs::DisplayType::Sdl:
-        return u"sdl"_s;
-    case VMSpecs::DisplayType::Dbus:
-        return u"dbus"_s;
     }
     return {};
 }
@@ -1030,17 +1011,6 @@ QString VMConfig::toUIString(VMSpecs::GpuType type)
         return i18n("VirtIO VGA");
     case VMSpecs::GpuType::Qxl:
         return i18n("QXL");
-    }
-    return {};
-}
-
-QString VMConfig::toUIString(VMSpecs::DisplayType type)
-{
-    switch (type) {
-    case VMSpecs::DisplayType::Sdl:
-        return i18n("SDL");
-    case VMSpecs::DisplayType::Dbus:
-        return i18n("Integrated Viewer");
     }
     return {};
 }
@@ -1209,19 +1179,6 @@ QString VMConfig::toString(VMSpecs::CpuModel model)
     default:
         return i18n("Unknown");
     }
-}
-
-QString VMConfig::toString(VMSpecs::DisplayType type)
-{
-    // No default case: a new display type must not silently be written out
-    // as another one.
-    switch (type) {
-    case VMSpecs::DisplayType::Sdl:
-        return u"sdl"_s;
-    case VMSpecs::DisplayType::Dbus:
-        return u"dbus"_s;
-    }
-    return u"dbus"_s;
 }
 
 QString VMConfig::toString(VMSpecs::MachineType type)
@@ -1478,27 +1435,6 @@ VMSpecs::CpuModel VMConfig::parseCpuModel(const QString &str)
         return VMSpecs::CpuModel::Epyc;
 
     return VMSpecs::CpuModel::Host;
-}
-
-// Availability is deliberately NOT checked here: VM directories are portable,
-// and a display type this build cannot provide must survive a round trip.
-VMSpecs::DisplayType VMConfig::parseDisplayType(const QString &str)
-{
-    const QString str_l_t = str.toLower().trimmed();
-    if (str_l_t == u"sdl"_s)
-        return VMSpecs::DisplayType::Sdl;
-    if (str_l_t == u"dbus"_s)
-        return VMSpecs::DisplayType::Dbus;
-    // Legacy: the GTK display was removed; SDL is the same kind of native
-    // QEMU window.
-    if (str_l_t == u"gtk"_s)
-        return VMSpecs::DisplayType::Sdl;
-    // Legacy: the external SPICE viewer was removed; migrate to the
-    // integrated D-Bus display.
-    if (str_l_t == u"spice"_s)
-        return VMSpecs::DisplayType::Dbus;
-
-    return GlobalDefaults.displayType;
 }
 
 VMSpecs::MachineType VMConfig::parseMachineType(const QString &str)
@@ -1846,7 +1782,6 @@ QJsonObject VMConfig::toJson() const
     j[u"monitor_count"_s] = m_monitorCount;
     j[u"display_width"_s] = m_displayResolution.width();
     j[u"display_height"_s] = m_displayResolution.height();
-    j[u"display_type"_s] = toString(m_displayType);
     j[u"machine_type"_s] = toString(m_machineType);
     j[u"gpu_type"_s] = toString(m_gpuType);
     j[u"gpu_3d_acceleration"_s] = m_gpu3dAcceleration;
@@ -1977,7 +1912,6 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
         c.m_extraDisks.append(disk);
     }
 
-    c.m_displayType = parseDisplayType(j[u"display_type"_s].toString());
     c.m_gpuType = parseGpuType(j[u"gpu_type"_s].toString());
     c.m_gpu3dAcceleration = j[u"gpu_3d_acceleration"_s].toBool(GlobalDefaults.gpu3dAcceleration);
     c.m_gpuMemMb = j[u"gpu_mem"_s].toInt(GlobalDefaults.gpuMemMb);

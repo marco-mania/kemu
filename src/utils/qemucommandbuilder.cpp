@@ -47,9 +47,29 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
                                       const QString &monitorSocketPath,
                                       const QemuNetworkContext &networkContext,
                                       const bool relativePaths,
-                                      const bool headless,
                                       const QString &incomingSavestatePath)
 {
+    return buildArgs(config, vmDir, monitorSocketPath, networkContext, relativePaths, incomingSavestatePath, Frontend::Viewer);
+}
+
+QStringList QemuCommandBuilder::buildForScript(const VMConfig &config,
+                                               const QDir &vmDir,
+                                               const QString &monitorSocketPath,
+                                               const QemuNetworkContext &networkContext,
+                                               const bool relativePaths)
+{
+    return buildArgs(config, vmDir, monitorSocketPath, networkContext, relativePaths, {}, Frontend::ScriptWindow);
+}
+
+QStringList QemuCommandBuilder::buildArgs(const VMConfig &config,
+                                          const QDir &vmDir,
+                                          const QString &monitorSocketPath,
+                                          const QemuNetworkContext &networkContext,
+                                          const bool relativePaths,
+                                          const QString &incomingSavestatePath,
+                                          const Frontend frontend)
+{
+    const bool viewer = frontend == Frontend::Viewer;
     QStringList args;
     // kemu-agent and the QEMU guest agent share one virtio-serial bus.
     bool virtioSerial = false;
@@ -313,8 +333,8 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     // --- Graphics ---
     // D-Bus keeps its GL backend active even when no viewer is attached.
     // Some distributions ship virtio-vga-gl in a package of its own.
-    const bool effective3d = config.gpu3dAcceleration() && config.gpuType() == VMSpecs::GpuType::Virtio
-        && (!headless || config.displayType() == VMSpecs::DisplayType::Dbus) && QemuCapabilities::instance().hasDevice(u"virtio-vga-gl"_s);
+    const bool effective3d =
+        config.gpu3dAcceleration() && config.gpuType() == VMSpecs::GpuType::Virtio && QemuCapabilities::instance().hasDevice(u"virtio-vga-gl"_s);
 
     const int mem = qBound(VMConfig::vgaMemMbLowerLimit(config.gpuType()), config.gpuMemMb(), VMConfig::vgaMemMbUpperLimit(config.gpuType()));
 
@@ -325,7 +345,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
         const QString device = effective3d ? u"virtio-vga-gl"_s : u"virtio-vga"_s;
         QString gpuOpt = u"%1,xres=%2,yres=%3,max_hostmem=%4M"_s.arg(device).arg(res.width()).arg(res.height()).arg(mem);
         const int monitors = qMin(config.monitorCount(), KEMUConst::SupportedMonitorCount);
-        if (config.displayType() == VMSpecs::DisplayType::Dbus && monitors > 1)
+        if (viewer && monitors > 1)
             gpuOpt += u",max_outputs=%1"_s.arg(monitors);
         args << u"-device"_s << gpuOpt;
     } else if (config.gpuType() == VMSpecs::GpuType::CirrusGD5446) {
@@ -339,7 +359,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     }
 
     // --- Display Frontend ---
-    if (config.displayType() == VMSpecs::DisplayType::Dbus) {
+    if (viewer) {
         // p2p: QEMU opens no window of its own and waits for a peer handed to
         // it via QMP add_client. "Headless" therefore only means "no viewer
         // attached yet" - the display object has to exist either way, or
@@ -367,10 +387,8 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             args << u"-device"_s
                  << u"virtserialport,chardev=%1,id=%2,name=%3"_s.arg(KEMUConst::AgentChardevId, KEMUConst::AgentPortId, KEMUConst::AgentPortName);
         }
-    } else if (headless) {
-        args << u"-display"_s << u"none"_s;
     } else {
-        QString displayOpt = VMConfig::toQemuString(config.displayType());
+        QString displayOpt = u"sdl"_s;
         if (effective3d)
             displayOpt += u",gl=on"_s;
         args << u"-display"_s << displayOpt;
@@ -380,7 +398,7 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
     if (config.audioDevice() != VMSpecs::AudioDevice::None) {
         // Audio follows the display: with a D-Bus display it is routed to the
         // viewer, which may attach later.
-        const bool useDbusAudio = (config.displayType() == VMSpecs::DisplayType::Dbus);
+        const bool useDbusAudio = viewer;
 
         QString hostAudioBackend = u"none"_s;
         const auto &qemu = QemuCapabilities::instance();
@@ -548,12 +566,6 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
                                              const bool relativePaths,
                                              const bool seccompSandbox)
 {
-    // A standalone script has no QMP peer to add_client the p2p display;
-    // fall back to a self-contained display backend.
-    VMConfig scriptConfig = config;
-    if (scriptConfig.displayType() == VMSpecs::DisplayType::Dbus)
-        scriptConfig.setDisplayType(VMSpecs::DisplayType::Sdl);
-
     // A standalone script cannot reach the in-memory switch inside the KEMU
     // process, so exported virtual networks run on QEMU's built-in multicast
     // networking: all exported VMs of the same network share one mcast group.
@@ -574,7 +586,9 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
         scriptNetCtx.userNetFd = -1;
     }
 
-    const QStringList args = build(scriptConfig, vmDir, monitorSocketPath, scriptNetCtx, relativePaths);
+    // A standalone script has no QMP peer to add_client the p2p display;
+    // it opens QEMU's own SDL window instead.
+    const QStringList args = buildForScript(config, vmDir, monitorSocketPath, scriptNetCtx, relativePaths);
 
     QString script;
 
@@ -645,10 +659,8 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
 
     const QString qemuPath = relativePaths ? u"qemu-system-x86_64"_s : ExternalTools::instance().path(ExternalTools::QemuSystem);
 
-    if (config.displayType() == VMSpecs::DisplayType::Dbus) {
-        script += u"# Inside KEMU, the integrated viewer connects automatically using D-Bus.\n"_s;
-        script += u"# For standalone use another display type.\n"_s;
-    }
+    script += u"# Inside KEMU, the VM runs in the integrated viewer. On its own, this\n"_s;
+    script += u"# script opens QEMU's SDL window instead.\n"_s;
 
     // The target machine's QEMU may lack seccomp support, so the script
     // checks before it confines it.

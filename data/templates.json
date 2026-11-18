@@ -12,7 +12,6 @@
     "gpu_type": "virtio",
     "gpu_3d_acceleration": true,
     "gpu_mem": 64,
-    "display_type": "dbus",
     "display_width": 1280,
     "display_height": 720,
     "monitor_count": 1,

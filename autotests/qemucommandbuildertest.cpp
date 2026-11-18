@@ -50,7 +50,6 @@ VMConfig testConfig(const QDir &dir)
     config.setUseKvm(false);
     config.setUseUefi(false);
     config.setUseGuestAgent(false);
-    config.setDisplayType(VMSpecs::DisplayType::Sdl);
     config.setAudioDevice(VMSpecs::AudioDevice::None);
     config.setNetworkCard(VMSpecs::NetworkCard::None);
     config.setDiskPath(dir.filePath(u"disk;$(touch pwned) ' &.qcow2"_s));
@@ -122,31 +121,22 @@ private Q_SLOTS:
         QCOMPARE(shell.readAllStandardOutput(), encodedArgs(args));
     }
 
-    void graphicsInHeadlessMode_data()
+    void graphicsDevice_data()
     {
-        QTest::addColumn<bool>("dbus");
-        QTest::addColumn<bool>("headless");
         QTest::addColumn<bool>("acceleration");
         QTest::addColumn<bool>("virtio");
         QTest::addColumn<QString>("expectedDevice");
         QTest::addColumn<QString>("expectedDisplay");
 
-        QTest::newRow("dbus-windowed-3d") << true << false << true << true << u"virtio-vga-gl"_s << u"dbus,p2p=on,gl=on"_s;
-        QTest::newRow("dbus-windowed-2d") << true << false << false << true << u"virtio-vga"_s << u"dbus,p2p=on"_s;
-        QTest::newRow("dbus-headless-3d") << true << true << true << true << u"virtio-vga-gl"_s << u"dbus,p2p=on,gl=on"_s;
-        QTest::newRow("dbus-headless-2d") << true << true << false << true << u"virtio-vga"_s << u"dbus,p2p=on"_s;
-        QTest::newRow("dbus-headless-qxl") << true << true << true << false << u"qxl-vga"_s << u"dbus,p2p=on"_s;
-        QTest::newRow("sdl-windowed-3d") << false << false << true << true << u"virtio-vga-gl"_s << u"sdl,gl=on"_s;
-        QTest::newRow("sdl-windowed-2d") << false << false << false << true << u"virtio-vga"_s << u"sdl"_s;
-        QTest::newRow("sdl-headless-3d") << false << true << true << true << u"virtio-vga"_s << u"none"_s;
-        QTest::newRow("sdl-headless-2d") << false << true << false << true << u"virtio-vga"_s << u"none"_s;
-        QTest::newRow("sdl-headless-qxl") << false << true << true << false << u"qxl-vga"_s << u"none"_s;
+        // Headless or not: the viewer may attach later, so the command line
+        // is the same.
+        QTest::newRow("3d") << true << true << u"virtio-vga-gl"_s << u"dbus,p2p=on,gl=on"_s;
+        QTest::newRow("2d") << false << true << u"virtio-vga"_s << u"dbus,p2p=on"_s;
+        QTest::newRow("qxl") << true << false << u"qxl-vga"_s << u"dbus,p2p=on"_s;
     }
 
-    void graphicsInHeadlessMode()
+    void graphicsDevice()
     {
-        QFETCH(bool, dbus);
-        QFETCH(bool, headless);
         QFETCH(bool, acceleration);
         QFETCH(bool, virtio);
         QFETCH(QString, expectedDevice);
@@ -156,15 +146,15 @@ private Q_SLOTS:
         QVERIFY(dir.isValid());
         const QDir vmDir(dir.path());
         VMConfig config = testConfig(vmDir);
-        config.setDisplayType(dbus ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Sdl);
         config.setGpuType(virtio ? VMSpecs::GpuType::Virtio : VMSpecs::GpuType::Qxl);
         config.setGpu3dAcceleration(acceleration);
 
-        const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s), {}, false, headless);
+        const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s));
         const int displayIndex = args.indexOf(u"-display"_s);
         QVERIFY(displayIndex >= 0);
         QVERIFY(displayIndex + 1 < args.size());
         QCOMPARE(args.at(displayIndex + 1), expectedDisplay);
+        QCOMPARE(args.count(u"-display"_s), 1);
 
         QStringList graphicsDevices;
         for (const QString &arg : args) {
@@ -173,6 +163,46 @@ private Q_SLOTS:
         }
         QCOMPARE(graphicsDevices.size(), 1);
         QCOMPARE(graphicsDevices.constFirst().section(u',', 0, 0), expectedDevice);
+    }
+
+    void scriptOpensSdlWindow_data()
+    {
+        QTest::addColumn<bool>("acceleration");
+        QTest::addColumn<QString>("expectedDisplay");
+        QTest::newRow("3d") << true << u"sdl,gl=on"_s;
+        QTest::newRow("2d") << false << u"sdl"_s;
+    }
+
+    void scriptOpensSdlWindow()
+    {
+        QFETCH(bool, acceleration);
+        QFETCH(QString, expectedDisplay);
+
+        // Without KEMU as the viewer's peer, the script shows QEMU's own
+        // window: no D-Bus display, no kemu-agent port, a single head.
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QDir vmDir(dir.path());
+        VMConfig config = testConfig(vmDir);
+        config.setGpuType(VMSpecs::GpuType::Virtio);
+        config.setGpu3dAcceleration(acceleration);
+        config.setMonitorCount(2);
+        config.setAudioDevice(VMSpecs::AudioDevice::Hda);
+
+        QemuNetworkContext context;
+        context.agentFd = 61;
+        const QStringList args = QemuCommandBuilder::buildForScript(config, vmDir, dir.filePath(u"monitor.sock"_s), context, true);
+        const int displayIndex = args.indexOf(u"-display"_s);
+        QVERIFY(displayIndex >= 0 && displayIndex + 1 < args.size());
+        QCOMPARE(args.at(displayIndex + 1), expectedDisplay);
+        const QString joined = args.join(u' ');
+        QVERIFY(!joined.contains(u"dbus"_s));
+        QVERIFY(!joined.contains(KEMUConst::AgentPortName));
+        QVERIFY(!joined.contains(u"max_outputs="_s));
+
+        const QString script = QemuCommandBuilder::buildShellScript(config, vmDir, dir.filePath(u"monitor.sock"_s), context, {}, true);
+        QVERIFY(script.contains(Utils::quoteShellArg(expectedDisplay)));
+        QVERIFY(!script.contains(u"dbus,p2p"_s));
     }
 
     void runtimeChannelsAndNetwork_data()
@@ -249,28 +279,22 @@ private Q_SLOTS:
 
     void multiheadArguments_data()
     {
-        QTest::addColumn<bool>("dbus");
         QTest::addColumn<bool>("virtio");
         QTest::addColumn<bool>("acceleration");
-        QTest::addColumn<bool>("headless");
         QTest::addColumn<int>("outputs");
         QTest::addColumn<bool>("expectedMultihead");
 
-        QTest::newRow("default") << true << true << true << false << 1 << false;
-        QTest::newRow("dbus-3d") << true << true << true << false << 2 << true;
-        QTest::newRow("dbus-3d-headless") << true << true << true << true << 2 << true;
-        QTest::newRow("dbus-2d") << true << true << false << false << 2 << true;
-        QTest::newRow("sdl") << false << true << true << false << 2 << false;
-        QTest::newRow("qxl") << true << false << false << false << 2 << false;
-        QTest::newRow("max-clamped") << true << true << false << false << 20 << true;
+        QTest::newRow("default") << true << true << 1 << false;
+        QTest::newRow("3d") << true << true << 2 << true;
+        QTest::newRow("2d") << true << false << 2 << true;
+        QTest::newRow("qxl") << false << false << 2 << false;
+        QTest::newRow("max-clamped") << true << false << 20 << true;
     }
 
     void multiheadArguments()
     {
-        QFETCH(bool, dbus);
         QFETCH(bool, virtio);
         QFETCH(bool, acceleration);
-        QFETCH(bool, headless);
         QFETCH(int, outputs);
         QFETCH(bool, expectedMultihead);
 
@@ -278,12 +302,11 @@ private Q_SLOTS:
         QVERIFY(dir.isValid());
         const QDir vmDir(dir.path());
         VMConfig config = testConfig(vmDir);
-        config.setDisplayType(dbus ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Sdl);
         config.setGpuType(virtio ? VMSpecs::GpuType::Virtio : VMSpecs::GpuType::Qxl);
         config.setGpu3dAcceleration(acceleration);
         config.setMonitorCount(outputs);
 
-        const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s), {}, false, headless);
+        const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s));
         QString graphicsDevice;
         for (const QString &arg : args) {
             if (arg.startsWith(u"virtio-vga"_s) || arg.startsWith(u"qxl-vga"_s)) {
@@ -302,22 +325,19 @@ private Q_SLOTS:
 
     void agentPort_data()
     {
-        QTest::addColumn<bool>("dbus");
         QTest::addColumn<VMSpecs::MachineType>("machine");
         QTest::addColumn<bool>("guestAgent");
         QTest::addColumn<int>("agentFd");
         QTest::addColumn<bool>("expectedPort");
 
-        QTest::newRow("dbus-fd") << true << VMSpecs::MachineType::Q35 << false << 61 << true;
-        QTest::newRow("dbus-no-fd") << true << VMSpecs::MachineType::Q35 << true << -1 << false;
-        QTest::newRow("dbus-with-qga") << true << VMSpecs::MachineType::Pc << true << 61 << true;
-        QTest::newRow("sdl") << false << VMSpecs::MachineType::Q35 << true << 61 << false;
-        QTest::newRow("isapc") << true << VMSpecs::MachineType::PcISA << false << 61 << false;
+        QTest::newRow("fd") << VMSpecs::MachineType::Q35 << false << 61 << true;
+        QTest::newRow("no-fd") << VMSpecs::MachineType::Q35 << true << -1 << false;
+        QTest::newRow("with-qga") << VMSpecs::MachineType::Pc << true << 61 << true;
+        QTest::newRow("isapc") << VMSpecs::MachineType::PcISA << false << 61 << false;
     }
 
     void agentPort()
     {
-        QFETCH(bool, dbus);
         QFETCH(VMSpecs::MachineType, machine);
         QFETCH(bool, guestAgent);
         QFETCH(int, agentFd);
@@ -327,7 +347,6 @@ private Q_SLOTS:
         QVERIFY(dir.isValid());
         const QDir vmDir(dir.path());
         VMConfig config = testConfig(vmDir);
-        config.setDisplayType(dbus ? VMSpecs::DisplayType::Dbus : VMSpecs::DisplayType::Sdl);
         config.setMachineType(machine);
         const bool pci = VMConfig::supportsPciBus(machine);
         config.setUseGuestAgent(guestAgent);
@@ -447,7 +466,7 @@ private Q_SLOTS:
         QVERIFY(tpmFile.open(QIODevice::ReadOnly));
         QVERIFY(fsFile.open(QIODevice::ReadOnly));
 
-        QStringList expected = QemuCommandBuilder::build(config, vmDir, monitorPath, {}, relativePaths);
+        QStringList expected = QemuCommandBuilder::buildForScript(config, vmDir, monitorPath, {}, relativePaths);
         if (sandboxEnabled && sandboxSupported) {
             expected.prepend(QString(KEMUConst::QemuSandboxOptions));
             expected.prepend(u"-sandbox"_s);

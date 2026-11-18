@@ -124,14 +124,12 @@ void TrayIcon::rebuildMenu()
         sub->setIcon(e->styledIcon);
         const bool controllable = e->state == VmEntry::State::Running || e->state == VmEntry::State::Deploying;
 
-        if (e->config.displayType() == VMSpecs::DisplayType::Dbus) {
-            QAction *show = sub->addAction(QIcon::fromTheme(u"video-display"_s), i18nc("@action:inmenu", "Show Display"));
-            show->setEnabled(controllable);
-            connect(show, &QAction::triggered, this, [this, name] {
-                Q_EMIT showDisplayRequested(name);
-            });
-            sub->addSeparator();
-        }
+        QAction *show = sub->addAction(QIcon::fromTheme(u"video-display"_s), i18nc("@action:inmenu", "Show Display"));
+        show->setEnabled(controllable);
+        connect(show, &QAction::triggered, this, [this, name] {
+            Q_EMIT showDisplayRequested(name);
+        });
+        sub->addSeparator();
 
         QAction *shutdown = sub->addAction(QIcon::fromTheme(u"system-shutdown"_s), i18nc("@action:inmenu", "Shut Down"));
         shutdown->setEnabled(controllable);

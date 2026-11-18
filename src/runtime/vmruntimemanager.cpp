@@ -83,9 +83,9 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
             config.setUseGuestAgent(false);
         }
     }
-    // kemu-agent, too. Only the integrated viewer uses it.
+    // kemu-agent, too. The integrated viewer speaks to it.
     int agentFds[2] = {-1, -1};
-    if (config.displayType() == VMSpecs::DisplayType::Dbus && VMConfig::supportsPciBus(config.machineType())) {
+    if (VMConfig::supportsPciBus(config.machineType())) {
         if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, agentFds) == 0) {
             netCtx.agentFd = agentFds[1];
         } else {
@@ -121,14 +121,12 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
 
     // The monitor path is only a fallback for exported scripts; this QEMU
     // gets the descriptor from netCtx.
-    QStringList args = QemuCommandBuilder::build(config, vmDir(vmName), monitorSocketPath(vmName), netCtx,
-                                                  /*relativePaths=*/false, req.headless, savestatePath);
+    QStringList args = QemuCommandBuilder::build(config, vmDir(vmName), monitorSocketPath(vmName), netCtx, /*relativePaths=*/false, savestatePath);
 
     // Unattended runs only: an interactive installer's UI could move to the
     // serial console once one is present, which would defeat an attended
     // installation. cloud-init has no such UI, so this is safe unconditionally
-    // - and independent of whether a window is shown, which does not follow
-    // from the same flag now that only the integrated viewer runs headless.
+    // - and independent of whether a viewer is attached.
     if (req.unattendedDeployment)
         args << u"-serial"_s << u"file:%1"_s.arg(Utils::escapeQemuOptionValue(path + u'/' + KEMUConst::DeploySerialLogFileName));
 
@@ -154,13 +152,8 @@ void VmRuntimeManager::launch(const LaunchRequest &req)
         inheritFds << netCtx.agentFd;
 
     KProcess *process = createQemuProcess(vmName, args, inheritFds);
-    const bool sdlDisplay = config.displayType() == VMSpecs::DisplayType::Sdl && !req.headless;
-    if (!sandbox.isEmpty() || sdlDisplay) {
-        QProcessEnvironment env = sandbox.isEmpty() ? QProcessEnvironment::systemEnvironment() : Utils::environmentWithoutDbusAutolaunch();
-        if (sdlDisplay)
-            env.insert(u"SDL_VIDEODRIVER"_s, u"wayland"_s);
-        process->setProcessEnvironment(env);
-    }
+    if (!sandbox.isEmpty())
+        process->setProcessEnvironment(Utils::environmentWithoutDbusAutolaunch());
 
     connect(process, &KProcess::finished, this, [this, vmName](int code, KProcess::ExitStatus status) {
         onQemuExit(vmName, code, status);

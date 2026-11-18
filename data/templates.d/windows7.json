@@ -67,7 +67,6 @@
         "gpu_type": "vga",
         "gpu_3d_acceleration": false,
         "gpu_mem": 32,
-        "display_type": "sdl",
         "audio_device": "hda",
         "disk_interface": "sataide",
         "net_card": "e1000",
