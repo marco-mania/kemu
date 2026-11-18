@@ -14,6 +14,7 @@
 
 #include "const.h"
 #include "utils/externaltools.h"
+#include "utils/qemucapabilities.h"
 #include "utils/tpmstate.h"
 #include "utils/qemucommandbuilder.h"
 #include "utils/utils.h"
@@ -179,6 +180,47 @@ private Q_SLOTS:
         const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s));
         QVERIFY2(std::any_of(args.cbegin(), args.cend(), [&expected](const QString &arg) { return arg.startsWith(expected) || arg.endsWith(expected); }),
                  qPrintable(args.join(u' ')));
+    }
+
+    void virglBlobProbe_data()
+    {
+        QTest::addColumn<QString>("listing");
+        QTest::addColumn<bool>("expected");
+
+        // Excerpt of QEMU 8.2: blob and hostmem are listed, yet virgl refuses
+        // blob resources and the VM does not start.
+        const QString qemu82 = QStringList{
+            u"virtio-vga-gl options:"_s,
+            u"  big-endian-framebuffer=<bool>"_s,
+            u"  blob=<bool>            - on/off (default: false)"_s,
+            u"  hostmem=<size>         -  (default: 0)"_s,
+            u"  max_hostmem=<size>     -  (default: 268435456)"_s,
+            u"  stats=<bool>           - on/off (default: false)"_s,
+            u"  virtio-backend=<child<virtio-gpu-gl-device>>"_s,
+        }.join(u'\n');
+        QTest::newRow("qemu-8.2") << qemu82 << false;
+        QTest::newRow("qemu-9.2") << qemu82 + u"\n  venus=<bool>           - on/off (default: false)\n"_s << true;
+        QTest::newRow("module-unloadable") << u"qemu-system-x86_64: -device virtio-vga-gl,help: failed to open module: "
+                                              "/usr/lib/x86_64-linux-gnu/qemu/hw-display-virtio-gpu-gl.so: undefined symbol: qemu_egl_display\n"_s
+                                           << false;
+        QTest::newRow("device-missing") << u"qemu-system-x86_64: -device virtio-vga-gl,help: Device 'virtio-vga-gl' not found\n"_s << false;
+        QTest::newRow("empty") << QString() << false;
+    }
+
+    void virglBlobProbe()
+    {
+        QFETCH(QString, listing);
+        QFETCH(bool, expected);
+
+        const QSet<QString> properties = QemuCapabilities::parsePropertyHelp(listing);
+        QCOMPARE(QemuCapabilities::allowsVirglBlob(properties), expected);
+        if (listing.startsWith(u"virtio-vga-gl options:"_s)) {
+            QVERIFY(properties.contains(u"big-endian-framebuffer"_s));
+            QVERIFY(properties.contains(u"virtio-backend"_s));
+            QVERIFY(!properties.contains(u"virtio-vga-gl options:"_s));
+        } else {
+            QVERIFY(properties.isEmpty());
+        }
     }
 
     void graphicsDevice_data()

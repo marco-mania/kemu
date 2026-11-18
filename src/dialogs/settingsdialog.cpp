@@ -13,6 +13,7 @@
 #include <QHostAddress>
 #include <QSizePolicy>
 #include <QStyle>
+#include <QSysInfo>
 #include <QTimer>
 
 #include <KColorScheme>
@@ -522,6 +523,11 @@ void SettingsDialog::listCapabilities()
     const auto toolMissing = [](ExternalTools::Tool tool) {
         return i18n("%1 was not found. Install it, or set its path on the Executables tab.", ExternalTools::displayName(tool));
     };
+    // Host blobs also depend on the host kernel, which needs no probe.
+    const bool blobKernel = QemuCapabilities::hostKernelSupportsGpuBlobs();
+    const QString blobMissing = !qemu.hasVirtioGpuBlob()
+        ? i18n("This QEMU cannot combine host blobs with 3D acceleration. That takes QEMU 9.2 or later, built with virglrenderer 1.0 or later.")
+        : i18n("The host runs Linux %1. QEMU needs Linux 6.13 or later to map GPU memory into a VM.", QSysInfo::kernelVersion());
 
     QList<Section> sections = {
         {i18n("Display"),
@@ -547,6 +553,11 @@ void SettingsDialog::listCapabilities()
            fromQemu(qemu.hasDevice(u"virtio-vga-gl"_s)),
            i18n("This QEMU lacks the virtio-vga-gl device. Some distributions ship it in a package of its own, "
                 "for example qemu-system-modules-opengl on Debian and Ubuntu.")},
+          {i18n("Direct GPU memory access"),
+           u"-device virtio-vga-gl,blob=on,hostmem=…"_s,
+           i18n("Host blobs: with 3D acceleration, Linux guests map GPU memory directly, for OpenGL 4.6."),
+           fromQemu(qemu.hasVirtioGpuBlob() && blobKernel),
+           blobMissing},
           {i18n("QXL graphics"),
            u"-device qxl-vga"_s,
            i18n("Recommended for Windows guests with the SPICE guest tools."),

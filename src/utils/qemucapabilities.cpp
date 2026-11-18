@@ -12,6 +12,11 @@
 
 #include "kemu_debug.h"
 
+#include <QSysInfo>
+#include <QVersionNumber>
+
+#include <algorithm>
+
 QemuCapabilities &QemuCapabilities::instance()
 {
     static QemuCapabilities s_instance;
@@ -26,6 +31,7 @@ void QemuCapabilities::refresh()
     m_chardevs.clear();
     m_seccompSandbox = false;
     m_monitorObject = false;
+    m_virtioGpuBlob = false;
     m_probeSucceeded = false;
 
     const QString qemu = ExternalTools::instance().path(ExternalTools::QemuSystem);
@@ -47,6 +53,45 @@ void QemuCapabilities::refresh()
         qCWarning(KEMU) << "Could not determine the capabilities of" << qemu;
         seedSelfContainedDefaults();
     }
+
+    if (m_virtioGpuBlob && !hostKernelSupportsGpuBlobs())
+        qCInfo(KEMU) << "QEMU supports virtio-gpu blob resources, but kernel" << QSysInfo::kernelVersion()
+                     << "is older than 6.13; 3D acceleration runs without them";
+}
+
+bool QemuCapabilities::hostKernelSupportsGpuBlobs()
+{
+    if (QSysInfo::kernelType() != u"linux"_s)
+        return false;
+    // "6.18.44-fc-v595": parsing stops at the first non-numeric suffix.
+    return QVersionNumber::fromString(QSysInfo::kernelVersion()) >= QVersionNumber(kGpuBlobKernelMajor, kGpuBlobKernelMinor);
+}
+
+QSet<QString> QemuCapabilities::parsePropertyHelp(const QString &output)
+{
+    // Lines read: "  blob=<bool>            - on/off (default: false)", some
+    // without a description. The header ("virtio-vga-gl options:") and error
+    // messages have no "=<".
+    QSet<QString> result;
+    const QStringList lines = output.split(u'\n', Qt::SkipEmptyParts);
+    for (const QString &line : lines) {
+        const QStringView trimmed = QStringView(line).trimmed();
+        const qsizetype separator = trimmed.indexOf(u"=<"_s);
+        if (separator <= 0)
+            continue;
+        const QStringView name = trimmed.first(separator);
+        const bool plainName = std::all_of(name.begin(), name.end(), [](QChar c) {
+            return c.isLetterOrNumber() || c == u'-' || c == u'_' || c == u'.';
+        });
+        if (plainName)
+            result.insert(name.toString());
+    }
+    return result;
+}
+
+bool QemuCapabilities::allowsVirglBlob(const QSet<QString> &properties)
+{
+    return properties.contains(u"blob"_s) && properties.contains(u"hostmem"_s) && properties.contains(u"venus"_s);
 }
 
 bool QemuCapabilities::hasDisplay(const QString &name) const
@@ -83,10 +128,16 @@ bool QemuCapabilities::runProbes(const QString &qemuPath, int timeoutMs)
     KProcess monitorProbe;
     KProcess deviceProbe;
     KProcess chardevProbe;
+    KProcess gpuGlProbe;
     startProbe(displayProbe, qemuPath, {u"-display"_s, u"help"_s});
     startProbe(audiodevProbe, qemuPath, {u"-audiodev"_s, u"help"_s});
     startProbe(deviceProbe, qemuPath, {u"-device"_s, u"help"_s});
     startProbe(chardevProbe, qemuPath, {u"-chardev"_s, u"help"_s});
+    // Modular builds before QEMU 9.1 (Debian, Ubuntu) cannot load the GL
+    // device module without a GL display ("undefined symbol:
+    // qemu_egl_display"). The listing is empty then, which is right: those
+    // versions cannot use blob resources with virgl anyway.
+    startProbe(gpuGlProbe, qemuPath, {u"-device"_s, u"virtio-vga-gl,help"_s});
     // Options are parsed in order, so -sandbox is checked before -version
     // exits. A QEMU without seccomp support fails right there.
     startProbe(sandboxProbe, qemuPath, {u"-sandbox"_s, KEMUConst::QemuSandboxOptions, u"-version"_s});
@@ -103,6 +154,7 @@ bool QemuCapabilities::runProbes(const QString &qemuPath, int timeoutMs)
     m_monitorObject = collectExitStatus(monitorProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
     m_devices = collectDeviceProbe(deviceProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
     m_chardevs = collectProbe(chardevProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
+    m_virtioGpuBlob = allowsVirglBlob(parsePropertyHelp(collectOutput(gpuGlProbe, timeoutMs - static_cast<int>(elapsed.elapsed()))));
 
     return !m_displays.isEmpty() && !m_audiodevs.isEmpty();
 }

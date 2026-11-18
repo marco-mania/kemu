@@ -47,6 +47,33 @@ public:
         return m_monitorObject;
     }
 
+    // Whether virtio-vga-gl takes blob=on and hostmem= next to virgl (QEMU
+    // 9.2+). The listing alone does not tell: QEMU has had both properties for
+    // years, but up to 9.1 the device refuses blob resources once virgl is on,
+    // and the VM does not start. The venus property came with virgl blob
+    // support in 9.2 and serves as the marker. Defaults to false like the
+    // sandbox: blob=on on a QEMU without it is fatal.
+    //
+    // A QEMU 9.2+ built against virglrenderer before 1.0 still lists
+    // everything and fails at start ("old virglrenderer, blob resources
+    // unsupported"); the listing cannot show the library version.
+    [[nodiscard]] bool hasVirtioGpuBlob() const
+    {
+        return m_virtioGpuBlob;
+    }
+
+    // Whether the host kernel can map the GPU memory of host blobs into a KVM
+    // guest. QEMU documents Linux 6.13 as the minimum; before it, KVM could not
+    // map the memory of every GPU driver.
+    [[nodiscard]] static bool hostKernelSupportsGpuBlobs();
+
+    // Property names of a "-device <type>,help" listing, e.g. "blob" from
+    // "  blob=<bool>  - on/off (default: false)". Exposed for tests.
+    [[nodiscard]] static QSet<QString> parsePropertyHelp(const QString &output);
+
+    // Whether the property listing of virtio-vga-gl allows blob=on with virgl.
+    [[nodiscard]] static bool allowsVirglBlob(const QSet<QString> &properties);
+
     // False when neither probe produced a listing. The Settings page can use
     // this to say "capabilities unknown" instead of silently offering
     // everything.
@@ -60,6 +87,8 @@ private:
 
     static constexpr int kProbeTimeoutMs = 4000;
     static constexpr int kProbeRetryTimeoutMs = 8000;
+    static constexpr int kGpuBlobKernelMajor = 6;
+    static constexpr int kGpuBlobKernelMinor = 13;
 
     bool runProbes(const QString &qemuPath, int timeoutMs);
     void seedSelfContainedDefaults();
@@ -75,5 +104,6 @@ private:
     QSet<QString> m_chardevs;
     bool m_seccompSandbox = false;
     bool m_monitorObject = false;
+    bool m_virtioGpuBlob = false;
     bool m_probeSucceeded = false;
 };
