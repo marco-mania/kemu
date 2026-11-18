@@ -85,6 +85,17 @@ QString monitorNotReadyText(const QString &vmName)
     return i18n("QEMU does not answer for '%1' yet. If the virtual machine has just started, try again in a moment.", vmName);
 }
 
+// QEMU's answer when the guest has locked the CD tray, as Linux does while
+// the disc is mounted: "Device 'cdrom0' is locked and force was not
+// specified, wait for tray to open and try again". QEMU has then sent the
+// guest an eject request; udev's cdrom_id answers it by unlocking and opening
+// the tray, and DEVICE_TRAY_MOVED then takes the image out of the
+// configuration.
+bool isTrayLockedByGuest(const QString &qmpError)
+{
+    return qmpError.contains(u"is locked"_s);
+}
+
 // Gives a window of the VM the icon the user chose for it, without the state
 // emblems of the list. Title bar and task switcher show it; Plasma's task
 // manager stays with the application icon of the desktop file.
@@ -2713,7 +2724,14 @@ void MainWindow::changeISOForVm(const QString &vmName, const QString &imagePath)
             entry->qmpClient->sendCommandSync(u"blockdev-change-medium"_s, {{u"id"_s, u"cdrom0"_s}, {u"filename"_s, isoPath}, {u"format"_s, u"raw"_s}});
 
         if (!result.success) {
-            KMessageBox::error(parentW, i18n("Changing ISO Failed"), result.errorMessage);
+            if (isTrayLockedByGuest(result.errorMessage)) {
+                KMessageBox::information(parentW,
+                                         i18n("The guest has locked the CD/DVD drive, usually because the disc is mounted. KEMU has asked the "
+                                              "guest to eject it. Once the disc is out, insert the new image again."),
+                                         i18n("Changing ISO Failed"));
+                return;
+            }
+            KMessageBox::error(parentW, result.errorMessage, i18n("Changing ISO Failed"));
             return;
         }
         statusBar()->showMessage(i18n("ISO changed successfully."));
@@ -2753,7 +2771,16 @@ void MainWindow::ejectISOForVm(const QString &vmName)
         const QMPResult result = entry->qmpClient->sendCommandSync(u"eject"_s, ejectArgs);
 
         if (!result.success) {
-            KMessageBox::error(parentW, i18n("Eject Failed"), result.errorMessage);
+            if (isTrayLockedByGuest(result.errorMessage)) {
+                // Not an error yet: the tray opens once the guest lets go.
+                KMessageBox::information(parentW,
+                                         i18n("The guest has locked the CD/DVD drive, usually because the disc is mounted. KEMU has asked the "
+                                              "guest to eject it, which Linux guests usually do right away. Otherwise, unmount or eject "
+                                              "the disc in the guest."),
+                                         i18n("Eject"));
+                return;
+            }
+            KMessageBox::error(parentW, result.errorMessage, i18n("Eject Failed"));
             return;
         }
         statusBar()->showMessage(i18n("ISO ejected."));
@@ -2804,7 +2831,7 @@ void MainWindow::changeFloppyForVm(const QString &vmName, const QString &dropped
             entry->qmpClient->sendCommandSync(u"blockdev-change-medium"_s, {{u"id"_s, u"fda"_s}, {u"filename"_s, imagePath}, {u"format"_s, u"raw"_s}});
 
         if (!result.success) {
-            KMessageBox::error(parentW, i18n("Changing floppy image failed"), result.errorMessage);
+            KMessageBox::error(parentW, result.errorMessage, i18n("Changing floppy image failed"));
             return;
         }
         statusBar()->showMessage(i18n("Floppy image changed successfully."));
@@ -2843,7 +2870,7 @@ void MainWindow::ejectFloppyForVm(const QString &vmName)
         const QMPResult result = entry->qmpClient->sendCommandSync(u"eject"_s, ejectArgs);
 
         if (!result.success) {
-            KMessageBox::error(parentW, i18n("Eject floppy failed"), result.errorMessage);
+            KMessageBox::error(parentW, result.errorMessage, i18n("Eject floppy failed"));
             return;
         }
         statusBar()->showMessage(i18n("Floppy ejected."));
