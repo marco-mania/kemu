@@ -218,7 +218,7 @@ private Q_SLOTS:
 
         if (windowsSharedFolder) {
             QVERIFY(args.contains(u"socket,id=char_virtiofs,path=%1"_s.arg(Utils::escapeQemuOptionValue(vmDir.filePath(KEMUConst::VirtiofsdSocketFileName)))));
-            QVERIFY(args.contains(u"memory-backend-file,id=mem,size=%1M,mem-path=/dev/shm,share=on"_s.arg(config.ramMb())));
+            QVERIFY(args.contains(u"memory-backend-memfd,id=mem,size=%1M,share=on"_s.arg(config.ramMb())));
             QVERIFY(args.contains(u"node,memdev=mem"_s));
             QVERIFY(!args.contains(u"-virtfs"_s));
         } else {

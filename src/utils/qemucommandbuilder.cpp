@@ -290,8 +290,12 @@ QStringList QemuCommandBuilder::build(const VMConfig &config,
             args << u"-chardev"_s << u"socket,id=char_virtiofs,path=%1"_s.arg(optPath(virtiofsSock, relativePaths));
             args << u"-device"_s << u"vhost-user-fs-pci,queue-size=1024,chardev=char_virtiofs,tag=%1"_s.arg(Utils::escapeQemuOptionValue(mountTag));
 
-            // Shared memory for virtio-fs
-            QString memObj = u"memory-backend-file,id=mem,size=%1M,mem-path=/dev/shm,share=on"_s.arg(config.ramMb());
+            // virtiofsd maps the guest RAM, so it has to be shared. memfd
+            // rather than a file in /dev/shm: that tmpfs is usually limited
+            // to half the host RAM, and once a larger guest has filled it,
+            // QEMU dies of SIGBUS (with prealloc it fails to start). memfd
+            // has no such limit and leaves no file behind.
+            QString memObj = u"memory-backend-memfd,id=mem,size=%1M,share=on"_s.arg(config.ramMb());
             if (config.preallocMemory())
                 memObj += u",prealloc=on"_s;
             args << u"-object"_s << memObj;
