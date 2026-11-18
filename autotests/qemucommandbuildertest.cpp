@@ -8,6 +8,7 @@
 #include <QJsonObject>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -68,6 +69,25 @@ class QemuCommandBuilderTest : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void initTestCase()
+    {
+        // The builder reads kemurc (firmware directory, initial resolution);
+        // keep the developer's own settings out.
+        QStandardPaths::setTestModeEnabled(true);
+    }
+
+    void initialResolution()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QDir vmDir(dir.path());
+        VMConfig config = testConfig(vmDir);
+        config.setGpuType(VMSpecs::GpuType::Virtio);
+        const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s));
+        const QSize size = KEMUConst::DefaultDisplaySize;
+        QVERIFY(!args.filter(u",xres=%1,yres=%2,"_s.arg(size.width()).arg(size.height())).isEmpty());
+    }
+
     void quoteShellArg_data()
     {
         QTest::addColumn<QString>("value");

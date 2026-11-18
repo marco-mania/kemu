@@ -13,6 +13,7 @@
 #include <QDir>
 // #include <QMetaEnum>
 #include <QProcessEnvironment>
+#include <QSize>
 #include <QString>
 #include <QStringView>
 
@@ -99,6 +100,10 @@ OvmfPaths findOvmfPaths(bool secureBoot = false, const QString &customDir = {});
 
 /// Firmware directory from the settings; empty while KEMU searches automatically.
 QString configuredOvmfDir();
+
+/// Resolution every VM starts with (Settings → Display), before the guest or
+/// the viewer window sets its own.
+QSize defaultDisplayResolution();
 
 struct OvmfVarsResult {
     enum class Status {

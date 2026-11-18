@@ -1213,8 +1213,8 @@ void MainWindow::openDbusSubDisplay(const QString &vmName, guint consoleId)
 
 // The size becomes the preferred mode in the EDID virtio-gpu reports for the
 // head, and guests remember monitor settings by EDID. Plug the head once with
-// the VM's resolution instead of following the guest; every SetUIInfo also
-// hotplugs the monitor in the guest.
+// the initial resolution instead of following the guest; every SetUIInfo
+// also hotplugs the monitor in the guest.
 void MainWindow::plugDbusSubDisplays(const QString &vmName)
 {
     auto *rt = m_runtimeManager->runtime(vmName);
@@ -1222,9 +1222,7 @@ void MainWindow::plugDbusSubDisplays(const QString &vmName)
         return;
 
     auto &state = *rt->viewer;
-    const VmEntry *entry = veModel->entryByName(vmName);
-    const QSize configured = entry ? entry->config.displayResolution() : QSize();
-    const QSize size = configured.isEmpty() ? QSize(1280, 800) : configured;
+    const QSize size = Utils::defaultDisplayResolution();
     const QSize primarySize = state.mouseMapping->displaySize(0).isEmpty() ? size : state.mouseMapping->displaySize(0);
     const QRect geometry =
         MultiheadMouseMapping::secondaryGeometry(primarySize, size, state.mouseMapping->secondaryPlacement(), state.mouseMapping->secondaryPosition());
@@ -1985,10 +1983,9 @@ void MainWindow::updateDetails()
     QString gpuVal = VMConfig::toUIString(currentConfig.gpuType());
     if (currentConfig.gpu3dAcceleration())
         gpuVal += i18n(" (3D)");
-    QString resolutionVal = u"%1×%2"_s.arg(currentConfig.displayResolution().width()).arg(currentConfig.displayResolution().height());
-    if (currentConfig.monitorCount() > 1)
-        resolutionVal = i18ncp("@info resolution, number of monitors", "%2, %1 monitor", "%2, %1 monitors", currentConfig.monitorCount(), resolutionVal);
-    VmOverview::Card display{u"video-display"_s, gpuVal, i18n("Display"), resolutionVal};
+    // The resolution follows the viewer window, so the card names the heads.
+    const QString monitorsVal = i18ncp("@info number of monitors", "%1 monitor", "%1 monitors", currentConfig.monitorCount());
+    VmOverview::Card display{u"video-display"_s, gpuVal, i18n("Display"), monitorsVal};
     display.id = u"display"_s;
     content.hardware << display;
 

@@ -177,7 +177,6 @@ struct Defaults {
     UsbController usbController = UsbController::Xhci;
     PointerDevice pointerDevice = PointerDevice::UsbTablet;
     KeyboardDevice keyboardDevice = KeyboardDevice::Ps2;
-    QSize displayResolution = QSize(1280, 720);
     bool useUefi = true;
     bool useTpm = false;
     bool useGuestAgent = true;
@@ -412,10 +411,6 @@ public:
     [[nodiscard]] int monitorCount() const
     {
         return m_monitorCount;
-    }
-    [[nodiscard]] QSize displayResolution() const
-    {
-        return m_displayResolution;
     }
     [[nodiscard]] VMSpecs::AudioDevice audioDevice() const
     {
@@ -696,10 +691,6 @@ public:
     void setMonitorCount(int count)
     {
         m_monitorCount = qBound(1, count, KEMUConst::MaxMonitorCount);
-    }
-    void setDisplayResolution(const QSize &res)
-    {
-        m_displayResolution = res;
     }
     void setAudioDevice(const VMSpecs::AudioDevice device)
     {
@@ -1021,7 +1012,6 @@ private:
     bool m_gpu3dAcceleration = GlobalDefaults.gpu3dAcceleration;
     int m_gpuMemMb = GlobalDefaults.gpuMemMb;
     int m_monitorCount = GlobalDefaults.monitorCount;
-    QSize m_displayResolution = GlobalDefaults.displayResolution;
     VMSpecs::AudioDevice m_audioDevice = GlobalDefaults.audioDevice;
     Sb16Config m_sb16Config;
     VMSpecs::DiskInterface m_diskInterface = GlobalDefaults.diskInterface;

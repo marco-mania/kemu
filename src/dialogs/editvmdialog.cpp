@@ -485,43 +485,19 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     gpuHintLabel->setVisible(false);
     graphicsLayout->addRow({}, gpuHintLabel);
 
-    hwLeftColumn->addWidget(graphicsGroup);
-
-    // Display
-    const auto [displayGroup, displayLayout] = createFormGroup(i18n("Display"));
-
     monitorCountSpin = new QSpinBox();
     monitorCountSpin->setRange(1, KEMUConst::SupportedMonitorCount);
     monitorCountSpin->setValue(GlobalDefaults.monitorCount);
     monitorCountSpin->setToolTip(
         i18n("Multiple monitors require VirtIO graphics. "
              "The current implementation supports up to two monitors."));
-    displayLayout->addRow(i18n("Monitors:"), monitorCountSpin);
-    monitorCountLabel = qobject_cast<QLabel *>(displayLayout->labelForField(monitorCountSpin));
+    graphicsLayout->addRow(i18n("Monitors:"), monitorCountSpin);
+    monitorCountLabel = qobject_cast<QLabel *>(graphicsLayout->labelForField(monitorCountSpin));
 
     monitorMessage = createInlineMessage(KMessageWidget::Information);
-    displayLayout->addRow({}, monitorMessage);
+    graphicsLayout->addRow({}, monitorMessage);
 
-    resolutionCombo = new QComboBox();
-    resolutionCombo->addItem(u"1280 × 800"_s, QSize(1280, 800));
-    resolutionCombo->addItem(u"1280 × 720 (HD)"_s, QSize(1280, 720));
-    resolutionCombo->addItem(u"1366 × 768"_s, QSize(1366, 768));
-    resolutionCombo->addItem(u"1440 × 900"_s, QSize(1440, 900));
-    resolutionCombo->addItem(u"1600 × 900"_s, QSize(1600, 900));
-    resolutionCombo->addItem(u"1920 × 1080 (Full HD)"_s, QSize(1920, 1080));
-    resolutionCombo->addItem(u"2560 × 1440 (QHD)"_s, QSize(2560, 1440));
-    resolutionCombo->addItem(u"3840 × 2160 (4K)"_s, QSize(3840, 2160));
-    const QSize defaultRes = SettingsDialog::getDefaultResolution();
-    for (int i = 0; i < resolutionCombo->count(); ++i) {
-        if (resolutionCombo->itemData(i).toSize() == defaultRes) {
-            resolutionCombo->setCurrentIndex(i);
-            break;
-        }
-    }
-    displayLayout->addRow(i18n("Initial resolution:"), resolutionCombo);
-    resolutionLabel = qobject_cast<QLabel *>(displayLayout->labelForField(resolutionCombo));
-
-    hwRightColumn->addWidget(displayGroup);
+    hwLeftColumn->addWidget(graphicsGroup);
 
     // Input and USB: mouse and keyboard depend on the USB controller.
     const auto [inputGroup, inputLayout] = createFormGroup(i18n("Input and USB"));
@@ -554,7 +530,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     setCombo(keyboardCombo, GlobalDefaults.keyboardDevice);
     inputLayout->addRow(i18n("Keyboard:"), keyboardCombo);
 
-    hwLeftColumn->addWidget(inputGroup);
+    hwRightColumn->addWidget(inputGroup);
 
     // Audio
     const auto [audioGroup, audioLayout] = createFormGroup(i18n("Audio"));
@@ -1105,16 +1081,6 @@ void EditVmDialog::setConfig(const VMConfig &config)
     secureBootCheck->setChecked(config.useSecureBoot());
     acpiCheck->setChecked(config.useAcpi());
     gpuMemSpin->setValue(config.gpuMemMb() > 0 ? config.gpuMemMb() : 64);
-    const QSize res = config.displayResolution();
-    for (int i = 0; i < resolutionCombo->count(); ++i) {
-        if (resolutionCombo->itemData(i).toSize() == res) {
-            resolutionCombo->setCurrentIndex(i);
-            break;
-        }
-    }
-    // Fall back to the first entry when the stored size is not offered
-    if (resolutionCombo->currentIndex() < 0)
-        resolutionCombo->setCurrentIndex(0);
 
     applyModeConstraints();
     refreshDiskList();
@@ -1278,9 +1244,6 @@ void EditVmDialog::onGpuDisplayChanged()
     }
     gpuMemSpin->setEnabled(true);
     vgaMemLabel->setEnabled(true);
-
-    resolutionCombo->setEnabled(isVirtio);
-    resolutionLabel->setEnabled(isVirtio);
 
     const bool multiheadAvailable = isVirtio;
     monitorCountSpin->setEnabled(multiheadAvailable);
@@ -1532,7 +1495,6 @@ VMConfig EditVmDialog::getResult() const
     c.setMonitorCount(monitorCountSpin->value());
     c.setGpu3dAcceleration(accel3dCheck->isChecked());
     c.setGpuMemMb(gpuMemSpin->value());
-    c.setDisplayResolution(resolutionCombo->currentData().toSize());
     c.setAudioDevice(static_cast<VMSpecs::AudioDevice>(audioCombo->currentData().toInt()));
     c.setSb16Config(m_sb16Config);
     c.setNetworkCard(static_cast<VMSpecs::NetworkCard>(netCombo->currentData().toInt()));
@@ -2425,14 +2387,6 @@ void EditVmDialog::resetToFactoryDefaults()
     setCombo(usbCombo, GlobalDefaults.usbController);
     setCombo(mouseCombo, GlobalDefaults.pointerDevice);
     setCombo(keyboardCombo, GlobalDefaults.keyboardDevice);
-
-    const QSize defaultRes = SettingsDialog::getDefaultResolution();
-    for (int i = 0; i < resolutionCombo->count(); ++i) {
-        if (resolutionCombo->itemData(i).toSize() == defaultRes) {
-            resolutionCombo->setCurrentIndex(i);
-            break;
-        }
-    }
 
     accel3dCheck->setChecked(GlobalDefaults.gpu3dAcceleration);
 

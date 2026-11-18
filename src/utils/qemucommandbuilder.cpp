@@ -341,7 +341,7 @@ QStringList QemuCommandBuilder::buildArgs(const VMConfig &config,
     if (config.gpuType() == VMSpecs::GpuType::Qxl) {
         args << u"-device"_s << u"qxl-vga,vgamem_mb=%1"_s.arg(mem);
     } else if (config.gpuType() == VMSpecs::GpuType::Virtio) {
-        const QSize res = config.displayResolution();
+        const QSize res = Utils::defaultDisplayResolution();
         const QString device = effective3d ? u"virtio-vga-gl"_s : u"virtio-vga"_s;
         QString gpuOpt = u"%1,xres=%2,yres=%3,max_hostmem=%4M"_s.arg(device).arg(res.width()).arg(res.height()).arg(mem);
         const int monitors = qMin(config.monitorCount(), KEMUConst::SupportedMonitorCount);

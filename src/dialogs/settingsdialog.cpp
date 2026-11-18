@@ -634,8 +634,8 @@ void SettingsDialog::setupDisplayPage()
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
 
-    // --- Defaults ---
-    auto *defaultsGroup = new QGroupBox(i18n("Defaults"));
+    // --- Virtual machines ---
+    auto *defaultsGroup = new QGroupBox(i18n("Virtual Machines"));
     auto *defaultsLayout = new QFormLayout(defaultsGroup);
 
     resolutionCombo = new QComboBox;
@@ -659,7 +659,9 @@ void SettingsDialog::setupDisplayPage()
     if (resolutionCombo->currentIndex() < 0)
         resolutionCombo->setCurrentIndex(0);
 
-    defaultsLayout->addRow(i18n("Default resolution for new VMs:"), resolutionCombo);
+    resolutionCombo->setToolTip(i18n("The resolution every VM starts with. Once the guest's graphics driver runs, the viewer window "
+                                     "sets the resolution."));
+    defaultsLayout->addRow(i18n("Initial resolution:"), resolutionCombo);
     layout->addWidget(defaultsGroup);
 
     // --- Screen locking ---
@@ -950,11 +952,7 @@ bool SettingsDialog::isPerformanceMonitorEnabled()
 
 QSize SettingsDialog::getDefaultResolution()
 {
-    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
-    const KConfigGroup general = config->group(u"General"_s);
-    const int w = general.readEntry("DisplayWidth", KEMUConst::DefaultDisplaySize.width());
-    const int h = general.readEntry("DisplayHeight", KEMUConst::DefaultDisplaySize.height());
-    return QSize(w, h);
+    return Utils::defaultDisplayResolution();
 }
 
 bool SettingsDialog::showAllArchitectures()

@@ -217,8 +217,6 @@ private:
     KMessageWidget *monitorMessage = nullptr;
     QSpinBox *gpuMemSpin = nullptr;
     QCheckBox *accel3dCheck = nullptr;
-    QComboBox *resolutionCombo = nullptr;
-    QLabel *resolutionLabel = nullptr;
     QLabel *vgaMemLabel = nullptr;
     QLabel *gpuHintLabel = nullptr;
     QComboBox *audioCombo = nullptr;

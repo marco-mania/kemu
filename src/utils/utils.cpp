@@ -130,6 +130,15 @@ OvmfPaths findOvmfPaths(bool secureBoot, const QString &customDir)
     return findFirmware(false, customDir);
 }
 
+QSize defaultDisplayResolution()
+{
+    const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);
+    const KConfigGroup general = config->group(u"General"_s);
+    const QSize size(general.readEntry("DisplayWidth", KEMUConst::DefaultDisplaySize.width()),
+                     general.readEntry("DisplayHeight", KEMUConst::DefaultDisplaySize.height()));
+    return size.isValid() && !size.isEmpty() ? size : KEMUConst::DefaultDisplaySize;
+}
+
 QString configuredOvmfDir()
 {
     const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kemurc"_s);

@@ -1780,8 +1780,6 @@ QJsonObject VMConfig::toJson() const
 
     j[u"gpu_mem"_s] = m_gpuMemMb;
     j[u"monitor_count"_s] = m_monitorCount;
-    j[u"display_width"_s] = m_displayResolution.width();
-    j[u"display_height"_s] = m_displayResolution.height();
     j[u"machine_type"_s] = toString(m_machineType);
     j[u"gpu_type"_s] = toString(m_gpuType);
     j[u"gpu_3d_acceleration"_s] = m_gpu3dAcceleration;
@@ -1916,8 +1914,6 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
     c.m_gpu3dAcceleration = j[u"gpu_3d_acceleration"_s].toBool(GlobalDefaults.gpu3dAcceleration);
     c.m_gpuMemMb = j[u"gpu_mem"_s].toInt(GlobalDefaults.gpuMemMb);
     c.setMonitorCount(j[u"monitor_count"_s].toInt(GlobalDefaults.monitorCount));
-    c.m_displayResolution =
-        QSize(j[u"display_width"_s].toInt(GlobalDefaults.displayResolution.width()), j[u"display_height"_s].toInt(GlobalDefaults.displayResolution.height()));
 
     c.m_audioDevice = parseAudioDevice(j[u"audio_device"_s].toString());
     if (j.contains(u"sb16_config"_s)) {
