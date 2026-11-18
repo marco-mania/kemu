@@ -485,6 +485,10 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     gpuHintLabel->setVisible(false);
     graphicsLayout->addRow({}, gpuHintLabel);
 
+    // Set the monitors apart from the adapter and its 3D option, as the
+    // System tab does with its groups.
+    graphicsLayout->addItem(new QSpacerItem(0, fontMetrics().height(), QSizePolicy::Minimum, QSizePolicy::Fixed));
+
     monitorCountSpin = new QSpinBox();
     monitorCountSpin->setRange(1, KEMUConst::SupportedMonitorCount);
     monitorCountSpin->setValue(GlobalDefaults.monitorCount);

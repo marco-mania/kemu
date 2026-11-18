@@ -76,7 +76,7 @@ For sandbox-specific behaviour and additional permissions, see [docs/flatpak.md]
 - KDE Frameworks ≥ 6.13: CoreAddons, Config, ConfigWidgets, Crash, DBusAddons, I18n, IconThemes, JobWidgets, KIO, Notifications, NotifyConfig, StatusNotifierItem, TextTemplate, Wallet, WidgetsAddons, WindowSystem, XmlGui
 - QEMU ≥ 7.2 with the D-Bus display (and Wayland-enabled SDL for running exported `qemu.sh` scripts)
 - libarchive, libslirp ≥ 4.7, libisofs, libudev, EGL, Wayland (client library, protocols, `wayland-scanner`)
-- Podman or Docker – builds kemu-agent, the agent for Linux guests, in a container (not needed with `-DKEMU_AGENT_BUNDLE=OFF`; see below)
+- Podman or Docker - builds kemu-agent, the agent for Linux guests, in a container (not needed with `-DKEMU_AGENT_BUNDLE=OFF`; see below)
 
 **Optional runtime dependencies:**
 
