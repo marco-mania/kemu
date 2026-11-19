@@ -19,7 +19,7 @@
     "audio_device": "hda",
     "disk_interface": "virtio",
     "net_card": "virtio",
-    "network_mode": "passt",
+    "network_mode": "usermode",
     "usb_controller": "xhci",
     "pointer_device": "usb-tablet",
     "keyboard_device": "ps2",
