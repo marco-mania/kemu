@@ -67,9 +67,9 @@ Valid `os_family` values are `linux`, `windows`, `bsd`, `dos`, and `other`. Temp
 | `gpu_type`            | `virtio`, `qxl`, `vga`, `vga_isa`, `cirrus`, `cirrus_isa`                                                                                                           | `virtio`     |
 | `gpu_mem`             | MiB, fitted to the adapter ([display.md](display.md))                                                                                                               | `64`         |
 | `monitor_count`       | `1`, `2`                                                                                                                                                            | `1`          |
-| `gpu_3d_acceleration` | `true`, `false` (*3D*, VirtIO only)                                                                                                                                 | `true`       |
-| `gpu_host_blobs`      | `true`, `false` (*Direct GPU memory access*, requires 3D)                                                                                                           | `false`      |
-| `gpu_hostmem`         | MiB, a power of two from 256 to 8192; others round up                                                                                                               | `1024`       |
+| `gpu_3d_acceleration` | `true`, `false` (*3D acceleration*, VirtIO only)                                                                                                                    | `true`       |
+| `gpu_host_blobs`      | `true`, `false` (*Direct GPU memory access*, requires 3D acceleration)                                                                                              | `false`      |
+| `gpu_hostmem`         | MiB (*Memory limit*), a power of two from 256 to 8192; others round up                                                                                              | `1024`       |
 | `gpu_vulkan`          | `true`, `false` (*Vulkan*, requires direct GPU memory access)                                                                                                       | `false`      |
 | `audio_device`        | `hda`, `ac97`, `es1370`, `sb16`, `adlib`, `pcspkr`, `none`                                                                                                          | `hda`        |
 | `disk_interface`      | `virtio`, `nvme`, `sataide`                                                                                                                                         | `virtio`     |

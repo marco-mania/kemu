@@ -26,8 +26,8 @@
 #include <KMessageWidget>
 
 #include <QMenu>
-#include <QScopedValueRollback>
 #include <QScopeGuard>
+#include <QScopedValueRollback>
 #include <QStyle>
 
 #include <bit>
@@ -132,6 +132,38 @@ public:
     }
 };
 
+// The field with a button beside it listing the powers of two within the
+// field's range, the typical sizes.
+QWidget *withSizeMenu(QSpinBox *spin, QToolButton **button)
+{
+    auto *presetButton = new QToolButton();
+    presetButton->setIcon(QIcon::fromTheme(u"arrow-down"_s));
+    presetButton->setPopupMode(QToolButton::InstantPopup);
+    presetButton->setToolTip(i18n("Typical sizes"));
+    auto *menu = new QMenu(presetButton);
+    presetButton->setMenu(menu);
+    // Built when opened, for the range the field has at that moment.
+    QObject::connect(menu, &QMenu::aboutToShow, spin, [spin, menu]() {
+        menu->clear();
+        for (int mb = qMax(1, spin->minimum()); mb <= spin->maximum(); mb = static_cast<int>(std::bit_floor(static_cast<unsigned>(mb))) * 2) {
+            QAction *action = menu->addAction(mb < 1024 ? i18n("%1 MiB", mb) : i18n("%1 GiB", mb / 1024));
+            action->setCheckable(true);
+            action->setChecked(mb == spin->value());
+            QObject::connect(action, &QAction::triggered, spin, [spin, mb]() {
+                spin->setValue(mb);
+            });
+        }
+    });
+
+    auto *field = new QWidget();
+    auto *layout = new QHBoxLayout(field);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(spin, 1);
+    layout->addWidget(presetButton);
+    *button = presetButton;
+    return field;
+}
+
 QString hostBlobsToolTip()
 {
     return i18n("Lets the guest use the host's GPU memory directly: faster 3D, and OpenGL 4.6 in Linux guests.");
@@ -139,7 +171,7 @@ QString hostBlobsToolTip()
 
 QString vulkanToolTip()
 {
-    return i18n("Lets the guest use Vulkan, rendered on the host GPU.");
+    return i18n("Lets the guest use Vulkan, rendered on the host GPU at often near-native speed.");
 }
 
 QString hostBlobsMissingText()
@@ -160,7 +192,6 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
 {
     setWindowTitle(mode == Mode::Edit ? i18n("Edit Virtual Machine") : i18n("Customize Virtual Machine"));
     resize(640, 560);
-
 
     auto *mainLayout = new QVBoxLayout(this);
     auto *tabs = new QTabWidget();
@@ -504,86 +535,26 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     gpuCombo->addItem(VMConfig::toUIString(VMSpecs::GpuType::VgaISA), static_cast<int>(VMSpecs::GpuType::VgaISA));
     graphicsLayout->addRow(i18n("Adapter:"), gpuCombo);
 
-    // The video memory below depends on the acceleration, so it comes first.
-    // Each option needs the one above it, hence the indent.
-    auto *accelField = new QWidget();
-    auto *accelFieldLayout = new QVBoxLayout(accelField);
-    accelFieldLayout->setContentsMargins(0, 0, 0, 0);
-    accel3dCheck = new QCheckBox(i18n("3D"));
-    accel3dCheck->setToolTip(accel3dToolTip());
-    accelFieldLayout->addWidget(accel3dCheck);
-    auto *accelOptionsLayout = new QVBoxLayout();
-    const int indent = style()->pixelMetric(QStyle::PM_IndicatorWidth) + style()->pixelMetric(QStyle::PM_CheckBoxLabelSpacing);
-    accelOptionsLayout->setContentsMargins(indent, 0, 0, 0);
-    hostBlobsCheck = new QCheckBox(i18n("Direct GPU memory access"));
-    hostBlobsCheck->setToolTip(hostBlobsToolTip());
-    accelOptionsLayout->addWidget(hostBlobsCheck);
-    // Needs direct GPU memory access as well, but is no further step down.
-    vulkanCheck = new QCheckBox(i18n("Vulkan"));
-    vulkanCheck->setToolTip(vulkanToolTip());
-    accelOptionsLayout->addWidget(vulkanCheck);
-    accelFieldLayout->addLayout(accelOptionsLayout);
-    graphicsLayout->addRow(i18n("Acceleration:"), accelField);
-
-    // The adapter's VRAM, or with direct GPU memory access the host memory
-    // window: either way, how much graphics memory the guest gets. Typed
-    // sizes stay as typed where the adapter takes them; the arrows step
-    // through powers of two, and the button next to it offers those.
+    // The adapter's VRAM. Typed sizes stay as typed where the adapter takes
+    // them; the arrows step through powers of two, and the button next to it
+    // offers those. With 3D, the host GPU provides it instead.
     gpuMemSpin = new PowerOfTwoSpinBox();
     gpuMemSpin->setSuffix(i18n(" MiB"));
     gpuMemSpin->setValue(GlobalDefaults.gpuMemMb);
     connect(gpuMemSpin, &QSpinBox::valueChanged, this, [this](int value) {
-        if (m_updatingMemory)
-            return;
-        (m_memoryShowsHostmem ? m_hostmemMb : m_vramMb) = value;
+        if (!m_updatingMemory)
+            m_vramMb = value;
     });
     connect(gpuMemSpin, &QSpinBox::editingFinished, this, [this]() {
         const auto gpu = static_cast<VMSpecs::GpuType>(gpuCombo->currentData().toInt());
-        const int value = gpuMemSpin->value();
-        // The memory window is a PCI BAR, so a power of two.
-        gpuMemSpin->setValue(m_memoryShowsHostmem ? static_cast<int>(std::bit_ceil(static_cast<unsigned>(value)))
-                                                  : VMConfig::normalizedVgaMemMb(gpu, value));
+        gpuMemSpin->setValue(VMConfig::normalizedVgaMemMb(gpu, gpuMemSpin->value()));
     });
-
-    gpuMemPresetButton = new QToolButton();
-    gpuMemPresetButton->setIcon(QIcon::fromTheme(u"arrow-down"_s));
-    gpuMemPresetButton->setPopupMode(QToolButton::InstantPopup);
-    gpuMemPresetButton->setToolTip(i18n("Typical sizes"));
-    auto *presetMenu = new QMenu(gpuMemPresetButton);
-    gpuMemPresetButton->setMenu(presetMenu);
-    // Built when opened, for the range the field has at that moment.
-    connect(presetMenu, &QMenu::aboutToShow, this, [this, presetMenu]() {
-        presetMenu->clear();
-        for (int mb = gpuMemSpin->minimum(); mb <= gpuMemSpin->maximum(); mb = static_cast<int>(std::bit_floor(static_cast<unsigned>(mb))) * 2) {
-            QAction *action = presetMenu->addAction(mb < 1024 ? i18n("%1 MiB", mb) : i18n("%1 GiB", mb / 1024));
-            action->setCheckable(true);
-            action->setChecked(mb == gpuMemSpin->value());
-            connect(action, &QAction::triggered, this, [this, mb]() {
-                gpuMemSpin->setValue(mb);
-            });
-        }
-    });
-
-    auto *memoryField = new QWidget();
-    auto *memoryFieldLayout = new QHBoxLayout(memoryField);
-    memoryFieldLayout->setContentsMargins(0, 0, 0, 0);
-    memoryFieldLayout->addWidget(gpuMemSpin, 1);
-    memoryFieldLayout->addWidget(gpuMemPresetButton);
-
     vgaMemLabel = new QLabel(i18n("Video memory:"));
     vgaMemLabel->setBuddy(gpuMemSpin);
     graphicsLayout->addRow(vgaMemLabel,
-                           ContextualHelp::beside(memoryField,
-                                                  i18n("How much video memory the guest gets. With 3D, the host GPU manages it "
-                                                       "automatically. With direct GPU memory access, it limits how much host GPU "
-                                                       "memory the guest can use.")));
-
-    gpuMessage = createInlineMessage(KMessageWidget::Information);
-    graphicsLayout->addRow({}, gpuMessage);
-
-    // Set the monitors apart from the adapter and its 3D options, as the
-    // System tab does with its groups.
-    graphicsLayout->addItem(new QSpacerItem(0, fontMetrics().height(), QSizePolicy::Minimum, QSizePolicy::Fixed));
+                           ContextualHelp::beside(withSizeMenu(gpuMemSpin, &gpuMemPresetButton),
+                                                  i18n("How much video memory the graphics adapter has. With 3D acceleration, the host GPU "
+                                                       "provides it as needed.")));
 
     monitorCountSpin = new QSpinBox();
     monitorCountSpin->setRange(1, KEMUConst::SupportedMonitorCount);
@@ -598,6 +569,42 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     graphicsLayout->addRow({}, monitorMessage);
 
     hwLeftColumn->addWidget(graphicsGroup);
+
+    // 3D acceleration in a group of its own, switched by the check box in its
+    // title. Each option in it needs the one above it.
+    accel3dGroup = new QGroupBox(i18n("3D acceleration"));
+    accel3dGroup->setCheckable(true);
+    auto *accelLayout = new QFormLayout(accel3dGroup);
+    accelLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+
+    hostBlobsCheck = new QCheckBox(i18n("Direct GPU memory access"));
+    hostBlobsCheck->setToolTip(hostBlobsToolTip());
+    accelLayout->addRow({}, hostBlobsCheck);
+
+    // The memory window of host blobs. A PCI BAR, so a power of two.
+    hostmemSpin = new PowerOfTwoSpinBox();
+    hostmemSpin->setSuffix(i18n(" MiB"));
+    hostmemSpin->setRange(KEMUConst::VirglHostmemMinMb, KEMUConst::VirglHostmemMaxMb);
+    hostmemSpin->setValue(GlobalDefaults.gpuHostmemMb);
+    hostmemSpin->setToolTip(i18n("%1 MiB to %2 GiB", KEMUConst::VirglHostmemMinMb, KEMUConst::VirglHostmemMaxMb / 1024));
+    connect(hostmemSpin, &QSpinBox::editingFinished, this, [this]() {
+        hostmemSpin->setValue(static_cast<int>(std::bit_ceil(static_cast<unsigned>(hostmemSpin->value()))));
+    });
+    hostmemLabel = new QLabel(i18n("Memory limit:"));
+    hostmemLabel->setBuddy(hostmemSpin);
+    accelLayout->addRow(hostmemLabel,
+                        ContextualHelp::beside(withSizeMenu(hostmemSpin, &hostmemPresetButton),
+                                               i18n("How much of the host's GPU memory the guest can use at once. Experimental "
+                                                    "Windows drivers suggest 4 GiB.")));
+
+    vulkanCheck = new QCheckBox(i18n("Vulkan"));
+    vulkanCheck->setToolTip(vulkanToolTip());
+    accelLayout->addRow({}, vulkanCheck);
+
+    gpuMessage = createInlineMessage(KMessageWidget::Information);
+    accelLayout->addRow(gpuMessage);
+
+    hwLeftColumn->addWidget(accel3dGroup);
 
     // Input and USB: mouse and keyboard depend on the USB controller.
     const auto [inputGroup, inputLayout] = createFormGroup(i18n("Input and USB"));
@@ -954,7 +961,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     connect(uefiCheck, &QCheckBox::toggled, this, updateSecureBootState);
     connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, updateSecureBootState);
     connect(gpuCombo, &QComboBox::currentIndexChanged, this, &EditVmDialog::onGpuDisplayChanged);
-    connect(accel3dCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
+    connect(accel3dGroup, &QGroupBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
     connect(hostBlobsCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
     connect(vulkanCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
     connect(monitorCountSpin, &QSpinBox::valueChanged, this, &EditVmDialog::onGpuDisplayChanged);
@@ -1153,8 +1160,9 @@ void EditVmDialog::setConfig(const VMConfig &config)
         setCombo(gpuCombo, config.gpuType());
     }
     monitorCountSpin->setValue(config.monitorCount());
-    accel3dCheck->setChecked(config.gpu3dAcceleration());
+    accel3dGroup->setChecked(config.gpu3dAcceleration());
     hostBlobsCheck->setChecked(config.gpuHostBlobs());
+    hostmemSpin->setValue(config.gpuHostmemMb());
     vulkanCheck->setChecked(config.gpuVulkan());
     setCombo(audioCombo, config.audioDevice());
     m_sb16Config = config.sb16Config();
@@ -1186,7 +1194,6 @@ void EditVmDialog::setConfig(const VMConfig &config)
     acpiCheck->setChecked(config.useAcpi());
     // As QEMU will get it: within the adapter's range, Cirrus snapped.
     m_vramMb = VMConfig::normalizedVgaMemMb(static_cast<VMSpecs::GpuType>(gpuCombo->currentData().toInt()), config.gpuMemMb());
-    m_hostmemMb = config.gpuHostmemMb();
     onGpuDisplayChanged();
 
     applyModeConstraints();
@@ -1358,12 +1365,13 @@ void EditVmDialog::onGpuDisplayChanged()
     monitorMessage->setToolTip(monitorToolTip);
     updateInlineMessage(monitorMessage, monitorText, KMessageWidget::Information);
 
+    // Unchecked, the group disables what it holds; the rules below come on top.
     const bool can3d = isVirtio && VMConfig::isGpu3dAvailable();
-    accel3dCheck->setEnabled(can3d);
-    accel3dCheck->setToolTip(!isVirtio ? i18n("Requires VirtIO graphics.") : VMConfig::isGpu3dAvailable() ? accel3dToolTip() : missingInQemuText());
+    accel3dGroup->setEnabled(can3d);
+    accel3dGroup->setToolTip(!isVirtio ? i18n("Requires VirtIO graphics.") : VMConfig::isGpu3dAvailable() ? accel3dToolTip() : missingInQemuText());
     if (!can3d)
-        accel3dCheck->setChecked(false);
-    const bool with3d = accel3dCheck->isChecked();
+        accel3dGroup->setChecked(false);
+    const bool with3d = accel3dGroup->isChecked();
 
     // The rules of QemuCommandBuilder::hostBlobsAvailable().
     const bool hostBlobs = QemuCommandBuilder::hostBlobsAvailable();
@@ -1372,6 +1380,9 @@ void EditVmDialog::onGpuDisplayChanged()
     if (!with3d || !hostBlobs)
         hostBlobsCheck->setChecked(false);
     const bool blobs = hostBlobsCheck->isChecked();
+    hostmemLabel->setEnabled(blobs);
+    hostmemSpin->setEnabled(blobs);
+    hostmemPresetButton->setEnabled(blobs);
 
     // The rules of QemuCommandBuilder::venusAvailable().
     const bool venus = QemuCommandBuilder::venusAvailable();
@@ -1381,7 +1392,7 @@ void EditVmDialog::onGpuDisplayChanged()
         vulkanCheck->setChecked(false);
     const bool vulkan = vulkanCheck->isChecked();
 
-    showMemorySize(!with3d ? MemoryMode::Vram : blobs ? MemoryMode::Hostmem : MemoryMode::HostGpu, gpu);
+    showVideoMemory(gpu, with3d);
 
     // A warning wins over information when both apply.
     QStringList hints;
@@ -1398,30 +1409,18 @@ void EditVmDialog::onGpuDisplayChanged()
     updateInlineMessage(gpuMessage, hints.join(u' '), type);
 }
 
-void EditVmDialog::showMemorySize(MemoryMode mode, VMSpecs::GpuType gpu)
+void EditVmDialog::showVideoMemory(VMSpecs::GpuType gpu, bool automatic)
 {
-    m_memoryShowsHostmem = mode == MemoryMode::Hostmem;
     const QScopedValueRollback guard(m_updatingMemory, true);
-    // 3D alone: the host GPU provides the memory, QEMU ignores max_hostmem.
-    const bool editable = mode != MemoryMode::HostGpu;
-    gpuMemSpin->setEnabled(editable);
-    gpuMemPresetButton->setEnabled(editable);
-    vgaMemLabel->setEnabled(editable);
-    switch (mode) {
-    case MemoryMode::HostGpu:
+    gpuMemSpin->setEnabled(!automatic);
+    gpuMemPresetButton->setEnabled(!automatic);
+    vgaMemLabel->setEnabled(!automatic);
+    if (automatic) {
         // The special text shows while the value sits at the minimum.
         gpuMemSpin->setRange(0, 0);
         gpuMemSpin->setSpecialValueText(i18nc("@item video memory size", "Automatic"));
         gpuMemSpin->setToolTip(i18n("Managed automatically by the host GPU."));
         return;
-    case MemoryMode::Hostmem:
-        gpuMemSpin->setSpecialValueText({});
-        gpuMemSpin->setRange(KEMUConst::VirglHostmemMinMb, KEMUConst::VirglHostmemMaxMb);
-        gpuMemSpin->setValue(m_hostmemMb);
-        gpuMemSpin->setToolTip(i18n("%1 MiB to %2 GiB", KEMUConst::VirglHostmemMinMb, KEMUConst::VirglHostmemMaxMb / 1024));
-        return;
-    case MemoryMode::Vram:
-        break;
     }
     gpuMemSpin->setSpecialValueText({});
     gpuMemSpin->setRange(VMConfig::vgaMemMbLowerLimit(gpu), VMConfig::vgaMemMbUpperLimit(gpu));
@@ -1640,11 +1639,11 @@ VMConfig EditVmDialog::getResult() const
     c.setSharedName(sharedNameEdit->text());
     c.setGpuType(static_cast<VMSpecs::GpuType>(gpuCombo->currentData().toInt()));
     c.setMonitorCount(monitorCountSpin->value());
-    c.setGpu3dAcceleration(accel3dCheck->isChecked());
+    c.setGpu3dAcceleration(accel3dGroup->isChecked());
     c.setGpuHostBlobs(hostBlobsCheck->isChecked());
     c.setGpuVulkan(vulkanCheck->isChecked());
     c.setGpuMemMb(VMConfig::normalizedVgaMemMb(c.gpuType(), m_vramMb));
-    c.setGpuHostmemMb(m_hostmemMb);
+    c.setGpuHostmemMb(hostmemSpin->value());
     c.setAudioDevice(static_cast<VMSpecs::AudioDevice>(audioCombo->currentData().toInt()));
     c.setSb16Config(m_sb16Config);
     c.setNetworkCard(static_cast<VMSpecs::NetworkCard>(netCombo->currentData().toInt()));
@@ -2530,7 +2529,7 @@ void EditVmDialog::resetToFactoryDefaults()
     setCombo(gpuCombo, GlobalDefaults.gpuType);
     monitorCountSpin->setValue(GlobalDefaults.monitorCount);
     m_vramMb = GlobalDefaults.gpuMemMb;
-    m_hostmemMb = GlobalDefaults.gpuHostmemMb;
+    hostmemSpin->setValue(GlobalDefaults.gpuHostmemMb);
     setCombo(audioCombo, GlobalDefaults.audioDevice);
     setSystemDiskInterface(GlobalDefaults.diskInterface);
     refreshDiskList(); // the size of a new system disk, too
@@ -2539,7 +2538,7 @@ void EditVmDialog::resetToFactoryDefaults()
     setCombo(mouseCombo, GlobalDefaults.pointerDevice);
     setCombo(keyboardCombo, GlobalDefaults.keyboardDevice);
 
-    accel3dCheck->setChecked(GlobalDefaults.gpu3dAcceleration);
+    accel3dGroup->setChecked(GlobalDefaults.gpu3dAcceleration);
     hostBlobsCheck->setChecked(GlobalDefaults.gpuHostBlobs);
     vulkanCheck->setChecked(GlobalDefaults.gpuVulkan);
     onGpuDisplayChanged();

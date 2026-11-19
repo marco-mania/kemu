@@ -153,14 +153,9 @@ private Q_SLOTS:
     void removePortForwardRow();
 
 private:
-    // What gpuMemSpin shows: the adapter's VRAM, "Automatic" with 3D alone,
-    // or with host blobs the memory window.
-    enum class MemoryMode {
-        Vram,
-        HostGpu,
-        Hostmem,
-    };
-    void showMemorySize(MemoryMode mode, VMSpecs::GpuType gpu);
+    // The adapter's VRAM in gpuMemSpin, or "Automatic" when the host GPU
+    // provides it (3D).
+    void showVideoMemory(VMSpecs::GpuType gpu, bool automatic);
     void applyEncryptionConstraints();
     [[nodiscard]] DiskDialog::Encryption encryptionState() const;
     // Its icon tells whether it is encrypted.
@@ -224,17 +219,19 @@ private:
     QLabel *monitorCountLabel = nullptr;
     KMessageWidget *monitorMessage = nullptr;
     QSpinBox *gpuMemSpin = nullptr;
-    QCheckBox *accel3dCheck = nullptr;
-    QCheckBox *hostBlobsCheck = nullptr; // indented below accel3dCheck
-    QCheckBox *vulkanCheck = nullptr; // below hostBlobsCheck, same indent
     QLabel *vgaMemLabel = nullptr;
     QToolButton *gpuMemPresetButton = nullptr;
-    KMessageWidget *gpuMessage = nullptr;
-    // gpuMemSpin edits one of these, depending on showMemorySize().
+    // What gpuMemSpin holds while it shows "Automatic".
     int m_vramMb = GlobalDefaults.gpuMemMb;
-    int m_hostmemMb = GlobalDefaults.gpuHostmemMb;
-    bool m_memoryShowsHostmem = false;
     bool m_updatingMemory = false;
+    // Checkable: its title switches 3D on and off.
+    QGroupBox *accel3dGroup = nullptr;
+    QCheckBox *hostBlobsCheck = nullptr;
+    QLabel *hostmemLabel = nullptr;
+    QSpinBox *hostmemSpin = nullptr; // the memory window of host blobs
+    QToolButton *hostmemPresetButton = nullptr;
+    QCheckBox *vulkanCheck = nullptr;
+    KMessageWidget *gpuMessage = nullptr;
     QComboBox *audioCombo = nullptr;
     QPushButton *sb16ConfigButton = nullptr;
     VMSpecs::DiskInterface m_systemDiskInterface = GlobalDefaults.diskInterface;
