@@ -1367,7 +1367,7 @@ void EditVmDialog::onGpuDisplayChanged()
     QStringList hints;
     auto type = KMessageWidget::Information;
     if (with3d && isWindows) {
-        hints << i18n("Windows guests get no 3D acceleration.");
+        hints << i18n("No official Windows VirtIO 3D driver exists; only experimental community drivers are available.");
         type = KMessageWidget::Warning;
     } else if (blobs && osFamily != VMSpecs::OsFamily::Linux) {
         hints << i18n("Direct GPU memory access only helps Linux guests so far.");

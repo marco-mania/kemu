@@ -62,9 +62,9 @@
 #include <KNotifyConfigWidget>
 #include <KWindowSystem>
 
-#include <QToolButton>
 #include <QProgressDialog>
 #include <QScopeGuard>
+#include <QToolButton>
 #include <QtSvg>
 
 #include <KNewPasswordDialog>
@@ -723,292 +723,279 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
     const QString consolePath = KemuDbusDisplayConst::ConsolePathPrefix + u"0"_s;
 
     registerDbusDisplayListener(ctrl, consolePath, [this, vmName, ctrl, consolePath](QemuDisplayListener *displayListener, const QString &err) {
-                         // The reply went through the event loop; re-validate the world.
-                         const bool vmAlive = m_runtimeManager->hasLiveQemu(vmName) && !m_runtimeManager->hasViewer(vmName);
+        // The reply went through the event loop; re-validate the world.
+        const bool vmAlive = m_runtimeManager->hasLiveQemu(vmName) && !m_runtimeManager->hasViewer(vmName);
 
-                         if (!displayListener || !vmAlive) {
-                             if (vmAlive && !displayListener) {
-                                 qCWarning(KEMU) << "RegisterListener failed:" << err;
-                                 KMessageBox::error(this, i18n("Display registration for '%1' failed: %2", vmName, err), i18n("Viewer Error"));
-                             }
-                             if (displayListener)
-                                 displayListener->deleteLater();
-                             ctrl->deleteLater();
-                             return;
-                         }
+        if (!displayListener || !vmAlive) {
+            if (vmAlive && !displayListener) {
+                qCWarning(KEMU) << "RegisterListener failed:" << err;
+                KMessageBox::error(this, i18n("Display registration for '%1' failed: %2", vmName, err), i18n("Viewer Error"));
+            }
+            if (displayListener)
+                displayListener->deleteLater();
+            ctrl->deleteLater();
+            return;
+        }
 
-                         VmRuntimeInfo::ViewerState state;
-                         state.ctrl = ctrl;
-                         state.displayListener = displayListener;
-                         state.mouseMapping = QSharedPointer<MultiheadMouseMapping>::create(consolePath);
-                         const auto config = KSharedConfig::openConfig(u"kemurc"_s);
-                         const auto geometryGroup = config->group(u"ViewerState"_s).group(vmName);
-                         const int placement = geometryGroup.readEntry(u"SecondaryPlacement"_s, int(MultiheadMouseMapping::SecondaryPlacement::Automatic));
-                         if (placement >= 0 && placement <= int(MultiheadMouseMapping::SecondaryPlacement::Automatic))
-                             state.mouseMapping->setSecondaryPlacement(static_cast<MultiheadMouseMapping::SecondaryPlacement>(placement));
-                         state.mouseMapping->setSecondaryPosition(QPoint(geometryGroup.readEntry(u"SecondaryX"_s, 1920),
-                                                                       geometryGroup.readEntry(u"SecondaryY"_s, 0)));
-                         if (geometryGroup.hasKey(u"DetectedSecondaryX"_s) && geometryGroup.hasKey(u"DetectedSecondaryY"_s))
-                             state.mouseMapping->setDetectedPosition(QPoint(geometryGroup.readEntry(u"DetectedSecondaryX"_s, 0),
-                                                                           geometryGroup.readEntry(u"DetectedSecondaryY"_s, 0)));
-                         connect(state.mouseMapping.get(), &MultiheadMouseMapping::secondaryPositionDetected, this, [vmName](const QPoint &position) {
-                             qCDebug(KEMU) << "Guest layout of" << vmName << "puts display 2 at" << position;
-                             auto config = KSharedConfig::openConfig(u"kemurc"_s);
-                             KConfigGroup geometryGroup = config->group(u"ViewerState"_s).group(vmName);
-                             geometryGroup.writeEntry(u"DetectedSecondaryX"_s, position.x());
-                             geometryGroup.writeEntry(u"DetectedSecondaryY"_s, position.y());
-                             config->sync();
-                         });
-                         connect(state.mouseMapping.get(), &MultiheadMouseMapping::layoutDetectionFailed, this, [this, vmName] {
-                             qCInfo(KEMU) << "Guest layout of" << vmName << "not detected";
-                             auto *rt = m_runtimeManager->runtime(vmName);
-                             if (rt && rt->viewer && rt->viewer->window && rt->viewer->mouseMapping
-                                 && rt->viewer->mouseMapping->secondaryPlacement() == MultiheadMouseMapping::SecondaryPlacement::Automatic)
-                                 rt->viewer->window->showLayoutDetectionFailed();
-                         });
+        VmRuntimeInfo::ViewerState state;
+        state.ctrl = ctrl;
+        state.displayListener = displayListener;
+        state.mouseMapping = QSharedPointer<MultiheadMouseMapping>::create(consolePath);
+        const auto config = KSharedConfig::openConfig(u"kemurc"_s);
+        const auto geometryGroup = config->group(u"ViewerState"_s).group(vmName);
+        const int placement = geometryGroup.readEntry(u"SecondaryPlacement"_s, int(MultiheadMouseMapping::SecondaryPlacement::Automatic));
+        if (placement >= 0 && placement <= int(MultiheadMouseMapping::SecondaryPlacement::Automatic))
+            state.mouseMapping->setSecondaryPlacement(static_cast<MultiheadMouseMapping::SecondaryPlacement>(placement));
+        state.mouseMapping->setSecondaryPosition(QPoint(geometryGroup.readEntry(u"SecondaryX"_s, 1920), geometryGroup.readEntry(u"SecondaryY"_s, 0)));
+        if (geometryGroup.hasKey(u"DetectedSecondaryX"_s) && geometryGroup.hasKey(u"DetectedSecondaryY"_s))
+            state.mouseMapping->setDetectedPosition(
+                QPoint(geometryGroup.readEntry(u"DetectedSecondaryX"_s, 0), geometryGroup.readEntry(u"DetectedSecondaryY"_s, 0)));
+        connect(state.mouseMapping.get(), &MultiheadMouseMapping::secondaryPositionDetected, this, [vmName](const QPoint &position) {
+            qCDebug(KEMU) << "Guest layout of" << vmName << "puts display 2 at" << position;
+            auto config = KSharedConfig::openConfig(u"kemurc"_s);
+            KConfigGroup geometryGroup = config->group(u"ViewerState"_s).group(vmName);
+            geometryGroup.writeEntry(u"DetectedSecondaryX"_s, position.x());
+            geometryGroup.writeEntry(u"DetectedSecondaryY"_s, position.y());
+            config->sync();
+        });
+        connect(state.mouseMapping.get(), &MultiheadMouseMapping::layoutDetectionFailed, this, [this, vmName] {
+            qCInfo(KEMU) << "Guest layout of" << vmName << "not detected";
+            auto *rt = m_runtimeManager->runtime(vmName);
+            if (rt && rt->viewer && rt->viewer->window && rt->viewer->mouseMapping
+                && rt->viewer->mouseMapping->secondaryPlacement() == MultiheadMouseMapping::SecondaryPlacement::Automatic)
+                rt->viewer->window->showLayoutDetectionFailed();
+        });
 
-                         const VmEntry *cfgEntry = veModel->entryByName(vmName);
-                         const bool hasUsbController = cfgEntry && cfgEntry->config.usbController() != VMSpecs::UsbController::None;
-                         const ViewerDevicePrefs viewerPrefs = loadViewerPrefs(vmName);
+        const VmEntry *cfgEntry = veModel->entryByName(vmName);
+        const bool hasUsbController = cfgEntry && cfgEntry->config.usbController() != VMSpecs::UsbController::None;
+        const ViewerDevicePrefs viewerPrefs = loadViewerPrefs(vmName);
 
-                         // --- Audio listeners (created up front, registered async below) ---
-                         state.audioOut = new QemuAudioListener(this);
-                         state.audioIn = new QemuAudioInListener(this);
+        // --- Audio listeners (created up front, registered async below) ---
+        state.audioOut = new QemuAudioListener(this);
+        state.audioIn = new QemuAudioInListener(this);
 
-                         // --- Viewer window ---
-                         state.window = new DbusViewerWindow(state.displayListener,
-                                                             ctrl,
-                                                             consolePath,
-                                                             state.audioOut,
-                                                             state.audioIn,
-                                                             false,
-                                                             false,
-                                                             hasUsbController,
-                                                             viewerPrefs,
-                                                             nullptr);
-                         state.window->displayWidget()->setMultiheadMouseMapping(state.mouseMapping, 0);
-                         state.window->displayWidget()->setCursorPositionIsImageOrigin(cfgEntry && cfgEntry->config.gpuType() == VMSpecs::GpuType::Virtio);
-                         // kemu-agent: the clipboard, and where the guest put its monitors.
-                         connect(state.mouseMapping.get(),
-                                 &MultiheadMouseMapping::agentLayoutChanged,
-                                 state.window,
-                                 &DbusViewerWindow::setDisplayLayoutFromAgent);
-                         if (KemuAgentClient *agent = m_runtimeManager->runtimeFor(vmName).kemuAgent) {
-                             state.window->setKemuAgent(agent);
-                             state.mouseMapping->setAgentLayout(agent->layout());
-                             connect(agent,
-                                     &KemuAgentClient::layoutChanged,
-                                     state.mouseMapping.get(),
-                                     [mapping = state.mouseMapping.get(), agent = QPointer<KemuAgentClient>(agent)] {
-                                         if (agent)
-                                             mapping->setAgentLayout(agent->layout());
-                                     });
-                         }
-                         // kemu-agent runs in Linux guests only; "Other" may well be one.
-                         if (cfgEntry) {
-                             switch (cfgEntry->config.osFamily()) {
-                             case VMSpecs::OsFamily::Windows:
-                                 state.window->setKemuAgentUnsupported(i18nc("@info:tooltip", "Clipboard sharing is not available for Windows guests yet"));
-                                 break;
-                             case VMSpecs::OsFamily::BSD:
-                                 state.window->setKemuAgentUnsupported(i18nc("@info:tooltip", "Clipboard sharing is not available for BSD guests yet"));
-                                 break;
-                             case VMSpecs::OsFamily::DOS:
-                                 state.window->setKemuAgentUnsupported(i18nc("@info:tooltip", "Clipboard sharing is not available for DOS guests"));
-                                 break;
-                             case VMSpecs::OsFamily::Linux:
-                             case VMSpecs::OsFamily::Other:
-                                 break;
-                             }
-                             state.window->setAgentMediumUnavailable(agentMediumBlocker(cfgEntry->config));
-                         }
-                         state.window->setWindowTitle(vmName);
-                         state.window->setAttribute(Qt::WA_DeleteOnClose, false);
-                         state.window->setStatusBarShown(viewerStatusBarShown());
-                         setVmWindowIcon(state.window, cfgEntry);
-                         connect(state.window, &DbusViewerWindow::statusBarShownChanged, this, &MainWindow::setViewerStatusBarShown);
-                         state.window->show();
+        // --- Viewer window ---
+        state.window =
+            new DbusViewerWindow(state.displayListener, ctrl, consolePath, state.audioOut, state.audioIn, false, false, hasUsbController, viewerPrefs, nullptr);
+        state.window->displayWidget()->setMultiheadMouseMapping(state.mouseMapping, 0);
+        state.window->displayWidget()->setCursorPositionIsImageOrigin(cfgEntry && cfgEntry->config.gpuType() == VMSpecs::GpuType::Virtio);
+        // kemu-agent: the clipboard, and where the guest put its monitors.
+        connect(state.mouseMapping.get(), &MultiheadMouseMapping::agentLayoutChanged, state.window, &DbusViewerWindow::setDisplayLayoutFromAgent);
+        if (KemuAgentClient *agent = m_runtimeManager->runtimeFor(vmName).kemuAgent) {
+            state.window->setKemuAgent(agent);
+            state.mouseMapping->setAgentLayout(agent->layout());
+            connect(agent,
+                    &KemuAgentClient::layoutChanged,
+                    state.mouseMapping.get(),
+                    [mapping = state.mouseMapping.get(), agent = QPointer<KemuAgentClient>(agent)] {
+                        if (agent)
+                            mapping->setAgentLayout(agent->layout());
+                    });
+        }
+        // kemu-agent runs in Linux guests only; "Other" may well be one.
+        if (cfgEntry) {
+            switch (cfgEntry->config.osFamily()) {
+            case VMSpecs::OsFamily::Windows:
+                state.window->setKemuAgentUnsupported(i18nc("@info:tooltip", "Clipboard sharing is not available for Windows guests yet"));
+                break;
+            case VMSpecs::OsFamily::BSD:
+                state.window->setKemuAgentUnsupported(i18nc("@info:tooltip", "Clipboard sharing is not available for BSD guests yet"));
+                break;
+            case VMSpecs::OsFamily::DOS:
+                state.window->setKemuAgentUnsupported(i18nc("@info:tooltip", "Clipboard sharing is not available for DOS guests"));
+                break;
+            case VMSpecs::OsFamily::Linux:
+            case VMSpecs::OsFamily::Other:
+                break;
+            }
+            state.window->setAgentMediumUnavailable(agentMediumBlocker(cfgEntry->config));
+        }
+        state.window->setWindowTitle(vmName);
+        state.window->setAttribute(Qt::WA_DeleteOnClose, false);
+        state.window->setStatusBarShown(viewerStatusBarShown());
+        setVmWindowIcon(state.window, cfgEntry);
+        connect(state.window, &DbusViewerWindow::statusBarShownChanged, this, &MainWindow::setViewerStatusBarShown);
+        state.window->show();
 
-                         // --- Teardown triggers ---
-                         // Auto-cleanup when QEMU's display connection drops.
-                         connect(state.displayListener, &QemuDisplayListener::connectionLost, this, [this, vmName]() {
-                             stopDbusViewer(vmName);
-                         });
+        // --- Teardown triggers ---
+        // Auto-cleanup when QEMU's display connection drops.
+        connect(state.displayListener, &QemuDisplayListener::connectionLost, this, [this, vmName]() {
+            stopDbusViewer(vmName);
+        });
 
-                         // Second trigger: the control connection dropped. Deferred,
-                         // because the signal is emitted from within the connection's
-                         // own dispatch.
-                         connect(ctrl, &QemuControlConnection::connectionLost, this, [this, vmName]() {
-                             QTimer::singleShot(0, this, [this, vmName] {
-                                 stopDbusViewer(vmName);
-                             });
-                         });
+        // Second trigger: the control connection dropped. Deferred,
+        // because the signal is emitted from within the connection's
+        // own dispatch.
+        connect(ctrl, &QemuControlConnection::connectionLost, this, [this, vmName]() {
+            QTimer::singleShot(0, this, [this, vmName] {
+                stopDbusViewer(vmName);
+            });
+        });
 
-                         // When the user closes the viewer window, keep QEMU running,
-                         // mark the VM as headless and tear down the per-viewer D-Bus
-                         // listeners so the user can reconnect later.
-                         //
-                         // QueuedConnection: the slot must run AFTER closeEvent() has
-                         // fully returned, otherwise stopDbusViewer() would delete the
-                         // window from within its own event handler.
-                         connect(
-                             state.window,
-                             &DbusViewerWindow::viewerClosed,
-                             this,
-                             [this, vmName]() {
-                                 if (!m_runtimeManager->hasViewer(vmName))
-                                     return; // already torn down (shutdown path / connectionLost)
+        // When the user closes the viewer window, keep QEMU running,
+        // mark the VM as headless and tear down the per-viewer D-Bus
+        // listeners so the user can reconnect later.
+        //
+        // QueuedConnection: the slot must run AFTER closeEvent() has
+        // fully returned, otherwise stopDbusViewer() would delete the
+        // window from within its own event handler.
+        connect(
+            state.window,
+            &DbusViewerWindow::viewerClosed,
+            this,
+            [this, vmName]() {
+                if (!m_runtimeManager->hasViewer(vmName))
+                    return; // already torn down (shutdown path / connectionLost)
 
-                                 if (m_runtimeManager->hasLiveQemu(vmName))
-                                     veModel->setHeadless(vmName, true);
+                if (m_runtimeManager->hasLiveQemu(vmName))
+                    veModel->setHeadless(vmName, true);
 
-                                 stopDbusViewer(vmName);
+                stopDbusViewer(vmName);
 
-                                 if (selectedVmName() == vmName) {
-                                     updateDetails();
-                                     updateActionStates();
-                                 }
-                             },
-                             Qt::QueuedConnection);
+                if (selectedVmName() == vmName) {
+                    updateDetails();
+                    updateActionStates();
+                }
+            },
+            Qt::QueuedConnection);
 
-                         connect(state.window, &DbusViewerWindow::shutdownRequested, this, [this, vmName] {
-                             shutdownVMByName(vmName);
-                         });
+        connect(state.window, &DbusViewerWindow::shutdownRequested, this, [this, vmName] {
+            shutdownVMByName(vmName);
+        });
 
-                         connect(state.window, &DbusViewerWindow::resetRequested, this, [this, vmName] {
-                             resetVMByName(vmName);
-                         });
+        connect(state.window, &DbusViewerWindow::resetRequested, this, [this, vmName] {
+            resetVMByName(vmName);
+        });
 
-                         connect(state.window, &DbusViewerWindow::powerOffRequested, this, [this, vmName] {
-                             powerOffVMByName(vmName);
-                         });
+        connect(state.window, &DbusViewerWindow::powerOffRequested, this, [this, vmName] {
+            powerOffVMByName(vmName);
+        });
 
-                         connect(state.window, &DbusViewerWindow::snapshotManagerRequested, this, [this, vmName] {
-                             manageSnapshotsForVm(vmName);
-                         });
+        connect(state.window, &DbusViewerWindow::snapshotManagerRequested, this, [this, vmName] {
+            manageSnapshotsForVm(vmName);
+        });
 
-                         connect(state.window, &DbusViewerWindow::shutdownHostWithGuestToggled, this, [this, vmName](bool armed) {
-                             setShutdownHostWithGuest(vmName, armed);
-                         });
+        connect(state.window, &DbusViewerWindow::shutdownHostWithGuestToggled, this, [this, vmName](bool armed) {
+            setShutdownHostWithGuest(vmName, armed);
+        });
 
-                         connect(state.window, &DbusViewerWindow::inhibitStateChanged, this, [this]() {
-                             updateSessionInhibitors();
-                         });
+        connect(state.window, &DbusViewerWindow::inhibitStateChanged, this, [this]() {
+            updateSessionInhibitors();
+        });
 
-                         connect(state.window, &DbusViewerWindow::devicePrefsChanged, this, [this, vmName](const ViewerDevicePrefs &p) {
-                             saveViewerPrefs(vmName, p);
-                         });
+        connect(state.window, &DbusViewerWindow::devicePrefsChanged, this, [this, vmName](const ViewerDevicePrefs &p) {
+            saveViewerPrefs(vmName, p);
+        });
 
-                         connect(state.window, &DbusViewerWindow::networkLinkChangeRequested, this, [this, vmName](bool up) {
-                             auto *win = m_runtimeManager->viewerWindow(vmName);
-                             if (!win)
-                                 return;
-                             QPointer<DbusViewerWindow> viewer = win;
+        connect(state.window, &DbusViewerWindow::networkLinkChangeRequested, this, [this, vmName](bool up) {
+            auto *win = m_runtimeManager->viewerWindow(vmName);
+            if (!win)
+                return;
+            QPointer<DbusViewerWindow> viewer = win;
 
-                             const VmEntry *entry = veModel->entryByName(vmName);
-                             if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
-                                 viewer->setNetworkLinkState(!up, false); // revert, keep the stored pref
-                                 KMessageBox::error(viewer, monitorNotReadyText(vmName));
-                                 return;
-                             }
+            const VmEntry *entry = veModel->entryByName(vmName);
+            if (!entry || !entry->qmpClient || !entry->qmpClient->isConnected()) {
+                viewer->setNetworkLinkState(!up, false); // revert, keep the stored pref
+                KMessageBox::error(viewer, monitorNotReadyText(vmName));
+                return;
+            }
 
-                             entry->qmpClient->setNetworkLink(KEMUConst::NetdevId, up, [viewer, up](QMPResult res) {
-                                 if (!viewer)
-                                     return; // viewer closed while QEMU was answering
-                                 if (!res.success) {
-                                     viewer->setNetworkLinkState(!up, false);
-                                     KMessageBox::error(viewer, i18n("Could not change the network link state: %1", res.errorMessage));
-                                     return;
-                                 }
-                                 viewer->setNetworkLinkState(up);
-                             });
-                         });
+            entry->qmpClient->setNetworkLink(KEMUConst::NetdevId, up, [viewer, up](QMPResult res) {
+                if (!viewer)
+                    return; // viewer closed while QEMU was answering
+                if (!res.success) {
+                    viewer->setNetworkLinkState(!up, false);
+                    KMessageBox::error(viewer, i18n("Could not change the network link state: %1", res.errorMessage));
+                    return;
+                }
+                viewer->setNetworkLinkState(up);
+            });
+        });
 
-                         connect(state.window, &DbusViewerWindow::changeIsoRequested, this, [this, vmName] {
-                             changeISOForVm(vmName);
-                         });
-                         connect(state.window, &DbusViewerWindow::ejectIsoRequested, this, [this, vmName] {
-                             ejectISOForVm(vmName);
-                         });
-                         connect(state.window, &DbusViewerWindow::insertAgentMediumRequested, this, [this, vmName] {
-                             insertAgentMediumForVm(vmName);
-                         });
-                         connect(state.window, &DbusViewerWindow::changeFloppyRequested, this, [this, vmName] {
-                             changeFloppyForVm(vmName);
-                         });
-                         connect(state.window, &DbusViewerWindow::ejectFloppyRequested, this, [this, vmName] {
-                             ejectFloppyForVm(vmName);
-                         });
+        connect(state.window, &DbusViewerWindow::changeIsoRequested, this, [this, vmName] {
+            changeISOForVm(vmName);
+        });
+        connect(state.window, &DbusViewerWindow::ejectIsoRequested, this, [this, vmName] {
+            ejectISOForVm(vmName);
+        });
+        connect(state.window, &DbusViewerWindow::insertAgentMediumRequested, this, [this, vmName] {
+            insertAgentMediumForVm(vmName);
+        });
+        connect(state.window, &DbusViewerWindow::changeFloppyRequested, this, [this, vmName] {
+            changeFloppyForVm(vmName);
+        });
+        connect(state.window, &DbusViewerWindow::ejectFloppyRequested, this, [this, vmName] {
+            ejectFloppyForVm(vmName);
+        });
 
-                         // USB submenu population: reuse the existing enumerator path.
-                         if (QMenu *usbMenu = state.window->usbMenu()) {
-                             connect(usbMenu, &QMenu::aboutToShow, this, [this, vmName, usbMenu] {
-                                 populateUsbMenuFor(vmName, usbMenu);
-                             });
-                         }
+        // USB submenu population: reuse the existing enumerator path.
+        if (QMenu *usbMenu = state.window->usbMenu()) {
+            connect(usbMenu, &QMenu::aboutToShow, this, [this, vmName, usbMenu] {
+                populateUsbMenuFor(vmName, usbMenu);
+            });
+        }
 
-                         m_runtimeManager->runtimeFor(vmName).viewer = state;
-                         connect(state.window, &DbusViewerWindow::secondaryPlacementChanged, this,
-                                 [this, vmName](MultiheadMouseMapping::SecondaryPlacement placement) {
-                                     auto *rt = m_runtimeManager->runtime(vmName);
-                                     if (!rt || !rt->viewer || !rt->viewer->mouseMapping)
-                                         return;
-                                     rt->viewer->mouseMapping->setSecondaryPlacement(placement);
-                                     auto config = KSharedConfig::openConfig(u"kemurc"_s);
-                                     KConfigGroup geometryGroup = config->group(u"ViewerState"_s).group(vmName);
-                                     geometryGroup.writeEntry(u"SecondaryPlacement"_s, int(placement));
-                                     config->sync();
-                                     updateDbusDisplayMenu(vmName);
-                                 });
-                         connect(state.window, &DbusViewerWindow::secondaryPositionChanged, this, [this, vmName](const QPoint &position) {
-                             auto *rt = m_runtimeManager->runtime(vmName);
-                             if (!rt || !rt->viewer || !rt->viewer->mouseMapping)
-                                 return;
-                             rt->viewer->mouseMapping->setSecondaryPosition(position);
-                             rt->viewer->mouseMapping->setSecondaryPlacement(MultiheadMouseMapping::SecondaryPlacement::Custom);
-                             auto config = KSharedConfig::openConfig(u"kemurc"_s);
-                             KConfigGroup geometryGroup = config->group(u"ViewerState"_s).group(vmName);
-                             geometryGroup.writeEntry(u"SecondaryPlacement"_s, int(MultiheadMouseMapping::SecondaryPlacement::Custom));
-                             geometryGroup.writeEntry(u"SecondaryX"_s, position.x());
-                             geometryGroup.writeEntry(u"SecondaryY"_s, position.y());
-                             config->sync();
-                             updateDbusDisplayMenu(vmName);
-                         });
-                         connect(state.window, &DbusViewerWindow::subDisplayToggled, this, [this, vmName](uint consoleId, bool open) {
-                             if (open)
-                                 openDbusSubDisplay(vmName, consoleId);
-                             else
-                                 closeDbusSubDisplay(vmName, consoleId);
-                         });
-                         veModel->setHeadless(vmName, false);
+        m_runtimeManager->runtimeFor(vmName).viewer = state;
+        connect(state.window, &DbusViewerWindow::secondaryPlacementChanged, this, [this, vmName](MultiheadMouseMapping::SecondaryPlacement placement) {
+            auto *rt = m_runtimeManager->runtime(vmName);
+            if (!rt || !rt->viewer || !rt->viewer->mouseMapping)
+                return;
+            rt->viewer->mouseMapping->setSecondaryPlacement(placement);
+            auto config = KSharedConfig::openConfig(u"kemurc"_s);
+            KConfigGroup geometryGroup = config->group(u"ViewerState"_s).group(vmName);
+            geometryGroup.writeEntry(u"SecondaryPlacement"_s, int(placement));
+            config->sync();
+            updateDbusDisplayMenu(vmName);
+        });
+        connect(state.window, &DbusViewerWindow::secondaryPositionChanged, this, [this, vmName](const QPoint &position) {
+            auto *rt = m_runtimeManager->runtime(vmName);
+            if (!rt || !rt->viewer || !rt->viewer->mouseMapping)
+                return;
+            rt->viewer->mouseMapping->setSecondaryPosition(position);
+            rt->viewer->mouseMapping->setSecondaryPlacement(MultiheadMouseMapping::SecondaryPlacement::Custom);
+            auto config = KSharedConfig::openConfig(u"kemurc"_s);
+            KConfigGroup geometryGroup = config->group(u"ViewerState"_s).group(vmName);
+            geometryGroup.writeEntry(u"SecondaryPlacement"_s, int(MultiheadMouseMapping::SecondaryPlacement::Custom));
+            geometryGroup.writeEntry(u"SecondaryX"_s, position.x());
+            geometryGroup.writeEntry(u"SecondaryY"_s, position.y());
+            config->sync();
+            updateDbusDisplayMenu(vmName);
+        });
+        connect(state.window, &DbusViewerWindow::subDisplayToggled, this, [this, vmName](uint consoleId, bool open) {
+            if (open)
+                openDbusSubDisplay(vmName, consoleId);
+            else
+                closeDbusSubDisplay(vmName, consoleId);
+        });
+        veModel->setHeadless(vmName, false);
 
-                         ctrl->subscribeSignal(QString(KemuDbusDisplayConst::VmPath),
-                                               u"org.freedesktop.DBus.Properties"_s,
-                                               u"PropertiesChanged"_s,
-                                               [this, vmName, ctrl = QPointer<QemuControlConnection>(ctrl)](GVariant *parameters) {
-                                                   if (!ctrl || !g_variant_is_of_type(parameters, G_VARIANT_TYPE("(sa{sv}as)")))
-                                                       return;
-                                                   const gchar *iface = nullptr;
-                                                   g_variant_get_child(parameters, 0, "&s", &iface);
-                                                   if (g_strcmp0(iface, "org.qemu.Display1.VM") == 0)
-                                                       refreshDbusDisplayConsoles(vmName, ctrl);
-                                               });
-                         refreshDbusDisplayConsoles(vmName, ctrl);
+        ctrl->subscribeSignal(QString(KemuDbusDisplayConst::VmPath),
+                              u"org.freedesktop.DBus.Properties"_s,
+                              u"PropertiesChanged"_s,
+                              [this, vmName, ctrl = QPointer<QemuControlConnection>(ctrl)](GVariant *parameters) {
+                                  if (!ctrl || !g_variant_is_of_type(parameters, G_VARIANT_TYPE("(sa{sv}as)")))
+                                      return;
+                                  const gchar *iface = nullptr;
+                                  g_variant_get_child(parameters, 0, "&s", &iface);
+                                  if (g_strcmp0(iface, "org.qemu.Display1.VM") == 0)
+                                      refreshDbusDisplayConsoles(vmName, ctrl);
+                              });
+        refreshDbusDisplayConsoles(vmName, ctrl);
 
-                         pushMediaStateToViewer(vmName);
-                         pushNetworkStateToViewer(vmName);
-                         pushGuestAgentStateToViewer(vmName);
-                         pushHostShutdownStateToViewer(vmName);
+        pushMediaStateToViewer(vmName);
+        pushNetworkStateToViewer(vmName);
+        pushGuestAgentStateToViewer(vmName);
+        pushHostShutdownStateToViewer(vmName);
 
-                         // Audio: asynchronous registration chain (see
-                         // registerAudioListeners); runs against the map entry, so it
-                         // must come after the insert above.
-                         registerAudioListeners(vmName);
+        // Audio: asynchronous registration chain (see
+        // registerAudioListeners); runs against the map entry, so it
+        // must come after the insert above.
+        registerAudioListeners(vmName);
 
-                         updateSessionInhibitors();
-                         if (selectedVmName() == vmName)
-                             updateActionStates();
-                     });
+        updateSessionInhibitors();
+        if (selectedVmName() == vmName)
+            updateActionStates();
+    });
 }
 
 namespace
@@ -1048,46 +1035,47 @@ void MainWindow::refreshDbusDisplayConsoles(const QString &vmName, QemuControlCo
         return;
 
     const quint64 generation = ++rt->viewer->consoleDiscoveryGeneration;
-    QemuDisplayConsoles::discoverAsync(ctrl, [this, vmName, ctrl = QPointer<QemuControlConnection>(ctrl), generation](
-                                                       const QList<QemuDisplayConsole> &consoles, const QString &error) {
-        auto *rt = m_runtimeManager->runtime(vmName);
-        if (!ctrl || !rt || !rt->viewer || rt->viewer->ctrl != ctrl || rt->viewer->consoleDiscoveryGeneration != generation)
-            return;
-        if (!error.isEmpty()) {
-            qCWarning(KEMU) << "Display console discovery failed:" << error;
-            return;
-        }
-
-        auto &displays = rt->viewer->subDisplays;
-        QHash<guint, VmRuntimeInfo::SubDisplayState> updated;
-        for (const auto &console : QemuDisplayConsoles::additionalConsoles(consoles)) {
-            auto state = displays.value(console.id);
-            state.console = console;
-            updated.insert(console.id, state);
-        }
-        for (auto it = displays.cbegin(); it != displays.cend(); ++it) {
-            if (updated.contains(it.key()))
-                continue;
-            if (it->window) {
-                disconnect(it->window, &DbusViewerSubWindow::viewerClosed, this, nullptr);
-                it->window->close();
-                it->window->deleteLater();
+    QemuDisplayConsoles::discoverAsync(
+        ctrl,
+        [this, vmName, ctrl = QPointer<QemuControlConnection>(ctrl), generation](const QList<QemuDisplayConsole> &consoles, const QString &error) {
+            auto *rt = m_runtimeManager->runtime(vmName);
+            if (!ctrl || !rt || !rt->viewer || rt->viewer->ctrl != ctrl || rt->viewer->consoleDiscoveryGeneration != generation)
+                return;
+            if (!error.isEmpty()) {
+                qCWarning(KEMU) << "Display console discovery failed:" << error;
+                return;
             }
-            if (it->listener)
-                it->listener->deleteLater();
-            if (rt->viewer->mouseMapping)
-                rt->viewer->mouseMapping->removeDisplay(it->console.head);
-        }
-        displays = std::move(updated);
-        updateDbusDisplayMenu(vmName);
-        QList<guint> toOpen;
-        for (auto it = displays.cbegin(); it != displays.cend(); ++it) {
-            if (it->wanted && !it->window && !it->registering)
-                toOpen.append(it.key());
-        }
-        for (guint id : toOpen)
-            openDbusSubDisplay(vmName, id);
-    });
+
+            auto &displays = rt->viewer->subDisplays;
+            QHash<guint, VmRuntimeInfo::SubDisplayState> updated;
+            for (const auto &console : QemuDisplayConsoles::additionalConsoles(consoles)) {
+                auto state = displays.value(console.id);
+                state.console = console;
+                updated.insert(console.id, state);
+            }
+            for (auto it = displays.cbegin(); it != displays.cend(); ++it) {
+                if (updated.contains(it.key()))
+                    continue;
+                if (it->window) {
+                    disconnect(it->window, &DbusViewerSubWindow::viewerClosed, this, nullptr);
+                    it->window->close();
+                    it->window->deleteLater();
+                }
+                if (it->listener)
+                    it->listener->deleteLater();
+                if (rt->viewer->mouseMapping)
+                    rt->viewer->mouseMapping->removeDisplay(it->console.head);
+            }
+            displays = std::move(updated);
+            updateDbusDisplayMenu(vmName);
+            QList<guint> toOpen;
+            for (auto it = displays.cbegin(); it != displays.cend(); ++it) {
+                if (it->wanted && !it->window && !it->registering)
+                    toOpen.append(it.key());
+            }
+            for (guint id : toOpen)
+                openDbusSubDisplay(vmName, id);
+        });
 }
 
 void MainWindow::updateDbusDisplayMenu(const QString &vmName)
@@ -1141,74 +1129,74 @@ void MainWindow::openDbusSubDisplay(const QString &vmName, guint consoleId)
     const uint head = it->console.head;
     updateDbusDisplayMenu(vmName);
 
-    registerDbusDisplayListener(ctrl, consolePath, [this, vmName, consoleId, ctrl, registrationGeneration, consolePath, head](
-                                                           QemuDisplayListener *listener, const QString &error) {
-        auto *rt = m_runtimeManager->runtime(vmName);
-        if (!ctrl || !rt || !rt->viewer || rt->viewer->ctrl != ctrl || !m_runtimeManager->hasLiveQemu(vmName)
-            || !rt->viewer->subDisplays.contains(consoleId)
-            || rt->viewer->subDisplays[consoleId].registrationGeneration != registrationGeneration) {
-            if (listener)
-                listener->deleteLater();
-            return;
-        }
-
-        auto &subDisplay = rt->viewer->subDisplays[consoleId];
-        subDisplay.registering = false;
-        if (!subDisplay.wanted || !listener) {
-            if (listener)
-                listener->deleteLater();
-            if (!listener) {
-                subDisplay.wanted = false;
-                qCWarning(KEMU) << "Additional display registration failed:" << consolePath << error;
+    registerDbusDisplayListener(
+        ctrl,
+        consolePath,
+        [this, vmName, consoleId, ctrl, registrationGeneration, consolePath, head](QemuDisplayListener *listener, const QString &error) {
+            auto *rt = m_runtimeManager->runtime(vmName);
+            if (!ctrl || !rt || !rt->viewer || rt->viewer->ctrl != ctrl || !m_runtimeManager->hasLiveQemu(vmName)
+                || !rt->viewer->subDisplays.contains(consoleId) || rt->viewer->subDisplays[consoleId].registrationGeneration != registrationGeneration) {
+                if (listener)
+                    listener->deleteLater();
+                return;
             }
-            updateDbusDisplayMenu(vmName);
-            return;
-        }
 
-        subDisplay.listener = listener;
-        subDisplay.lastUiInfo = {};
-        subDisplay.window = new DbusViewerSubWindow(listener, ctrl, consolePath);
-        subDisplay.window->displayWidget()->setMultiheadMouseMapping(rt->viewer->mouseMapping, head);
-        const VmEntry *cfgEntry = veModel->entryByName(vmName);
-        subDisplay.window->displayWidget()->setCursorPositionIsImageOrigin(cfgEntry && cfgEntry->config.gpuType() == VMSpecs::GpuType::Virtio);
-        subDisplay.window->setWindowTitle(i18n("%1 – Display %2", vmName, head + 1));
-        setVmWindowIcon(subDisplay.window, cfgEntry);
-        subDisplay.window->setAttribute(Qt::WA_DeleteOnClose, false);
-        connect(subDisplay.window,
+            auto &subDisplay = rt->viewer->subDisplays[consoleId];
+            subDisplay.registering = false;
+            if (!subDisplay.wanted || !listener) {
+                if (listener)
+                    listener->deleteLater();
+                if (!listener) {
+                    subDisplay.wanted = false;
+                    qCWarning(KEMU) << "Additional display registration failed:" << consolePath << error;
+                }
+                updateDbusDisplayMenu(vmName);
+                return;
+            }
+
+            subDisplay.listener = listener;
+            subDisplay.lastUiInfo = {};
+            subDisplay.window = new DbusViewerSubWindow(listener, ctrl, consolePath);
+            subDisplay.window->displayWidget()->setMultiheadMouseMapping(rt->viewer->mouseMapping, head);
+            const VmEntry *cfgEntry = veModel->entryByName(vmName);
+            subDisplay.window->displayWidget()->setCursorPositionIsImageOrigin(cfgEntry && cfgEntry->config.gpuType() == VMSpecs::GpuType::Virtio);
+            subDisplay.window->setWindowTitle(i18n("%1 – Display %2", vmName, head + 1));
+            setVmWindowIcon(subDisplay.window, cfgEntry);
+            subDisplay.window->setAttribute(Qt::WA_DeleteOnClose, false);
+            connect(
+                subDisplay.window,
                 &DbusViewerSubWindow::viewerClosed,
                 this,
                 [this, vmName, consoleId, window = QPointer<DbusViewerSubWindow>(subDisplay.window)] {
                     auto *rt = m_runtimeManager->runtime(vmName);
-                    if (rt && rt->viewer && rt->viewer->subDisplays.contains(consoleId)
-                        && rt->viewer->subDisplays[consoleId].window == window)
+                    if (rt && rt->viewer && rt->viewer->subDisplays.contains(consoleId) && rt->viewer->subDisplays[consoleId].window == window)
                         closeDbusSubDisplay(vmName, consoleId);
                 },
                 Qt::QueuedConnection);
-        connect(listener, &QemuDisplayListener::connectionLost, this, [this, vmName, consoleId, listener = QPointer<QemuDisplayListener>(listener)] {
-            QTimer::singleShot(0, this, [this, vmName, consoleId, listener] {
-                auto *rt = m_runtimeManager->runtime(vmName);
-                if (rt && rt->viewer && rt->viewer->subDisplays.contains(consoleId)
-                    && rt->viewer->subDisplays[consoleId].listener == listener)
-                    closeDbusSubDisplay(vmName, consoleId);
+            connect(listener, &QemuDisplayListener::connectionLost, this, [this, vmName, consoleId, listener = QPointer<QemuDisplayListener>(listener)] {
+                QTimer::singleShot(0, this, [this, vmName, consoleId, listener] {
+                    auto *rt = m_runtimeManager->runtime(vmName);
+                    if (rt && rt->viewer && rt->viewer->subDisplays.contains(consoleId) && rt->viewer->subDisplays[consoleId].listener == listener)
+                        closeDbusSubDisplay(vmName, consoleId);
+                });
             });
+            plugDbusSubDisplays(vmName);
+            connect(subDisplay.window, &DbusViewerSubWindow::mainWindowRequested, this, [this, vmName] {
+                auto *rt = m_runtimeManager->runtime(vmName);
+                if (!rt || !rt->viewer || !rt->viewer->window)
+                    return;
+                QWidget *mainViewer = rt->viewer->window;
+                if (mainViewer->isMinimized())
+                    mainViewer->showNormal();
+                mainViewer->raise();
+                mainViewer->activateWindow();
+            });
+            subDisplay.window->restorePlacement(loadSubDisplayPlacement(vmName, head));
+            subDisplay.window->setStatusBarShown(subDisplayStatusBarShown());
+            connect(subDisplay.window, &DbusViewerSubWindow::statusBarShownChanged, this, &MainWindow::setSubDisplayStatusBarShown);
+            subDisplay.window->show();
+            updateDbusDisplayMenu(vmName);
         });
-        plugDbusSubDisplays(vmName);
-        connect(subDisplay.window, &DbusViewerSubWindow::mainWindowRequested, this, [this, vmName] {
-            auto *rt = m_runtimeManager->runtime(vmName);
-            if (!rt || !rt->viewer || !rt->viewer->window)
-                return;
-            QWidget *mainViewer = rt->viewer->window;
-            if (mainViewer->isMinimized())
-                mainViewer->showNormal();
-            mainViewer->raise();
-            mainViewer->activateWindow();
-        });
-        subDisplay.window->restorePlacement(loadSubDisplayPlacement(vmName, head));
-        subDisplay.window->setStatusBarShown(subDisplayStatusBarShown());
-        connect(subDisplay.window, &DbusViewerSubWindow::statusBarShownChanged, this, &MainWindow::setSubDisplayStatusBarShown);
-        subDisplay.window->show();
-        updateDbusDisplayMenu(vmName);
-    });
 }
 
 // The size becomes the preferred mode in the EDID virtio-gpu reports for the
@@ -1990,13 +1978,12 @@ void MainWindow::updateDetails()
     const bool virgl = currentConfig.gpuType() == VMSpecs::GpuType::Virtio && currentConfig.gpu3dAcceleration();
     if (virgl && currentConfig.gpuHostBlobs() && QemuCommandBuilder::hostBlobsAvailable()) {
         const int mb = currentConfig.gpuHostmemMb();
-        displayFactList << (mb < 1024 ? i18nc("@info video memory in MiB", "%1 MiB video memory", mb)
-                                      : i18nc("@info video memory in GiB", "%1 GiB video memory", mb / 1024));
+        displayFactList << (mb < 1024 ? i18nc("@info video memory in MiB", "%1 MiB VRAM", mb) : i18nc("@info video memory in GiB", "%1 GiB VRAM", mb / 1024));
     } else if (virgl) {
-        displayFactList << i18nc("@info video memory the host GPU provides as needed", "Automatic video memory");
+        displayFactList << i18nc("@info video memory the host GPU provides as needed", "Automatic VRAM");
     } else {
         const int mb = VMConfig::normalizedVgaMemMb(currentConfig.gpuType(), currentConfig.gpuMemMb());
-        displayFactList << i18nc("@info video memory in MiB", "%1 MiB video memory", mb);
+        displayFactList << i18nc("@info video memory in MiB", "%1 MiB VRAM", mb);
     }
     displayFactList << i18ncp("@info number of monitors", "%1 monitor", "%1 monitors", currentConfig.monitorCount());
     const QString displayFacts = displayFactList.join(u" · "_s);
@@ -2583,12 +2570,11 @@ void MainWindow::runEncryptionJob(EncryptDiskJob *job, EditVmDialog *dialog, QWi
     veModel->setVmState(vmName, encrypt ? VmEntry::State::Encrypting : VmEntry::State::Decrypting);
 
     // Modal over the dialog that asked, so nothing else touches the VM meanwhile.
-    auto *progress =
-        new QProgressDialog(encrypt ? i18n("Encrypting the system disk of '%1'…", vmName) : i18n("Decrypting the system disk of '%1'…", vmName),
-                            i18n("Cancel"),
-                            0,
-                            1000,
-                            target);
+    auto *progress = new QProgressDialog(encrypt ? i18n("Encrypting the system disk of '%1'…", vmName) : i18n("Decrypting the system disk of '%1'…", vmName),
+                                         i18n("Cancel"),
+                                         0,
+                                         1000,
+                                         target);
     progress->setWindowModality(Qt::WindowModal);
     progress->setMinimumDuration(0);
     progress->setAttribute(Qt::WA_DeleteOnClose);
@@ -3713,9 +3699,7 @@ void MainWindow::saveScreenshot()
     }
 
     if (!vmSupportsScreendump()) {
-        KMessageBox::information(this,
-                                 i18n("Open the D-Bus viewer to capture a 3D-accelerated VM."),
-                                 i18n("Screenshot Not Available"));
+        KMessageBox::information(this, i18n("Open the D-Bus viewer to capture a 3D-accelerated VM."), i18n("Screenshot Not Available"));
         return;
     }
 
@@ -5674,8 +5658,8 @@ void MainWindow::startClone(const QString &srcName,
             saveVmConfig(dstPath, cloneConfig);
             loadVmList();
             selectVmByName(cloneName);
-            const QString message = cloneJob->isLinked() ? i18n("Linked clone '%2' of VM '%1' created.", srcName, cloneName)
-                                                         : i18n("VM '%1' cloned as '%2'.", srcName, cloneName);
+            const QString message =
+                cloneJob->isLinked() ? i18n("Linked clone '%2' of VM '%1' created.", srcName, cloneName) : i18n("VM '%1' cloned as '%2'.", srcName, cloneName);
             statusBar()->showMessage(message);
             notifyEvent(u"taskFinished"_s, cloneName, message);
         }
