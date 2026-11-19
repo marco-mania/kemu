@@ -62,6 +62,27 @@ public:
         return m_virtioGpuBlob;
     }
 
+    // The render server of virglrenderer, or an empty string. Vulkan (Venus,
+    // venus=on) runs in this separate program, which virglrenderer starts for
+    // every such VM; without it the guest gets no Vulkan device. venus=on
+    // needs the same QEMU as host blobs, see hasVirtioGpuBlob().
+    [[nodiscard]] QString virglRenderServer() const
+    {
+        return m_virglRenderServer;
+    }
+
+    // virglrenderer starts the render server from this variable if it is set
+    // (QEMU inherits it from KEMU), otherwise from the path it was built with.
+    static constexpr const char *RenderServerEnvironment = "RENDER_SERVER_EXEC_PATH";
+
+    // Where virglrenderer would start its render server from, for the QEMU at
+    // qemuPath. The built-in path is <prefix>/libexec/virgl_render_server, or
+    // <prefix>/lib/virgl_render_server on Arch. The library does not tell its
+    // prefix, so this looks below the prefix of QEMU first, then below
+    // systemPrefixes. A set RenderServerEnvironment is the only candidate, as
+    // for virglrenderer. Returns the first program found, or an empty string.
+    [[nodiscard]] static QString findVirglRenderServer(const QString &qemuPath, const QStringList &systemPrefixes);
+
     // Whether the host kernel can map the GPU memory of host blobs into a KVM
     // guest. QEMU documents Linux 6.13 as the minimum; before it, KVM could not
     // map the memory of every GPU driver.
@@ -105,5 +126,6 @@ private:
     bool m_seccompSandbox = false;
     bool m_monitorObject = false;
     bool m_virtioGpuBlob = false;
+    QString m_virglRenderServer;
     bool m_probeSucceeded = false;
 };

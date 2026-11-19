@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonObject>
 #include <QProcess>
 #include <QProcessEnvironment>
@@ -221,6 +223,54 @@ private Q_SLOTS:
         } else {
             QVERIFY(properties.isEmpty());
         }
+    }
+
+    void virglRenderServer()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const auto install = [&root](const QString &relative, bool program) {
+            const QString path = root.filePath(relative);
+            QDir().mkpath(QFileInfo(path).absolutePath());
+            QFile file(path);
+            if (!file.open(QIODevice::WriteOnly))
+                return QString();
+            file.setPermissions(program ? QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner : QFile::ReadOwner | QFile::WriteOwner);
+            return path;
+        };
+        const char *variable = QemuCapabilities::RenderServerEnvironment;
+        qunsetenv(variable);
+        const QString qemu = install(u"opt/qemu/bin/qemu-system-x86_64"_s, true);
+        const QStringList system{root.filePath(u"usr"_s)};
+
+        QCOMPARE(QemuCapabilities::findVirglRenderServer(qemu, system), QString());
+
+        // Only programs count.
+        install(u"opt/qemu/libexec/virgl_render_server"_s, false);
+        QCOMPARE(QemuCapabilities::findVirglRenderServer(qemu, system), QString());
+
+        // Arch layout below a system prefix.
+        const QString arch = install(u"usr/lib/virgl_render_server"_s, true);
+        QCOMPARE(QemuCapabilities::findVirglRenderServer(qemu, system), arch);
+
+        // Next to QEMU comes first.
+        const QString own = install(u"opt/qemu/libexec/virgl_render_server"_s, true);
+        QCOMPARE(QemuCapabilities::findVirglRenderServer(qemu, system), own);
+
+        // A QEMU reached through a symlink: the prefix of its target counts too.
+        QDir().mkpath(root.filePath(u"sw/bin"_s));
+        const QString link = root.filePath(u"sw/bin/qemu-system-x86_64"_s);
+        QVERIFY(QFile::link(qemu, link));
+        QCOMPARE(QemuCapabilities::findVirglRenderServer(link, {}), own);
+        const QString linked = install(u"sw/libexec/virgl_render_server"_s, true);
+        QCOMPARE(QemuCapabilities::findVirglRenderServer(link, {}), linked);
+
+        // The environment replaces the search, as in virglrenderer.
+        qputenv(variable, arch.toLocal8Bit());
+        QCOMPARE(QemuCapabilities::findVirglRenderServer(qemu, system), arch);
+        qputenv(variable, root.filePath(u"missing"_s).toLocal8Bit());
+        QCOMPARE(QemuCapabilities::findVirglRenderServer(qemu, system), QString());
+        qunsetenv(variable);
     }
 
     void virtioGpuDevice_data()

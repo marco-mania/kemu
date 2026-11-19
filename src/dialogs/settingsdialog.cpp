@@ -448,8 +448,9 @@ QWidget *SettingsDialog::createCapabilitiesTab()
     auto *layout = new QVBoxLayout(page);
 
     auto *headerRow = new QHBoxLayout;
-    auto *intro = new QLabel(i18n("Shows which of KEMU's features the QEMU in use provides. "
-                                  "The VM settings gray out what is missing."));
+    auto *intro =
+        new QLabel(i18n("Shows which of KEMU's features the QEMU in use provides. "
+                        "The VM settings gray out what is missing."));
     intro->setWordWrap(true);
     headerRow->addWidget(intro, 1);
     auto *checkButton = new QPushButton(QIcon::fromTheme(u"view-refresh"_s), i18n("Check Again"));
@@ -528,6 +529,16 @@ void SettingsDialog::listCapabilities()
     const QString blobMissing = !qemu.hasVirtioGpuBlob()
         ? i18n("This QEMU cannot combine host blobs with 3D acceleration. That takes QEMU 9.2 or later, built with virglrenderer 1.0 or later.")
         : i18n("The host runs Linux %1. QEMU needs Linux 6.13 or later to map GPU memory into a VM.", QSysInfo::kernelVersion());
+    // Venus builds on host blobs and runs in virglrenderer's render server.
+    const bool blobs = qemu.hasVirtioGpuBlob() && blobKernel;
+    const bool renderServer = !qemu.virglRenderServer().isEmpty();
+    const QString renderServerOverride = qEnvironmentVariable(QemuCapabilities::RenderServerEnvironment);
+    const QString venusMissing = !blobs ? i18n("Requires direct GPU memory access, which is not available here.")
+        : !renderServerOverride.isEmpty()
+        ? i18n("%1 points to %2, which is not a program.", QString::fromLatin1(QemuCapabilities::RenderServerEnvironment), renderServerOverride)
+        : i18n(
+              "virglrenderer's render server (virgl_render_server) was not found. It comes with virglrenderer built with Venus; "
+              "Debian and Ubuntu ship it in the virgl-server package.");
 
     QList<Section> sections = {
         {i18n("Display"),
@@ -556,8 +567,13 @@ void SettingsDialog::listCapabilities()
           {i18n("Direct GPU memory access"),
            u"-device virtio-vga-gl,blob=on,hostmem=…"_s,
            i18n("Host blobs: with 3D acceleration, Linux guests map GPU memory directly, for OpenGL 4.6."),
-           fromQemu(qemu.hasVirtioGpuBlob() && blobKernel),
+           fromQemu(blobs),
            blobMissing},
+          {i18n("Vulkan (Venus)"),
+           u"-device virtio-vga-gl,blob=on,hostmem=…,venus=on"_s,
+           i18n("Vulkan for Linux guests with 3D acceleration."),
+           fromQemu(blobs && renderServer),
+           venusMissing},
           {i18n("QXL graphics"),
            u"-device qxl-vga"_s,
            i18n("Recommended for Windows guests with the SPICE guest tools."),
@@ -670,8 +686,9 @@ void SettingsDialog::setupDisplayPage()
     if (resolutionCombo->currentIndex() < 0)
         resolutionCombo->setCurrentIndex(0);
 
-    resolutionCombo->setToolTip(i18n("The resolution every VM starts with. Once the guest's graphics driver runs, the viewer window "
-                                     "sets the resolution."));
+    resolutionCombo->setToolTip(
+        i18n("The resolution every VM starts with. Once the guest's graphics driver runs, the viewer window "
+             "sets the resolution."));
     defaultsLayout->addRow(i18n("Initial resolution:"), resolutionCombo);
     layout->addWidget(defaultsGroup);
 
@@ -1325,7 +1342,9 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
                        const QHostAddress address(other.gateway);
                        return address.protocol() == QAbstractSocket::IPv4Protocol && address.toIPv4Address() == gatewayIp;
                    })) {
-            reportError(i18n("Gateway %1 is already used by another virtual network.", gateway.toString()), feedback->gateway || feedback->gatewayEdited, gatewayEdit);
+            reportError(i18n("Gateway %1 is already used by another virtual network.", gateway.toString()),
+                        feedback->gateway || feedback->gatewayEdited,
+                        gatewayEdit);
         }
 
         if (dhcpCheck->isChecked() && usableGateway) {
@@ -1340,7 +1359,9 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
                     reportError(i18n("The automatic DHCP range includes the gateway. Enter a range manually."), feedback->dhcp, dhcpStartEdit);
                 }
             } else if (startText.isEmpty() || endText.isEmpty()) {
-                reportError(i18n("Enter both DHCP range addresses or leave both empty for an automatic range."), feedback->dhcp, startText.isEmpty() ? dhcpStartEdit : dhcpEndEdit);
+                reportError(i18n("Enter both DHCP range addresses or leave both empty for an automatic range."),
+                            feedback->dhcp,
+                            startText.isEmpty() ? dhcpStartEdit : dhcpEndEdit);
             } else {
                 const QHostAddress startAddress(startText);
                 const QHostAddress endAddress(endText);
@@ -1351,14 +1372,18 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
                     const quint32 startIp = startAddress.toIPv4Address();
                     const quint32 endIp = endAddress.toIPv4Address();
                     if (startIp > endIp) {
-                        reportError(i18n("The DHCP range start must not be after its end."), feedback->dhcp || feedback->dhcpEdited, dhcpStartEdit->hasFocus() ? dhcpStartEdit : dhcpEndEdit);
+                        reportError(i18n("The DHCP range start must not be after its end."),
+                                    feedback->dhcp || feedback->dhcpEdited,
+                                    dhcpStartEdit->hasFocus() ? dhcpStartEdit : dhcpEndEdit);
                     } else if (startIp <= networkIp || endIp >= broadcastIp) {
                         reportError(
                             i18n("The DHCP range must be inside the gateway's subnet (%1/%2).", QHostAddress(networkIp).toString(), prefixSpin->value()),
                             feedback->dhcp || feedback->dhcpEdited,
                             dhcpStartEdit->hasFocus() ? dhcpStartEdit : dhcpEndEdit);
                     } else if (startIp <= gatewayIp && gatewayIp <= endIp) {
-                        reportError(i18n("The DHCP range must not include the gateway address."), feedback->dhcp || feedback->dhcpEdited, dhcpStartEdit->hasFocus() ? dhcpStartEdit : dhcpEndEdit);
+                        reportError(i18n("The DHCP range must not include the gateway address."),
+                                    feedback->dhcp || feedback->dhcpEdited,
+                                    dhcpStartEdit->hasFocus() ? dhcpStartEdit : dhcpEndEdit);
                     }
                 }
             }

@@ -12,6 +12,7 @@
 
 #include "kemu_debug.h"
 
+#include <QDir>
 #include <QSysInfo>
 #include <QVersionNumber>
 
@@ -32,6 +33,7 @@ void QemuCapabilities::refresh()
     m_seccompSandbox = false;
     m_monitorObject = false;
     m_virtioGpuBlob = false;
+    m_virglRenderServer.clear();
     m_probeSucceeded = false;
 
     const QString qemu = ExternalTools::instance().path(ExternalTools::QemuSystem);
@@ -57,6 +59,52 @@ void QemuCapabilities::refresh()
     if (m_virtioGpuBlob && !hostKernelSupportsGpuBlobs())
         qCInfo(KEMU) << "QEMU supports virtio-gpu blob resources, but kernel" << QSysInfo::kernelVersion()
                      << "is older than 6.13; 3D acceleration runs without them";
+
+    m_virglRenderServer = findVirglRenderServer(qemu, {u"/usr"_s, u"/usr/local"_s});
+    if (m_virtioGpuBlob) {
+        if (m_virglRenderServer.isEmpty())
+            qCInfo(KEMU) << "No virgl_render_server found; VMs get no Vulkan (Venus)";
+        else
+            qCDebug(KEMU) << "Venus render server:" << m_virglRenderServer;
+    }
+}
+
+QString QemuCapabilities::findVirglRenderServer(const QString &qemuPath, const QStringList &systemPrefixes)
+{
+    const auto isProgram = [](const QString &path) {
+        const QFileInfo info(path);
+        return info.isFile() && info.isExecutable();
+    };
+
+    // virglrenderer does not fall back to its built-in path when the variable
+    // is set, so neither does this.
+    const QString override = qEnvironmentVariable(RenderServerEnvironment);
+    if (!override.isEmpty())
+        return isProgram(override) ? override : QString();
+
+    // The path as configured and its target: a QEMU reached through a symlink
+    // (NixOS: /run/current-system/sw/bin) has a prefix of its own on each end.
+    QStringList prefixes;
+    const QFileInfo qemu(qemuPath);
+    for (const QString &binary : {qemu.absoluteFilePath(), qemu.canonicalFilePath()}) {
+        if (binary.isEmpty())
+            continue;
+        const QFileInfo binDir(QFileInfo(binary).absolutePath());
+        if (binDir.fileName() == u"bin"_s)
+            prefixes << binDir.absolutePath();
+    }
+    prefixes << systemPrefixes;
+    prefixes.removeDuplicates();
+
+    // meson installs to libexec/ by default; Arch sets libexecdir to lib/.
+    for (const QString &prefix : std::as_const(prefixes)) {
+        for (const QString &relative : {u"libexec/virgl_render_server"_s, u"lib/virgl_render_server"_s}) {
+            const QString candidate = QDir(prefix).filePath(relative);
+            if (isProgram(candidate))
+                return candidate;
+        }
+    }
+    return {};
 }
 
 bool QemuCapabilities::hostKernelSupportsGpuBlobs()
