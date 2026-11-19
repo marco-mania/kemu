@@ -127,6 +127,21 @@ sudo dnf install gcc-c++ cmake extra-cmake-modules \
 sudo dnf install edk2-ovmf swtpm swtpm-tools virtiofsd   # optional
 ```
 
+#### openSUSE (Leap 16+)
+
+```sh
+sudo zypper in gcc-c++ cmake extra-cmake-modules \
+  qt6-base-devel qt6-base-private-devel qt6-wayland qt6-svg-devel qt6-multimedia-devel \
+  kf6-kcoreaddons-devel kf6-kconfig-devel kf6-kconfigwidgets-devel kf6-kcrash-devel \
+  kf6-kdbusaddons-devel kf6-ki18n-devel kf6-kiconthemes-devel kf6-kjobwidgets-devel \
+  kf6-kio-devel kf6-knotifications-devel kf6-knotifyconfig-devel \
+  kf6-kstatusnotifieritem-devel kf6-ktexttemplate-devel kf6-kwallet-devel \
+  kf6-kwidgetsaddons-devel kf6-kwindowsystem-devel kf6-kxmlgui-devel \
+  libarchive-devel libslirp-devel libisofs-devel systemd-devel Mesa-libEGL-devel \
+  wayland-devel wayland-protocols-devel qemu-x86 qemu-img qemu-ui-dbus qemu-audio-dbus podman
+sudo zypper in qemu-ovmf-x86_64 swtpm virtiofsd   # optional
+```
+
 #### Build, install, uninstall
 
 The source tree contains KEMU and `kemu-agent` in `agent/`, its agent for Linux guests (clipboard sharing and monitor layout; see [docs/display.md](docs/display.md)). A normal build produces both: KEMU, and the agent as a *portable bundle* for guests of the host's architecture, which is installed to `share/kemu/agent/<arch>/` so that KEMU can offer it to guests.
@@ -216,7 +231,7 @@ sudo cmake --build build --target uninstall-agent-bundle    # removes them again
 
 A bundle can also be installed by hand in a guest: unpack it and run `sudo sh install.sh`, which installs to `/opt/kemu-agent` and `/etc` (`/opt/kemu-agent/uninstall.sh` removes it). See [agent/README.md](agent/README.md#portable-bundle) for details.
 
-##### kemu-agent on its own, in a guest
+##### kemu-agent on its own (usually in a guest)
 
 To build the agent from source inside a guest instead, without KEMU or KDE libraries—only Qt ≥ 6.5 (Core, Gui, DBus), libwayland-client ≥ 1.20, Extra CMake Modules, `wayland-scanner`, and wayland-protocols:
 
