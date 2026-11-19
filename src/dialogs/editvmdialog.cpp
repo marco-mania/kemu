@@ -11,6 +11,7 @@
 #include "dialogs/settingsdialog.h"
 #include "utils/diskkeystore.h"
 #include "utils/externaltools.h"
+#include "utils/qemucapabilities.h"
 #include "utils/qemucommandbuilder.h"
 #include "utils/qemuimgprocess.h"
 #include "utils/sandboxcapabilities.h"
@@ -134,6 +135,11 @@ public:
 QString hostBlobsToolTip()
 {
     return i18n("Lets the guest use the host's GPU memory directly: faster 3D, and OpenGL 4.6 in Linux guests.");
+}
+
+QString vulkanToolTip()
+{
+    return i18n("Lets the guest use Vulkan, rendered on the host GPU.");
 }
 
 QString hostBlobsMissingText()
@@ -512,6 +518,10 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     hostBlobsCheck = new QCheckBox(i18n("Direct GPU memory access"));
     hostBlobsCheck->setToolTip(hostBlobsToolTip());
     accelOptionsLayout->addWidget(hostBlobsCheck);
+    // Needs direct GPU memory access as well, but is no further step down.
+    vulkanCheck = new QCheckBox(i18n("Vulkan"));
+    vulkanCheck->setToolTip(vulkanToolTip());
+    accelOptionsLayout->addWidget(vulkanCheck);
     accelFieldLayout->addLayout(accelOptionsLayout);
     graphicsLayout->addRow(i18n("Acceleration:"), accelField);
 
@@ -946,6 +956,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     connect(gpuCombo, &QComboBox::currentIndexChanged, this, &EditVmDialog::onGpuDisplayChanged);
     connect(accel3dCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
     connect(hostBlobsCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
+    connect(vulkanCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
     connect(monitorCountSpin, &QSpinBox::valueChanged, this, &EditVmDialog::onGpuDisplayChanged);
     // The hints depend on the OS family set on the General tab.
     connect(osFamilyCombo, &QComboBox::currentIndexChanged, this, &EditVmDialog::onGpuDisplayChanged);
@@ -1144,6 +1155,7 @@ void EditVmDialog::setConfig(const VMConfig &config)
     monitorCountSpin->setValue(config.monitorCount());
     accel3dCheck->setChecked(config.gpu3dAcceleration());
     hostBlobsCheck->setChecked(config.gpuHostBlobs());
+    vulkanCheck->setChecked(config.gpuVulkan());
     setCombo(audioCombo, config.audioDevice());
     m_sb16Config = config.sb16Config();
     setCombo(netCombo, config.networkCard());
@@ -1361,6 +1373,14 @@ void EditVmDialog::onGpuDisplayChanged()
         hostBlobsCheck->setChecked(false);
     const bool blobs = hostBlobsCheck->isChecked();
 
+    // The rules of QemuCommandBuilder::venusAvailable().
+    const bool venus = QemuCommandBuilder::venusAvailable();
+    vulkanCheck->setEnabled(blobs && venus);
+    vulkanCheck->setToolTip(!blobs ? i18n("Requires direct GPU memory access.") : venus ? vulkanToolTip() : hostBlobsMissingText());
+    if (!blobs || !venus)
+        vulkanCheck->setChecked(false);
+    const bool vulkan = vulkanCheck->isChecked();
+
     showMemorySize(!with3d ? MemoryMode::Vram : blobs ? MemoryMode::Hostmem : MemoryMode::HostGpu, gpu);
 
     // A warning wins over information when both apply.
@@ -1372,6 +1392,9 @@ void EditVmDialog::onGpuDisplayChanged()
     } else if (blobs && osFamily != VMSpecs::OsFamily::Linux) {
         hints << i18n("Direct GPU memory access only helps Linux guests so far.");
     }
+    // QemuCommandBuilder::sandboxArgs() leaves it out for Venus.
+    if (vulkan && SettingsDialog::qemuSeccompSandbox() && QemuCapabilities::instance().hasSeccompSandbox())
+        hints << i18n("Vulkan needs a helper program on the host, so this VM runs without QEMU's seccomp sandbox.");
     updateInlineMessage(gpuMessage, hints.join(u' '), type);
 }
 
@@ -1619,6 +1642,7 @@ VMConfig EditVmDialog::getResult() const
     c.setMonitorCount(monitorCountSpin->value());
     c.setGpu3dAcceleration(accel3dCheck->isChecked());
     c.setGpuHostBlobs(hostBlobsCheck->isChecked());
+    c.setGpuVulkan(vulkanCheck->isChecked());
     c.setGpuMemMb(VMConfig::normalizedVgaMemMb(c.gpuType(), m_vramMb));
     c.setGpuHostmemMb(m_hostmemMb);
     c.setAudioDevice(static_cast<VMSpecs::AudioDevice>(audioCombo->currentData().toInt()));
@@ -2517,6 +2541,7 @@ void EditVmDialog::resetToFactoryDefaults()
 
     accel3dCheck->setChecked(GlobalDefaults.gpu3dAcceleration);
     hostBlobsCheck->setChecked(GlobalDefaults.gpuHostBlobs);
+    vulkanCheck->setChecked(GlobalDefaults.gpuVulkan);
     onGpuDisplayChanged();
 
     uefiCheck->setChecked(GlobalDefaults.useUefi);

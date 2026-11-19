@@ -7,7 +7,7 @@ Because sandboxed applications cannot run host executables directly, the Flatpak
 | Permission                                               | Purpose                                           |
 | -------------------------------------------------------- | ------------------------------------------------- |
 | `--socket=wayland`, `--share=ipc`                        | Native Wayland viewer, SDL window of `qemu.sh`    |
-| `--device=dri`                                           | 3D acceleration (`virglrenderer`)                 |
+| `--device=dri`                                           | 3D acceleration and Vulkan (`virglrenderer`)      |
 | `--device=kvm`                                           | Hardware virtualization                           |
 | `--share=network`                                        | User-mode networking and NAT for virtual networks |
 | `--socket=pulseaudio`, `--filesystem=xdg-run/pipewire-0` | Guest audio                                       |

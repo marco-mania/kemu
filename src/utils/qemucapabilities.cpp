@@ -13,6 +13,9 @@
 #include "kemu_debug.h"
 
 #include <QDir>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSysInfo>
 #include <QVersionNumber>
 
@@ -34,6 +37,7 @@ void QemuCapabilities::refresh()
     m_monitorObject = false;
     m_virtioGpuBlob = false;
     m_virglRenderServer.clear();
+    m_kvmHonorGuestPat = false;
     m_probeSucceeded = false;
 
     const QString qemu = ExternalTools::instance().path(ExternalTools::QemuSystem);
@@ -109,10 +113,20 @@ QString QemuCapabilities::findVirglRenderServer(const QString &qemuPath, const Q
 
 bool QemuCapabilities::hostKernelSupportsGpuBlobs()
 {
+    return hostKernelAtLeast(kGpuBlobKernelMajor, kGpuBlobKernelMinor);
+}
+
+bool QemuCapabilities::hostKernelHonorsGuestPat()
+{
+    return hostKernelAtLeast(kGuestPatKernelMajor, kGuestPatKernelMinor);
+}
+
+bool QemuCapabilities::hostKernelAtLeast(int major, int minor)
+{
     if (QSysInfo::kernelType() != u"linux"_s)
         return false;
     // "6.18.44-fc-v595": parsing stops at the first non-numeric suffix.
-    return QVersionNumber::fromString(QSysInfo::kernelVersion()) >= QVersionNumber(kGpuBlobKernelMajor, kGpuBlobKernelMinor);
+    return QVersionNumber::fromString(QSysInfo::kernelVersion()) >= QVersionNumber(major, minor);
 }
 
 QSet<QString> QemuCapabilities::parsePropertyHelp(const QString &output)
@@ -133,6 +147,24 @@ QSet<QString> QemuCapabilities::parsePropertyHelp(const QString &output)
         });
         if (plainName)
             result.insert(name.toString());
+    }
+    return result;
+}
+
+QSet<QString> QemuCapabilities::parseQomPropertyList(const QString &output)
+{
+    // One reply per line: the greeting, {"return": {}} for the commands
+    // without a result, and {"return": [{"name": "...", "type": "..."}, ...]}.
+    QSet<QString> result;
+    const QStringList lines = output.split(u'\n', Qt::SkipEmptyParts);
+    for (const QString &line : lines) {
+        const QJsonValue reply = QJsonDocument::fromJson(line.toUtf8()).object().value(u"return"_s);
+        const QJsonArray properties = reply.toArray();
+        for (const QJsonValue &property : properties) {
+            const QString name = property.toObject().value(u"name"_s).toString();
+            if (!name.isEmpty())
+                result.insert(name);
+        }
     }
     return result;
 }
@@ -177,6 +209,7 @@ bool QemuCapabilities::runProbes(const QString &qemuPath, int timeoutMs)
     KProcess deviceProbe;
     KProcess chardevProbe;
     KProcess gpuGlProbe;
+    KProcess kvmAccelProbe;
     startProbe(displayProbe, qemuPath, {u"-display"_s, u"help"_s});
     startProbe(audiodevProbe, qemuPath, {u"-audiodev"_s, u"help"_s});
     startProbe(deviceProbe, qemuPath, {u"-device"_s, u"help"_s});
@@ -186,6 +219,15 @@ bool QemuCapabilities::runProbes(const QString &qemuPath, int timeoutMs)
     // qemu_egl_display"). The listing is empty then, which is right: those
     // versions cannot use blob resources with virgl anyway.
     startProbe(gpuGlProbe, qemuPath, {u"-device"_s, u"virtio-vga-gl,help"_s});
+    // Accelerators have no "help" listing ("Property 'kvm-accel.help' not
+    // found"), so ask over QMP. The machine "none" has no devices or CPUs;
+    // the class needs no instance to list its properties.
+    startProbe(kvmAccelProbe, qemuPath, {u"-machine"_s, u"none"_s, u"-nodefaults"_s, u"-display"_s, u"none"_s, u"-qmp"_s, u"stdio"_s});
+    kvmAccelProbe.write(R"({"execute": "qmp_capabilities"}
+{"execute": "qom-list-properties", "arguments": {"typename": "kvm-accel"}}
+{"execute": "quit"}
+)");
+    kvmAccelProbe.closeWriteChannel();
     // Options are parsed in order, so -sandbox is checked before -version
     // exits. A QEMU without seccomp support fails right there.
     startProbe(sandboxProbe, qemuPath, {u"-sandbox"_s, KEMUConst::QemuSandboxOptions, u"-version"_s});
@@ -203,6 +245,7 @@ bool QemuCapabilities::runProbes(const QString &qemuPath, int timeoutMs)
     m_devices = collectDeviceProbe(deviceProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
     m_chardevs = collectProbe(chardevProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
     m_virtioGpuBlob = allowsVirglBlob(parsePropertyHelp(collectOutput(gpuGlProbe, timeoutMs - static_cast<int>(elapsed.elapsed()))));
+    m_kvmHonorGuestPat = parseQomPropertyList(collectOutput(kvmAccelProbe, timeoutMs - static_cast<int>(elapsed.elapsed()))).contains(u"honor-guest-pat"_s);
 
     return !m_displays.isEmpty() && !m_audiodevs.isEmpty();
 }

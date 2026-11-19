@@ -137,10 +137,11 @@ public:
      * denies spawn, privilege changes and resource control, which some guest
      * and host features need. Also empty when the VM's extra arguments bring
      * their own -sandbox, as QEMU installs one filter per occurrence and a
-     * later "-sandbox off" could not lift ours. The caller checks
-     * QemuCapabilities first.
+     * later "-sandbox off" could not lift ours. And empty for a VM shown in
+     * the @p viewer that uses Vulkan (usesVenus()): virglrenderer starts a
+     * program of its own for it. The caller checks QemuCapabilities first.
      */
-    static QStringList sandboxArgs(const VMConfig &config, bool enabled);
+    static QStringList sandboxArgs(const VMConfig &config, bool enabled, bool viewer = true);
 
     /**
      * @brief The -device value of the VirtIO graphics adapter.
@@ -148,16 +149,37 @@ public:
      * @p gl selects virtio-vga-gl (virgl). @p blob adds host blobs with a
      * host memory window of VMConfig::gpuHostmemMb(); it only applies
      * together with @p gl. @p viewer: for the integrated viewer, which shows
-     * several heads, rather than an exported script's SDL window. As with
+     * several heads, rather than an exported script's SDL window. @p venus
+     * adds Vulkan; it only applies together with @p blob. As with
      * sandboxArgs(), the caller checks QemuCapabilities first.
      */
-    static QString virtioGpuDevice(const VMConfig &config, bool gl, bool blob, bool viewer = true);
+    static QString virtioGpuDevice(const VMConfig &config, bool gl, bool blob, bool viewer = true, bool venus = false);
 
     /**
      * @brief Whether host blobs can be used on this host: QEMU 9.2+ and a
      * host kernel 6.13+ (see QemuCapabilities).
      */
     static bool hostBlobsAvailable();
+
+    /**
+     * @brief Whether Vulkan (Venus) can be used on this host: host blobs and
+     * virglrenderer's render server (QemuCapabilities::virglRenderServer()).
+     */
+    static bool venusAvailable();
+
+    /**
+     * @brief Whether @p config gets host blobs (blob=on) when started for the
+     * integrated viewer: 3D and direct GPU memory access are on, and the host
+     * has what they need. Exported scripts never use them.
+     */
+    static bool usesHostBlobs(const VMConfig &config);
+
+    /**
+     * @brief Whether @p config gets Vulkan (venus=on) when started for the
+     * integrated viewer: 3D, host blobs and Vulkan are on, and the host has
+     * what they need. Exported scripts never use it.
+     */
+    static bool usesVenus(const VMConfig &config);
 
     /**
      * @brief Formats the QEMU argument list into a readable multi-line string.

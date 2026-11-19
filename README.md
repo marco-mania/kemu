@@ -390,7 +390,7 @@ In the viewer, *Machine → Save Screenshot…* captures the guest display at it
 
 ### QEMU sandbox
 
-*Settings → System → QEMU Sandbox* enables QEMU's seccomp filter (`-sandbox on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny`), restricting process spawning and privilege changes if a guest compromises QEMU. Features that spawn helper processes (`-netdev tap,script=…`, `smb=`) cannot be used with these restrictions, and a blocked system call terminates QEMU with `SIGSYS`. A `-sandbox` option in a VM's extra arguments always takes precedence.
+*Settings → System → QEMU Sandbox* enables QEMU's seccomp filter (`-sandbox on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny`), restricting process spawning and privilege changes if a guest compromises QEMU. Features that spawn helper processes (`-netdev tap,script=…`, `smb=`) cannot be used with these restrictions, and a blocked system call terminates QEMU with `SIGSYS`. A `-sandbox` option in a VM's extra arguments always takes precedence. VMs with Vulkan run without the filter, because virglrenderer starts its render server for them.
 
 ## Known limitations
 

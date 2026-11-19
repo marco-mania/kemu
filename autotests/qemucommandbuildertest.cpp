@@ -17,8 +17,8 @@
 #include "const.h"
 #include "utils/externaltools.h"
 #include "utils/qemucapabilities.h"
-#include "utils/tpmstate.h"
 #include "utils/qemucommandbuilder.h"
+#include "utils/tpmstate.h"
 #include "utils/utils.h"
 
 using namespace Qt::StringLiterals;
@@ -134,8 +134,8 @@ private Q_SLOTS:
 
     void readableArgsRoundTrip()
     {
-        const QStringList args = {u"-name"_s, u"guest=hello world"_s, u"-device"_s, u"foo;bar&baz|qux"_s,
-                                  u"-option"_s, u""_s, u"-value-starting-with-hyphen"_s, u"a'b\n$(id)"_s};
+        const QStringList args =
+            {u"-name"_s, u"guest=hello world"_s, u"-device"_s, u"foo;bar&baz|qux"_s, u"-option"_s, u""_s, u"-value-starting-with-hyphen"_s, u"a'b\n$(id)"_s};
 
         QProcess shell;
         shell.start(u"/bin/sh"_s, {u"-c"_s, u"printf '%s\\0' "_s + QemuCommandBuilder::argsToReadableString(args)});
@@ -180,7 +180,11 @@ private Q_SLOTS:
         config.setGpu3dAcceleration(false);
         config.setGpuMemMb(requested);
         const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s));
-        QVERIFY2(std::any_of(args.cbegin(), args.cend(), [&expected](const QString &arg) { return arg.startsWith(expected) || arg.endsWith(expected); }),
+        QVERIFY2(std::any_of(args.cbegin(),
+                             args.cend(),
+                             [&expected](const QString &arg) {
+                                 return arg.startsWith(expected) || arg.endsWith(expected);
+                             }),
                  qPrintable(args.join(u' ')));
     }
 
@@ -191,15 +195,17 @@ private Q_SLOTS:
 
         // Excerpt of QEMU 8.2: blob and hostmem are listed, yet virgl refuses
         // blob resources and the VM does not start.
-        const QString qemu82 = QStringList{
-            u"virtio-vga-gl options:"_s,
-            u"  big-endian-framebuffer=<bool>"_s,
-            u"  blob=<bool>            - on/off (default: false)"_s,
-            u"  hostmem=<size>         -  (default: 0)"_s,
-            u"  max_hostmem=<size>     -  (default: 268435456)"_s,
-            u"  stats=<bool>           - on/off (default: false)"_s,
-            u"  virtio-backend=<child<virtio-gpu-gl-device>>"_s,
-        }.join(u'\n');
+        const QString qemu82 =
+            QStringList{
+                u"virtio-vga-gl options:"_s,
+                u"  big-endian-framebuffer=<bool>"_s,
+                u"  blob=<bool>            - on/off (default: false)"_s,
+                u"  hostmem=<size>         -  (default: 0)"_s,
+                u"  max_hostmem=<size>     -  (default: 268435456)"_s,
+                u"  stats=<bool>           - on/off (default: false)"_s,
+                u"  virtio-backend=<child<virtio-gpu-gl-device>>"_s,
+            }
+                .join(u'\n');
         QTest::newRow("qemu-8.2") << qemu82 << false;
         QTest::newRow("qemu-9.2") << qemu82 + u"\n  venus=<bool>           - on/off (default: false)\n"_s << true;
         QTest::newRow("module-unloadable") << u"qemu-system-x86_64: -device virtio-vga-gl,help: failed to open module: "
@@ -277,6 +283,7 @@ private Q_SLOTS:
     {
         QTest::addColumn<bool>("gl");
         QTest::addColumn<bool>("blob");
+        QTest::addColumn<bool>("venus");
         QTest::addColumn<bool>("viewer");
         QTest::addColumn<int>("monitors");
         QTest::addColumn<QString>("expected");
@@ -284,18 +291,21 @@ private Q_SLOTS:
         const QSize size = KEMUConst::DefaultDisplaySize;
         const QString base = u"xres=%1,yres=%2,max_hostmem=64M"_s.arg(size.width()).arg(size.height());
         const QString blob = u",blob=on,hostmem=4096M"_s;
-        QTest::newRow("2d") << false << false << true << 1 << u"virtio-vga,"_s + base;
-        QTest::newRow("2d-blob-ignored") << false << true << true << 1 << u"virtio-vga,"_s + base;
-        QTest::newRow("3d") << true << false << true << 1 << u"virtio-vga-gl,"_s + base;
-        QTest::newRow("3d-blob") << true << true << true << 1 << u"virtio-vga-gl,"_s + base + blob;
-        QTest::newRow("3d-blob-multihead") << true << true << true << 2 << u"virtio-vga-gl,"_s + base + blob + u",max_outputs=2"_s;
-        QTest::newRow("script-single-head") << true << false << false << 2 << u"virtio-vga-gl,"_s + base;
+        QTest::newRow("2d") << false << false << false << true << 1 << u"virtio-vga,"_s + base;
+        QTest::newRow("2d-blob-ignored") << false << true << false << true << 1 << u"virtio-vga,"_s + base;
+        QTest::newRow("3d") << true << false << false << true << 1 << u"virtio-vga-gl,"_s + base;
+        QTest::newRow("3d-blob") << true << true << false << true << 1 << u"virtio-vga-gl,"_s + base + blob;
+        QTest::newRow("3d-blob-venus") << true << true << true << true << 1 << u"virtio-vga-gl,"_s + base + blob + u",venus=on"_s;
+        QTest::newRow("venus-needs-blob") << true << false << true << true << 1 << u"virtio-vga-gl,"_s + base;
+        QTest::newRow("3d-blob-multihead") << true << true << false << true << 2 << u"virtio-vga-gl,"_s + base + blob + u",max_outputs=2"_s;
+        QTest::newRow("script-single-head") << true << false << false << false << 2 << u"virtio-vga-gl,"_s + base;
     }
 
     void virtioGpuDevice()
     {
         QFETCH(bool, gl);
         QFETCH(bool, blob);
+        QFETCH(bool, venus);
         QFETCH(bool, viewer);
         QFETCH(int, monitors);
         QFETCH(QString, expected);
@@ -308,7 +318,7 @@ private Q_SLOTS:
         config.setMonitorCount(monitors);
         config.setGpuHostmemMb(4096);
 
-        QCOMPARE(QemuCommandBuilder::virtioGpuDevice(config, gl, blob, viewer), expected);
+        QCOMPARE(QemuCommandBuilder::virtioGpuDevice(config, gl, blob, viewer, venus), expected);
     }
 
     void gpuHostmemIsPowerOfTwo_data()
@@ -336,9 +346,12 @@ private Q_SLOTS:
         QJsonObject json = config.toJson();
         json[u"gpu_hostmem"_s] = requested;
         json[u"gpu_host_blobs"_s] = true;
+        json[u"gpu_vulkan"_s] = true;
         const VMConfig loaded = VMConfig::fromJson(json);
         QCOMPARE(loaded.gpuHostmemMb(), expected);
         QVERIFY(loaded.gpuHostBlobs());
+        QVERIFY(loaded.gpuVulkan());
+        QVERIFY(!VMConfig::fromJson(VMConfig().toJson()).gpuVulkan());
     }
 
     void hostBlobsNeedProbedCapabilities()
@@ -353,6 +366,7 @@ private Q_SLOTS:
         config.setGpu3dAcceleration(true);
         config.setGpuHostBlobs(true);
         config.setPreallocMemory(true);
+        config.setUseKvm(true);
 
         const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s));
         const QString joined = args.join(u' ');
@@ -361,6 +375,50 @@ private Q_SLOTS:
         QVERIFY(!joined.contains(u"hostmem=1024M"_s));
         QVERIFY(!joined.contains(u"memory-backend"_s));
         QVERIFY(args.contains(u"-mem-prealloc"_s));
+        // Nor the memory types for them, which would move the accelerator.
+        QVERIFY(!args.contains(u"-accel"_s));
+        QVERIFY(joined.contains(u",accel=kvm"_s));
+    }
+
+    void qomPropertyProbe()
+    {
+        // QEMU 11.0 over "-qmp stdio", shortened.
+        const QStringList qemu11{
+            uR"({"QMP": {"version": {"qemu": {"micro": 1, "minor": 0, "major": 11}}, "capabilities": ["oob"]}})"_s,
+            uR"({"return": {}})"_s,
+            uR"({"return": [{"name": "kernel-irqchip", "type": "OnOffSplit"}, {"name": "honor-guest-pat", "type": "OnOffAuto"}]})"_s,
+            uR"({"return": {}})"_s,
+            uR"({"timestamp": {"seconds": 1, "microseconds": 2}, "event": "SHUTDOWN", "data": {"guest": false, "reason": "host-qmp-quit"}})"_s,
+        };
+        QCOMPARE(QemuCapabilities::parseQomPropertyList(qemu11.join(u'\n')), (QSet<QString>{u"kernel-irqchip"_s, u"honor-guest-pat"_s}));
+
+        // A QEMU without KVM has no such class.
+        const QStringList noKvm{
+            uR"({"QMP": {"version": {"qemu": {"micro": 0, "minor": 2, "major": 8}}, "capabilities": ["oob"]}})"_s,
+            uR"({"return": {}})"_s,
+            uR"({"error": {"class": "DeviceNotFound", "desc": "Class 'kvm-accel' not found"}})"_s,
+        };
+        QVERIFY(QemuCapabilities::parseQomPropertyList(noKvm.join(u'\n')).isEmpty());
+        QVERIFY(QemuCapabilities::parseQomPropertyList(QString()).isEmpty());
+    }
+
+    void venusNeedsProbedCapabilities()
+    {
+        // Unprobed, nothing is known about Venus: no venus=on, and the VM
+        // keeps the sandbox, which Venus would have to give up.
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QDir vmDir(dir.path());
+        VMConfig config = testConfig(vmDir);
+        config.setGpuType(VMSpecs::GpuType::Virtio);
+        config.setGpu3dAcceleration(true);
+        config.setGpuHostBlobs(true);
+        config.setGpuVulkan(true);
+
+        QVERIFY(!QemuCommandBuilder::venusAvailable());
+        QVERIFY(!QemuCommandBuilder::usesVenus(config));
+        QVERIFY(!QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s)).join(u' ').contains(u"venus="_s));
+        QCOMPARE(QemuCommandBuilder::sandboxArgs(config, true), (QStringList{u"-sandbox"_s, KEMUConst::QemuSandboxOptions}));
     }
 
     void graphicsDevice_data()
@@ -480,7 +538,7 @@ private Q_SLOTS:
         const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s), context);
 
         const QString networkArg = virtualNetwork ? u"stream,id=%1,server=off,addr.type=fd,addr.str=51"_s.arg(KEMUConst::NetdevId)
-                                                   : u"stream,id=%1,server=off,addr.type=fd,addr.str=52"_s.arg(KEMUConst::NetdevId);
+                                                  : u"stream,id=%1,server=off,addr.type=fd,addr.str=52"_s.arg(KEMUConst::NetdevId);
         QVERIFY(args.contains(networkArg));
         QVERIFY(args.contains(u"socket,id=%1,fd=53"_s.arg(KEMUConst::QmpChardevId)));
         QVERIFY(args.contains(u"socket,id=%1,fd=54"_s.arg(KEMUConst::GuestAgentChardevId)));
@@ -651,7 +709,9 @@ private Q_SLOTS:
             "fi\n"
             "printf '%s\\0' \"$@\" > \"$KEMU_TEST_QEMU_ARGS\"\n"
             "if [ \"$KEMU_TEST_ENCRYPTED\" = 1 ]; then cat <&3 > \"$KEMU_TEST_QEMU_SECRET\"; fi\n";
-        const QByteArray tpmStub = "#!/bin/sh\nif [ \"$1\" = --version ]; then echo test-tool; exit 0; fi\nprintf '%s\\0' \"$@\" > \"$KEMU_TEST_TPM_ARGS\"\nif [ \"$KEMU_TEST_ENCRYPTED\" = 1 ]; then cat > \"$KEMU_TEST_TPM_SECRET\"; fi\n";
+        const QByteArray tpmStub =
+            "#!/bin/sh\nif [ \"$1\" = --version ]; then echo test-tool; exit 0; fi\nprintf '%s\\0' \"$@\" > \"$KEMU_TEST_TPM_ARGS\"\nif [ "
+            "\"$KEMU_TEST_ENCRYPTED\" = 1 ]; then cat > \"$KEMU_TEST_TPM_SECRET\"; fi\n";
         const QByteArray fsStub = "#!/bin/sh\nif [ \"$1\" = --version ]; then echo test-tool; exit 0; fi\nprintf '%s\\0' \"$@\" > \"$KEMU_TEST_FS_ARGS\"\n";
         QVERIFY(writeExecutable(dir.filePath(u"qemu-system-x86_64"_s), qemuStub));
         QVERIFY(writeExecutable(dir.filePath(u"swtpm"_s), tpmStub));
@@ -717,14 +777,13 @@ private Q_SLOTS:
         const QString tpmSocket = relativePaths ? QString(KEMUConst::SwtpmSocketFileName) : vmDir.filePath(KEMUConst::SwtpmSocketFileName);
         const QString tpmState = relativePaths ? u"."_s : vmDir.absolutePath();
         const QString fsSocket = relativePaths ? QString(KEMUConst::VirtiofsdSocketFileName) : vmDir.filePath(KEMUConst::VirtiofsdSocketFileName);
-        QStringList expectedTpm = {u"socket"_s, u"--ctrl"_s, u"type=unixio,path="_s + tpmSocket,
-                                   u"--terminate"_s, u"--tpmstate"_s, u"dir="_s + tpmState};
+        QStringList expectedTpm = {u"socket"_s, u"--ctrl"_s, u"type=unixio,path="_s + tpmSocket, u"--terminate"_s, u"--tpmstate"_s, u"dir="_s + tpmState};
         if (encrypted)
             expectedTpm << u"--key"_s << TpmState::keyOption(0);
         expectedTpm << u"--tpm2"_s;
         QCOMPARE(tpmFile.readAll(), encodedArgs(expectedTpm));
-        QCOMPARE(fsFile.readAll(), encodedArgs({u"--socket-path="_s + fsSocket,
-                                               u"--shared-dir="_s + config.sharedPath(), u"--cache=auto"_s, u"--sandbox=none"_s}));
+        QCOMPARE(fsFile.readAll(),
+                 encodedArgs({u"--socket-path="_s + fsSocket, u"--shared-dir="_s + config.sharedPath(), u"--cache=auto"_s, u"--sandbox=none"_s}));
         QVERIFY(!QFile::exists(dir.filePath(u"pwned"_s)));
         if (encrypted) {
             QFile qemuSecret(qemuSecretPath);

@@ -226,6 +226,7 @@ private:
     QSpinBox *gpuMemSpin = nullptr;
     QCheckBox *accel3dCheck = nullptr;
     QCheckBox *hostBlobsCheck = nullptr; // indented below accel3dCheck
+    QCheckBox *vulkanCheck = nullptr; // below hostBlobsCheck, same indent
     QLabel *vgaMemLabel = nullptr;
     QToolButton *gpuMemPresetButton = nullptr;
     KMessageWidget *gpuMessage = nullptr;

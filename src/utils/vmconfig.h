@@ -172,6 +172,7 @@ struct Defaults {
     int monitorCount = 1;
     bool gpu3dAcceleration = true;
     bool gpuHostBlobs = false;
+    bool gpuVulkan = false;
     int gpuHostmemMb = 1024;
     AudioDevice audioDevice = AudioDevice::Hda;
     DiskInterface diskInterface = DiskInterface::Virtio;
@@ -411,6 +412,11 @@ public:
     [[nodiscard]] bool gpuHostBlobs() const
     {
         return m_gpuHostBlobs;
+    }
+    // Vulkan for the guest on top of host blobs (Venus, venus=on).
+    [[nodiscard]] bool gpuVulkan() const
+    {
+        return m_gpuVulkan;
     }
     // Host memory window for host blobs (hostmem=), in MiB. Always a power of
     // two between KEMUConst::VirglHostmemMinMb and VirglHostmemMaxMb.
@@ -704,6 +710,10 @@ public:
     void setGpuHostBlobs(bool enabled)
     {
         m_gpuHostBlobs = enabled;
+    }
+    void setGpuVulkan(bool enabled)
+    {
+        m_gpuVulkan = enabled;
     }
     // Rounds up to the next power of two and clamps: QEMU asserts that the
     // window, a PCI BAR, is a power of two.
@@ -1035,6 +1045,7 @@ private:
     VMSpecs::GpuType m_gpuType = GlobalDefaults.gpuType;
     bool m_gpu3dAcceleration = GlobalDefaults.gpu3dAcceleration;
     bool m_gpuHostBlobs = GlobalDefaults.gpuHostBlobs;
+    bool m_gpuVulkan = GlobalDefaults.gpuVulkan;
     int m_gpuHostmemMb = GlobalDefaults.gpuHostmemMb;
     int m_gpuMemMb = GlobalDefaults.gpuMemMb;
     int m_monitorCount = GlobalDefaults.monitorCount;

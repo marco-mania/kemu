@@ -80,9 +80,20 @@ QStringList QemuCommandBuilder::buildArgs(const VMConfig &config,
 
     // --- Chipset ---
     const QString accel = config.useKvm() ? u"kvm"_s : u"tcg"_s;
+    // Host blobs map host GPU memory into the guest. On Intel CPUs, KVM
+    // forces write-back on it unless it honors the guest's memory types,
+    // and where the host maps that memory write-combined, the guest reads
+    // stale data: Vulkan hangs in fence waits. "auto" honors them where
+    // the host kernel can (Linux 6.16+) and changes nothing elsewhere; AMD
+    // CPUs always honor them. The option only exists on -accel, which
+    // cannot be combined with -machine accel=.
+    // Only for Vulkan, the case Mesa and QEMU ask for it: OpenGL alone ran
+    // without it, and Firefox's GPU compositor stuttered on video with it.
+    const bool honorGuestPat = viewer && config.useKvm() && usesVenus(config) && QemuCapabilities::instance().hasKvmHonorGuestPat();
+    const QString machineAccel = honorGuestPat ? QString() : u",accel=%1"_s.arg(accel);
 
     if (config.machineType() == VMSpecs::MachineType::Q35) {
-        QString machineTypeParam = u"type=q35,accel=%1,vmport=off"_s.arg(accel);
+        QString machineTypeParam = u"type=q35%1,vmport=off"_s.arg(machineAccel);
         machineTypeParam += config.useSecureBoot() ? u",smm=on"_s : u",smm=off"_s;
         if (config.osFamily() == VMSpecs::OsFamily::Windows)
             machineTypeParam += u",hpet=off"_s;
@@ -90,13 +101,15 @@ QStringList QemuCommandBuilder::buildArgs(const VMConfig &config,
             machineTypeParam += u",acpi=off"_s;
         args << u"-machine"_s << machineTypeParam;
     } else if (config.machineType() == VMSpecs::MachineType::PcISA) {
-        args << u"-machine"_s << u"type=isapc,accel=%1"_s.arg(accel);
+        args << u"-machine"_s << u"type=isapc%1"_s.arg(machineAccel);
     } else {
-        QString machineTypeParam = u"type=pc,accel=%1"_s.arg(accel);
+        QString machineTypeParam = u"type=pc%1"_s.arg(machineAccel);
         if (!config.useAcpi())
             machineTypeParam += u",acpi=off"_s;
         args << u"-machine"_s << machineTypeParam;
     }
+    if (honorGuestPat)
+        args << u"-accel"_s << u"kvm,honor-guest-pat=auto"_s;
 
     // --- Identity ---
     if (!config.uuid().isNull())
@@ -342,14 +355,17 @@ QStringList QemuCommandBuilder::buildArgs(const VMConfig &config,
     // (udmabuf) they need no shared memory backend for the guest RAM.
     // Asked for per VM; never in exported scripts, so they keep running on
     // QEMUs without blob support.
-    const bool effectiveBlob = effective3d && viewer && config.gpuHostBlobs() && hostBlobsAvailable();
+    const bool effectiveBlob = viewer && usesHostBlobs(config);
+    // Vulkan (Venus) builds on host blobs: the guest's Vulkan memory is host
+    // GPU memory in their window. See also sandboxArgs().
+    const bool effectiveVenus = viewer && usesVenus(config);
 
     const int mem = VMConfig::normalizedVgaMemMb(config.gpuType(), config.gpuMemMb());
 
     if (config.gpuType() == VMSpecs::GpuType::Qxl) {
         args << u"-device"_s << u"qxl-vga,vgamem_mb=%1"_s.arg(mem);
     } else if (config.gpuType() == VMSpecs::GpuType::Virtio) {
-        args << u"-device"_s << virtioGpuDevice(config, effective3d, effectiveBlob, viewer);
+        args << u"-device"_s << virtioGpuDevice(config, effective3d, effectiveBlob, viewer, effectiveVenus);
     } else if (config.gpuType() == VMSpecs::GpuType::CirrusGD5446) {
         args << u"-device"_s << u"cirrus-vga,vgamem_mb=%1"_s.arg(mem);
     } else if (config.gpuType() == VMSpecs::GpuType::CirrusGD5430) {
@@ -666,7 +682,8 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
 
     // The target machine's QEMU may lack seccomp support, so the script
     // checks before it confines it.
-    const QStringList sandbox = sandboxArgs(config, seccompSandbox);
+    // Scripts run without host blobs, so without Venus, and keep the sandbox.
+    const QStringList sandbox = sandboxArgs(config, seccompSandbox, false);
     if (!sandbox.isEmpty()) {
         script += u"# Confine QEMU with its seccomp sandbox if it was built with one.\n"_s;
         script += u"SANDBOX=%1\n"_s.arg(Utils::quoteShellArg(sandbox.last()));
@@ -691,9 +708,12 @@ QString QemuCommandBuilder::buildShellScript(const VMConfig &config,
     return script;
 }
 
-QStringList QemuCommandBuilder::sandboxArgs(const VMConfig &config, bool enabled)
+QStringList QemuCommandBuilder::sandboxArgs(const VMConfig &config, bool enabled, bool viewer)
 {
-    if (!enabled)
+    // virglrenderer starts its render server for Venus as a program of its
+    // own, which spawn=deny answers with SIGSYS. The server confines the
+    // Vulkan contexts of the guest in processes of their own instead.
+    if (!enabled || (viewer && usesVenus(config)))
         return {};
 
     const QStringList extra = KProcess::splitCommand(config.extraArgs());
@@ -707,14 +727,34 @@ bool QemuCommandBuilder::hostBlobsAvailable()
     return QemuCapabilities::instance().hasVirtioGpuBlob() && QemuCapabilities::hostKernelSupportsGpuBlobs();
 }
 
-QString QemuCommandBuilder::virtioGpuDevice(const VMConfig &config, bool gl, bool blob, bool viewer)
+bool QemuCommandBuilder::venusAvailable()
+{
+    return hostBlobsAvailable() && !QemuCapabilities::instance().virglRenderServer().isEmpty();
+}
+
+bool QemuCommandBuilder::usesHostBlobs(const VMConfig &config)
+{
+    // The conditions of buildArgs() for the viewer.
+    return config.gpuType() == VMSpecs::GpuType::Virtio && config.gpu3dAcceleration() && config.gpuHostBlobs()
+        && QemuCapabilities::instance().hasDevice(u"virtio-vga-gl"_s) && hostBlobsAvailable();
+}
+
+bool QemuCommandBuilder::usesVenus(const VMConfig &config)
+{
+    return usesHostBlobs(config) && config.gpuVulkan() && venusAvailable();
+}
+
+QString QemuCommandBuilder::virtioGpuDevice(const VMConfig &config, bool gl, bool blob, bool viewer, bool venus)
 {
     const int mem = VMConfig::normalizedVgaMemMb(VMSpecs::GpuType::Virtio, config.gpuMemMb());
     const QSize res = Utils::defaultDisplayResolution();
     QString device = u"%1,xres=%2,yres=%3,max_hostmem=%4M"_s.arg(gl ? u"virtio-vga-gl"_s : u"virtio-vga"_s).arg(res.width()).arg(res.height()).arg(mem);
     // Without virgl, blob resources would need udmabuf and memfd-backed RAM.
-    if (gl && blob)
+    if (gl && blob) {
         device += u",blob=on,hostmem=%1M"_s.arg(config.gpuHostmemMb());
+        if (venus)
+            device += u",venus=on"_s;
+    }
     const int monitors = qMin(config.monitorCount(), KEMUConst::SupportedMonitorCount);
     if (viewer && monitors > 1)
         device += u",max_outputs=%1"_s.arg(monitors);

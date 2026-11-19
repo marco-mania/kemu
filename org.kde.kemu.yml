@@ -24,7 +24,8 @@ finish-args:
   # Display. KEMU's viewer and the SDL window of exported qemu.sh need it.
   - --share=ipc
   - --socket=wayland
-  # GPU for Virtio-GL (virglrenderer) and /dev/kvm for hardware virtualization.
+  # GPU for Virtio-GL and Vulkan (virglrenderer), /dev/kvm for hardware
+  # virtualization.
   - --device=dri
   - --device=kvm
   # User-mode networking (SLIRP) and the in-process NAT uplink originate their
@@ -179,6 +180,8 @@ modules:
           name: pyyaml
 
   # --- 3D acceleration --------------------------------------------------------
+  # -Dvenus=true also builds the render server (/app/libexec/virgl_render_server)
+  # that Vulkan in the guest (venus=on) runs in.
   - name: virglrenderer
     buildsystem: meson
     build-options:

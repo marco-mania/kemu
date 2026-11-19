@@ -83,10 +83,29 @@ public:
     // for virglrenderer. Returns the first program found, or an empty string.
     [[nodiscard]] static QString findVirglRenderServer(const QString &qemuPath, const QStringList &systemPrefixes);
 
+    // Whether KVM can be told to honor the memory types the guest sets up
+    // (-accel kvm,honor-guest-pat=, QEMU 11.0+ on x86). On Intel CPUs, KVM
+    // otherwise forces write-back for host GPU memory the guest maps, which
+    // the host itself maps write-combined on Meteor Lake and xe GPUs, and on
+    // dedicated GPUs: the guest then reads stale values, and Vulkan waits for
+    // fences forever. Linux 6.16 or later on the host makes it take effect.
+    [[nodiscard]] bool hasKvmHonorGuestPat() const
+    {
+        return m_kvmHonorGuestPat;
+    }
+
+    // Property names in the replies of a QMP session over stdio, e.g.
+    // "honor-guest-pat" from qom-list-properties. Exposed for tests.
+    [[nodiscard]] static QSet<QString> parseQomPropertyList(const QString &output);
+
     // Whether the host kernel can map the GPU memory of host blobs into a KVM
     // guest. QEMU documents Linux 6.13 as the minimum; before it, KVM could not
     // map the memory of every GPU driver.
     [[nodiscard]] static bool hostKernelSupportsGpuBlobs();
+
+    // Whether KVM on this host can honor the guest's memory types when told
+    // to (KVM_X86_QUIRK_IGNORE_GUEST_PAT, Linux 6.16). See hasKvmHonorGuestPat().
+    [[nodiscard]] static bool hostKernelHonorsGuestPat();
 
     // Property names of a "-device <type>,help" listing, e.g. "blob" from
     // "  blob=<bool>  - on/off (default: false)". Exposed for tests.
@@ -110,6 +129,10 @@ private:
     static constexpr int kProbeRetryTimeoutMs = 8000;
     static constexpr int kGpuBlobKernelMajor = 6;
     static constexpr int kGpuBlobKernelMinor = 13;
+    static constexpr int kGuestPatKernelMajor = 6;
+    static constexpr int kGuestPatKernelMinor = 16;
+
+    static bool hostKernelAtLeast(int major, int minor);
 
     bool runProbes(const QString &qemuPath, int timeoutMs);
     void seedSelfContainedDefaults();
@@ -127,5 +150,6 @@ private:
     bool m_monitorObject = false;
     bool m_virtioGpuBlob = false;
     QString m_virglRenderServer;
+    bool m_kvmHonorGuestPat = false;
     bool m_probeSucceeded = false;
 };

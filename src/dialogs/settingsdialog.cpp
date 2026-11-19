@@ -418,7 +418,8 @@ QWidget *SettingsDialog::createSandboxTab()
                                                   "then neither start programs nor change its privileges.</p>"
                                                   "<p>A feature that needs one of these calls ends QEMU with SIGSYS, without "
                                                   "a message, which makes problems harder to find. VMs whose extra arguments "
-                                                  "have their own <tt>-sandbox</tt> keep it.</p>")));
+                                                  "have their own <tt>-sandbox</tt> keep it. VMs with Vulkan run without it, "
+                                                  "because Vulkan needs a helper program on the host.</p>")));
 
     layout->addStretch();
     return page;
@@ -539,6 +540,10 @@ void SettingsDialog::listCapabilities()
         : i18n(
               "virglrenderer's render server (virgl_render_server) was not found. It comes with virglrenderer built with Venus; "
               "Debian and Ubuntu ship it in the virgl-server package.");
+    // KEMU asks for it with Vulkan; AMD CPUs need no such request.
+    const QString guestPatMissing = !qemu.hasKvmHonorGuestPat()
+        ? i18n("This QEMU cannot pass the guest's memory types to KVM. That takes QEMU 11.0 or later.")
+        : i18n("The host runs Linux %1. KVM honors the guest's memory types from Linux 6.16 on.", QSysInfo::kernelVersion());
 
     QList<Section> sections = {
         {i18n("Display"),
@@ -574,6 +579,11 @@ void SettingsDialog::listCapabilities()
            i18n("Vulkan for Linux guests with 3D acceleration."),
            fromQemu(blobs && renderServer),
            venusMissing},
+          {i18n("Guest memory types"),
+           u"-accel kvm,honor-guest-pat=auto"_s,
+           i18n("On Intel CPUs, Vulkan needs it with Meteor Lake or xe graphics and with dedicated GPUs; otherwise it can hang."),
+           fromQemu(qemu.hasKvmHonorGuestPat() && QemuCapabilities::hostKernelHonorsGuestPat()),
+           guestPatMissing},
           {i18n("QXL graphics"),
            u"-device qxl-vga"_s,
            i18n("Recommended for Windows guests with the SPICE guest tools."),

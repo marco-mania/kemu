@@ -1969,7 +1969,10 @@ void MainWindow::updateDetails()
     content.hardware << boot;
 
     QString gpuVal = VMConfig::toUIString(currentConfig.gpuType());
-    if (currentConfig.gpu3dAcceleration())
+    // Vulkan only where it takes effect, like the video memory below.
+    if (QemuCommandBuilder::usesVenus(currentConfig))
+        gpuVal += i18n(" (3D, Vulkan)");
+    else if (currentConfig.gpu3dAcceleration())
         gpuVal += i18n(" (3D)");
     // The resolution follows the viewer window, so the card names the
     // graphics memory QEMU uses and the heads. With 3D acceleration, the host
