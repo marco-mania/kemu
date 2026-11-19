@@ -405,6 +405,10 @@ private Q_SLOTS:
         QCOMPARE(roundTrips(VMSpecs::KeyboardDevice{}, &VMConfig::parseKeyboardDevice), QString());
         QCOMPARE(roundTrips(VMSpecs::OsFamily{}, &VMConfig::parseOsFamily), QString());
         QCOMPARE(roundTrips(VMSpecs::Architecture{}, &VMConfig::parseArchitecture), QString());
+
+        // Templates spell the names out, in no language in particular.
+        QCOMPARE(VMConfig::toString(VMSpecs::CpuModel::Haswell), u"corei4"_s);
+        QCOMPARE(VMConfig::parseCpuModel(u" Pentium3 "_s), VMSpecs::CpuModel::Pentium3);
     }
 
     void qomPropertyProbe()

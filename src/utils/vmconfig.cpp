@@ -1167,44 +1167,45 @@ QString VMConfig::firmwareToUIString(bool useUefi, bool useSecureBoot)
 
 // --- Common Strings (toString) ---
 
+// The names in config.json and templates. Not translated: a configuration
+// written in one language has to read back in any other.
 QString VMConfig::toString(VMSpecs::CpuModel model)
 {
     switch (model) {
     case VMSpecs::CpuModel::Host:
-        return i18n("host");
+        return u"host"_s;
     case VMSpecs::CpuModel::Qemu64:
-        return i18n("qemu64");
+        return u"qemu64"_s;
     case VMSpecs::CpuModel::Qemu32:
-        return i18n("qemu32");
+        return u"qemu32"_s;
     case VMSpecs::CpuModel::I486:
-        return i18n("i486");
+        return u"i486"_s;
     case VMSpecs::CpuModel::Pentium:
-        return i18n("pentium");
+        return u"pentium"_s;
     case VMSpecs::CpuModel::Pentium2:
-        return i18n("pentium2");
+        return u"pentium2"_s;
     case VMSpecs::CpuModel::Pentium3:
-        return i18n("pentium3");
+        return u"pentium3"_s;
     case VMSpecs::CpuModel::Pentium4:
-        return i18n("pentium4");
+        return u"pentium4"_s;
     case VMSpecs::CpuModel::CoreDuo:
-        return i18n("coreduo");
+        return u"coreduo"_s;
     case VMSpecs::CpuModel::Core2Duo:
-        return i18n("core2duo");
+        return u"core2duo"_s;
     case VMSpecs::CpuModel::Nehalem:
-        return i18n("corei1");
+        return u"corei1"_s;
     case VMSpecs::CpuModel::SandyBridge:
-        return i18n("corei2");
+        return u"corei2"_s;
     case VMSpecs::CpuModel::Haswell:
-        return i18n("corei4");
+        return u"corei4"_s;
     case VMSpecs::CpuModel::Skylake:
-        return i18n("corei6");
+        return u"corei6"_s;
     case VMSpecs::CpuModel::Phenom:
-        return i18n("phenom");
+        return u"phenom"_s;
     case VMSpecs::CpuModel::Epyc:
-        return i18n("ryzen");
-    default:
-        return i18n("Unknown");
+        return u"ryzen"_s;
     }
+    return u"host"_s;
 }
 
 QString VMConfig::toString(VMSpecs::MachineType type)
@@ -1427,37 +1428,37 @@ QString VMConfig::toString(IconSource source)
 VMSpecs::CpuModel VMConfig::parseCpuModel(const QString &str)
 {
     const QString str_l_t = str.toLower().trimmed();
-    if (str_l_t == i18n("host"))
+    if (str_l_t == u"host"_s)
         return VMSpecs::CpuModel::Host;
-    if (str_l_t == i18n("qemu64"))
+    if (str_l_t == u"qemu64"_s)
         return VMSpecs::CpuModel::Qemu64;
-    if (str_l_t == i18n("qemu32"))
+    if (str_l_t == u"qemu32"_s)
         return VMSpecs::CpuModel::Qemu32;
-    if (str_l_t == i18n("i486"))
+    if (str_l_t == u"i486"_s)
         return VMSpecs::CpuModel::I486;
-    if (str_l_t == i18n("pentium"))
+    if (str_l_t == u"pentium"_s)
         return VMSpecs::CpuModel::Pentium;
-    if (str_l_t == i18n("pentium2"))
+    if (str_l_t == u"pentium2"_s)
         return VMSpecs::CpuModel::Pentium2;
-    if (str_l_t == i18n("pentium3"))
+    if (str_l_t == u"pentium3"_s)
         return VMSpecs::CpuModel::Pentium3;
-    if (str_l_t == i18n("pentium4"))
+    if (str_l_t == u"pentium4"_s)
         return VMSpecs::CpuModel::Pentium4;
-    if (str_l_t == i18n("coreduo"))
+    if (str_l_t == u"coreduo"_s)
         return VMSpecs::CpuModel::CoreDuo;
-    if (str_l_t == i18n("core2duo"))
+    if (str_l_t == u"core2duo"_s)
         return VMSpecs::CpuModel::Core2Duo;
-    if (str_l_t == i18n("corei1"))
+    if (str_l_t == u"corei1"_s)
         return VMSpecs::CpuModel::Nehalem;
-    if (str_l_t == i18n("corei2"))
+    if (str_l_t == u"corei2"_s)
         return VMSpecs::CpuModel::SandyBridge;
-    if (str_l_t == i18n("corei4"))
+    if (str_l_t == u"corei4"_s)
         return VMSpecs::CpuModel::Haswell;
-    if (str_l_t == i18n("corei6"))
+    if (str_l_t == u"corei6"_s)
         return VMSpecs::CpuModel::Skylake;
-    if (str_l_t == i18n("phenom"))
+    if (str_l_t == u"phenom"_s)
         return VMSpecs::CpuModel::Phenom;
-    if (str_l_t == i18n("ryzen"))
+    if (str_l_t == u"ryzen"_s)
         return VMSpecs::CpuModel::Epyc;
 
     return VMSpecs::CpuModel::Host;
