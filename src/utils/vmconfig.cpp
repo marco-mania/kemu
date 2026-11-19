@@ -1518,7 +1518,8 @@ VMSpecs::NetworkCard VMConfig::parseNetworkCard(const QString &str)
         return VMSpecs::NetworkCard::Pcnet;
     if (str_l_t == u"rtl8029"_s)
         return VMSpecs::NetworkCard::Rtl8029;
-    if (str_l_t == u"ne20000"_s)
+    // "ne20000" is what this used to expect, though nothing ever wrote it.
+    if (str_l_t == u"ne2000"_s || str_l_t == u"ne20000"_s)
         return VMSpecs::NetworkCard::Ne2000;
     if (str_l_t == u"i82551"_s)
         return VMSpecs::NetworkCard::I82551;

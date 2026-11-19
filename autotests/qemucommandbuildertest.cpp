@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonObject>
+#include <QMetaEnum>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QStandardPaths>
@@ -378,6 +379,32 @@ private Q_SLOTS:
         // Nor the memory types for them, which would move the accelerator.
         QVERIFY(!args.contains(u"-accel"_s));
         QVERIFY(joined.contains(u",accel=kvm"_s));
+    }
+
+    void enumsSurviveConfigJson()
+    {
+        // Every value a config.json or template can hold reads back as itself.
+        const auto roundTrips = []<typename Enum>(Enum, auto parse) {
+            const QMetaEnum meta = QMetaEnum::fromType<Enum>();
+            for (int i = 0; i < meta.keyCount(); ++i) {
+                const auto value = static_cast<Enum>(meta.value(i));
+                const QString text = VMConfig::toString(value);
+                if (parse(text) != value)
+                    return u"%1::%2 is written as \"%3\" but not read back"_s.arg(QString::fromLatin1(meta.name()), QString::fromLatin1(meta.key(i)), text);
+            }
+            return QString();
+        };
+        QCOMPARE(roundTrips(VMSpecs::CpuModel{}, &VMConfig::parseCpuModel), QString());
+        QCOMPARE(roundTrips(VMSpecs::MachineType{}, &VMConfig::parseMachineType), QString());
+        QCOMPARE(roundTrips(VMSpecs::GpuType{}, &VMConfig::parseGpuType), QString());
+        QCOMPARE(roundTrips(VMSpecs::AudioDevice{}, &VMConfig::parseAudioDevice), QString());
+        QCOMPARE(roundTrips(VMSpecs::NetworkCard{}, &VMConfig::parseNetworkCard), QString());
+        QCOMPARE(roundTrips(VMSpecs::DiskInterface{}, &VMConfig::parseDiskInterface), QString());
+        QCOMPARE(roundTrips(VMSpecs::UsbController{}, &VMConfig::parseUSBController), QString());
+        QCOMPARE(roundTrips(VMSpecs::PointerDevice{}, &VMConfig::parsePointerDevice), QString());
+        QCOMPARE(roundTrips(VMSpecs::KeyboardDevice{}, &VMConfig::parseKeyboardDevice), QString());
+        QCOMPARE(roundTrips(VMSpecs::OsFamily{}, &VMConfig::parseOsFamily), QString());
+        QCOMPARE(roundTrips(VMSpecs::Architecture{}, &VMConfig::parseArchitecture), QString());
     }
 
     void qomPropertyProbe()
