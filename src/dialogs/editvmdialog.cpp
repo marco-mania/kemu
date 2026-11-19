@@ -169,11 +169,6 @@ QString hostBlobsToolTip()
     return i18n("Lets the guest use the host's GPU memory directly: faster 3D, and OpenGL 4.6 in Linux guests.");
 }
 
-QString vulkanToolTip()
-{
-    return i18n("Lets the guest use Vulkan, rendered on the host GPU at often near-native speed.");
-}
-
 QString hostBlobsMissingText()
 {
     // The capability overview names the missing piece.
@@ -597,9 +592,14 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
                                                i18n("How much of the host's GPU memory the guest can use at once. Experimental "
                                                     "Windows drivers suggest 4 GiB.")));
 
+    // A help button rather than a tool tip: the name alone says little.
     vulkanCheck = new QCheckBox(i18n("Vulkan"));
-    vulkanCheck->setToolTip(vulkanToolTip());
-    accelLayout->addRow({}, vulkanCheck);
+    accelLayout->addRow({},
+                        ContextualHelp::beside(vulkanCheck,
+                                               i18n("Enables Vulkan in the VM for modern games and Proton, rendering on the host GPU at "
+                                                    "often near-native speeds. Linux guests use Mesa's Venus driver, while Windows "
+                                                    "support is limited to experimental options like vgpu3d. Note that the VM runs "
+                                                    "without a seccomp sandbox.")));
 
     gpuMessage = createInlineMessage(KMessageWidget::Information);
     accelLayout->addRow(gpuMessage);
@@ -1387,7 +1387,8 @@ void EditVmDialog::onGpuDisplayChanged()
     // The rules of QemuCommandBuilder::venusAvailable().
     const bool venus = QemuCommandBuilder::venusAvailable();
     vulkanCheck->setEnabled(blobs && venus);
-    vulkanCheck->setToolTip(!blobs ? i18n("Requires direct GPU memory access.") : venus ? vulkanToolTip() : hostBlobsMissingText());
+    // Only why it is unavailable; the help button explains it.
+    vulkanCheck->setToolTip(!blobs ? i18n("Requires direct GPU memory access.") : venus ? QString() : hostBlobsMissingText());
     if (!blobs || !venus)
         vulkanCheck->setChecked(false);
     const bool vulkan = vulkanCheck->isChecked();
