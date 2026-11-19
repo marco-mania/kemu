@@ -428,8 +428,8 @@ void DbusViewerWindow::createActions()
     connect(m_actEjectFloppy, &QAction::triggered, this, &DbusViewerWindow::ejectFloppyRequested);
 
     // --- Devices: Clipboard ---
-    // First line of the menu while the settings cannot take effect yet
-    // (updateClipboardMenu()).
+    // First line of the menu while a running agent cannot carry the
+    // clipboard: why (updateClipboardMenu()).
     m_actClipHint = new QAction(QIcon::fromTheme(u"dialog-information"_s), QString(), this);
     m_actClipHint->setEnabled(false);
     m_actClipHint->setVisible(false);
@@ -1276,22 +1276,18 @@ void DbusViewerWindow::updateClipboardMenu(const ClipboardMenuState &state)
     if (m_indClipboard)
         m_indClipboard->setPopupMenu(available ? m_clipMenu : nullptr);
 
-    // While the agent is away the settings stay open, they apply once it
-    // comes; the first line says why nothing happens yet.
-    QString hint;
-    if (state.agent == Agent::Away)
-        hint = kemuAgentAwayText();
-    else if (state.agent == Agent::NoGuestClipboard)
-        hint = i18nc("@info", "kemu-agent cannot reach the clipboard of the guest session");
-    m_actClipHint->setText(hint);
-    m_actClipHint->setToolTip(state.agent == Agent::Away ? i18nc("@info:tooltip", "The settings take effect once kemu-agent runs in the guest session")
-                                                         : QString());
-    m_actClipHint->setVisible(!hint.isEmpty());
-    m_clipHintSeparator->setVisible(!hint.isEmpty());
+    // While the agent is away, which mostly means a Linux guest without
+    // it, the settings are off like everything else that does not work; the
+    // kemu-agent indicator says why and offers the agent. A running agent
+    // without the guest's clipboard is rarer: the first line says so.
+    const bool hint = state.agent == Agent::NoGuestClipboard;
+    m_actClipHint->setText(hint ? i18nc("@info", "kemu-agent cannot reach the clipboard of the guest session") : QString());
+    m_actClipHint->setVisible(hint);
+    m_clipHintSeparator->setVisible(hint);
 
     // What is known not to work is off and says why; the setting stays as
     // it was and applies again with an agent that can.
-    const bool directions = available && state.agent != Agent::NoGuestClipboard;
+    const bool directions = available && state.agent == Agent::Ready;
     for (QAction *action : {m_actClipOff, m_actClipToHost, m_actClipToGuest, m_actClipBoth, m_actClipFilterPasswords})
         action->setEnabled(directions);
 

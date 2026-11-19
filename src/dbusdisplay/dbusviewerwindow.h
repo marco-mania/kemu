@@ -286,7 +286,7 @@ private:
     QAction *m_actInsertAgentMedium = nullptr;
     QMenu *m_kemuAgentMenu = nullptr; // behind the kemu-agent indicator
     QAction *m_actEjectFloppy = nullptr;
-    QAction *m_actClipHint = nullptr; // why the settings do nothing yet
+    QAction *m_actClipHint = nullptr; // why the settings are off with an agent running
     QAction *m_clipHintSeparator = nullptr;
     QAction *m_actClipOff = nullptr;
     QAction *m_actClipToHost = nullptr;
