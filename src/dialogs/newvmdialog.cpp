@@ -6,6 +6,8 @@
 
 #include "dialogs/newvmdialog.h"
 
+#include <array>
+
 #include <QCheckBox>
 #include <QCompleter>
 #include <QDir>
@@ -62,6 +64,9 @@ int firstStepIndexAtLeast(const QList<int> &steps, int minValue)
     }
     return steps.size() - 1;
 }
+
+// The OS family of a fallback entry, see populateOsCombo().
+constexpr int FallbackFamilyRole = Qt::UserRole + 1;
 
 QLabel *sectionLabel(const QString &text)
 {
@@ -149,6 +154,16 @@ void NewVmDialog::buildUi()
     osCombo->completer()->setCaseSensitivity(Qt::CaseInsensitive);
     osCombo->completer()->setCompletionMode(QCompleter::PopupCompletion);
     mainLayout->addWidget(osCombo);
+
+    noTemplatesMessage = new KMessageWidget();
+    noTemplatesMessage->setMessageType(KMessageWidget::Information);
+    noTemplatesMessage->setCloseButtonVisible(false);
+    noTemplatesMessage->setWordWrap(true);
+    noTemplatesMessage->setFocusPolicy(Qt::NoFocus);
+    noTemplatesMessage->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    noTemplatesMessage->setMinimumWidth(0);
+    noTemplatesMessage->hide();
+    mainLayout->addWidget(noTemplatesMessage);
 
     auto *sourceLayout = new QVBoxLayout();
     sourceLayout->setContentsMargins(0, 4, 0, 0);
@@ -396,13 +411,15 @@ void NewVmDialog::populateOsCombo()
     osCombo->clear();
     m_cloudImages.clear();
 
-    if (!m_imageDatabase)
-        return;
-
     auto *model = qobject_cast<QStandardItemModel *>(osCombo->model());
 
-    for (const auto family : {VMSpecs::OsFamily::Linux, VMSpecs::OsFamily::Windows, VMSpecs::OsFamily::BSD, VMSpecs::OsFamily::DOS, VMSpecs::OsFamily::Other}) {
-        const QList<TemplateInfo> templates = m_imageDatabase->templatesForFamily(family);
+    constexpr std::array families{VMSpecs::OsFamily::Linux,
+                                  VMSpecs::OsFamily::Windows,
+                                  VMSpecs::OsFamily::BSD,
+                                  VMSpecs::OsFamily::DOS,
+                                  VMSpecs::OsFamily::Other};
+    for (const auto family : families) {
+        const QList<TemplateInfo> templates = m_imageDatabase ? m_imageDatabase->templatesForFamily(family) : QList<TemplateInfo>();
         if (templates.isEmpty())
             continue;
 
@@ -421,9 +438,28 @@ void NewVmDialog::populateOsCombo()
         }
     }
 
+    // No template to offer: none installed or found, or all hidden. Creating a
+    // VM must still work, with KEMU's general defaults; the family is chosen
+    // all the same, as it decides more than the defaults (guest agents, the
+    // clock, the icon).
+    const bool withoutTemplates = osCombo->count() == 0;
+    if (withoutTemplates) {
+        for (const auto family : families) {
+            osCombo->addItem(VMConfig::toUIString(family));
+            osCombo->setItemData(osCombo->count() - 1, int(family), FallbackFamilyRole);
+        }
+        const bool someHidden = m_imageDatabase && !m_imageDatabase->allTemplates().isEmpty();
+        noTemplatesMessage->setText(someHidden ? i18n("All operating system templates are hidden, so the new virtual machine gets general "
+                                                      "settings. Show templates under Settings → Templates.")
+                                               : i18n("No operating system templates were found, so the new virtual machine gets general "
+                                                      "settings, and automated installation is unavailable. KEMU's installation may be "
+                                                      "incomplete; templates can also be added under Settings → Templates."));
+    }
+    noTemplatesMessage->setVisible(withoutTemplates);
+
     // Select the first real entry, skipping the leading group header.
     for (int i = 0; i < osCombo->count(); ++i) {
-        if (!osCombo->itemData(i).isNull()) {
+        if (!osCombo->itemData(i).isNull() || !osCombo->itemData(i, FallbackFamilyRole).isNull()) {
             osCombo->setCurrentIndex(i);
             break;
         }
@@ -442,6 +478,14 @@ QString NewVmDialog::selectedVersion() const
 {
     const QStringList data = osCombo->currentData().toStringList();
     return data.value(1);
+}
+
+std::optional<VMSpecs::OsFamily> NewVmDialog::selectedFallbackFamily() const
+{
+    const QVariant family = osCombo->currentData(FallbackFamilyRole);
+    if (family.isNull())
+        return std::nullopt;
+    return static_cast<VMSpecs::OsFamily>(family.toInt());
 }
 
 const TemplateInfo *NewVmDialog::selectedTemplate() const
@@ -631,7 +675,7 @@ void NewVmDialog::validateForm()
         reportError(i18n("A virtual machine named '%1' already exists.", name), nameEdit);
     }
 
-    if (selectedTemplateId().isEmpty())
+    if (selectedTemplateId().isEmpty() && !selectedFallbackFamily())
         reportError(i18n("Please select an operating system."), osCombo);
 
     if (source() == Source::InstallerIso) {
@@ -762,14 +806,15 @@ void NewVmDialog::detectOsFromName()
 
 void NewVmDialog::applyTemplateDefaults()
 {
-    if (!m_imageDatabase)
-        return;
-
     const QString tplId = selectedTemplateId();
-    if (tplId.isEmpty())
+    if (tplId.isEmpty() && !selectedFallbackFamily())
         return;
 
-    const VMConfig defaults = m_imageDatabase->defaultsFor(tplId);
+    // A fallback entry has the general defaults: those of templates.json if
+    // it was found, otherwise KEMU's own.
+    VMConfig defaults;
+    if (m_imageDatabase)
+        defaults = tplId.isEmpty() ? m_imageDatabase->globalDefaults() : m_imageDatabase->defaultsFor(tplId);
 
     cpuSpin->setMaximum(VMConfig::maxCoresForModel(defaults.cpuModel()));
     cpuSlider->setMaximum(cpuSpin->maximum());
@@ -779,7 +824,7 @@ void NewVmDialog::applyTemplateDefaults()
 
     // minDiskGbFor() already falls back to the project default, so no qMax():
     // it would override a template that deliberately asks for less.
-    const int minDisk = m_imageDatabase->minDiskGbFor(tplId, selectedVersion());
+    const int minDisk = m_imageDatabase ? m_imageDatabase->minDiskGbFor(tplId, selectedVersion()) : KEMUConst::DefaultMinDiskSizeGB;
 
     diskSpin->setMinimum(minDisk);
     diskSlider->setMinimum(firstStepIndexAtLeast(m_diskSteps, minDisk));
@@ -788,11 +833,10 @@ void NewVmDialog::applyTemplateDefaults()
 
 void NewVmDialog::updateIcon()
 {
-    const TemplateInfo *tpl = selectedTemplate();
-    if (!tpl)
-        return;
-
-    iconSelector->followOs(tpl->osFamily, tpl->id, tpl->iconHint);
+    if (const TemplateInfo *tpl = selectedTemplate())
+        iconSelector->followOs(tpl->osFamily, tpl->id, tpl->iconHint);
+    else if (const auto family = selectedFallbackFamily())
+        iconSelector->followOs(*family, QString());
 }
 
 void NewVmDialog::updateDeployInfo()
@@ -897,12 +941,18 @@ VMConfig NewVmDialog::getResult() const
 {
     const TemplateInfo *tpl = selectedTemplate();
 
-    VMConfig config = m_hasCustomConfig ? m_customConfig : (m_imageDatabase ? m_imageDatabase->defaultsFor(selectedTemplateId()) : VMConfig());
+    VMConfig config;
+    if (m_hasCustomConfig)
+        config = m_customConfig;
+    else if (m_imageDatabase)
+        config = tpl ? m_imageDatabase->defaultsFor(tpl->id) : m_imageDatabase->globalDefaults();
 
     config.setName(nameEdit->text().trimmed());
     config.setDistroId(selectedTemplateId());
     if (tpl)
         config.setOsFamily(tpl->osFamily);
+    else if (const auto family = selectedFallbackFamily())
+        config.setOsFamily(*family);
 
     config.setRamMb(ramSpin->value());
     config.setCpuCoreCount(cpuSpin->value());

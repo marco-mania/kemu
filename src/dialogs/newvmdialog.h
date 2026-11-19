@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -110,6 +112,8 @@ private:
     [[nodiscard]] QString selectedTemplateId() const;
     [[nodiscard]] QString selectedVersion() const;
     [[nodiscard]] const TemplateInfo *selectedTemplate() const;
+    // Without any template to offer, the combo lists the OS families instead.
+    [[nodiscard]] std::optional<VMSpecs::OsFamily> selectedFallbackFamily() const;
     [[nodiscard]] bool hasCloudDeploy() const;
     [[nodiscard]] QStringList usedMacAddresses() const;
 
@@ -120,6 +124,7 @@ private:
     QLineEdit *nameEdit = nullptr;
     KMessageWidget *errorMessage = nullptr;
     QComboBox *osCombo = nullptr;
+    KMessageWidget *noTemplatesMessage = nullptr;
 
     QRadioButton *cloudRadio = nullptr;
     QRadioButton *isoRadio = nullptr;

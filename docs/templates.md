@@ -19,6 +19,8 @@ Under *Settings → Templates*, you can create, duplicate, customise, reset, hid
 - `cloud_init_template` and `network_template` reference `.yaml.tpl` files, resolved in order from the user's `cloud-init-templates/` directory, downloaded templates (including packages), and bundled templates.
 - Templates listed in `~/.local/share/kemu/data/hidden-templates.json` are not offered for new VMs.
 
+If no template is left to offer—none was found, for example after an incomplete installation, or all are hidden—the new VM dialog lists the operating system families instead and says why. The VM then gets the global defaults from `templates.json`, or KEMU's built-in ones if that file is missing too; installing from an ISO image or starting with an empty disk still works, automated installation does not.
+
 ## Format
 
 Minimal example (`mydistro.json`):
