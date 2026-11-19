@@ -336,18 +336,20 @@ QStringList QemuCommandBuilder::buildArgs(const VMConfig &config,
     const bool effective3d =
         config.gpu3dAcceleration() && config.gpuType() == VMSpecs::GpuType::Virtio && QemuCapabilities::instance().hasDevice(u"virtio-vga-gl"_s);
 
+    // Host blobs let the guest map GPU memory directly: OpenGL 4.6 instead of
+    // 4.3 with Mesa, persistent and coherent buffers. virglrenderer exports
+    // the DMA-BUFs itself, so unlike blob resources of 2D virtio-gpu
+    // (udmabuf) they need no shared memory backend for the guest RAM.
+    // Asked for per VM; never in exported scripts, so they keep running on
+    // QEMUs without blob support.
+    const bool effectiveBlob = effective3d && viewer && config.gpuHostBlobs() && hostBlobsAvailable();
+
     const int mem = VMConfig::normalizedVgaMemMb(config.gpuType(), config.gpuMemMb());
 
     if (config.gpuType() == VMSpecs::GpuType::Qxl) {
         args << u"-device"_s << u"qxl-vga,vgamem_mb=%1"_s.arg(mem);
     } else if (config.gpuType() == VMSpecs::GpuType::Virtio) {
-        const QSize res = Utils::defaultDisplayResolution();
-        const QString device = effective3d ? u"virtio-vga-gl"_s : u"virtio-vga"_s;
-        QString gpuOpt = u"%1,xres=%2,yres=%3,max_hostmem=%4M"_s.arg(device).arg(res.width()).arg(res.height()).arg(mem);
-        const int monitors = qMin(config.monitorCount(), KEMUConst::SupportedMonitorCount);
-        if (viewer && monitors > 1)
-            gpuOpt += u",max_outputs=%1"_s.arg(monitors);
-        args << u"-device"_s << gpuOpt;
+        args << u"-device"_s << virtioGpuDevice(config, effective3d, effectiveBlob, viewer);
     } else if (config.gpuType() == VMSpecs::GpuType::CirrusGD5446) {
         args << u"-device"_s << u"cirrus-vga,vgamem_mb=%1"_s.arg(mem);
     } else if (config.gpuType() == VMSpecs::GpuType::CirrusGD5430) {
@@ -698,6 +700,25 @@ QStringList QemuCommandBuilder::sandboxArgs(const VMConfig &config, bool enabled
     if (extra.contains(u"-sandbox"_s) || extra.contains(u"--sandbox"_s))
         return {};
     return {u"-sandbox"_s, KEMUConst::QemuSandboxOptions};
+}
+
+bool QemuCommandBuilder::hostBlobsAvailable()
+{
+    return QemuCapabilities::instance().hasVirtioGpuBlob() && QemuCapabilities::hostKernelSupportsGpuBlobs();
+}
+
+QString QemuCommandBuilder::virtioGpuDevice(const VMConfig &config, bool gl, bool blob, bool viewer)
+{
+    const int mem = VMConfig::normalizedVgaMemMb(VMSpecs::GpuType::Virtio, config.gpuMemMb());
+    const QSize res = Utils::defaultDisplayResolution();
+    QString device = u"%1,xres=%2,yres=%3,max_hostmem=%4M"_s.arg(gl ? u"virtio-vga-gl"_s : u"virtio-vga"_s).arg(res.width()).arg(res.height()).arg(mem);
+    // Without virgl, blob resources would need udmabuf and memfd-backed RAM.
+    if (gl && blob)
+        device += u",blob=on,hostmem=%1M"_s.arg(config.gpuHostmemMb());
+    const int monitors = qMin(config.monitorCount(), KEMUConst::SupportedMonitorCount);
+    if (viewer && monitors > 1)
+        device += u",max_outputs=%1"_s.arg(monitors);
+    return device;
 }
 
 QString QemuCommandBuilder::argsToReadableString(const QStringList &args)

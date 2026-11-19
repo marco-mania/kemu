@@ -28,6 +28,14 @@ inline constexpr auto VMDiskFileName = "disk.qcow2"_L1;
 inline constexpr int MaxExtraDisks = 8;
 inline constexpr int MaxMonitorCount = 16; // virtio-gpu outputs
 inline constexpr int SupportedMonitorCount = 2; // what the viewer handles so far
+// Host memory window of virtio-gpu that the guest maps host blobs into
+// (VMConfig::gpuHostmemMb()). It is a PCI BAR, so a power of two (QEMU
+// asserts it). It takes guest address space; the host backs it only where
+// blobs are mapped. QEMU documents 256 MiB to 8 GiB as the usual range.
+inline constexpr int VirglHostmemMinMb = 256;
+inline constexpr int VirglHostmemMaxMb = 8192;
+static_assert((VirglHostmemMinMb & (VirglHostmemMinMb - 1)) == 0 && (VirglHostmemMaxMb & (VirglHostmemMaxMb - 1)) == 0,
+              "hostmem must be a power of two");
 inline constexpr int MaxSmbiosStringLength = 64;
 inline constexpr auto VMConfigFileName = "config.json"_L1;
 inline constexpr auto OvmfVarsFileName = "OVMF_VARS.fd"_L1;

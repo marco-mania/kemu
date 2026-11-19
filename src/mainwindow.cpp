@@ -1983,12 +1983,23 @@ void MainWindow::updateDetails()
     QString gpuVal = VMConfig::toUIString(currentConfig.gpuType());
     if (currentConfig.gpu3dAcceleration())
         gpuVal += i18n(" (3D)");
-    // The resolution follows the viewer window, so the card names the video
-    // memory QEMU gets and the heads.
-    const int vramMb = VMConfig::normalizedVgaMemMb(currentConfig.gpuType(), currentConfig.gpuMemMb());
-    const QString displayFacts = QStringList{i18nc("@info video memory in MiB", "%1 MiB VRAM", vramMb),
-                                             i18ncp("@info number of monitors", "%1 monitor", "%1 monitors", currentConfig.monitorCount())}
-                                     .join(u" · "_s);
+    // The resolution follows the viewer window, so the card names the
+    // graphics memory QEMU uses and the heads. With 3D acceleration, the host
+    // GPU provides it; host blobs set how much the guest maps at once.
+    QStringList displayFactList;
+    const bool virgl = currentConfig.gpuType() == VMSpecs::GpuType::Virtio && currentConfig.gpu3dAcceleration();
+    if (virgl && currentConfig.gpuHostBlobs() && QemuCommandBuilder::hostBlobsAvailable()) {
+        const int mb = currentConfig.gpuHostmemMb();
+        displayFactList << (mb < 1024 ? i18nc("@info video memory in MiB", "%1 MiB video memory", mb)
+                                      : i18nc("@info video memory in GiB", "%1 GiB video memory", mb / 1024));
+    } else if (virgl) {
+        displayFactList << i18nc("@info video memory the host GPU provides as needed", "Automatic video memory");
+    } else {
+        const int mb = VMConfig::normalizedVgaMemMb(currentConfig.gpuType(), currentConfig.gpuMemMb());
+        displayFactList << i18nc("@info video memory in MiB", "%1 MiB video memory", mb);
+    }
+    displayFactList << i18ncp("@info number of monitors", "%1 monitor", "%1 monitors", currentConfig.monitorCount());
+    const QString displayFacts = displayFactList.join(u" · "_s);
     VmOverview::Card display{u"video-display"_s, gpuVal, i18n("Display"), displayFacts};
     display.id = u"display"_s;
     content.hardware << display;

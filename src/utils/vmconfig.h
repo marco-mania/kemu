@@ -171,6 +171,8 @@ struct Defaults {
     int gpuMemMb = 64;
     int monitorCount = 1;
     bool gpu3dAcceleration = true;
+    bool gpuHostBlobs = false;
+    int gpuHostmemMb = 1024;
     AudioDevice audioDevice = AudioDevice::Hda;
     DiskInterface diskInterface = DiskInterface::Virtio;
     NetworkCard networkCard = NetworkCard::Virtio;
@@ -403,6 +405,18 @@ public:
     [[nodiscard]] bool gpu3dAcceleration() const
     {
         return m_gpu3dAcceleration;
+    }
+    // Host blobs on top of 3D acceleration: the guest maps GPU memory of the
+    // host directly ("Direct GPU memory access").
+    [[nodiscard]] bool gpuHostBlobs() const
+    {
+        return m_gpuHostBlobs;
+    }
+    // Host memory window for host blobs (hostmem=), in MiB. Always a power of
+    // two between KEMUConst::VirglHostmemMinMb and VirglHostmemMaxMb.
+    [[nodiscard]] int gpuHostmemMb() const
+    {
+        return m_gpuHostmemMb;
     }
     [[nodiscard]] int gpuMemMb() const
     {
@@ -687,6 +701,13 @@ public:
     {
         m_gpu3dAcceleration = enabled;
     }
+    void setGpuHostBlobs(bool enabled)
+    {
+        m_gpuHostBlobs = enabled;
+    }
+    // Rounds up to the next power of two and clamps: QEMU asserts that the
+    // window, a PCI BAR, is a power of two.
+    void setGpuHostmemMb(int mb);
     void setGpuMemMb(const int mb)
     {
         m_gpuMemMb = mb;
@@ -1013,6 +1034,8 @@ private:
 
     VMSpecs::GpuType m_gpuType = GlobalDefaults.gpuType;
     bool m_gpu3dAcceleration = GlobalDefaults.gpu3dAcceleration;
+    bool m_gpuHostBlobs = GlobalDefaults.gpuHostBlobs;
+    int m_gpuHostmemMb = GlobalDefaults.gpuHostmemMb;
     int m_gpuMemMb = GlobalDefaults.gpuMemMb;
     int m_monitorCount = GlobalDefaults.monitorCount;
     VMSpecs::AudioDevice m_audioDevice = GlobalDefaults.audioDevice;

@@ -21,6 +21,27 @@ KEMU launches QEMU with `-display dbus,p2p=on` and passes one end of a Unix `soc
 
 *Settings → Display* sets the initial resolution of all VMs, which applies until the guest's graphics driver runs and the viewer window takes over, and when the screensaver is inhibited: whenever a viewer is open, while it is in fullscreen mode, or while it captures the pointer.
 
+## Graphics: acceleration and video memory
+
+*Edit… → Hardware → Graphics* sets the adapter, its *Acceleration* and its *Video memory*, in this order, as the acceleration decides what the video memory means. Options the adapter or the host cannot provide are greyed out, and their tooltip says why.
+
+- **3D:** QEMU starts with `virtio-vga-gl`, and the guest's OpenGL runs on the host GPU through `virglrenderer`. Requires VirtIO graphics. The host GPU provides the guest's video memory as needed, so *Video memory* shows *Automatic*.
+- **Direct GPU memory access**, below *3D*: enables host blobs (`blob=on,hostmem=…`). Instead of having every change copied, the guest maps GPU memory of the host directly. Linux guests get OpenGL 4.6 instead of 4.3, and applications that stream a lot of data to the GPU need less CPU time. So far only Mesa in Linux guests makes use of it. It requires QEMU 9.2 or later built with `virglrenderer` 1.0 or later (the Flatpak ships both), and Linux 6.13 or later on the host, which QEMU needs to map GPU memory into a VM. *Settings → System → Capabilities* shows whether the host meets them.
+
+*Video memory* takes any size within its range; the arrows step through powers of two, and the button next to the field lists them. The help button beside it explains what the size means at the moment.
+
+| Adapter / acceleration             | Range         | Note                                    |
+| ---------------------------------- | ------------- | --------------------------------------- |
+| Standard VGA                       | 4–256 MiB     | QEMU rounds up to a power of two        |
+| ISA VGA                            | 1–16 MiB      | QEMU rounds up to a power of two        |
+| Cirrus VGA                         | 4, 8, 16 MiB  | Other sizes snap to these               |
+| QXL                                | 8–256 MiB     | QEMU rounds up to a power of two        |
+| VirtIO                             | 16–2048 MiB   | Limits the host memory of 2D resources  |
+| VirtIO, 3D                         | Automatic     | Provided by the host GPU as needed      |
+| VirtIO, direct GPU memory access   | 256 MiB–8 GiB | Powers of two only; 1 GiB by default    |
+
+With direct GPU memory access, the size is how much host GPU memory the guest maps at once (`hostmem`). It takes guest address space only; the host backs it where the guest maps memory. Host blobs need no shared memory for the guest RAM, so memory preallocation behaves as without them. Exported `qemu.sh` scripts never use them, so they keep running on older QEMUs.
+
 ## kemu-agent
 
 `kemu-agent` is KEMU's guest agent for Linux (`agent/` in this repository). Running in the user's graphical session, it:

@@ -143,6 +143,23 @@ public:
     static QStringList sandboxArgs(const VMConfig &config, bool enabled);
 
     /**
+     * @brief The -device value of the VirtIO graphics adapter.
+     *
+     * @p gl selects virtio-vga-gl (virgl). @p blob adds host blobs with a
+     * host memory window of VMConfig::gpuHostmemMb(); it only applies
+     * together with @p gl. @p viewer: for the integrated viewer, which shows
+     * several heads, rather than an exported script's SDL window. As with
+     * sandboxArgs(), the caller checks QemuCapabilities first.
+     */
+    static QString virtioGpuDevice(const VMConfig &config, bool gl, bool blob, bool viewer = true);
+
+    /**
+     * @brief Whether host blobs can be used on this host: QEMU 9.2+ and a
+     * host kernel 6.13+ (see QemuCapabilities).
+     */
+    static bool hostBlobsAvailable();
+
+    /**
      * @brief Formats the QEMU argument list into a readable multi-line string.
      * @param args  The list of QEMU arguments.
      * @return A formatted string with line continuation characters.

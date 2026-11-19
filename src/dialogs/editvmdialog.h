@@ -153,6 +153,14 @@ private Q_SLOTS:
     void removePortForwardRow();
 
 private:
+    // What gpuMemSpin shows: the adapter's VRAM, "Automatic" with 3D alone,
+    // or with host blobs the memory window.
+    enum class MemoryMode {
+        Vram,
+        HostGpu,
+        Hostmem,
+    };
+    void showMemorySize(MemoryMode mode, VMSpecs::GpuType gpu);
     void applyEncryptionConstraints();
     [[nodiscard]] DiskDialog::Encryption encryptionState() const;
     // Its icon tells whether it is encrypted.
@@ -217,8 +225,15 @@ private:
     KMessageWidget *monitorMessage = nullptr;
     QSpinBox *gpuMemSpin = nullptr;
     QCheckBox *accel3dCheck = nullptr;
+    QCheckBox *hostBlobsCheck = nullptr; // indented below accel3dCheck
     QLabel *vgaMemLabel = nullptr;
-    QLabel *gpuHintLabel = nullptr;
+    QToolButton *gpuMemPresetButton = nullptr;
+    KMessageWidget *gpuMessage = nullptr;
+    // gpuMemSpin edits one of these, depending on showMemorySize().
+    int m_vramMb = GlobalDefaults.gpuMemMb;
+    int m_hostmemMb = GlobalDefaults.gpuHostmemMb;
+    bool m_memoryShowsHostmem = false;
+    bool m_updatingMemory = false;
     QComboBox *audioCombo = nullptr;
     QPushButton *sb16ConfigButton = nullptr;
     VMSpecs::DiskInterface m_systemDiskInterface = GlobalDefaults.diskInterface;

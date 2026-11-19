@@ -20,6 +20,7 @@
 #include <QThread>
 
 #include <algorithm>
+#include <bit>
 
 using namespace Qt::StringLiterals;
 
@@ -802,6 +803,12 @@ bool VMConfig::isGpuTypeAvailable(VMSpecs::GpuType type)
 VMSpecs::GpuType VMConfig::fallbackGpuType()
 {
     return isGpuTypeAvailable(VMSpecs::GpuType::Virtio) ? VMSpecs::GpuType::Virtio : VMSpecs::GpuType::Vga;
+}
+
+void VMConfig::setGpuHostmemMb(int mb)
+{
+    const auto bounded = static_cast<unsigned>(qBound(KEMUConst::VirglHostmemMinMb, mb, KEMUConst::VirglHostmemMaxMb));
+    m_gpuHostmemMb = static_cast<int>(std::bit_ceil(bounded));
 }
 
 bool VMConfig::isGpu3dAvailable()
@@ -1802,6 +1809,8 @@ QJsonObject VMConfig::toJson() const
     j[u"machine_type"_s] = toString(m_machineType);
     j[u"gpu_type"_s] = toString(m_gpuType);
     j[u"gpu_3d_acceleration"_s] = m_gpu3dAcceleration;
+    j[u"gpu_host_blobs"_s] = m_gpuHostBlobs;
+    j[u"gpu_hostmem"_s] = m_gpuHostmemMb;
 
     j[u"audio_device"_s] = toString(m_audioDevice);
     if (m_audioDevice == VMSpecs::AudioDevice::Sb16 && !m_sb16Config.isDefault()) {
@@ -1931,6 +1940,8 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
 
     c.m_gpuType = parseGpuType(j[u"gpu_type"_s].toString());
     c.m_gpu3dAcceleration = j[u"gpu_3d_acceleration"_s].toBool(GlobalDefaults.gpu3dAcceleration);
+    c.m_gpuHostBlobs = j[u"gpu_host_blobs"_s].toBool(GlobalDefaults.gpuHostBlobs);
+    c.setGpuHostmemMb(j[u"gpu_hostmem"_s].toInt(GlobalDefaults.gpuHostmemMb));
     c.m_gpuMemMb = j[u"gpu_mem"_s].toInt(GlobalDefaults.gpuMemMb);
     c.setMonitorCount(j[u"monitor_count"_s].toInt(GlobalDefaults.monitorCount));
 

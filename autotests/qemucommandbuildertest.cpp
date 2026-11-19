@@ -223,6 +223,96 @@ private Q_SLOTS:
         }
     }
 
+    void virtioGpuDevice_data()
+    {
+        QTest::addColumn<bool>("gl");
+        QTest::addColumn<bool>("blob");
+        QTest::addColumn<bool>("viewer");
+        QTest::addColumn<int>("monitors");
+        QTest::addColumn<QString>("expected");
+
+        const QSize size = KEMUConst::DefaultDisplaySize;
+        const QString base = u"xres=%1,yres=%2,max_hostmem=64M"_s.arg(size.width()).arg(size.height());
+        const QString blob = u",blob=on,hostmem=4096M"_s;
+        QTest::newRow("2d") << false << false << true << 1 << u"virtio-vga,"_s + base;
+        QTest::newRow("2d-blob-ignored") << false << true << true << 1 << u"virtio-vga,"_s + base;
+        QTest::newRow("3d") << true << false << true << 1 << u"virtio-vga-gl,"_s + base;
+        QTest::newRow("3d-blob") << true << true << true << 1 << u"virtio-vga-gl,"_s + base + blob;
+        QTest::newRow("3d-blob-multihead") << true << true << true << 2 << u"virtio-vga-gl,"_s + base + blob + u",max_outputs=2"_s;
+        QTest::newRow("script-single-head") << true << false << false << 2 << u"virtio-vga-gl,"_s + base;
+    }
+
+    void virtioGpuDevice()
+    {
+        QFETCH(bool, gl);
+        QFETCH(bool, blob);
+        QFETCH(bool, viewer);
+        QFETCH(int, monitors);
+        QFETCH(QString, expected);
+
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        VMConfig config = testConfig(QDir(dir.path()));
+        config.setGpuType(VMSpecs::GpuType::Virtio);
+        config.setGpuMemMb(64);
+        config.setMonitorCount(monitors);
+        config.setGpuHostmemMb(4096);
+
+        QCOMPARE(QemuCommandBuilder::virtioGpuDevice(config, gl, blob, viewer), expected);
+    }
+
+    void gpuHostmemIsPowerOfTwo_data()
+    {
+        QTest::addColumn<int>("requested");
+        QTest::addColumn<int>("expected");
+        QTest::newRow("default") << GlobalDefaults.gpuHostmemMb << 1024;
+        QTest::newRow("exact") << 4096 << 4096;
+        QTest::newRow("rounded-up") << 3000 << 4096;
+        QTest::newRow("below-minimum") << 64 << KEMUConst::VirglHostmemMinMb;
+        QTest::newRow("above-maximum") << 100000 << KEMUConst::VirglHostmemMaxMb;
+        QTest::newRow("garbage") << -1 << KEMUConst::VirglHostmemMinMb;
+    }
+
+    void gpuHostmemIsPowerOfTwo()
+    {
+        QFETCH(int, requested);
+        QFETCH(int, expected);
+
+        VMConfig config;
+        config.setGpuHostmemMb(requested);
+        QCOMPARE(config.gpuHostmemMb(), expected);
+
+        // Stored values pass the same check, e.g. ones edited by hand.
+        QJsonObject json = config.toJson();
+        json[u"gpu_hostmem"_s] = requested;
+        json[u"gpu_host_blobs"_s] = true;
+        const VMConfig loaded = VMConfig::fromJson(json);
+        QCOMPARE(loaded.gpuHostmemMb(), expected);
+        QVERIFY(loaded.gpuHostBlobs());
+    }
+
+    void hostBlobsNeedProbedCapabilities()
+    {
+        // The capabilities are never probed here: a VM asking for host blobs
+        // runs with plain 3D, and its guest RAM keeps QEMU's own backend.
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QDir vmDir(dir.path());
+        VMConfig config = testConfig(vmDir);
+        config.setGpuType(VMSpecs::GpuType::Virtio);
+        config.setGpu3dAcceleration(true);
+        config.setGpuHostBlobs(true);
+        config.setPreallocMemory(true);
+
+        const QStringList args = QemuCommandBuilder::build(config, vmDir, dir.filePath(u"monitor.sock"_s));
+        const QString joined = args.join(u' ');
+        QVERIFY(joined.contains(u"virtio-vga-gl,"_s));
+        QVERIFY(!joined.contains(u"blob="_s));
+        QVERIFY(!joined.contains(u"hostmem=1024M"_s));
+        QVERIFY(!joined.contains(u"memory-backend"_s));
+        QVERIFY(args.contains(u"-mem-prealloc"_s));
+    }
+
     void graphicsDevice_data()
     {
         QTest::addColumn<bool>("acceleration");
