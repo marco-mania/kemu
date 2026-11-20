@@ -219,7 +219,6 @@ private:
     QLabel *monitorCountLabel = nullptr;
     KMessageWidget *monitorMessage = nullptr;
     QSpinBox *gpuMemSpin = nullptr;
-    QLabel *vgaMemLabel = nullptr;
     QToolButton *gpuMemPresetButton = nullptr;
     // What gpuMemSpin holds while it shows "Automatic".
     int m_vramMb = GlobalDefaults.gpuMemMb;

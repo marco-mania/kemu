@@ -28,7 +28,9 @@
 #include <QMenu>
 #include <QScopeGuard>
 #include <QScopedValueRollback>
+#include <QScrollBar>
 #include <QStyle>
+#include <QTabBar>
 
 #include <bit>
 
@@ -42,13 +44,49 @@ void setCombo(QComboBox *combo, E enumValue)
     if (idx >= 0)
         combo->setCurrentIndex(idx);
 }
-// Text-like widgets stay enabled so their content remains legible and
-// selectable; everything else is disabled.
+// Takes no input while it keeps its look. In the read-only view a setting
+// stays as legible as where it can be changed, and grey keeps meaning that
+// it does not apply.
+class InputLock : public QObject
+{
+public:
+    using QObject::QObject;
+
+    static void apply(QWidget *widget)
+    {
+        widget->installEventFilter(new InputLock(widget));
+        widget->setFocusPolicy(Qt::NoFocus);
+        widget->setAttribute(Qt::WA_Hover, false); // no highlight inviting a click
+    }
+
+protected:
+    bool eventFilter(QObject * /*watched*/, QEvent *event) override
+    {
+        switch (event->type()) {
+        case QEvent::MouseButtonPress:
+        case QEvent::MouseButtonRelease:
+        case QEvent::MouseButtonDblClick:
+        case QEvent::Wheel:
+        case QEvent::KeyPress:
+        case QEvent::KeyRelease:
+        case QEvent::Shortcut:
+        case QEvent::ContextMenu:
+            return true;
+        default:
+            return false;
+        }
+    }
+};
+
+// Text stays selectable, settings keep their look but take no input, and
+// actions are disabled.
 void makeReadOnly(QWidget *widget)
 {
     if (auto *combo = qobject_cast<QComboBox *>(widget)) {
-        combo->setEnabled(false);
-        return; // do not descend into the internal line edit
+        InputLock::apply(combo);
+        if (QLineEdit *edit = combo->lineEdit())
+            edit->setReadOnly(true);
+        return;
     }
     if (auto *spin = qobject_cast<QAbstractSpinBox *>(widget)) {
         spin->setReadOnly(true);
@@ -66,14 +104,30 @@ void makeReadOnly(QWidget *widget)
     }
     if (auto *view = qobject_cast<QAbstractItemView *>(widget)) {
         view->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        // Settings in cells, like the port forwarding rules.
+        for (QWidget *child : view->viewport()->findChildren<QWidget *>(Qt::FindDirectChildrenOnly))
+            makeReadOnly(child);
         return;
     }
     if (qobject_cast<KContextualHelpButton *>(widget))
         return; // explains, changes nothing
-    if (qobject_cast<QAbstractButton *>(widget) || qobject_cast<QAbstractSlider *>(widget)) {
-        widget->setEnabled(false);
+    if (qobject_cast<QTabBar *>(widget) || qobject_cast<QScrollBar *>(widget))
+        return; // moves around, changes nothing
+    if (auto *button = qobject_cast<QAbstractButton *>(widget)) {
+        // A check box shows a setting; any other button starts an action.
+        if (button->isCheckable())
+            InputLock::apply(button);
+        else
+            button->setEnabled(false);
         return;
     }
+    if (qobject_cast<QAbstractSlider *>(widget)) {
+        InputLock::apply(widget);
+        return;
+    }
+    // The check box in its title; the walk goes on into its content.
+    if (auto *group = qobject_cast<QGroupBox *>(widget); group && group->isCheckable())
+        InputLock::apply(group);
     for (QWidget *child : widget->findChildren<QWidget *>(Qt::FindDirectChildrenOnly))
         makeReadOnly(child);
 }
@@ -544,7 +598,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
         const auto gpu = static_cast<VMSpecs::GpuType>(gpuCombo->currentData().toInt());
         gpuMemSpin->setValue(VMConfig::normalizedVgaMemMb(gpu, gpuMemSpin->value()));
     });
-    vgaMemLabel = new QLabel(i18n("Video memory:"));
+    auto *vgaMemLabel = new QLabel(i18n("Video memory:"));
     vgaMemLabel->setBuddy(gpuMemSpin);
     graphicsLayout->addRow(vgaMemLabel,
                            ContextualHelp::beside(withSizeMenu(gpuMemSpin, &gpuMemPresetButton),
@@ -1266,8 +1320,9 @@ void EditVmDialog::setReadOnly(bool readOnly, bool frozen)
 
     makeReadOnly(this);
 
-    // Composite widget without a QAbstractButton root.
-    iconSelector->setEnabled(false);
+    // A button, but the icon it shows is a setting like the others.
+    iconSelector->setEnabled(true);
+    InputLock::apply(iconSelector);
 
     // setStandardButtons() replaces the buttons the walk above disabled.
     buttonBox->setStandardButtons(QDialogButtonBox::Close);
@@ -1276,6 +1331,15 @@ void EditVmDialog::setReadOnly(bool readOnly, bool frozen)
     if (!m_original.name().isEmpty()) {
         setWindowTitle(frozen ? i18n("Specification of VM: %1 (frozen)", m_original.name()) : i18n("Specification of VM: %1 (running)", m_original.name()));
     }
+
+    // Says at once that nothing here can be changed, and why.
+    auto *notice = createInlineMessage(KMessageWidget::Information);
+    notice->setIcon(QIcon::fromTheme(u"object-locked"_s));
+    notice->setText(frozen ? i18n("Linked clones are based on the disks of this virtual machine, so its settings are locked.")
+                           : i18n("This virtual machine is running, so its settings are locked."));
+    if (auto *box = qobject_cast<QBoxLayout *>(layout()))
+        box->insertWidget(0, notice);
+    notice->show();
 }
 
 void EditVmDialog::onMachineTypeChanged(int /*index*/)
@@ -1415,7 +1479,6 @@ void EditVmDialog::showVideoMemory(VMSpecs::GpuType gpu, bool automatic)
     const QScopedValueRollback guard(m_updatingMemory, true);
     gpuMemSpin->setEnabled(!automatic);
     gpuMemPresetButton->setEnabled(!automatic);
-    vgaMemLabel->setEnabled(!automatic);
     if (automatic) {
         // The special text shows while the value sits at the minimum.
         gpuMemSpin->setRange(0, 0);
