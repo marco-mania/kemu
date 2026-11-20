@@ -18,6 +18,7 @@
 #include <QDir>
 #include <QTimer>
 
+#include "dbusdisplay/audiolistener.h"
 #include "utils/qemucapabilities.h"
 #include "utils/sandboxcapabilities.h"
 
@@ -25,6 +26,9 @@ using namespace Qt::StringLiterals;
 
 int main(int argc, char *argv[])
 {
+    // Before QApplication starts any thread, as it sets the environment.
+    QemuAudioListener::requestShortPeriods();
+
     QApplication app(argc, argv);
 
     KLocalizedString::setApplicationDomain("kemu"_ba);

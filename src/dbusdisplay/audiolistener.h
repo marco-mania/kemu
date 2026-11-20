@@ -58,6 +58,12 @@ public:
     explicit QemuAudioListener(QObject *parent = nullptr);
     ~QemuAudioListener() override;
 
+    // Asks PipeWire for periods short enough for the sink's buffer, unless
+    // PIPEWIRE_LATENCY is set already. Call it once at startup, before any
+    // thread exists: it sets that environment variable, which PipeWire reads
+    // whenever a stream is created.
+    static void requestShortPeriods();
+
     int createSocketPair();
     bool connectListener();
     int socketFd() const

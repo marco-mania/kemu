@@ -9,7 +9,7 @@ Only the exported `qemu.sh` script—which runs standalone without KEMU—uses Q
 KEMU launches QEMU with `-display dbus,p2p=on` and passes one end of a Unix `socketpair` via QMP's `add_client` command, establishing a direct peer-to-peer D-Bus connection without a message bus or socket file. Video and input require no special guest drivers.
 
 - **Hardware-accelerated graphics:** With Virtio-GPU and 3D acceleration enabled, frames arrive as DMA-BUF descriptors and import directly into the viewer's OpenGL context, enabling zero-copy GPU-to-GPU transfers.
-- **Bidirectional audio:** Playback and microphone audio travel over D-Bus via QEMU's `audiodev=dbus`, handled on the host by Qt Multimedia (PipeWire).
+- **Bidirectional audio:** Playback and microphone audio travel over D-Bus via QEMU's `audiodev=dbus`, handled on the host by Qt Multimedia (PipeWire). Because the viewer keeps its playback buffer short, KEMU asks PipeWire for periods of at most 512 frames at 48 kHz (`PIPEWIRE_LATENCY=512/48000`, unless already set); longer periods, which audio players on the host may request, broke up the guest's sound. While a VM plays sound, the host's audio graph therefore runs in these shorter periods.
 - **Clipboard:** Select off, guest → host, host → guest, or bidirectional sharing under the viewer's *Devices* menu (requires `kemu-agent` in the guest; see below):
   - *Filter Passwords* (enabled by default) keeps entries marked as secret by password managers such as KeePassXC on their originating side in both directions; when disabled, they transfer like regular text.
   - *Share Selection (Middle Click)* additionally shares the primary selection.

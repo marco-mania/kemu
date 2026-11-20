@@ -16,6 +16,15 @@ namespace
 // in the jitter buffer, where the drift controller can see it.
 constexpr qint64 kSinkBufferUs = 30'000;
 
+// The longest period PipeWire may use while a stream of KEMU plays, about a
+// third of the sink's buffer. Without a request, the graph follows the other
+// streams: with a host player asking for 2048 frames (43 ms), each period
+// took more than the 30 ms buffer held, the guest's sound broke up, and the
+// jitter buffer, read at 70 % of QEMU's pace, resynced three times a second.
+constexpr int kPeriodFrames = 512;
+constexpr int kPeriodRate = 48'000;
+static_assert(2 * qint64(kPeriodFrames) * 1'000'000 / kPeriodRate <= kSinkBufferUs, "a period has to fit the sink's buffer twice");
+
 constexpr int kStatsIntervalMs = 10'000;
 constexpr int kRestartDelayMs = 250;
 } // namespace
@@ -74,6 +83,18 @@ QemuAudioListener::QemuAudioListener(QObject *parent)
     m_worker->moveToThread(m_thread);
 
     m_thread->start();
+}
+
+void QemuAudioListener::requestShortPeriods()
+{
+    // A latency the user set wins. Only PipeWire streams read it; with Qt's
+    // PulseAudio backend, the sink's buffer size already bounds the period.
+    if (qEnvironmentVariableIsSet("PIPEWIRE_LATENCY"))
+        return;
+    // A QByteArray of its own: with QT_USE_QSTRINGBUILDER the sum is a
+    // QStringBuilder, which qputenv()'s QByteArrayView does not take.
+    const QByteArray latency = QByteArray::number(kPeriodFrames) + '/' + QByteArray::number(kPeriodRate);
+    qputenv("PIPEWIRE_LATENCY", latency);
 }
 
 QemuAudioListener::~QemuAudioListener()
