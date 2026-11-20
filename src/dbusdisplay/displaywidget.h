@@ -30,7 +30,6 @@
 #include "dbusdisplay/controlconnection.h"
 #include "dbusdisplay/listener.h"
 #include "dbusdisplay/waylandpointerlock.h"
-#include "dbusdisplay/waylandsubsurface.h"
 
 class MultiheadMouseMapping;
 
@@ -75,18 +74,6 @@ public:
     void setPointerCaptured(bool capture);
     bool isPointerCaptureSupported() const;
 
-    // Mirrors the OSD widget into the Wayland overlay sub-surface. A no-op
-    // unless the zero-copy path is active, where the guest frame would
-    // otherwise cover the Qt widget. 'position' is in window coordinates.
-    void setOverlayImage(const QImage &image, const QPoint &position, bool visible);
-
-    // True while guest frames go straight to the compositor instead of
-    // through the OpenGL pipeline.
-    bool isZeroCopyActive() const
-    {
-        return m_subsurfaceActive;
-    }
-
 Q_SIGNALS:
     void fullscreenToggleRequested();
     void relativeGrabChanged(bool active);
@@ -95,9 +82,6 @@ Q_SIGNALS:
 protected:
     void initializeGL() override;
     void paintGL() override;
-    void resizeEvent(QResizeEvent *event) override;
-    void moveEvent(QMoveEvent *event) override;
-    void hideEvent(QHideEvent *event) override;
 
     bool event(QEvent *event) override;
 
@@ -120,19 +104,6 @@ private Q_SLOTS:
     void onCursorMoved();
 
 private:
-    // Zero-copy path: hand the guest's DMA-BUF straight to the compositor as
-    // a Wayland sub-surface, skipping the EGL import, the blit and Qt's own
-    // widget composition. Opt-in via KEMU_WAYLAND_SUBSURFACE=1.
-    bool subSurfacePossible() const
-    {
-        return m_subsurfaceRequested && !m_subsurfaceFailed;
-    }
-    bool ensureSubSurface();
-    bool presentViaSubSurface();
-    void disableSubSurface(const char *reason);
-    void updateSubSurfaceGeometry();
-    void updateSubSurfaceCursor();
-
     bool initEglFunctions();
     bool importDmaBuf(const DmaBufScanout &buf);
     bool ensureDmaBufImported();
@@ -224,7 +195,6 @@ private:
     bool m_textureReady = false;
     bool m_usingDmaBuf = false;
     bool m_dmaBufPending = false;
-    DmaBufScanout m_lastSubSurfaceScanout;
 
     // GL_BGRA_EXT: Avoids format conversion in the software path
     bool m_hasBGRA = false;
@@ -285,11 +255,6 @@ private:
     bool m_lastCursorVisible = false;
 
     QPoint m_lastCursorPos = {-1, -1};
-
-    WaylandSubSurface *m_subsurface = nullptr;
-    bool m_subsurfaceRequested = false; // KEMU_WAYLAND_SUBSURFACE=1
-    bool m_subsurfaceActive = false; // frames really go through it
-    bool m_subsurfaceFailed = false; // gave up, OpenGL path for good
 
     WaylandPointerLock *m_pointerLock = nullptr;
     QPointF m_motionAccum; // sub-pixel carry between relative_motion events

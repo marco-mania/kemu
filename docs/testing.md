@@ -49,7 +49,7 @@ Use `ctest --test-dir build -V` for verbose output, or `cmake --build build --ta
 ctest --test-dir build -R '^(dbusdisplaytest|controlconnectiontest)$' --output-on-failure
 ```
 
-These suites validate protocol handling and buffer management; they are **not** end-to-end graphics tests. EGL/DMA-BUF rendering, Wayland subsurfaces, pointer capture, and reconnecting to a live QEMU instance still require manual or integration testing in a suitable desktop session.
+These suites validate protocol handling and buffer management; they are **not** end-to-end graphics tests. EGL/DMA-BUF rendering, pointer capture, and reconnecting to a live QEMU instance still require manual or integration testing in a suitable desktop session.
 
 ## External tools
 

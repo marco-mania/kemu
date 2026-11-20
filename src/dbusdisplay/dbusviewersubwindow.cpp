@@ -49,14 +49,7 @@ DbusViewerSubWindow::DbusViewerSubWindow(QemuDisplayListener *listener, QemuCont
     m_scrollArea->setFocusPolicy(Qt::NoFocus);
     setCentralWidget(m_scrollArea);
 
-    // As in the main viewer, mirrored for the zero-copy path.
     m_osd = new OsdOverlay(m_scrollArea->viewport());
-    connect(m_osd, &OsdOverlay::appearanceChanged, this, [this] {
-        if (!m_display->isZeroCopyActive())
-            return;
-        const bool visible = m_osd->isVisible();
-        m_display->setOverlayImage(visible ? m_osd->renderToImage() : QImage(), m_osd->mapTo(this, QPoint(0, 0)), visible);
-    });
 
     QMenu *viewMenu = menuBar()->addMenu(i18n("&View"));
     m_fullscreenAction = viewMenu->addAction(i18n("&Fullscreen"));

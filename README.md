@@ -401,7 +401,7 @@ Each UEFI VM stores its NVRAM in a separate `OVMF_VARS.fd`, created from a match
 
 ### Screenshots
 
-In the viewer, *Machine → Save Screenshot…* captures the guest display at its native resolution, including Virtio-GL (using the optional Wayland zero-copy path when the DMA-BUF can also be imported through EGL). The main window's screenshot action uses the viewer when connected and falls back to QEMU's `screendump` for 2D VMs without a viewer. For a headless 3D VM, open the viewer before taking a screenshot.
+In the viewer, *Machine → Save Screenshot…* captures the guest display at its native resolution, including Virtio-GL. The main window's screenshot action uses the viewer when connected and falls back to QEMU's `screendump` for 2D VMs without a viewer. For a headless 3D VM, open the viewer before taking a screenshot.
 
 ### QEMU sandbox
 

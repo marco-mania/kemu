@@ -111,7 +111,6 @@ public:
     QRegion takeDirtyRegion();
 
     bool takeDmaBufScanout(DmaBufScanout &out);
-    void restoreDmaBufScanout(DmaBufScanout &&buf);
     bool isDmaBuf() const;
     CursorInfo cursorInfo() const;
 

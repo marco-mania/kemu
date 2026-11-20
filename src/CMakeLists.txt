@@ -21,21 +21,6 @@ function(kemu_add_wayland_protocol basename xml)
   target_sources(${PROJECT_NAME} PRIVATE ${header} ${source})
 endfunction()
 
-# linux-dmabuf moved from unstable/ to stable/ in wayland-protocols 1.33. Both
-# files declare zwp_linux_dmabuf_v1, so the generated basename stays the same
-# either way and the #include does not have to care.
-function(kemu_find_wayland_protocol_xml outvar)
-  foreach(candidate ${ARGN})
-    if(EXISTS "${candidate}")
-      set(${outvar}
-          "${candidate}"
-          PARENT_SCOPE)
-      return()
-    endif()
-  endforeach()
-  message(FATAL_ERROR "No usable protocol XML found for ${outvar}")
-endfunction()
-
 kemu_add_wayland_protocol(
   pointer-constraints-unstable-v1
   ${WAYLAND_PROTOCOLS_DIR}/unstable/pointer-constraints/pointer-constraints-unstable-v1.xml)
@@ -48,17 +33,6 @@ qt_generate_wayland_protocol_client_sources(
   PRIVATE_CODE
   FILES
     ${WAYLAND_PROTOCOLS_DIR}/unstable/keyboard-shortcuts-inhibit/keyboard-shortcuts-inhibit-unstable-v1.xml)
-
-# Zero-copy display path: viewporter does the crop/scale that sub-surfaces
-# cannot inherit, linux-dmabuf hands the guest's buffer to the compositor.
-kemu_add_wayland_protocol(
-  viewporter ${WAYLAND_PROTOCOLS_DIR}/stable/viewporter/viewporter.xml)
-
-kemu_find_wayland_protocol_xml(
-  KEMU_LINUX_DMABUF_XML
-  ${WAYLAND_PROTOCOLS_DIR}/stable/linux-dmabuf/linux-dmabuf-v1.xml
-  ${WAYLAND_PROTOCOLS_DIR}/unstable/linux-dmabuf/linux-dmabuf-unstable-v1.xml)
-kemu_add_wayland_protocol(linux-dmabuf-v1 ${KEMU_LINUX_DMABUF_XML})
 
 ecm_qt_declare_logging_category(
   ${PROJECT_NAME}
@@ -315,9 +289,7 @@ target_sources(
           dbusdisplay/waylandkeyboardshortcutsinhibit.cpp
           dbusdisplay/waylandkeyboardshortcutsinhibit.h
           dbusdisplay/waylandpointerlock.cpp
-          dbusdisplay/waylandpointerlock.h
-          dbusdisplay/waylandsubsurface.cpp
-          dbusdisplay/waylandsubsurface.h)
+          dbusdisplay/waylandpointerlock.h)
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
                                                    ${CMAKE_CURRENT_BINARY_DIR})

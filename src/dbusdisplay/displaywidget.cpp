@@ -142,10 +142,6 @@ QemuDisplayWidget::QemuDisplayWidget(QemuDisplayListener *listener, QemuControlC
     connect(m_pointerLock, &WaylandPointerLock::relativeMotion, this, &QemuDisplayWidget::onRelativeMotion);
     connect(m_pointerLock, &WaylandPointerLock::lockedChanged, this, &QemuDisplayWidget::onPointerLockChanged);
 
-    // Opt-in for now: the zero-copy path changes how frames reach the screen
-    // and depends on compositor support, so it must be asked for explicitly.
-    m_subsurfaceRequested = qgetenv("KEMU_WAYLAND_SUBSURFACE") == "1";
-
     m_motionTimer.setSingleShot(true);
     m_motionTimer.setTimerType(Qt::PreciseTimer);
     connect(&m_motionTimer, &QTimer::timeout, this, &QemuDisplayWidget::flushMotion);
@@ -197,7 +193,6 @@ void QemuDisplayWidget::setCursorPositionIsImageOrigin(bool imageOrigin)
     if (m_cursorPositionIsImageOrigin == imageOrigin)
         return;
     m_cursorPositionIsImageOrigin = imageOrigin;
-    updateSubSurfaceCursor();
     if (m_relativeGrabActive)
         scheduleRepaint();
 }
@@ -212,147 +207,6 @@ QPoint QemuDisplayWidget::guestPointer(const CursorInfo &ci) const
 bool QemuDisplayWidget::isInactiveSecondaryHead() const
 {
     return m_multiheadMouseMapping && m_displayHead != 0 && !m_multiheadMouseMapping->hasDisplay(m_displayHead);
-}
-
-// =============================================================================
-// Zero-copy Wayland sub-surface
-// =============================================================================
-
-bool QemuDisplayWidget::ensureSubSurface()
-{
-    if (!m_subsurfaceRequested || m_subsurfaceFailed)
-        return false;
-    if (m_subsurface && m_subsurface->isAttached())
-        return true;
-
-    // The parent wl_surface only exists once the window is mapped; before
-    // that just stay on the OpenGL path and retry on the next frame.
-    QWindow *handle = window() ? window()->windowHandle() : nullptr;
-    if (!handle)
-        return false;
-
-    if (!m_subsurface)
-        m_subsurface = new WaylandSubSurface(this);
-
-    if (!m_subsurface->attachToWindow(handle)) {
-        disableSubSurface("compositor or platform does not support it");
-        return false;
-    }
-
-    updateSubSurfaceGeometry();
-    return true;
-}
-
-void QemuDisplayWidget::disableSubSurface(const char *reason)
-{
-    if (m_subsurfaceFailed)
-        return;
-    m_subsurfaceFailed = true;
-    m_subsurfaceActive = false;
-    m_lastSubSurfaceScanout = {};
-    if (m_subsurface) {
-        m_subsurface->detach();
-        m_subsurface->deleteLater();
-        m_subsurface = nullptr;
-    }
-    qCDebug(KEMU_DBUSDISPLAY) << "Zero-copy path off, using OpenGL:" << reason;
-    update();
-}
-
-void QemuDisplayWidget::updateSubSurfaceGeometry()
-{
-    if (!m_subsurface || !m_subsurface->isAttached())
-        return;
-
-    QWidget *top = window();
-    if (!top)
-        return;
-
-    // Sub-surfaces are not clipped by their parent, so the scroll viewport's
-    // rect has to be passed along and applied as a crop.
-    const QRect content(mapTo(top, QPoint(0, 0)), size());
-    QRect clip = top->rect();
-    if (QWidget *viewport = parentWidget())
-        clip = QRect(viewport->mapTo(top, QPoint(0, 0)), viewport->size());
-
-    m_subsurface->setGeometry(content, clip);
-
-    // wl_subsurface.set_position only lands on the parent's commit, so nudge
-    // Qt into repainting the toplevel.
-    update();
-}
-
-void QemuDisplayWidget::updateSubSurfaceCursor()
-{
-    if (!m_subsurfaceActive || !m_subsurface)
-        return;
-
-    const CursorInfo ci = m_listener->cursorInfo();
-    const bool show = m_relativeGrabActive && !m_dimmed && ci.visible && !ci.image.isNull();
-    m_subsurface->setCursor(ci.image, QPoint(ci.hot_x, ci.hot_y), guestPointer(ci), show);
-}
-
-bool QemuDisplayWidget::presentViaSubSurface()
-{
-    if (!ensureSubSurface())
-        return false;
-
-    DmaBufScanout buf;
-    if (!m_listener->takeDmaBufScanout(buf)) {
-        // No new buffer this time; what is on screen stays valid.
-        m_listener->ackPendingFrame();
-        return m_subsurfaceActive;
-    }
-
-    const QRegion damage = m_listener->takeDirtyRegion();
-    if (!m_subsurface->present(buf, damage)) {
-        m_listener->restoreDmaBufScanout(std::move(buf));
-        m_dmaBufPending = true;
-        disableSubSurface("compositor rejected the guest's buffer format");
-        return false;
-    }
-    m_lastSubSurfaceScanout = std::move(buf);
-
-    // Keep the rest of the widget's state coherent: the software upload path
-    // must not run, and paintGL has nothing left to import.
-    m_dmaBufPending = false;
-    m_usingDmaBuf = true;
-
-    if (!m_subsurfaceActive) {
-        m_subsurfaceActive = true;
-        qCDebug(KEMU_DBUSDISPLAY) << "Zero-copy path active: guest frames go straight to the compositor";
-        update(); // one repaint to drop the stale OpenGL frame underneath
-    }
-
-    m_listener->ackPendingFrame();
-    updateSubSurfaceCursor();
-    return true;
-}
-
-void QemuDisplayWidget::setOverlayImage(const QImage &image, const QPoint &position, bool visible)
-{
-    if (!m_subsurfaceActive || !m_subsurface)
-        return;
-    m_subsurface->setOverlay(image, position, visible);
-}
-
-void QemuDisplayWidget::resizeEvent(QResizeEvent *event)
-{
-    QOpenGLWidget::resizeEvent(event);
-    updateSubSurfaceGeometry();
-}
-
-void QemuDisplayWidget::moveEvent(QMoveEvent *event)
-{
-    QOpenGLWidget::moveEvent(event);
-    updateSubSurfaceGeometry();
-}
-
-void QemuDisplayWidget::hideEvent(QHideEvent *event)
-{
-    QOpenGLWidget::hideEvent(event);
-    if (m_subsurface)
-        m_subsurface->hide();
 }
 
 // =============================================================================
@@ -413,7 +267,6 @@ void QemuDisplayWidget::onCursorImageChanged()
     m_cachedCursorImageKey = -1; // host cursor cache
     m_cursorTexKey = -1; // GPU overlay cache
     updateCursor();
-    updateSubSurfaceCursor();
     if (m_relativeGrabActive)
         scheduleRepaint(); // overlay draws the (new) image
 }
@@ -440,11 +293,6 @@ void QemuDisplayWidget::onCursorMoved()
     if (!positionChanged && !visibilityChanged)
         return;
     m_lastCursorPos = pos;
-
-    if (m_subsurfaceActive) {
-        updateSubSurfaceCursor();
-        return;
-    }
 
     scheduleRepaint();
 }
@@ -789,9 +637,6 @@ void QemuDisplayWidget::blitImportToPresent()
 
 void QemuDisplayWidget::presentDmaBufFrame()
 {
-    if (presentViaSubSurface())
-        return;
-
     makeCurrent();
     if (m_eglAvailable && ensureDmaBufImported())
         blitImportToPresent();
@@ -815,20 +660,14 @@ QImage QemuDisplayWidget::captureGuestFrame()
     if (m_fbSize.isEmpty())
         return {};
 
-    if (!m_subsurfaceActive && !m_usingDmaBuf && !m_dmaBufPending)
+    if (!m_usingDmaBuf && !m_dmaBufPending)
         return m_listener->currentImage().copy();
 
     if (!isValid())
         return {};
 
     makeCurrent();
-    if (m_subsurfaceActive) {
-        if (!m_eglAvailable || m_lastSubSurfaceScanout.numFds == 0 || !importDmaBuf(m_lastSubSurfaceScanout)) {
-            doneCurrent();
-            return {};
-        }
-        blitImportToPresent();
-    } else if (m_dmaBufPending) {
+    if (m_dmaBufPending) {
         if (!m_eglAvailable || !ensureDmaBufImported()) {
             doneCurrent();
             return {};
@@ -838,12 +677,6 @@ QImage QemuDisplayWidget::captureGuestFrame()
     }
 
     const QImage image = m_textureReady && m_texAllocSize == m_fbSize ? readDisplayTexture(this, m_textureId, m_fbSize, m_flipY) : QImage();
-    if (m_subsurfaceActive) {
-        destroyEglImage();
-        glDeleteTextures(1, &m_importTexture);
-        m_importTexture = 0;
-        m_textureReady = false;
-    }
     doneCurrent();
     return image;
 }
@@ -883,19 +716,6 @@ void QemuDisplayWidget::paintGL()
     m_pendingRepaint = false;
 
     glClear(GL_COLOR_BUFFER_BIT);
-
-    if (m_subsurfaceActive) {
-        // Frame, cursor and OSD all live in sub-surfaces above this widget;
-        // there is nothing left to rasterise here. Release whatever the
-        // OpenGL path still pins - this is the one place with a current
-        // context after the switch.
-        if (m_eglImage != EGL_NO_IMAGE_KHR) {
-            destroyEglImage();
-            m_textureReady = false;
-        }
-        m_listener->ackPendingFrame();
-        return;
-    }
 
     if (m_fbSize.isEmpty()) {
         destroyEglImage();
@@ -1136,7 +956,6 @@ bool QemuDisplayWidget::beginRelativeGrab()
     m_absVirtual = QPointF(rect().center());
     m_motionAccum = {};
 
-    updateSubSurfaceCursor();
     Q_EMIT relativeGrabChanged(true);
     return true;
 }
@@ -1154,7 +973,6 @@ void QemuDisplayWidget::endRelativeGrab()
     releaseAllKeys();
 
     updateCursor();
-    updateSubSurfaceCursor();
     Q_EMIT relativeGrabChanged(false);
 }
 
@@ -1167,16 +985,7 @@ void QemuDisplayWidget::onScanoutChanged(int w, int h)
     qCDebug(KEMU_DBUSDISPLAY) << "QemuDisplayWidget::onScanoutChanged" << w << h;
     m_dmaBufPending = false;
     m_usingDmaBuf = false;
-    m_lastSubSurfaceScanout = {};
     m_texAllocSize = QSize(); // present texture was blit-allocated; force realloc
-
-    // The guest dropped back to a software scanout, so the sub-surface would
-    // keep covering the widget with a stale frame.
-    if (m_subsurfaceActive) {
-        m_subsurfaceActive = false;
-        if (m_subsurface)
-            m_subsurface->hide();
-    }
 
     if (w == 0 || h == 0) {
         m_fbSize = QSize();
@@ -1205,8 +1014,8 @@ void QemuDisplayWidget::onDmaBufScanout(int w, int h)
     if (w == 0 || h == 0) {
         return;
     }
-    // The sub-surface path hands the buffer to the compositor directly and
-    // needs no EGL import of our own.
+    // Coming from a software scanout, the software upload allocated the
+    // present texture: let the first blit allocate it anew.
     if (!m_usingDmaBuf)
         m_texAllocSize = QSize();
     m_dmaBufPending = true;
@@ -1223,7 +1032,7 @@ void QemuDisplayWidget::onRegionUpdated(const QRect &)
 {
     // DMA-BUF path: copy the frame now and release QEMU immediately,
     // instead of making it wait for our paint/vsync cycle.
-    if ((m_usingDmaBuf || m_dmaBufPending) && (m_eglAvailable || subSurfacePossible()) && isValid()) {
+    if ((m_usingDmaBuf || m_dmaBufPending) && m_eglAvailable && isValid()) {
         presentDmaBufFrame();
         return;
     }
@@ -1630,9 +1439,6 @@ void QemuDisplayWidget::setDimmed(bool dimmed)
     m_dimmed = dimmed;
     if (dimmed)
         releaseAllKeys(); // key releases are swallowed while dimmed
-    // The guest cursor can be taken away; the frame itself cannot be dimmed
-    // on the zero-copy path, where the compositor owns the buffer.
-    updateSubSurfaceCursor();
     scheduleRepaint();
 }
 
