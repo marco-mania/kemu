@@ -2853,10 +2853,10 @@ void MainWindow::insertAgentMediumForVm(const QString &vmName)
         const QString pattern = u"kemu-agent-<version>-linux-%1.tar.gz"_s.arg(architecture);
         const QString text = available.isEmpty() ? xi18nc("@info",
                                                           "<para>KEMU makes the kemu-agent CD image from a kemu-agent bundle, and none is installed.</para>"
-                                                          "<para>KEMU's build makes one and installs it to <filename>share/kemu/agent</filename>, "
-                                                          "unless it was configured with <command>-DKEMU_AGENT_BUNDLE=OFF</command> "
-                                                          "(see KEMU's README, \"Build, install, uninstall\"). "
-                                                          "You can also choose a bundle (<filename>%1</filename>) yourself.</para>",
+                                                          "<para>Bundles are built from KEMU's sources with <command>cmake -S agent/packaging/bundle</command> "
+                                                          "and installed to <filename>share/kemu/agent</filename> (see KEMU's README, "
+                                                          "\"Build, install, uninstall\"). You can also choose a bundle "
+                                                          "(<filename>%1</filename>) yourself.</para>",
                                                           pattern)
                                                  : xi18nc("@info %2 lists architectures",
                                                           "<para>There is no kemu-agent bundle for %1 guests, only for %2.</para>"

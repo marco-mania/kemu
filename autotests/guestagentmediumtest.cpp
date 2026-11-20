@@ -57,7 +57,7 @@ struct TarEntry {
     bool directory = false;
 };
 
-/// A bundle tarball, as the agent-bundle target writes it.
+/// A bundle tarball, as agent/packaging/bundle builds it.
 bool writeTar(const QString &path, const QList<TarEntry> &entries, bool xz = false)
 {
     archive *a = archive_write_new();

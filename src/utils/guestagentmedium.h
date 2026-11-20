@@ -17,9 +17,9 @@
  *
  * KEMU offers kemu-agent to a guest as a CD image, like other hypervisors'
  * guest tools. The image is made from kemu-agent bundles (agent/README.md,
- * "Portable bundle"): unpacked in share/kemu/agent/<arch>/ (where KEMU's
- * build installs them unless KEMU_AGENT_BUNDLE is off), or a bundle tarball
- * the user chose. It holds the newest bundle for each architecture, an install.sh and
+ * "Portable bundle"): unpacked in share/kemu/agent/<arch>/ (where the
+ * bundle project agent/packaging/bundle, or KEMU's build with
+ * KEMU_AGENT_BUNDLES, installs them), or a bundle tarball the user chose. It holds the newest bundle for each architecture, an install.sh and
  * uninstall.sh that run the bundle's own for the guest's architecture, and a
  * README.txt.
  */

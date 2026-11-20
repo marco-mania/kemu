@@ -2,13 +2,13 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# kemu-agent is built and installed inside the guest, from this directory:
+# kemu-agent is built and installed inside the guest, or packaged by a
+# distribution, from this directory:
 #   cmake -S agent -B build -DCMAKE_INSTALL_PREFIX=/usr && cmake --build build && sudo cmake --install build
 #
-# It is also part of KEMU's source tree. KEMU's top-level CMakeLists.txt adds
-# it for its tests (with BUILD_TESTING): the agent belongs in the guest, so
-# nothing of it is installed then (see KEMU_AGENT_INSTALL). KEMU builds the
-# bundle for guests itself (KEMU_AGENT_BUNDLE, cmake/KemuAgentBundle.cmake).
+# It lives in KEMU's source tree but builds on its own; KEMU's build does not
+# include it. The portable bundle for guests is a project of its own as well
+# (packaging/bundle/CMakeLists.txt).
 
 cmake_minimum_required(VERSION 3.22)
 project(kemu-agent VERSION 0.3.0 LANGUAGES C CXX)
@@ -32,19 +32,10 @@ find_package(Wayland 1.20 REQUIRED COMPONENTS Client) # wl_output v4 events
 find_package(WaylandScanner REQUIRED)
 find_package(WaylandProtocols REQUIRED)
 
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    set(kemu_agent_standalone ON)
-else()
-    set(kemu_agent_standalone OFF)
-endif()
-
-option(KEMU_AGENT_INSTALL "Install kemu-agent (off when built as part of KEMU: it is meant for the guest)" ${kemu_agent_standalone})
 option(KEMU_AGENT_ENABLE_USER_UNIT "Enable the systemd user unit for every user (graphical-session.target.wants)" ON)
 set(KEMU_AGENT_UDEV_RULES_DIR "lib/udev/rules.d" CACHE PATH "udev rules directory, relative to the prefix or absolute")
 
-if(kemu_agent_standalone)
-    feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)
-endif()
+feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)
 
 # Protocol, clipboard and layout logic without platform code, shared with
 # the tests.
@@ -99,54 +90,25 @@ endif()
 configure_file(data/kemu-agent.service.in ${CMAKE_CURRENT_BINARY_DIR}/kemu-agent.service @ONLY)
 configure_file(data/org.kde.kemu.agent.desktop.in ${CMAKE_CURRENT_BINARY_DIR}/org.kde.kemu.agent.desktop @ONLY)
 
-if(KEMU_AGENT_INSTALL)
-    install(TARGETS kemu-agent ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
+install(TARGETS kemu-agent ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
 
-    # Port access for the user of the active session (section 11.1).
-    install(FILES data/70-kemu-agent.rules DESTINATION ${KEMU_AGENT_UDEV_RULES_DIR})
+# Port access for the user of the active session (section 11.1).
+install(FILES data/70-kemu-agent.rules DESTINATION ${KEMU_AGENT_UDEV_RULES_DIR})
 
-    # Start-up (section 11.2): a systemd user unit, and an autostart entry for
-    # sessions that start no user units.
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kemu-agent.service DESTINATION ${KDE_INSTALL_SYSTEMDUSERUNITDIR})
-    if(KEMU_AGENT_ENABLE_USER_UNIT)
-        set(wants "${KDE_INSTALL_FULL_SYSTEMDUSERUNITDIR}/graphical-session.target.wants")
-        install(CODE "
-            file(MAKE_DIRECTORY \"\$ENV{DESTDIR}${wants}\")
-            execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink ../kemu-agent.service \"\$ENV{DESTDIR}${wants}/kemu-agent.service\")
-            # The link is created here, not by install(FILES): list it in the
-            # manifest, or the uninstall target leaves it behind.
-            list(APPEND CMAKE_INSTALL_MANIFEST_FILES \"${wants}/kemu-agent.service\")
-        ")
-    endif()
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.kde.kemu.agent.desktop DESTINATION ${KDE_INSTALL_AUTOSTARTDIR})
+# Start-up (section 11.2): a systemd user unit, and an autostart entry for
+# sessions that start no user units.
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kemu-agent.service DESTINATION ${KDE_INSTALL_SYSTEMDUSERUNITDIR})
+if(KEMU_AGENT_ENABLE_USER_UNIT)
+    set(wants "${KDE_INSTALL_FULL_SYSTEMDUSERUNITDIR}/graphical-session.target.wants")
+    install(CODE "
+        file(MAKE_DIRECTORY \"\$ENV{DESTDIR}${wants}\")
+        execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink ../kemu-agent.service \"\$ENV{DESTDIR}${wants}/kemu-agent.service\")
+        # The link is created here, not by install(FILES): list it in the
+        # manifest, or the uninstall target leaves it behind.
+        list(APPEND CMAKE_INSTALL_MANIFEST_FILES \"${wants}/kemu-agent.service\")
+    ")
 endif()
-
-# The portable bundle: kemu-agent built in a container against an old glibc and
-# a static Qt, for the installer medium. Needs podman or docker; see
-# README.md ("Portable bundle"). Within KEMU's build tree KEMU's own
-# agent-bundle target does this.
-if(kemu_agent_standalone)
-    string(TOLOWER "${CMAKE_HOST_SYSTEM_PROCESSOR}" kemu_agent_host)
-    if(kemu_agent_host MATCHES "^(aarch64|arm64)$")
-        set(kemu_agent_host aarch64)
-    else()
-        set(kemu_agent_host x86_64)
-    endif()
-    set(KEMU_AGENT_BUNDLE_ARCHS "${kemu_agent_host}" CACHE STRING
-        "Architectures to build bundles for: x86_64, aarch64 (default: the host's)")
-    set(KEMU_AGENT_BUNDLE_GLIBC "2.28" CACHE STRING "Oldest glibc the bundle runs on: 2.28 or 2.34")
-    set(kemu_agent_bundle_commands)
-    foreach(arch IN LISTS KEMU_AGENT_BUNDLE_ARCHS)
-        list(APPEND kemu_agent_bundle_commands
-            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/packaging/bundle/build-bundle.sh
-                    --arch ${arch} --glibc ${KEMU_AGENT_BUNDLE_GLIBC}
-                    --out ${CMAKE_CURRENT_BINARY_DIR}/bundle)
-    endforeach()
-    add_custom_target(agent-bundle
-        ${kemu_agent_bundle_commands}
-        COMMENT "Building the portable kemu-agent bundle in a container"
-        USES_TERMINAL VERBATIM)
-endif()
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.kde.kemu.agent.desktop DESTINATION ${KDE_INSTALL_AUTOSTARTDIR})
 
 if(BUILD_TESTING)
     find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Test)

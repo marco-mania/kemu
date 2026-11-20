@@ -76,7 +76,7 @@ For sandbox-specific behaviour and additional permissions, see [docs/flatpak.md]
 - KDE Frameworks ≥ 6.13: CoreAddons, Config, ConfigWidgets, Crash, DBusAddons, I18n, IconThemes, JobWidgets, KIO, Notifications, NotifyConfig, StatusNotifierItem, TextTemplate, Wallet, WidgetsAddons, WindowSystem, XmlGui
 - QEMU ≥ 7.2 with the D-Bus display (and Wayland-enabled SDL for running exported `qemu.sh` scripts)
 - libarchive, libslirp ≥ 4.7, libisofs, libudev, EGL, Wayland (client library, protocols, `wayland-scanner`)
-- Podman or Docker - builds kemu-agent, the agent for Linux guests, in a container (not needed with `-DKEMU_AGENT_BUNDLE=OFF`; see below)
+- Podman or Docker - only to build the kemu-agent bundle for guests (see below)
 
 **Optional runtime dependencies:**
 
@@ -93,7 +93,7 @@ sudo pacman -S cmake extra-cmake-modules qt6-base qt6-svg qt6-multimedia \
   kcoreaddons kconfig kconfigwidgets kcrash kdbusaddons ki18n kiconthemes \
   kjobwidgets kio knotifications knotifyconfig kstatusnotifieritem \
   ktexttemplate kwallet kwidgetsaddons kwindowsystem kxmlgui \
-  libarchive libslirp libisofs wayland wayland-protocols qt6-wayland qemu-full podman
+  libarchive libslirp libisofs wayland wayland-protocols qt6-wayland qemu-full
 sudo pacman -S edk2-ovmf swtpm virtiofsd   # optional
 ```
 
@@ -108,7 +108,7 @@ sudo apt install build-essential cmake extra-cmake-modules \
   libkf6statusnotifieritem-dev libkf6texttemplate-dev libkf6wallet-dev \
   libkf6widgetsaddons-dev libkf6windowsystem-dev libkf6xmlgui-dev \
   libarchive-dev libslirp-dev libisofs-dev libudev-dev libegl1-mesa-dev \
-  libwayland-dev wayland-protocols qemu-system podman
+  libwayland-dev wayland-protocols qemu-system
 sudo apt install ovmf swtpm swtpm-tools virtiofsd   # optional
 ```
 
@@ -123,7 +123,7 @@ sudo dnf install gcc-c++ cmake extra-cmake-modules \
   kf6-kstatusnotifieritem-devel kf6-ktexttemplate-devel kf6-kwallet-devel \
   kf6-kwidgetsaddons-devel kf6-kwindowsystem-devel kf6-kxmlgui-devel \
   libarchive-devel libslirp-devel libisofs-devel systemd-devel mesa-libEGL-devel \
-  wayland-devel wayland-protocols-devel qemu-system-x86 qemu-img podman
+  wayland-devel wayland-protocols-devel qemu-system-x86 qemu-img
 sudo dnf install edk2-ovmf swtpm swtpm-tools virtiofsd   # optional
 ```
 
@@ -138,22 +138,21 @@ sudo zypper in gcc-c++ cmake extra-cmake-modules \
   kf6-kstatusnotifieritem-devel kf6-ktexttemplate-devel kf6-kwallet-devel \
   kf6-kwidgetsaddons-devel kf6-kwindowsystem-devel kf6-kxmlgui-devel \
   libarchive-devel libslirp-devel libisofs-devel systemd-devel Mesa-libEGL-devel \
-  wayland-devel wayland-protocols-devel qemu-x86 qemu-img qemu-ui-dbus qemu-audio-dbus podman
+  wayland-devel wayland-protocols-devel qemu-x86 qemu-img qemu-ui-dbus qemu-audio-dbus
 sudo zypper in qemu-ovmf-x86_64 swtpm virtiofsd   # optional
 ```
 
 #### Build, install, uninstall
 
-The source tree contains KEMU and `kemu-agent` in `agent/`, its agent for Linux guests (clipboard sharing and monitor layout; see [docs/display.md](docs/display.md)). A normal build produces both: KEMU, and the agent as a *portable bundle* for guests of the host's architecture, which is installed to `share/kemu/agent/<arch>/` so that KEMU can offer it to guests.
+The source tree contains KEMU and, in `agent/`, `kemu-agent`, its agent for Linux guests (clipboard sharing and monitor layout; see [docs/display.md](docs/display.md)). They are built separately:
 
-The bundle is built in a container (Podman or Docker) against an old glibc (2.28: RHEL 8, Debian 10, Ubuntu 18.10, and newer) with a static Qt, so guests need neither Qt nor development packages. The first build downloads a toolchain image and compiles Qt, which takes a while; later builds reuse the image and rebuild the agent only when its sources change. Without Podman or Docker, configuring stops and says how to build without the agent.
+| Build                                     | Configure                                         | Needs                       |
+| ----------------------------------------- | ------------------------------------------------- | --------------------------- |
+| KEMU                                      | `cmake -B build`                                  | the requirements above      |
+| kemu-agent bundle for KEMU's CD image     | `cmake -S agent/packaging/bundle -B build-bundle` | Podman or Docker            |
+| kemu-agent itself, usually in a guest     | `cmake -S agent -B build-agent`                   | Qt ≥ 6.5, Wayland, ECM      |
 
-| Configure option                               | Builds and installs                                                       |
-| ---------------------------------------------- | ------------------------------------------------------------------------- |
-| (none, the default)                            | KEMU + the agent bundle for the host's architecture                       |
-| `-DKEMU_AGENT_BUNDLE=OFF`                      | KEMU only (CI, distribution packages, Flatpak)                            |
-| `"-DKEMU_AGENT_BUNDLE_ARCHS=x86_64;aarch64"`   | KEMU + agent bundles for x86_64 and aarch64 guests                        |
-| `-DKEMU_AGENT_BUNDLES=/path/to/bundle.tar.gz`  | additionally, bundles built elsewhere (also with `KEMU_AGENT_BUNDLE=OFF`) |
+A normal build is KEMU alone. To offer the agent to guests (*Insert kemu-agent CD Image…*), KEMU also needs a kemu-agent bundle, installed alongside it or chosen when inserting the image (see *kemu-agent bundle for guests* below).
 
 **Run from the build directory (development):**
 
@@ -190,23 +189,34 @@ sudo cmake --install build
 sudo cmake --build build --target uninstall    # to remove
 ```
 
-> **Note:** Use `cmake --install build` rather than `sudo cmake --build build --target install`. The latter compiles as root first, which the agent bundle rejects because its container toolchain image would end up in root's container storage.
+> **Note:** Use `cmake --install build` rather than `sudo cmake --build build --target install`. The latter compiles as root first, leaving files owned by root in the build directory.
 
 Because pointer capture relies on a private Qt API to access the viewer window's Wayland surface, KEMU must be rebuilt after upgrading to a new Qt minor version.
 
-##### KEMU without the agent
+##### kemu-agent bundle for guests
+
+KEMU offers `kemu-agent` to guests on a CD image (see *Installing kemu-agent in guests* below), which it makes from a *portable bundle*: the agent built against an old glibc (2.28: RHEL 8, Debian 10, Ubuntu 18.10, and newer) with a static Qt, so guests need neither Qt nor development packages. The bundle is a build of its own, made in a container; besides CMake, it needs only Podman or Docker (package `podman` in all distributions above):
 
 ```sh
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DKEMU_AGENT_BUNDLE=OFF
+cmake -S agent/packaging/bundle -B build-bundle
+cmake --build build-bundle
+sudo cmake --install build-bundle                    # to /usr/local/share/kemu/agent/<arch>/
+sudo cmake --build build-bundle --target uninstall   # to remove
 ```
 
-For CI pipelines, distribution packages, and the Flatpak, which build without a container engine or network access (see [docs/flatpak.md](docs/flatpak.md#kemu-agent-for-guests)). The agent's tests still run with `ctest`. KEMU then has no agent to offer to guests unless bundles built elsewhere are installed with it: `-DKEMU_AGENT_BUNDLES=/path/to/kemu-agent-<version>-linux-<arch>.tar.gz` (a list of absolute paths; a `.sha256` file next to a bundle is verified).
+KEMU finds bundles in `share/kemu/agent/` next to its program, in the system data directories (`XDG_DATA_DIRS`, which include `/usr/local/share`), and in `~/.local/share`, so a bundle can also be installed for the current user without root: `cmake --install build-bundle --prefix ~/.local`. Build as your regular user: the bundle refuses to be built through `sudo`, since its toolchain image would end up in root's container storage.
+
+The first build downloads a toolchain image and compiles Qt, which takes a while; later builds reuse the image and rebuild the agent only when its sources change. Without Podman or Docker, configuring stops. The archive, `build-bundle/kemu-agent-<version>-linux-<arch>.tar.gz` with a `.sha256` file, stays in the build directory; `agent/packaging/bundle/check-bundle.sh` has verified it during the build. `-DKEMU_AGENT_BUNDLE_GLIBC=2.34` raises the baseline to RHEL 9 and newer.
+
+Bundles built elsewhere or downloaded can also be installed together with KEMU, without a container—for distribution packages and the Flatpak, for example (see [docs/flatpak.md](docs/flatpak.md#kemu-agent-for-guests)): configure KEMU with `-DKEMU_AGENT_BUNDLES=/path/to/kemu-agent-<version>-linux-<arch>.tar.gz` (a list of absolute paths; a `.sha256` file next to a bundle is verified). Without any bundle installed, KEMU asks for a bundle tarball when inserting the CD image.
+
+A bundle can also be installed by hand in a guest: unpack it and run `sudo sh install.sh`, which installs to `/opt/kemu-agent` and `/etc` (`/opt/kemu-agent/uninstall.sh` removes it). See [agent/README.md](agent/README.md#portable-bundle) for details.
 
 ##### Guests of other architectures (aarch64)
 
 ```sh
-cmake -B build -DCMAKE_BUILD_TYPE=Release "-DKEMU_AGENT_BUNDLE_ARCHS=x86_64;aarch64"
-cmake --build build
+cmake -S agent/packaging/bundle -B build-bundle "-DKEMU_AGENT_BUNDLE_ARCHS=x86_64;aarch64"
+cmake --build build-bundle
 ```
 
 `KEMU_AGENT_BUNDLE_ARCHS` lists the guest architectures to build bundles for (x86_64, aarch64; default: the host's). A bundle for another architecture is not cross-compiled: it is built natively in a container of that architecture, which runs under QEMU user-mode emulation. The host therefore needs QEMU's user-mode emulation with its binfmt handlers:
@@ -219,21 +229,11 @@ cmake --build build
 
 After installing, restart `systemd-binfmt` (`sudo systemctl restart systemd-binfmt`) or reboot. Configuring checks that the handler is registered (`/proc/sys/fs/binfmt_misc/qemu-aarch64`) and stops otherwise.
 
-Emulated, the first build takes hours instead of minutes, and each architecture has its own cached toolchain image; once that exists, rebuilding the agent takes minutes. The result is `build/agent/bundle/kemu-agent-<version>-linux-aarch64.tar.gz`, which `agent/packaging/bundle/check-bundle.sh` has already verified during the build; `install` puts it in `share/kemu/agent/aarch64/`. On an aarch64 host, it works the other way round, with x86_64 as the additional architecture. `-DKEMU_AGENT_BUNDLE_GLIBC=2.34` raises the baseline of all bundles to RHEL 9 and newer.
-
-##### The bundle on its own
-
-```sh
-cmake --build build --target agent-bundle                   # builds only the bundles
-sudo cmake --install build --component agent-bundle         # installs only the bundles
-sudo cmake --build build --target uninstall-agent-bundle    # removes them again
-```
-
-A bundle can also be installed by hand in a guest: unpack it and run `sudo sh install.sh`, which installs to `/opt/kemu-agent` and `/etc` (`/opt/kemu-agent/uninstall.sh` removes it). See [agent/README.md](agent/README.md#portable-bundle) for details.
+Emulated, the first build takes hours instead of minutes, and each architecture has its own cached toolchain image; once that exists, rebuilding the agent takes minutes. The result is `build-bundle/kemu-agent-<version>-linux-aarch64.tar.gz`; `cmake --install build-bundle` puts it in `share/kemu/agent/aarch64/`. On an aarch64 host, it works the other way round, with x86_64 as the additional architecture.
 
 ##### kemu-agent on its own (usually in a guest)
 
-To build the agent from source inside a guest instead, without KEMU or KDE libraries—only Qt ≥ 6.5 (Core, Gui, DBus), libwayland-client ≥ 1.20, Extra CMake Modules, `wayland-scanner`, and wayland-protocols:
+To build the agent from source inside a guest instead, or to package it for a distribution, without KEMU or KDE libraries—only Qt ≥ 6.5 (Core, Gui, DBus), libwayland-client ≥ 1.20, Extra CMake Modules, `wayland-scanner`, and wayland-protocols:
 
 ```sh
 cmake -S agent -B build-agent -DCMAKE_INSTALL_PREFIX=/usr
@@ -266,7 +266,7 @@ Manage templates under *Settings → Templates* (format documented in [docs/temp
 sudo sh /run/media/$USER/KEMU_AGENT/install.sh    # Debian/Ubuntu: /media/$USER/KEMU_AGENT
 ```
 
-This installs the agent to `/opt/kemu-agent` and starts it; a newer CD image updates it, and `sudo sh /opt/kemu-agent/uninstall.sh` removes it. KEMU builds the image from the kemu-agent bundles installed to `share/kemu/agent`—which a normal build does (see *Build, install, uninstall* above)—or from a bundle you choose when none is installed. See [docs/display.md](docs/display.md#installing-it-in-a-guest) for details.
+This installs the agent to `/opt/kemu-agent` and starts it; a newer CD image updates it, and `sudo sh /opt/kemu-agent/uninstall.sh` removes it. KEMU builds the image from the kemu-agent bundles installed to `share/kemu/agent` (see *kemu-agent bundle for guests* above), or from a bundle you choose when none is installed. See [docs/display.md](docs/display.md#installing-it-in-a-guest) for details.
 
 ### Multiple monitors (experimental)
 

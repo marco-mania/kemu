@@ -23,7 +23,7 @@ sudo cmake --install build
 sudo cmake --build build --target uninstall    # to remove it again
 ```
 
-Located in `agent/` within KEMU's source tree, the agent builds standalone without KEMU's other sources or KDE Frameworks. KEMU's build includes it for its tests (with `BUILD_TESTING`, the default) and builds the portable bundle for guests from it; because the agent belongs inside the guest, the agent itself is not installed on the host unless `-DKEMU_AGENT_INSTALL=ON` is set.
+Located in `agent/` within KEMU's source tree, the agent builds on its own, without KEMU's other sources or KDE Frameworks; KEMU's build does not include it. Distributions can package it from the same source tarball as KEMU.
 
 Installation places the following files:
 
@@ -41,13 +41,18 @@ After installation, reload udev rules (`sudo udevadm control --reload && sudo ud
 
 Where building on the guest is undesirable or impractical, the agent can be packaged once into a self-contained bundle. It links against an older glibc (2.28 by default—supporting RHEL 8, Debian 10, Ubuntu 18.10, and newer), statically embeds a minimal Qt, and bundles remaining non-glibc dependencies (such as `libxcb-cursor` for Qt 6.5+), so the guest needs neither Qt nor development packages.
 
-KEMU's own build makes the bundle by default and installs it to `share/kemu/agent/<arch>/` (see KEMU's README, "Build, install, uninstall"). A standalone build of `agent/`, or the script itself, makes it on request:
+The bundle has a build of its own in `packaging/bundle/`, which needs only CMake and a container engine; it installs the bundle to `share/kemu/agent/<arch>/`, where KEMU finds it to offer the agent to guests (see KEMU's README, "kemu-agent bundle for guests"):
 
 ```bash
-cmake --build build --target agent-bundle      # or: packaging/bundle/build-bundle.sh
+cmake -S agent/packaging/bundle -B build-bundle
+cmake --build build-bundle
+sudo cmake --install build-bundle                    # or, without root: --prefix ~/.local
+sudo cmake --build build-bundle --target uninstall   # to remove it again
 ```
 
-Building requires Podman or Docker. It builds and caches a `manylinux`-based toolchain image (the initial Qt compilation takes a while), compiles the agent inside it, and outputs `kemu-agent-<version>-linux-<arch>.tar.gz` alongside a `.sha256` file.
+Without CMake, `packaging/bundle/build-bundle.sh` builds a bundle as well (`--arch`, `--glibc`, `--out`; `--help` lists all options).
+
+Building requires Podman or Docker. It builds and caches a `manylinux`-based toolchain image (the initial Qt compilation takes a while), compiles the agent inside it, and outputs `kemu-agent-<version>-linux-<arch>.tar.gz` alongside a `.sha256` file in the build directory.
 
 - `"-DKEMU_AGENT_BUNDLE_ARCHS=x86_64;aarch64"`: Builds a bundle for each listed architecture (default: the host's). On `x86_64`, `aarch64` is not cross-compiled: the `aarch64` container runs natively under QEMU user-mode emulation (`binfmt`), so the first Qt build takes hours. KEMU's README ("Guests of other architectures") lists what the host needs.
 - `-DKEMU_AGENT_BUNDLE_GLIBC=2.34`: Raises baseline compatibility to RHEL 9 and newer.
@@ -121,7 +126,7 @@ cmake -S agent -B build -DBUILD_TESTING=ON && cmake --build build
 QT_QPA_PLATFORM=offscreen ctest --test-dir build
 ```
 
-Within KEMU's build tree, these run alongside KEMU's test suite under the `agent…test` prefix.
+They are not part of KEMU's test suite: run them in a build of their own, as above.
 
 `agentbundleinstalltest` tests the bundle's `install.sh` and `uninstall.sh` against a system tree in a temporary directory (`--root`) using `sh` and, where available, `dash`.
 

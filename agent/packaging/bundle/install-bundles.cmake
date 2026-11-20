@@ -2,27 +2,17 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# Run at install time (from KemuAgentBundle.cmake): unpacks kemu-agent bundles
-# to KEMU_AGENT_BUNDLE_DEST/<arch>/, one per architecture, replacing what was
-# there. With KEMU_AGENT_BUNDLE_MODE=uninstall (cmake -P) it removes
-# KEMU_AGENT_BUNDLE_DEST instead. DESTDIR is honoured in both.
+# Run at install time, from the bundle project (CMakeLists.txt here) and from
+# KEMU's build (cmake/KemuAgentBundle.cmake): unpacks kemu-agent bundles to
+# KEMU_AGENT_BUNDLE_DEST/<arch>/, the newest per architecture, replacing what
+# was there, and lists the files in the install manifest. DESTDIR is honoured.
 #
-#   KEMU_AGENT_BUNDLE_BUILT  the bundles the build made, without extension
+#   KEMU_AGENT_BUNDLE_BUILT  bundles the bundle project built, without extension
 #                            (.../kemu-agent-<version>-linux-<arch>)
-#   KEMU_AGENT_BUNDLES       bundles built elsewhere
+#   KEMU_AGENT_BUNDLES       bundles built elsewhere or downloaded
 #   KEMU_AGENT_BUNDLE_DEST   share/kemu/agent, as a full path
 
 set(dest "$ENV{DESTDIR}${KEMU_AGENT_BUNDLE_DEST}")
-
-if(KEMU_AGENT_BUNDLE_MODE STREQUAL "uninstall")
-    if(EXISTS "${dest}")
-        message(STATUS "Removing: ${dest}")
-        file(REMOVE_RECURSE "${dest}")
-    else()
-        message(STATUS "Not installed: ${dest}")
-    endif()
-    return()
-endif()
 
 set(bundles)
 foreach(built IN LISTS KEMU_AGENT_BUNDLE_BUILT)
@@ -30,7 +20,7 @@ foreach(built IN LISTS KEMU_AGENT_BUNDLE_BUILT)
     if(NOT found)
         get_filename_component(name "${built}" NAME)
         message(FATAL_ERROR
-            "${name} has not been built. Build KEMU first, as your user: cmake --build <build>; "
+            "${name} has not been built. Build it first, as your user: cmake --build <build>; "
             "then install it: sudo cmake --install <build>.")
     endif()
     list(APPEND bundles ${found})
@@ -96,7 +86,7 @@ foreach(arch IN LISTS archs)
     file(REMOVE_RECURSE "${tmp}")
     message(STATUS "Installing: ${dest}/${arch} (kemu-agent ${version})")
 
-    # For the uninstall target and install_manifest*.txt.
+    # For install_manifest.txt, which the uninstall targets read.
     file(GLOB_RECURSE files LIST_DIRECTORIES false RELATIVE "${dest}/${arch}" "${dest}/${arch}/*")
     foreach(file IN LISTS files)
         list(APPEND CMAKE_INSTALL_MANIFEST_FILES "${KEMU_AGENT_BUNDLE_DEST}/${arch}/${file}")

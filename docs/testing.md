@@ -19,9 +19,9 @@ ctest --test-dir build -N
 ctest --test-dir build -R '^dbusdisplaytest$' --output-on-failure
 ```
 
-When `BUILD_TESTING` is enabled, the guest agent (`agent/`) is built natively for its unit tests (`agent…test`). See `agent/README.md` for end-to-end tests, which require a guest-like environment.
+The guest agent (`agent/`) is not part of KEMU's build. Its unit tests (`agent…test`) run in a build of their own (`cmake -S agent -B build-agent -DBUILD_TESTING=ON`); see `agent/README.md`, which also covers end-to-end tests that require a guest-like environment. A CI pipeline therefore runs two builds, KEMU and the agent; neither needs Podman or Docker.
 
-In CI—or any environment without Podman or Docker—configure with `-DKEMU_AGENT_BUNDLE=OFF`; otherwise, CMake configuration stops because the `kemu-agent` guest bundle is built in a container (the agent's own tests still run). Pipelines producing bundles require a job with a container engine (plus QEMU user-mode emulation when targeting another architecture) running `cmake --build build --target agent-bundle`.
+Pipelines producing `kemu-agent` bundles for guests require a job with a container engine (plus QEMU user-mode emulation when targeting another architecture) that builds `agent/packaging/bundle` (`cmake -S agent/packaging/bundle -B build-bundle && cmake --build build-bundle`).
 
 Use `ctest --test-dir build -V` for verbose output, or `cmake --build build --target dbusdisplaytest` to build only the D-Bus viewer test. Standard KEMU development dependencies and Qt6 Test are required.
 

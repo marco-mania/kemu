@@ -103,13 +103,10 @@ find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
 
 add_subdirectory(src)
 
-# kemu-agent, the agent for Linux guests: built natively for its tests (it is
-# not installed on the host), and as the bundle for guests, built in a
-# container and installed to share/kemu/agent (KEMU_AGENT_BUNDLE, on by
-# default; see cmake/KemuAgentBundle.cmake).
-if(BUILD_TESTING)
-  add_subdirectory(agent)
-endif()
+# kemu-agent, the agent for Linux guests in agent/, is not part of KEMU's
+# build: it builds on its own (cmake -S agent), and so does its portable
+# bundle for guests (cmake -S agent/packaging/bundle). Bundles made there can
+# be installed with KEMU (KEMU_AGENT_BUNDLES, see cmake/KemuAgentBundle.cmake).
 include(KemuAgentBundle)
 
 if(BUILD_TESTING)

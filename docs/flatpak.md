@@ -27,15 +27,14 @@ Some permissions are intentionally omitted to preserve sandbox isolation; grant 
 
 ## kemu-agent for guests
 
-The Flatpak is built without the `kemu-agent` guest bundle (`-DKEMU_AGENT_BUNDLE=OFF` in `org.kde.kemu.yml`) because building the bundle requires a container engine and network access, neither of which `flatpak-builder` provides. To include bundles in the Flatpak, build them externally (or use prebuilt release archives), add each to the `kemu` module's `sources`, and pass their paths in `/run/build/kemu/` (where `flatpak-builder` places sources) via `-DKEMU_AGENT_BUNDLES`:
+The Flatpak ships no `kemu-agent` guest bundle by default: building one requires a container engine and network access, neither of which `flatpak-builder` provides. To include bundles in the Flatpak, build them externally (`cmake -S agent/packaging/bundle`, see the README, "kemu-agent bundle for guests") or use prebuilt release archives, add each to the `kemu` module's `sources`, and pass their paths in `/run/build/kemu/` (where `flatpak-builder` places sources) via `-DKEMU_AGENT_BUNDLES`:
 
 ```yaml
 config-opts:
-  - -DKEMU_AGENT_BUNDLE=OFF
   - -DKEMU_AGENT_BUNDLES=/run/build/kemu/kemu-agent-0.3.0-linux-x86_64.tar.gz
 sources:
   - type: file
-    path: build/agent/bundle/kemu-agent-0.3.0-linux-x86_64.tar.gz
+    path: build-bundle/kemu-agent-0.3.0-linux-x86_64.tar.gz
     only-arches: [x86_64]
 ```
 

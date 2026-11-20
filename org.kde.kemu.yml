@@ -324,16 +324,14 @@ modules:
       - -DCMAKE_BUILD_TYPE=Release
       - -DKEMU_SELF_CONTAINED=ON
       - -DBUILD_TESTING=OFF
-      # flatpak-builder has neither network access nor a container engine, so
-      # the kemu-agent bundle for guests cannot be built here. To ship bundles
-      # built outside (cmake --build build --target agent-bundle, or a
-      # release), add each as a source below and name it here; see
-      # docs/flatpak.md, "kemu-agent for guests".
-      - -DKEMU_AGENT_BUNDLE=OFF
+      # The kemu-agent bundle for guests needs a container engine to build,
+      # which flatpak-builder does not offer. To ship bundles built outside
+      # (cmake -S agent/packaging/bundle, or a release), add each as a source
+      # below and name it here; see docs/flatpak.md, "kemu-agent for guests".
       # - -DKEMU_AGENT_BUNDLES=/run/build/kemu/kemu-agent-0.3.0-linux-x86_64.tar.gz
     sources:
       # - type: file
-      #   path: build/agent/bundle/kemu-agent-0.3.0-linux-x86_64.tar.gz
+      #   path: build-bundle/kemu-agent-0.3.0-linux-x86_64.tar.gz
       #   # or, for a released bundle: url: … and sha256: …
       #   only-arches: [x86_64]
       - type: dir
