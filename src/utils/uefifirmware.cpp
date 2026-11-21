@@ -13,8 +13,11 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMap>
+#include <QRegularExpression>
+#include <QtEndian>
 
 #include <algorithm>
+#include <cstring>
 
 using namespace Qt::StringLiterals;
 
@@ -36,10 +39,28 @@ QString flashFile(const QJsonObject &image, const QString &root)
     return QFileInfo::exists(path) ? path : QString();
 }
 
-bool targetsX86_64(const QJsonArray &targets)
+// Whether a descriptor is for the x86_64 PCs KEMU starts. Its machines are
+// globs of versioned QEMU machine names; other machines may need other
+// firmware: openSUSE's 50-xen-hvm-x86_64.json, for Xen's "xenfv", comes with
+// a template holding the Microsoft keys, and sorting before
+// 60-ovmf-x86_64.json, it could turn Secure Boot on for VMs without it. A
+// target without machines is taken to fit, as before.
+bool targetsKemuMachines(const QJsonArray &targets)
 {
-    return std::any_of(targets.cbegin(), targets.cend(), [](const QJsonValue &target) {
-        return target.toObject().value(u"architecture"_s).toString() == u"x86_64"_s;
+    static const QStringList kemuMachines = {u"pc-q35-99.0"_s, u"pc-i440fx-99.0"_s};
+    return std::any_of(targets.cbegin(), targets.cend(), [](const QJsonValue &value) {
+        const QJsonObject target = value.toObject();
+        if (target.value(u"architecture"_s).toString() != u"x86_64"_s)
+            return false;
+        const QJsonArray machines = target.value(u"machines"_s).toArray();
+        if (machines.isEmpty())
+            return true;
+        return std::any_of(machines.cbegin(), machines.cend(), [](const QJsonValue &machine) {
+            const QRegularExpression glob(QRegularExpression::wildcardToRegularExpression(machine.toString(), QRegularExpression::NonPathWildcardConversion));
+            return std::any_of(kemuMachines.cbegin(), kemuMachines.cend(), [&glob](const QString &name) {
+                return glob.match(name).hasMatch();
+            });
+        });
     });
 }
 
@@ -73,7 +94,7 @@ Firmware fromDescriptors(const QStringList &dirs, bool secureBoot, const QString
         // An empty file masks a descriptor without replacing it.
         const QJsonObject descriptor = QJsonDocument::fromJson(file.readAll()).object();
         if (descriptor.isEmpty() || !descriptor.value(u"interface-types"_s).toArray().contains(u"uefi"_s)
-            || !targetsX86_64(descriptor.value(u"targets"_s).toArray()))
+            || !targetsKemuMachines(descriptor.value(u"targets"_s).toArray()))
             continue;
 
         const QJsonObject mapping = descriptor.value(u"mapping"_s).toObject();
@@ -94,8 +115,11 @@ Firmware fromDescriptors(const QStringList &dirs, bool secureBoot, const QString
         firmware.varsPath = flashFile(mapping.value(u"nvram-template"_s).toObject(), root);
         firmware.source = path;
         firmware.secureBoot = isSecureBoot;
-        firmware.keysEnrolled = features.contains(u"enrolled-keys"_s);
+        firmware.keysEnrolled = features.contains(u"enrolled-keys"_s) || hasEnrolledKeys(firmware.varsPath);
         if (!firmware.isValid())
+            continue;
+        // Keys would turn Secure Boot on after all.
+        if (!secureBoot && firmware.keysEnrolled)
             continue;
         // Windows checks Secure Boot against the Microsoft keys.
         if (!secureBoot || firmware.keysEnrolled)
@@ -146,8 +170,9 @@ Firmware fromFileNames(const QStringList &dirs, bool secureBoot)
             return n.contains("4m"_L1, Qt::CaseInsensitive) == is4m;
         });
         const QString varsPath = firstExisting(dir, varsNames);
-        // Code without a template is of no use; another directory may have both.
-        if (varsPath.isEmpty())
+        // Code without a template is of no use; another directory may have
+        // both. Nor is a template with keys without Secure Boot.
+        if (varsPath.isEmpty() || (!secureBoot && hasEnrolledKeys(varsPath)))
             continue;
 
         const QString varsName = QFileInfo(varsPath).fileName();
@@ -156,10 +181,44 @@ Firmware fromFileNames(const QStringList &dirs, bool secureBoot)
         firmware.varsPath = varsPath;
         firmware.source = dir.absolutePath();
         firmware.secureBoot = secureBoot;
-        firmware.keysEnrolled = secureBoot && (varsName.contains(".ms."_L1) || varsName.contains("-ms-"_L1) || varsName.contains("secboot"_L1));
+        firmware.keysEnrolled =
+            secureBoot && (varsName.contains(".ms."_L1) || varsName.contains("-ms-"_L1) || varsName.contains("secboot"_L1) || hasEnrolledKeys(varsPath));
         return firmware;
     }
     return {};
+}
+
+bool hasEnrolledKeys(const QString &varsPath)
+{
+    QFile file(varsPath);
+    // Variable stores are 128 KiB to a few MiB; anything far larger is no store.
+    if (!file.open(QIODevice::ReadOnly) || file.size() > 64 * 1024 * 1024)
+        return false;
+    const QByteArray store = file.readAll();
+
+    // An authenticated variable (edk2's AUTHENTICATED_VARIABLE_HEADER): start
+    // id 0x55aa, state, reserved, attributes, monotonic count, timestamp,
+    // public key index, name size, data size, vendor GUID, then the name.
+    // PK belongs to EFI_GLOBAL_VARIABLE, 8be4df61-93ca-11d2-aa0d-00e098032b8c.
+    static const QByteArray pk = QByteArray::fromHex("61dfe48bca93d211aa0d00e098032b8c") + QByteArray("P\0K\0\0\0", 6);
+    constexpr qsizetype guidOffset = 44;
+    constexpr quint8 varAdded = 0x3f;
+    constexpr quint8 inDeletedTransition = 0xfe; // cleared bit 0: being replaced, still valid
+
+    for (qsizetype at = store.indexOf(pk); at >= 0; at = store.indexOf(pk, at + 1)) {
+        const qsizetype header = at - guidOffset;
+        if (header < 0)
+            continue;
+        const auto *bytes = reinterpret_cast<const uchar *>(store.constData() + header);
+        quint32 nameSize = 0;
+        quint32 dataSize = 0;
+        std::memcpy(&nameSize, bytes + 36, sizeof nameSize);
+        std::memcpy(&dataSize, bytes + 40, sizeof dataSize);
+        const bool valid = bytes[0] == 0xaa && bytes[1] == 0x55 && (bytes[2] == varAdded || bytes[2] == (varAdded & inDeletedTransition));
+        if (valid && qFromLittleEndian(nameSize) == 6 && qFromLittleEndian(dataSize) > 0)
+            return true;
+    }
+    return false;
 }
 
 } // namespace Ovmf

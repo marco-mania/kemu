@@ -21,7 +21,8 @@ struct Firmware {
     // The QEMU firmware descriptor, or the directory searched by file name.
     QString source;
     bool secureBoot = false;
-    // The template carries the Microsoft keys Secure Boot checks against.
+    // The template carries the keys Secure Boot checks against, the
+    // Microsoft ones as a rule.
     bool keysEnrolled = false;
 
     [[nodiscard]] bool isValid() const
@@ -40,5 +41,11 @@ struct Firmware {
 // Looks for the file names distributions use, code and template from one
 // directory and of the same size.
 [[nodiscard]] Firmware fromFileNames(const QStringList &dirs, bool secureBoot);
+
+// Whether a variable store (a template or a VM's copy) holds a platform key.
+// Firmware built with Secure Boot then enforces it, with SMM or without, and
+// most distributions build all their OVMF images with it: a store with keys
+// turns Secure Boot on, whatever the descriptor says.
+[[nodiscard]] bool hasEnrolledKeys(const QString &varsPath);
 
 } // namespace Ovmf

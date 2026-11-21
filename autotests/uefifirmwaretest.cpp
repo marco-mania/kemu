@@ -29,17 +29,38 @@ private:
         file.write(content);
     }
 
-    static QByteArray descriptor(const QString &code, const QString &vars, const QStringList &features, const QString &format = u"raw"_s)
+    static QByteArray descriptor(const QString &code,
+                                 const QString &vars,
+                                 const QStringList &features,
+                                 const QString &format = u"raw"_s,
+                                 const QStringList &machines = {u"pc-i440fx-*"_s, u"pc-q35-*"_s})
     {
         const QJsonObject mapping{{u"device"_s, u"flash"_s},
                                   {u"executable"_s, QJsonObject{{u"filename"_s, code}, {u"format"_s, format}}},
                                   {u"nvram-template"_s, QJsonObject{{u"filename"_s, vars}, {u"format"_s, format}}}};
-        const QJsonObject target{{u"architecture"_s, u"x86_64"_s}, {u"machines"_s, QJsonArray{u"pc-i440fx-*"_s, u"pc-q35-*"_s}}};
+        const QJsonObject target{{u"architecture"_s, u"x86_64"_s}, {u"machines"_s, QJsonArray::fromStringList(machines)}};
         const QJsonObject object{{u"interface-types"_s, QJsonArray{u"uefi"_s}},
                                  {u"mapping"_s, mapping},
                                  {u"targets"_s, QJsonArray{target}},
                                  {u"features"_s, QJsonArray::fromStringList(features)}};
         return QJsonDocument(object).toJson();
+    }
+
+    // A variable store of 128 KiB, erased flash but for one authenticated
+    // variable: PK of EFI_GLOBAL_VARIABLE, unless another GUID is given.
+    static QByteArray varsWithPk(quint8 state = 0x3f, const QByteArray &guid = QByteArray::fromHex("61dfe48bca93d211aa0d00e098032b8c"))
+    {
+        QByteArray store(128 * 1024, '\xff');
+        QByteArray variable(60, '\0'); // the header, up to the name
+        variable[0] = '\xaa';
+        variable[1] = '\x55';
+        variable[2] = char(state);
+        variable[36] = 6; // name size, little-endian
+        variable[40] = 16; // data size
+        variable.replace(44, 16, guid);
+        variable += QByteArray("P\0K\0\0\0", 6) + QByteArray(16, 'k');
+        store.replace(0x1000, variable.size(), variable);
+        return store;
     }
 
     // The files of Debian's ovmf package, under @p root.
@@ -134,6 +155,7 @@ private Q_SLOTS:
         QTest::newRow("needs smm") << QStringList{u"requires-smm"_s} << u"raw"_s << true;
         QTest::newRow("sev") << QStringList{u"amd-sev"_s} << u"raw"_s << true;
         QTest::newRow("tdx") << QStringList{u"intel-tdx"_s} << u"raw"_s << true;
+        QTest::newRow("enrolled keys") << QStringList{u"enrolled-keys"_s} << u"raw"_s << true;
     }
 
     void unusableDescriptors()
@@ -166,6 +188,75 @@ private Q_SLOTS:
         QVERIFY(!secure.keysEnrolled);
         // Secure Boot firmware is no plain firmware.
         QVERIFY(!Ovmf::fromDescriptors({u"/desc"_s}, false, root.path()).isValid());
+    }
+
+    void enrolledKeys()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto check = [&dir](const QByteArray &content) {
+            const QString path = dir.filePath(u"vars.fd"_s);
+            QFile::remove(path);
+            touch(path, content);
+            return Ovmf::hasEnrolledKeys(path);
+        };
+        QVERIFY(check(varsWithPk()));
+        QVERIFY(check(varsWithPk(0x3e))); // being replaced, still valid
+        QVERIFY(!check(QByteArray(128 * 1024, '\xff'))); // empty store, setup mode
+        QVERIFY(!check(varsWithPk(0x3c))); // deleted
+        QVERIFY(!check(varsWithPk(0x3f, QByteArray(16, '\x11')))); // a PK of another vendor
+        QVERIFY(!Ovmf::hasEnrolledKeys(dir.filePath(u"missing.fd"_s)));
+    }
+
+    // openSUSE: 50-xen-hvm-x86_64.json, for Xen's machine, comes first and has
+    // no Secure Boot feature, but the Microsoft keys in its template.
+    void otherMachinesAreSkipped()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        touch(root.filePath(u"usr/share/qemu/ovmf-x86_64-ms-4m.bin"_s));
+        touch(root.filePath(u"usr/share/qemu/ovmf-x86_64-ms-4m-vars.bin"_s), varsWithPk());
+        touch(root.filePath(u"usr/share/qemu/ovmf-x86_64-4m-code.bin"_s));
+        touch(root.filePath(u"usr/share/qemu/ovmf-x86_64-4m-vars.bin"_s));
+        touch(root.filePath(u"usr/share/qemu/firmware/50-xen-hvm-x86_64.json"_s),
+              descriptor(u"/usr/share/qemu/ovmf-x86_64-ms-4m.bin"_s, u"/usr/share/qemu/ovmf-x86_64-ms-4m-vars.bin"_s, {u"acpi-s3"_s}, u"raw"_s, {u"xenfv"_s}));
+        touch(root.filePath(u"usr/share/qemu/firmware/60-ovmf-x86_64.json"_s),
+              descriptor(u"/usr/share/qemu/ovmf-x86_64-4m-code.bin"_s, u"/usr/share/qemu/ovmf-x86_64-4m-vars.bin"_s, {u"acpi-s3"_s}));
+
+        // Not even with a template without keys.
+        touch(root.filePath(u"usr/share/qemu/firmware/55-xen-plain.json"_s),
+              descriptor(u"/usr/share/qemu/ovmf-x86_64-4m-code.bin"_s, u"/usr/share/qemu/ovmf-x86_64-4m-vars.bin"_s, {u"acpi-s3"_s}, u"raw"_s, {u"xenfv"_s}));
+
+        const Ovmf::Firmware plain = Ovmf::fromDescriptors({u"/usr/share/qemu/firmware"_s}, false, root.path());
+        QVERIFY(plain.source.endsWith(u"60-ovmf-x86_64.json"_s));
+        QCOMPARE(plain.varsPath, root.filePath(u"usr/share/qemu/ovmf-x86_64-4m-vars.bin"_s));
+        QVERIFY(!plain.keysEnrolled);
+
+        // Without machines, a target still fits.
+        touch(root.filePath(u"usr/share/qemu/firmware/40-any.json"_s),
+              descriptor(u"/usr/share/qemu/ovmf-x86_64-4m-code.bin"_s, u"/usr/share/qemu/ovmf-x86_64-4m-vars.bin"_s, {}, u"raw"_s, {}));
+        QVERIFY(Ovmf::fromDescriptors({u"/usr/share/qemu/firmware"_s}, false, root.path()).source.endsWith(u"40-any.json"_s));
+    }
+
+    // A descriptor without Secure Boot whose template has keys would turn it
+    // on all the same.
+    void plainFirmwareHasNoKeys()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        touch(root.filePath(u"fw/code.fd"_s));
+        touch(root.filePath(u"fw/ms-vars.fd"_s), varsWithPk());
+        touch(root.filePath(u"fw/vars.fd"_s));
+        touch(root.filePath(u"desc/60-a-ms.json"_s), descriptor(u"/fw/code.fd"_s, u"/fw/ms-vars.fd"_s, {u"acpi-s3"_s}));
+        touch(root.filePath(u"desc/60-b.json"_s), descriptor(u"/fw/code.fd"_s, u"/fw/vars.fd"_s, {u"acpi-s3"_s}));
+        QVERIFY(Ovmf::fromDescriptors({u"/desc"_s}, false, root.path()).source.endsWith(u"60-b.json"_s));
+
+        // By file name: a plain template with keys is no candidate either.
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        touch(dir.filePath(u"OVMF_CODE_4M.fd"_s));
+        touch(dir.filePath(u"OVMF_VARS_4M.fd"_s), varsWithPk());
+        QVERIFY(!Ovmf::fromFileNames({dir.path()}, false).isValid());
     }
 };
 
