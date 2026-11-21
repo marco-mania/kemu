@@ -177,6 +177,12 @@ public:
     static bool nativeContextAvailable();
 
     /**
+     * @brief Whether @p config gets 3D acceleration (virtio-vga-gl): it is on,
+     * with VirtIO graphics, and QEMU has the device.
+     */
+    static bool uses3dAcceleration(const VMConfig &config);
+
+    /**
      * @brief Whether @p config gets host blobs (blob=on) when started for the
      * integrated viewer: 3D and direct GPU memory access are on, and the host
      * has what they need. Exported scripts never use them.

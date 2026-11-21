@@ -260,6 +260,8 @@ target_sources(
           dbusdisplay/displaywidget.h
           dbusdisplay/framecapture.cpp
           dbusdisplay/framecapture.h
+          dbusdisplay/graphicsstatus.cpp
+          dbusdisplay/graphicsstatus.h
           dbusdisplay/listener.cpp
           dbusdisplay/listener.h
           dbusdisplay/audiojittercore.h

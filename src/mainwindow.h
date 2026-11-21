@@ -196,6 +196,7 @@ private:
     void pushMediaStateToViewer(const QString &vmName);
     void pushNetworkStateToViewer(const QString &vmName);
     void pushGuestAgentStateToViewer(const QString &vmName);
+    void pushGraphicsStateToViewer(const QString &vmName);
 
     ImageDatabase m_imageDatabase;
 

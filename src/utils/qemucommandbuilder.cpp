@@ -349,8 +349,7 @@ QStringList QemuCommandBuilder::buildArgs(const VMConfig &config,
     // --- Graphics ---
     // D-Bus keeps its GL backend active even when no viewer is attached.
     // Some distributions ship virtio-vga-gl in a package of its own.
-    const bool effective3d =
-        config.gpu3dAcceleration() && config.gpuType() == VMSpecs::GpuType::Virtio && QemuCapabilities::instance().hasDevice(u"virtio-vga-gl"_s);
+    const bool effective3d = uses3dAcceleration(config);
 
     // Host blobs let the guest map GPU memory directly: OpenGL 4.6 instead of
     // 4.3 with Mesa, persistent and coherent buffers. virglrenderer exports
@@ -738,11 +737,15 @@ bool QemuCommandBuilder::venusAvailable()
     return hostBlobsAvailable() && !QemuCapabilities::instance().virglRenderServer().isEmpty();
 }
 
+bool QemuCommandBuilder::uses3dAcceleration(const VMConfig &config)
+{
+    return config.gpu3dAcceleration() && config.gpuType() == VMSpecs::GpuType::Virtio && QemuCapabilities::instance().hasDevice(u"virtio-vga-gl"_s);
+}
+
 bool QemuCommandBuilder::usesHostBlobs(const VMConfig &config)
 {
     // The conditions of buildArgs() for the viewer.
-    return config.gpuType() == VMSpecs::GpuType::Virtio && config.gpu3dAcceleration() && config.gpuHostBlobs()
-        && QemuCapabilities::instance().hasDevice(u"virtio-vga-gl"_s) && hostBlobsAvailable();
+    return uses3dAcceleration(config) && config.gpuHostBlobs() && hostBlobsAvailable();
 }
 
 bool QemuCommandBuilder::usesVenus(const VMConfig &config)

@@ -817,6 +817,7 @@ KEMU replaces the `qemu-vdagent` chardev and D-Bus clipboard bridge with a dedic
 | QEMU capability check (`settingsdialog.cpp`)              | Required `qemu-vdagent` chardev                                                                | Checks for `virtio-serial-pci` instead                                                           |
 | Guest hint (`editvmdialog.cpp`)                           | Recommended `spice-vdagent` for multiple monitors                                              | Recommends `kemu-agent` for Linux guests                                                         |
 | Viewer status bar                                         | —                                                                                              | Clipboard indicator shows `kemu-agent` connection status and version from HELLO                  |
+| 3D indicator in the viewer                                | —                                                                                              | Shows the guest's OpenGL driver from GRAPHICS\_INFO next to what KEMU asked QEMU for             |
 
 ### 12.2 Port client
 

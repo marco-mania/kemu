@@ -985,6 +985,7 @@ void MainWindow::finishDbusViewer(const QString &vmName, QemuControlConnection *
         pushMediaStateToViewer(vmName);
         pushNetworkStateToViewer(vmName);
         pushGuestAgentStateToViewer(vmName);
+        pushGraphicsStateToViewer(vmName);
         pushHostShutdownStateToViewer(vmName);
 
         // Audio: asynchronous registration chain (see
@@ -3198,6 +3199,25 @@ void MainWindow::pushGuestAgentStateToViewer(const QString &vmName)
         }
     }
     win->setGuestAgentState(view);
+}
+
+void MainWindow::pushGraphicsStateToViewer(const QString &vmName)
+{
+    auto *win = m_runtimeManager->viewerWindow(vmName);
+    const VmEntry *entry = veModel->entryByName(vmName);
+    if (!win || !entry)
+        return;
+
+    // What buildArgs() put on the command line; the configuration of a
+    // running VM cannot change.
+    const VMConfig &cfg = entry->config;
+    GraphicsRequest request;
+    request.acceleration = QemuCommandBuilder::uses3dAcceleration(cfg);
+    request.hostBlobs = QemuCommandBuilder::usesHostBlobs(cfg);
+    request.hostmemMb = cfg.gpuHostmemMb();
+    request.vulkan = QemuCommandBuilder::usesVenus(cfg);
+    request.nativeContext = QemuCommandBuilder::usesNativeContext(cfg);
+    win->setGraphicsRequest(request);
 }
 
 void MainWindow::pushNetworkStateToViewer(const QString &vmName)

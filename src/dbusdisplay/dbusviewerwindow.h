@@ -35,6 +35,7 @@
 #include "dbusdisplay/clipboard.h"
 #include "dbusdisplay/controlconnection.h"
 #include "dbusdisplay/displaywidget.h"
+#include "dbusdisplay/graphicsstatus.h"
 #include "dbusdisplay/listener.h"
 #include "dbusdisplay/multiheadmousemapping.h"
 #include "dbusdisplay/osdoverlay.h"
@@ -148,6 +149,11 @@ public:
     // State of the guest agent and what it reports about the guest.
     void setGuestAgentState(const GuestAgentView &view);
 
+    // The 3D acceleration QEMU runs the VM with. The status bar shows it,
+    // and what the guest makes of it once kemu-agent reports. Call once
+    // after construction, like setNetworkState().
+    void setGraphicsRequest(const GraphicsRequest &request);
+
     // How many USB devices are currently redirected into the VM.
     // Call after every attach/detach, like setMediaState().
     void setUsbState(int attachedCount);
@@ -229,6 +235,7 @@ private:
     void showOsd(const QString &text, int holdMs = 2500);
     void setupClipboard(ClipboardDirection dir);
     void updateKemuAgentIndicator();
+    void updateGraphicsIndicator();
     void updateClipboardMenu(const ClipboardMenuState &state);
     QString clipboardUnavailableReason(const ClipboardMenuState &state) const;
     QString kemuAgentAwayText() const;
@@ -323,6 +330,7 @@ private:
     StatusIndicator *m_indKeyboardShortcutsInhibit = nullptr;
     StatusIndicator *m_indUsb = nullptr;
     StatusIndicator *m_indGuestAgent = nullptr;
+    StatusIndicator *m_indGraphics = nullptr;
     StatusIndicator *m_indKemuAgent = nullptr;
 
     int m_usbAttached = 0;
@@ -349,6 +357,7 @@ private:
     bool m_hasNic = false;
 
     GuestAgentView m_guestAgent;
+    GraphicsRequest m_graphicsRequest;
 
     QSize m_scanoutSize;
     QSize m_lastWindowSize = {1280, 720};

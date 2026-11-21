@@ -634,6 +634,19 @@ void DbusViewerWindow::createStatusBar()
     // reflow the whole bar.
     m_lblResolution->setFixedWidth(m_lblResolution->fontMetrics().horizontalAdvance(u"8888 × 8888"_s) + 8);
 
+    m_indGraphics = new StatusIndicator(this);
+    // Not every icon theme has a GPU; a display stands in.
+    QString graphicsIcon = u"video-display"_s;
+    for (const QString &name : {u"gpu"_s, u"video-card"_s}) {
+        if (QIcon::hasThemeIcon(name)) {
+            graphicsIcon = name;
+            break;
+        }
+    }
+    m_indGraphics->setIconNames(graphicsIcon, graphicsIcon);
+    m_indGraphics->setAccessibleName(i18nc("@info:whatsthis", "3D acceleration"));
+    m_indGraphics->setVisible(false); // until setGraphicsRequest() asks for 3D
+
     m_indCdrom = new StatusIndicator(this);
     m_indCdrom->setIconNames(u"media-optical"_s, u"media-optical"_s);
     m_indCdrom->setAccessibleName(i18nc("@info:whatsthis", "CD/DVD drive"));
@@ -711,6 +724,7 @@ void DbusViewerWindow::createStatusBar()
     connect(m_indKeyboardShortcutsInhibit, &StatusIndicator::activated, m_actKeyboardShortcutsInhibit, &QAction::toggle);
 
     statusBar()->addPermanentWidget(m_lblResolution);
+    statusBar()->addPermanentWidget(m_indGraphics);
     statusBar()->addPermanentWidget(m_indCdrom);
     statusBar()->addPermanentWidget(m_indFloppy);
     statusBar()->addPermanentWidget(m_indUsb);
@@ -796,6 +810,7 @@ void DbusViewerWindow::updateStatusBar()
         break;
     }
     updateKemuAgentIndicator();
+    updateGraphicsIndicator();
     const ClipboardMenuState clipState = clipboardMenuState(m_kemuAgent, m_kemuAgentUnsupported.isEmpty());
     updateClipboardMenu(clipState);
     if (const QString unavailable = clipboardUnavailableReason(clipState); !unavailable.isEmpty()) {
@@ -1199,6 +1214,85 @@ void DbusViewerWindow::updateKemuAgentIndicator()
     m_indKemuAgent->setStatus(StatusIndicator::Active, lines.join(u'\n'), emblem);
 }
 
+void DbusViewerWindow::setGraphicsRequest(const GraphicsRequest &request)
+{
+    m_graphicsRequest = request;
+    updateGraphicsIndicator();
+}
+
+void DbusViewerWindow::updateGraphicsIndicator()
+{
+    if (!m_indGraphics)
+        return;
+    const GraphicsRequest &request = m_graphicsRequest;
+    m_indGraphics->setVisible(request.acceleration);
+    if (!request.acceleration)
+        return;
+
+    using OpenGl = GraphicsStatus::OpenGl;
+    const auto guest = m_kemuAgent ? m_kemuAgent->guestGraphics() : std::nullopt;
+    const GraphicsStatus status = evaluateGraphics(request, guest);
+    QStringList lines{i18nc("@info:tooltip", "3D acceleration")};
+
+    // What the guest uses, once kemu-agent has said so.
+    if (guest) {
+        switch (status.openGl) {
+        case OpenGl::NativeContext:
+            lines << i18nc("@info:tooltip %1 is the guest's OpenGL renderer", "OpenGL: native context (%1)", status.renderer);
+            break;
+        case OpenGl::Zink:
+            lines << i18nc("@info:tooltip %1 is the guest's OpenGL renderer", "OpenGL: on Vulkan (%1)", status.renderer);
+            break;
+        case OpenGl::Software:
+            lines << i18nc("@info:tooltip %1 is the guest's OpenGL renderer", "OpenGL: software rendering (%1), the host GPU is not used", status.renderer);
+            break;
+        case OpenGl::Virgl:
+        case OpenGl::Other:
+            // The renderer says it: "virgl (Mesa Intel(R) …)".
+            lines << i18nc("@info:tooltip %1 is the guest's OpenGL renderer", "OpenGL: %1", status.renderer);
+            break;
+        case OpenGl::Unknown:
+            lines << i18nc("@info:tooltip", "OpenGL: the guest could not create a context");
+            break;
+        }
+    }
+
+    if (request.hostBlobs) {
+        const QString size = request.hostmemMb % 1024 == 0 ? i18nc("@info:tooltip size", "%1 GiB", request.hostmemMb / 1024)
+                                                           : i18nc("@info:tooltip size", "%1 MiB", request.hostmemMb);
+        lines << i18nc("@info:tooltip", "Direct GPU memory access: up to %1", size);
+    }
+    if (request.vulkan) {
+        if (status.venusOffered == true)
+            lines << i18nc("@info:tooltip", "Vulkan: Venus available");
+        else if (status.venusOffered == false)
+            lines << i18nc("@info:tooltip", "Vulkan: not offered by the host");
+        else
+            lines << i18nc("@info:tooltip", "Vulkan: Venus requested");
+    }
+    if (request.nativeContext && status.openGl != OpenGl::NativeContext) {
+        if (status.nativeContextOffered == false)
+            lines << i18nc("@info:tooltip", "Native context: not offered by the host (virglrenderer or the host GPU lacks support)");
+        else if (status.nativeContextOffered == true && status.openGl == OpenGl::Virgl)
+            lines << i18nc("@info:tooltip", "Native context: offered, but the guest uses virgl (it needs Linux 6.14 and a recent Mesa)");
+        else
+            lines << i18nc("@info:tooltip", "Native context: requested");
+    }
+
+    // Only kemu-agent can tell what the guest does with it.
+    if (!guest && m_kemuAgentUnsupported.isEmpty()) {
+        if (m_kemuAgent && m_kemuAgent->hasSession() && m_kemuAgent->hasCapability(KemuAgentProtocol::Capability::DisplayGraphics))
+            lines << i18nc("@info:tooltip", "Waiting for kemu-agent to report the guest's driver…");
+        else if (m_kemuAgent && m_kemuAgent->hasSession())
+            lines << i18nc("@info:tooltip", "This kemu-agent does not report the guest's driver; a newer one does.");
+        else
+            lines << i18nc("@info:tooltip", "Which driver the guest uses shows once kemu-agent runs in the guest.");
+    }
+
+    const auto state = status.openGl == OpenGl::Software ? StatusIndicator::Inactive : StatusIndicator::Active;
+    m_indGraphics->setStatus(state, lines.join(u'\n'), status.warning ? u"dialog-warning"_s : QString());
+}
+
 void DbusViewerWindow::setKemuAgent(KemuAgentClient *agent)
 {
     if (m_kemuAgent)
@@ -1213,6 +1307,7 @@ void DbusViewerWindow::setKemuAgent(KemuAgentClient *agent)
         connect(agent, &KemuAgentClient::sessionStarted, this, &DbusViewerWindow::updateStatusBar);
         connect(agent, &KemuAgentClient::sessionEnded, this, &DbusViewerWindow::updateStatusBar);
         connect(agent, &KemuAgentClient::layoutChanged, this, &DbusViewerWindow::updateKemuAgentIndicator);
+        connect(agent, &KemuAgentClient::guestGraphicsChanged, this, &DbusViewerWindow::updateGraphicsIndicator);
     }
     updateStatusBar();
 }

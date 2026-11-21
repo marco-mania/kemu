@@ -87,6 +87,14 @@ ecm_add_test(kemuagentprotocoltest.cpp
              LINK_LIBRARIES Qt6::Core Qt6::Test)
 target_include_directories(kemuagentprotocoltest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
+# What the viewer makes of the guest's graphics report.
+ecm_add_test(graphicsstatustest.cpp
+             ${CMAKE_SOURCE_DIR}/src/dbusdisplay/graphicsstatus.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/kemuagentprotocol.cpp
+             TEST_NAME graphicsstatustest
+             LINK_LIBRARIES Qt6::Core Qt6::Test)
+target_include_directories(graphicsstatustest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 # Host end of the agent channel against a scripted agent on a socketpair.
 ecm_add_test(kemuagentclienttest.cpp
              ${CMAKE_SOURCE_DIR}/src/utils/kemuagentclient.cpp
