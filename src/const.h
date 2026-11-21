@@ -39,6 +39,7 @@ static_assert((VirglHostmemMinMb & (VirglHostmemMinMb - 1)) == 0 && (VirglHostme
 inline constexpr int MaxSmbiosStringLength = 64;
 inline constexpr auto VMConfigFileName = "config.json"_L1;
 inline constexpr auto OvmfVarsFileName = "OVMF_VARS.fd"_L1;
+inline constexpr auto OvmfVarsBackupFileName = "OVMF_VARS.fd.bak"_L1; // before resetOvmfVars()
 inline constexpr auto VMDefaultIcon = "computer"_L1;
 
 inline constexpr auto OsIconDirPath = "kemu/icons"_L1;

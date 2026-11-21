@@ -126,6 +126,30 @@ struct OvmfVarsResult {
  */
 OvmfVarsResult ensureOvmfVars(const QDir &vmDir, bool secureBoot);
 
+/// How a VM's variable store fits its Secure Boot setting. The store decides
+/// whether Secure Boot is enforced: with keys enrolled, OVMF checks signatures
+/// in every image distributions build with Secure Boot support, SMM or not;
+/// without keys, Secure Boot stays in setup mode. Changing the setting does
+/// not change the store a VM already has.
+enum class OvmfVarsMismatch {
+    None,
+    KeysWithoutSecureBoot, ///< Secure Boot is off, but enforced all the same
+    SecureBootWithoutKeys, ///< Secure Boot is on, but not enforced, while the template has keys
+};
+
+/// Compares the VM's OVMF_VARS.fd with its Secure Boot setting; None while there is no store.
+OvmfVarsMismatch ovmfVarsMismatch(const QDir &vmDir, bool secureBoot);
+
+/**
+ * @brief Creates the VM's variable store anew from the template that fits its
+ * Secure Boot setting, for a mismatch (ovmfVarsMismatch()).
+ *
+ * The VM's boot entries and firmware settings are lost; the previous store is
+ * kept as OVMF_VARS.fd.bak, replacing an older backup. If no new store can be
+ * made, the previous one stays in place.
+ */
+OvmfVarsResult resetOvmfVars(const QDir &vmDir, bool secureBoot);
+
 /**
  * @brief Detects the host's configured keyboard layout via KDE System Settings.
  *

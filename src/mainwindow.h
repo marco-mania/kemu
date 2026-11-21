@@ -293,6 +293,10 @@ private:
     /// Creates the VM's UEFI variable store if needed and reports problems.
     /// False if the VM cannot boot with UEFI.
     bool requireUefiFirmware(const QString &vmPath, const VMConfig &config, QWidget *parent);
+    /// Before a start: offers to create the UEFI variable store anew when it
+    /// no longer fits the Secure Boot setting (Utils::ovmfVarsMismatch()).
+    /// False if the start is cancelled or the store could not be replaced.
+    bool matchUefiVarsToSecureBoot(const QString &vmPath, const VMConfig &config, QWidget *parent);
 
     VirtualEnvironmentTreeView *veTreeView = nullptr;
     VirtualEnvironmentModel *veModel = nullptr;

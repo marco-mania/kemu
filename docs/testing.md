@@ -38,6 +38,7 @@ Use `ctest --test-dir build -V` for verbose output, or `cmake --build build --ta
 | `tpmstatetest`          | Encrypted TPM-state detection, key descriptors, and rekeying                                                  |
 | `dbusdisplaytest`       | D-Bus display protocol, framebuffer updates, DMA-BUF descriptors, cursor, audio buffers, and acknowledgements |
 | `controlconnectiontest` | Asynchronous D-Bus control-connection teardown, pending calls, and file-descriptor ownership                  |
+| `ovmfvarstest`          | UEFI variable stores against the Secure Boot setting, and creating them anew                                  |
 
 ### D-Bus viewer tests
 

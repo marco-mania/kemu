@@ -1400,6 +1400,53 @@ bool MainWindow::requireUefiFirmware(const QString &vmPath, const VMConfig &conf
     return false;
 }
 
+bool MainWindow::matchUefiVarsToSecureBoot(const QString &vmPath, const VMConfig &config, QWidget *parent)
+{
+    const QDir vmDir(vmPath);
+    const Utils::OvmfVarsMismatch mismatch = Utils::ovmfVarsMismatch(vmDir, config.useSecureBoot());
+    if (mismatch == Utils::OvmfVarsMismatch::None)
+        return true;
+
+    const QString tail = i18n(
+        "KEMU can create the UEFI variables anew. That also resets the boot entries and firmware settings of the "
+        "virtual machine; installed systems are usually found again through the default boot path. The current "
+        "variables are kept as %1.",
+        QString(KEMUConst::OvmfVarsBackupFileName));
+    const QString text = mismatch == Utils::OvmfVarsMismatch::KeysWithoutSecureBoot
+        ? i18n(
+              "Secure Boot is off for '%1', but its UEFI variables still hold Secure Boot keys, so the firmware keeps checking "
+              "signatures: systems that are not signed, such as Arch Linux's installer, do not start.",
+              config.name())
+        : i18n(
+              "Secure Boot is on for '%1', but its UEFI variables hold no Secure Boot keys, so nothing is checked, and Windows "
+              "reports Secure Boot as off. The new variables get the Microsoft keys.",
+              config.name());
+    // The answer is remembered per VM if the user asks for it.
+    const QString dontAsk = u"UefiVarsSecureBoot_%1"_s.arg(config.uuid().isNull() ? config.name() : config.uuid().toString(QUuid::WithoutBraces));
+    const auto answer = KMessageBox::questionTwoActionsCancel(parent,
+                                                              text + u"\n\n"_s + tail,
+                                                              i18nc("@title:window", "UEFI Variables"),
+                                                              KGuiItem(i18n("Create Anew"), u"edit-reset"_s),
+                                                              KGuiItem(i18n("Keep Them"), u"dialog-ok"_s),
+                                                              KStandardGuiItem::cancel(),
+                                                              dontAsk);
+    if (answer == KMessageBox::Cancel)
+        return false;
+    if (answer != KMessageBox::PrimaryAction)
+        return true;
+
+    const Utils::OvmfVarsResult result = Utils::resetOvmfVars(vmDir, config.useSecureBoot());
+    if (result.status != Utils::OvmfVarsResult::Status::Created) {
+        KMessageBox::error(parent,
+                           i18n("The UEFI variables of '%1' could not be created anew; the current ones are still in place.", config.name()),
+                           i18nc("@title:window", "UEFI Variables"));
+        return false;
+    }
+    statusBar()->showMessage(
+        i18n("UEFI variables of '%1' created anew; the previous ones are in %2.", config.name(), QString(KEMUConst::OvmfVarsBackupFileName)));
+    return true;
+}
+
 void MainWindow::setupActions()
 {
     KActionCollection *ac = actionCollection();
@@ -4180,7 +4227,9 @@ void MainWindow::continueStartVM(bool headless, const QByteArray &diskKey)
         return;
     if (!currentConfig.sharedPath().isEmpty() && currentConfig.osFamily() == VMSpecs::OsFamily::Windows && !requireTool(ExternalTools::Virtiofsd))
         return;
-    if (currentConfig.useUefi() && !requireUefiFirmware(vmDirPath, currentConfig, dialogParentFor(vmName)))
+    if (currentConfig.useUefi()
+        && (!requireUefiFirmware(vmDirPath, currentConfig, dialogParentFor(vmName))
+            || !matchUefiVarsToSecureBoot(vmDirPath, currentConfig, dialogParentFor(vmName))))
         return;
 
     auto *chain = new StartupChain(this);

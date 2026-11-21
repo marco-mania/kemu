@@ -200,6 +200,20 @@ ecm_qt_declare_logging_category(virtualswitchtest
                                 IDENTIFIER "KEMU"
                                 CATEGORY_NAME "org.kde.kemu")
 
+# A VM's UEFI variable store against its Secure Boot setting, and resetting it.
+ecm_add_test(ovmfvarstest.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/utils.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/uefifirmware.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/diskencryption.cpp
+             ${CMAKE_SOURCE_DIR}/src/utils/3rdparty/crypt_sha512.c
+             TEST_NAME ovmfvarstest
+             LINK_LIBRARIES Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test KF6::CoreAddons KF6::I18n KF6::ConfigCore)
+target_include_directories(ovmfvarstest PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR})
+ecm_qt_declare_logging_category(ovmfvarstest
+                                HEADER "kemu_debug.h"
+                                IDENTIFIER "KEMU"
+                                CATEGORY_NAME "org.kde.kemu")
+
 # QEMU firmware descriptors and the file names distributions use for OVMF.
 ecm_add_test(uefifirmwaretest.cpp ${CMAKE_SOURCE_DIR}/src/utils/uefifirmware.cpp
              TEST_NAME uefifirmwaretest

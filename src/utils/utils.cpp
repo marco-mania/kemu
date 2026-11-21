@@ -177,6 +177,48 @@ OvmfVarsResult ensureOvmfVars(const QDir &vmDir, bool secureBoot)
     return result;
 }
 
+OvmfVarsMismatch ovmfVarsMismatch(const QDir &vmDir, bool secureBoot)
+{
+    const QString vars = vmDir.filePath(KEMUConst::OvmfVarsFileName);
+    if (!QFileInfo::exists(vars))
+        return OvmfVarsMismatch::None;
+
+    const bool keys = Ovmf::hasEnrolledKeys(vars);
+    if (!secureBoot && keys)
+        return OvmfVarsMismatch::KeysWithoutSecureBoot;
+    if (secureBoot && !keys) {
+        // Only worth a word if a template with keys can be had.
+        const OvmfPaths ovmf = findOvmfPaths(true, configuredOvmfDir());
+        if (ovmf.secureBoot && ovmf.keysEnrolled)
+            return OvmfVarsMismatch::SecureBootWithoutKeys;
+    }
+    return OvmfVarsMismatch::None;
+}
+
+OvmfVarsResult resetOvmfVars(const QDir &vmDir, bool secureBoot)
+{
+    const OvmfPaths ovmf = findOvmfPaths(secureBoot, configuredOvmfDir());
+    if (!ovmf.isValid())
+        return {};
+
+    const QString target = vmDir.filePath(KEMUConst::OvmfVarsFileName);
+    const QString backup = vmDir.filePath(KEMUConst::OvmfVarsBackupFileName);
+    QFile::remove(backup);
+    if (QFileInfo::exists(target) && !QFile::rename(target, backup)) {
+        OvmfVarsResult result;
+        result.status = OvmfVarsResult::Status::CopyFailed;
+        result.templatePath = ovmf.varsPath;
+        return result;
+    }
+
+    const OvmfVarsResult result = ensureOvmfVars(vmDir, secureBoot);
+    if (result.status != OvmfVarsResult::Status::Created) {
+        QFile::remove(target);
+        QFile::rename(backup, target);
+    }
+    return result;
+}
+
 QString detectHostKeyboardLayout()
 {
     const KSharedConfig::Ptr config = KSharedConfig::openConfig(u"kxkbrc"_s);

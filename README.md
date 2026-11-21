@@ -397,7 +397,7 @@ KEMU automatically locates OVMF firmware on common distributions, searching any 
 | Fedora        | `edk2-ovmf`        | `/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd`   |
 | openSUSE      | `qemu-ovmf-x86_64` | `/usr/share/qemu/ovmf-x86_64-smm-ms-code.bin` |
 
-Each UEFI VM stores its NVRAM in a separate `OVMF_VARS.fd`, created from a matching template when needed without overwriting existing files.
+Each UEFI VM stores its NVRAM in a separate `OVMF_VARS.fd`, created from a matching template when needed without overwriting existing files. This file also decides whether Secure Boot is enforced: with keys enrolled, the firmware checks signatures. When a VM's Secure Boot setting no longer matches its file—keys although Secure Boot is off, or none although a template with keys is available—KEMU offers to create it anew at the next start, keeping the previous one as `OVMF_VARS.fd.bak`. This resets the VM's boot entries; installed systems are usually found again through the default boot path.
 
 ### Screenshots
 
