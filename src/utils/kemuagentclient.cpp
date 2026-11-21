@@ -21,6 +21,7 @@ const QStringList kCapabilities{
     QString(Capability::ClipboardPrimary),
     QString(Capability::ClipboardFiles),
     QString(Capability::DisplayLayout),
+    QString(Capability::DisplayGraphics),
 };
 } // namespace
 
@@ -134,6 +135,10 @@ void KemuAgentClient::setPortOpen(bool open)
             m_layout.reset();
             Q_EMIT layoutChanged();
         }
+        if (m_graphics) {
+            m_graphics.reset();
+            Q_EMIT guestGraphicsChanged();
+        }
         setStatus(Status::Waiting);
     }
 }
@@ -239,6 +244,20 @@ void KemuAgentClient::handleFrame(const Frame &frame)
         } else {
             qCWarning(KEMU) << "kemu-agent: malformed DISPLAY_LAYOUT";
             write(Error, QCborMap{{u"code"_s, QString(Reason::BadMessage)}, {u"type"_s, int(DisplayLayout)}});
+        }
+        return;
+    case GraphicsInfo:
+        if (!hasCapability(Capability::DisplayGraphics))
+            return;
+        if (auto graphics = parseGraphicsInfo(frame.body)) {
+            if (m_graphics == graphics)
+                return;
+            m_graphics = std::move(*graphics);
+            qCDebug(KEMU) << "kemu-agent: guest OpenGL renderer" << m_graphics->glRenderer;
+            Q_EMIT guestGraphicsChanged();
+        } else {
+            qCWarning(KEMU) << "kemu-agent: malformed GRAPHICS_INFO";
+            write(Error, QCborMap{{u"code"_s, QString(Reason::BadMessage)}, {u"type"_s, int(GraphicsInfo)}});
         }
         return;
     case ClipboardOffer:

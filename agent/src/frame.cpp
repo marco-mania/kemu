@@ -58,6 +58,8 @@ QLatin1StringView Protocol::messageName(quint16 type)
         return "DISPLAY_LAYOUT"_L1;
     case DisplayLayoutQuery:
         return "DISPLAY_LAYOUT_QUERY"_L1;
+    case GraphicsInfo:
+        return "GRAPHICS_INFO"_L1;
     }
     return "unknown"_L1;
 }

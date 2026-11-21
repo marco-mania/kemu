@@ -11,7 +11,7 @@
 # (packaging/bundle/CMakeLists.txt).
 
 cmake_minimum_required(VERSION 3.22)
-project(kemu-agent VERSION 0.3.0 LANGUAGES C CXX)
+project(kemu-agent VERSION 0.4.0 LANGUAGES C CXX)
 
 set(QT_MIN_VERSION "6.5.0")
 set(ECM_MIN_VERSION "6.0.0")
@@ -37,8 +37,8 @@ set(KEMU_AGENT_UDEV_RULES_DIR "lib/udev/rules.d" CACHE PATH "udev rules director
 
 feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)
 
-# Protocol, clipboard and layout logic without platform code, shared with
-# the tests.
+# Protocol, clipboard, layout and graphics logic without platform code,
+# shared with the tests.
 add_library(kemuagent_core STATIC
     src/transport.h # header-only QObjects, listed for moc
     src/clipboardbackend.h
@@ -46,7 +46,9 @@ add_library(kemuagent_core STATIC
     src/clipboardfiles.cpp
     src/clipboardsync.cpp
     src/displaylayout.cpp
+    src/drmdevice.cpp
     src/frame.cpp
+    src/graphicsinfo.cpp
     src/layoutreporter.cpp
     src/logging.cpp
     src/mimerules.cpp
@@ -59,6 +61,7 @@ add_executable(kemu-agent
     src/agent.cpp
     src/main.cpp
     src/datacontrolbackend.cpp
+    src/graphicsprobe.cpp
     src/platformprobe.cpp
     src/qtclipboardbackend.cpp
     src/screenlayout.cpp
@@ -76,7 +79,8 @@ ecm_add_wayland_client_protocol(kemu-agent
     PROTOCOL ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wlr-data-control-unstable-v1.xml
     BASENAME wlr-data-control-unstable-v1)
 target_compile_definitions(kemu-agent PRIVATE KEMU_AGENT_VERSION="${PROJECT_VERSION}")
-target_link_libraries(kemu-agent PRIVATE kemuagent_core Qt6::DBus Wayland::Client)
+# dlopen() for the graphics probe lives in libdl before glibc 2.34.
+target_link_libraries(kemu-agent PRIVATE kemuagent_core Qt6::DBus Wayland::Client ${CMAKE_DL_LIBS})
 
 # With a static Qt (the portable bundle, see packaging/bundle) the platform
 # plugins are part of the executable and have to be named: the agent picks

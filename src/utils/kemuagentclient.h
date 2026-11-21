@@ -120,6 +120,13 @@ public:
         return m_layout;
     }
 
+    // The guest's graphics driver as the agent last reported it, while the
+    // port stays open.
+    [[nodiscard]] std::optional<KemuAgentProtocol::GuestGraphics> guestGraphics() const
+    {
+        return m_graphics;
+    }
+
     // Sent right away in a session, otherwise with the next WELCOME.
     void setPolicy(const Policy &policy);
     [[nodiscard]] Policy policy() const
@@ -142,6 +149,7 @@ Q_SIGNALS:
     // Everything that belonged to the session is gone.
     void sessionEnded();
     void layoutChanged();
+    void guestGraphicsChanged();
     // A clipboard message of the session.
     void message(quint16 type, const QCborMap &body);
     // The socket took all queued bytes.
@@ -173,6 +181,7 @@ private:
     quint64 m_peerMaxTransfer = 0;
     Policy m_policy;
     std::optional<KemuAgentProtocol::Layout> m_layout;
+    std::optional<KemuAgentProtocol::GuestGraphics> m_graphics;
     quint64 m_nextPingId = 0;
 
     QTimer m_helloRequest;

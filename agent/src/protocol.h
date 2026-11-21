@@ -54,6 +54,7 @@ enum MessageType : quint16 {
 
     DisplayLayout = 0x0200,
     DisplayLayoutQuery = 0x0201,
+    GraphicsInfo = 0x0210,
 };
 
 namespace Capability
@@ -62,6 +63,7 @@ inline constexpr auto Clipboard = "clipboard"_L1;
 inline constexpr auto ClipboardPrimary = "clipboard.primary"_L1;
 inline constexpr auto ClipboardFiles = "clipboard.files"_L1;
 inline constexpr auto DisplayLayout = "display.layout"_L1;
+inline constexpr auto DisplayGraphics = "display.graphics"_L1;
 }
 
 // Selection values on the wire (section 6.1).

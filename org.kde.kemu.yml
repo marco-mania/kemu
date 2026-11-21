@@ -328,10 +328,10 @@ modules:
       # which flatpak-builder does not offer. To ship bundles built outside
       # (cmake -S agent/packaging/bundle, or a release), add each as a source
       # below and name it here; see docs/flatpak.md, "kemu-agent for guests".
-      # - -DKEMU_AGENT_BUNDLES=/run/build/kemu/kemu-agent-0.3.0-linux-x86_64.tar.gz
+      # - -DKEMU_AGENT_BUNDLES=/run/build/kemu/kemu-agent-0.4.0-linux-x86_64.tar.gz
     sources:
       # - type: file
-      #   path: build-bundle/kemu-agent-0.3.0-linux-x86_64.tar.gz
+      #   path: build-bundle/kemu-agent-0.4.0-linux-x86_64.tar.gz
       #   # or, for a released bundle: url: … and sha256: …
       #   only-arches: [x86_64]
       - type: dir

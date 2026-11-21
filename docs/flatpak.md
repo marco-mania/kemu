@@ -31,10 +31,10 @@ The Flatpak ships no `kemu-agent` guest bundle by default: building one requires
 
 ```yaml
 config-opts:
-  - -DKEMU_AGENT_BUNDLES=/run/build/kemu/kemu-agent-0.3.0-linux-x86_64.tar.gz
+  - -DKEMU_AGENT_BUNDLES=/run/build/kemu/kemu-agent-0.4.0-linux-x86_64.tar.gz
 sources:
   - type: file
-    path: build-bundle/kemu-agent-0.3.0-linux-x86_64.tar.gz
+    path: build-bundle/kemu-agent-0.4.0-linux-x86_64.tar.gz
     only-arches: [x86_64]
 ```
 

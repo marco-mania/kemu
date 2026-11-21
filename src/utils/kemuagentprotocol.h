@@ -38,6 +38,9 @@ inline constexpr qsizetype MaxTextSize = 4096; // section 4.2
 inline constexpr qsizetype MaxMimeTypeSize = 255; // section 6.6
 inline constexpr int MaxOfferTypes = 64; // section 6.3
 inline constexpr int MaxOutputs = 16; // section 7.1
+inline constexpr int MaxCapsets = 64; // section 7.5
+inline constexpr quint64 MaxCapsetId = 63; // section 7.5
+inline constexpr qsizetype MaxGraphicsTextSize = 255; // section 7.5
 inline constexpr int MaxCoordinate = 32768; // section 10.1
 inline constexpr qsizetype NonceSize = 16;
 inline constexpr quint64 DefaultMaxTransfer = 64ull * 1024 * 1024;
@@ -65,6 +68,7 @@ enum MessageType : quint16 {
 
     DisplayLayout = 0x0200,
     DisplayLayoutQuery = 0x0201,
+    GraphicsInfo = 0x0210,
 };
 
 QLatin1StringView messageName(quint16 type);
@@ -75,6 +79,7 @@ inline constexpr auto Clipboard = "clipboard"_L1;
 inline constexpr auto ClipboardPrimary = "clipboard.primary"_L1;
 inline constexpr auto ClipboardFiles = "clipboard.files"_L1;
 inline constexpr auto DisplayLayout = "display.layout"_L1;
+inline constexpr auto DisplayGraphics = "display.graphics"_L1;
 }
 
 // Section 6.1.
@@ -205,6 +210,36 @@ struct Layout {
 
 // Refuses layouts outside the limits of sections 7.1 and 10.1.
 std::optional<Layout> parseLayout(const QCborMap &body);
+
+// GRAPHICS_INFO (section 7.5). Named apart from the message type.
+struct GuestGraphics {
+    // Capability sets of the virtio-gpu device (VIRTIO_GPU_CAPSET_*), as the
+    // guest kernel lists them; unset when the agent cannot tell.
+    std::optional<QList<uint>> capsets;
+    // Of an OpenGL context in the guest; empty when the agent could not
+    // make one.
+    QString glRenderer;
+    QString glVendor;
+    QString glVersion;
+
+    bool operator==(const GuestGraphics &) const = default;
+    [[nodiscard]] bool hasCapset(uint id) const
+    {
+        return capsets && capsets->contains(id);
+    }
+};
+
+// VIRTIO_GPU_CAPSET_* values that GuestGraphics::capsets may hold.
+namespace Capset
+{
+inline constexpr uint Virgl = 1;
+inline constexpr uint Virgl2 = 2;
+inline constexpr uint Venus = 4;
+inline constexpr uint Drm = 6; // DRM native context
+}
+
+// Refuses reports outside the limits of section 7.5.
+std::optional<GuestGraphics> parseGraphicsInfo(const QCborMap &body);
 
 // Which clipboard types cross the port (section 6.6).
 namespace Mime

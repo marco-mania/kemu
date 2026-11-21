@@ -8,6 +8,7 @@
 // it: framing, the CBOR rules of section 4.2, the scan mode of section 5.3,
 // DISPLAY_LAYOUT and the clipboard type rules.
 
+#include <QCborArray>
 #include <QTest>
 #include <QtEndian>
 
@@ -386,6 +387,56 @@ private Q_SLOTS:
     {
         QFETCH(QCborMap, body);
         QVERIFY(!parseLayout(body));
+    }
+
+    void parsesGraphicsInfo()
+    {
+        const QCborMap body{{u"capsets"_s, QCborArray{1, 2, 4, 6}},
+                            {u"gl"_s,
+                             QCborMap{{u"renderer"_s, u"Mesa Intel(R) Graphics (ADL GT2)"_s},
+                                      {u"vendor"_s, u"Intel"_s},
+                                      {u"version"_s, u"4.6 (Compatibility Profile) Mesa 26.1.0"_s},
+                                      {u"future"_s, true}}},
+                            {u"future"_s, 1}};
+        const auto graphics = parseGraphicsInfo(body);
+        QVERIFY(graphics);
+        QCOMPARE(graphics->capsets, std::optional(QList<uint>{1, 2, 4, 6}));
+        QVERIFY(graphics->hasCapset(Capset::Drm));
+        QVERIFY(!graphics->hasCapset(3));
+        QCOMPARE(graphics->glRenderer, u"Mesa Intel(R) Graphics (ADL GT2)"_s);
+        QCOMPARE(graphics->glVendor, u"Intel"_s);
+
+        // Everything is optional; unknown and empty differ.
+        const auto empty = parseGraphicsInfo(QCborMap());
+        QVERIFY(empty);
+        QVERIFY(!empty->capsets);
+        QVERIFY(!empty->hasCapset(Capset::Virgl));
+        QVERIFY(empty->glRenderer.isEmpty());
+        const auto none = parseGraphicsInfo(QCborMap{{u"capsets"_s, QCborArray()}, {u"gl"_s, QCborValue(nullptr)}});
+        QVERIFY(none);
+        QCOMPARE(none->capsets, std::optional(QList<uint>()));
+    }
+
+    void graphicsInfoRejected_data()
+    {
+        QTest::addColumn<QCborMap>("body");
+        QTest::newRow("capsets-not-array") << QCborMap{{u"capsets"_s, 6}};
+        QTest::newRow("capset-text") << QCborMap{{u"capsets"_s, QCborArray{u"drm"_s}}};
+        QTest::newRow("capset-too-large") << QCborMap{{u"capsets"_s, QCborArray{64}}};
+        QCborArray many;
+        for (int i = 0; i <= MaxCapsets; ++i)
+            many.append(1);
+        QTest::newRow("too-many-capsets") << QCborMap{{u"capsets"_s, many}};
+        QTest::newRow("gl-not-map") << QCborMap{{u"gl"_s, u"virgl"_s}};
+        QTest::newRow("gl-without-renderer") << QCborMap{{u"gl"_s, QCborMap{{u"vendor"_s, u"Mesa"_s}}}};
+        QTest::newRow("gl-empty-renderer") << QCborMap{{u"gl"_s, QCborMap{{u"renderer"_s, QString()}}}};
+        QTest::newRow("gl-long-renderer") << QCborMap{{u"gl"_s, QCborMap{{u"renderer"_s, QString(256, u'x')}}}};
+    }
+
+    void graphicsInfoRejected()
+    {
+        QFETCH(QCborMap, body);
+        QVERIFY(!parseGraphicsInfo(body));
     }
 
     void mimeTypes_data()

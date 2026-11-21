@@ -195,7 +195,7 @@ The agent always initiates a session with HELLO, to which the host responds with
 1. The agent opens the port and waits until the host end connects (Section 3.1).
 2. The agent generates a fresh 16-byte random nonce, sends HELLO, and enters HANDSHAKE.
 3. Upon receiving a valid HELLO, the host resets its session state, selects the protocol version, sends WELCOME followed by POLICY, and enters READY.
-4. Upon receiving a WELCOME matching its current nonce, the agent enters READY, sends DISPLAY\_LAYOUT if negotiated, and—once POLICY arrives—sends a CLIPBOARD\_OFFER for each held selection permitted by policy.
+4. Upon receiving a WELCOME matching its current nonce, the agent enters READY, sends DISPLAY\_LAYOUT and GRAPHICS\_INFO if negotiated (the latter once known), and—once POLICY arrives—sends a CLIPBOARD\_OFFER for each held selection permitted by policy.
 5. If no matching WELCOME arrives, the agent resends HELLO with a new nonce after 2 seconds, doubling the backoff interval up to 30 seconds.
 
 **HELLO** (0x0001, G→H)
@@ -582,11 +582,11 @@ G→H CLIPBOARD_FILE_DATA {"id": 33, "data": h'…'}
 
 Once `report/notes.txt` finishes transferring, the host clipboard exposes `text/uri-list` containing `file:///…/clipboard/7/report`.
 
-## 7. Display layout
+## 7. Display
 
-The agent reports each monitor's geometry in the guest's global coordinate space alongside the bounding rectangle mapped by absolute pointer devices, allowing the host to position the pointer accurately across monitors.
+The agent reports each monitor's geometry in the guest's global coordinate space alongside the bounding rectangle mapped by absolute pointer devices, allowing the host to position the pointer accurately across monitors (Sections 7.1–7.4). It also tells the host which graphics driver the guest uses (Section 7.5).
 
-Capability: `display.layout`.
+Capabilities: `display.layout` (Sections 7.1–7.4), `display.graphics` (Section 7.5).
 
 ### 7.1 DISPLAY\_LAYOUT
 
@@ -631,6 +631,17 @@ Capability: `display.layout`.
 
 **DISPLAY\_LAYOUT\_QUERY** (0x0201, H→G) has an empty body; the agent responds with a DISPLAY\_LAYOUT carrying an incremented `generation`, even if unchanged.
 
+### 7.5 GRAPHICS\_INFO
+
+**GRAPHICS\_INFO** (0x0210, G→H) tells the host what the guest makes of its graphics device: which capability sets the `virtio-gpu` device offers, and which OpenGL driver an application of the session gets. The host can thus show whether 3D acceleration takes effect and, for example, whether a DRM native context it asked QEMU for is in use. The agent determines this once at startup and sends it once per session, after the handshake or as soon as it is known.
+
+| Field     | Type                                            | Req. | Meaning                                                                                                                                                                                                            |
+| --------- | ----------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `capsets` | `[uint]`                                        | no   | Capability set IDs the device offers (`VIRTIO_GPU_CAPSET_*`: 1 `virgl`, 2 `virgl2`, 4 `venus`, 5 `cross-domain`, 6 `drm`), at most 64, each below 64. Omitted if unknown; empty if the device offers none (no 3D). |
+| `gl`      | `{renderer: tstr, vendor: tstr, version: tstr}` | no   | `GL_RENDERER`, `GL_VENDOR`, and `GL_VERSION` of an OpenGL context on the device, each at most 255 characters; `renderer` is required within the map. Omitted if no context could be created.                       |
+
+Receivers ignore a report whose fields exceed these limits. The strings come from the guest's graphics driver; typical renderers are `virgl (…)` for virgl, the host GPU's own driver name (for example `Mesa Intel(R) Graphics (ADL GT2)`) for a DRM native context, `zink …` for OpenGL on Vulkan, and `llvmpipe (…)` for software rendering. Classifying them is up to the host.
+
 ## 8. Pointer mapping on the host (non-normative)
 
 Using a single tablet device and the reported layout, the host maps pointer coordinates on any monitor into global tablet coordinates without sending pointer events over the agent port or requiring `uinput` or root in the guest.
@@ -669,7 +680,7 @@ Version 1 reserves message ranges and capability names for two planned extension
 | ----------------- | --------------------------------- |
 | `0x0001`–`0x00FF` | Core messages (Section 5)         |
 | `0x0100`–`0x01FF` | Clipboard (Section 6)             |
-| `0x0200`–`0x02FF` | Display layout (Section 7)        |
+| `0x0200`–`0x02FF` | Display (Section 7)               |
 | `0x0300`–`0x03FF` | Reserved: display configuration   |
 | `0x0400`–`0x04FF` | Reserved: file transfer           |
 | `0x0500`–`0x7FFF` | Unassigned                        |
@@ -693,12 +704,13 @@ The host treats all guest messages as untrusted input. While the agent trusts th
 - Treats `size` fields as hints only and enforces `max_transfer` against actual received bytes.
 - Enforces user-configured transfer directions per VM regardless of agent behaviour, MAY strip arbitrary MIME types before publishing proxies, and MAY coalesce rapid guest offers.
 - Ignores layout dimensions above 32,768 or more than 16 outputs (a spoofed layout can at worst misplace pointer clicks inside the VM).
+- Shows the strings of GRAPHICS\_INFO as plain text only (never as markup); a spoofed report can at worst misstate which driver the guest uses.
 
 ### 10.2 Guest
 
 - Port access is restricted via `uaccess` to the active seat session user (Sections 2.2 and 3.4); other local users cannot access the port.
 - **Limitation:** Because an already-open file descriptor persists until closed, a malicious process in an inactive session could retain the port and continue receiving host offers. Multi-user guests with mutually untrusted users are outside version 1's threat model.
-- The agent runs unprivileged as the session user, executes no commands, writes no files (aside from clipboard file staging), and routes incoming data solely to its own session clipboard.
+- The agent runs unprivileged as the session user, executes no commands other than itself for the graphics probe (Section 11.8), writes no files (aside from clipboard file staging), and routes incoming data solely to its own session clipboard.
 
 ### 10.3 Secrets and logs
 
@@ -759,7 +771,7 @@ The agent selects its backend at startup before Qt initialises a platform plugin
 
 ### 11.4 Heads
 
-1. Locate the DRM card whose `/sys/class/drm/cardN/device/driver` resolves to `virtio_gpu`.
+1. Locate the DRM card that belongs to the `virtio-gpu` device: `/sys/class/drm/cardN/device/driver` resolves to `virtio_gpu` (virtio-mmio), or `device` is the PCI device, bound to `virtio-pci`, whose `virtioM` child is bound to `virtio_gpu`.
 2. Enumerate its `/sys/class/drm/cardN-Virtual-M` connectors and sort them numerically by `M`.
 3. Assign zero-based head index `k` to the `k`-th connector (omitting `head` if there is not exactly one `virtio-gpu` card).
 
@@ -782,6 +794,14 @@ On GNOME Wayland, the agent MUST NOT read the display layout from XWayland's Ran
 ### 11.7 Testing
 
 A pipe-connected host simulator enables automated CI testing of `kemu-agent` under headless compositors such as `sway` or `kwin_wayland --virtual`.
+
+### 11.8 Graphics
+
+1. Locate the render node that belongs to the `virtio-gpu` device, as for the heads (Section 11.4); without exactly one, the agent sends neither field.
+2. Read the capability sets with `DRM_IOCTL_VIRTGPU_GETPARAM` and `VIRTGPU_PARAM_SUPPORTED_CAPSET_IDs` (Linux 5.16+), which returns a bit mask of capset IDs.
+3. Run `kemu-agent --graphics-probe` as a child process (10-second limit), so a graphics driver that crashes or hangs cannot take the agent with it. The probe loads `libEGL.so.1` at run time, creates a context on the surfaceless platform (`EGL_MESA_platform_surfaceless`)—so Mesa picks the driver exactly as it would for an application of the session—and prints the three strings as JSON. The child gets the directory of the system C library in front of `LD_LIBRARY_PATH`: the portable bundle carries old copies of `libstdc++`, `libwayland-client`, and `libxcb` that its executable finds through `RUNPATH`, and the guest's Mesa does not load next to them. A failed probe logs the last line of its error output.
+
+`--no-graphics` turns the report off. `kemu-agent --graphics-info` runs the same steps and prints the result, with the reason for anything missing on stderr.
 
 ## 12. Implementation notes: KEMU host
 
@@ -821,39 +841,41 @@ KEMU replaces the `qemu-vdagent` chardev and D-Bus clipboard bridge with a dedic
 
 ## Appendix A. Message types
 
-| Type     | Name                     | Direction | Capability        | Section |
-| -------- | ------------------------ | --------- | ----------------- | ------- |
-| `0x0001` | HELLO                    | G→H       | core              | 5.1     |
-| `0x0002` | WELCOME                  | H→G       | core              | 5.1     |
-| `0x0003` | HELLO\_REQUEST           | H→G       | core              | 5.3     |
-| `0x0004` | PING                     | both      | core              | 5.6     |
-| `0x0005` | PONG                     | both      | core              | 5.6     |
-| `0x0006` | GOODBYE                  | both      | core              | 5.7     |
-| `0x0007` | ERROR                    | both      | core              | 5.8     |
-| `0x0010` | POLICY                   | H→G       | core              | 5.5     |
-| `0x0100` | CLIPBOARD\_OFFER         | both      | `clipboard`       | 6.3     |
-| `0x0101` | CLIPBOARD\_RELEASE       | both      | `clipboard`       | 6.4     |
-| `0x0102` | CLIPBOARD\_REQUEST       | both      | `clipboard`       | 6.5     |
-| `0x0103` | CLIPBOARD\_DATA          | both      | `clipboard`       | 6.5     |
-| `0x0104` | CLIPBOARD\_FAIL          | both      | `clipboard`       | 6.5     |
-| `0x0105` | CLIPBOARD\_CANCEL        | both      | `clipboard`       | 6.5     |
-| `0x0110` | CLIPBOARD\_FILE\_LIST    | both      | `clipboard.files` | 6.8     |
-| `0x0111` | CLIPBOARD\_FILE\_ENTRIES | both      | `clipboard.files` | 6.8     |
-| `0x0112` | CLIPBOARD\_FILE\_READ    | both      | `clipboard.files` | 6.8     |
-| `0x0113` | CLIPBOARD\_FILE\_DATA    | both      | `clipboard.files` | 6.8     |
-| `0x0200` | DISPLAY\_LAYOUT          | G→H       | `display.layout`  | 7.1     |
-| `0x0201` | DISPLAY\_LAYOUT\_QUERY   | H→G       | `display.layout`  | 7.4     |
+| Type     | Name                     | Direction | Capability         | Section |
+| -------- | ------------------------ | --------- | ------------------ | ------- |
+| `0x0001` | HELLO                    | G→H       | core               | 5.1     |
+| `0x0002` | WELCOME                  | H→G       | core               | 5.1     |
+| `0x0003` | HELLO\_REQUEST           | H→G       | core               | 5.3     |
+| `0x0004` | PING                     | both      | core               | 5.6     |
+| `0x0005` | PONG                     | both      | core               | 5.6     |
+| `0x0006` | GOODBYE                  | both      | core               | 5.7     |
+| `0x0007` | ERROR                    | both      | core               | 5.8     |
+| `0x0010` | POLICY                   | H→G       | core               | 5.5     |
+| `0x0100` | CLIPBOARD\_OFFER         | both      | `clipboard`        | 6.3     |
+| `0x0101` | CLIPBOARD\_RELEASE       | both      | `clipboard`        | 6.4     |
+| `0x0102` | CLIPBOARD\_REQUEST       | both      | `clipboard`        | 6.5     |
+| `0x0103` | CLIPBOARD\_DATA          | both      | `clipboard`        | 6.5     |
+| `0x0104` | CLIPBOARD\_FAIL          | both      | `clipboard`        | 6.5     |
+| `0x0105` | CLIPBOARD\_CANCEL        | both      | `clipboard`        | 6.5     |
+| `0x0110` | CLIPBOARD\_FILE\_LIST    | both      | `clipboard.files`  | 6.8     |
+| `0x0111` | CLIPBOARD\_FILE\_ENTRIES | both      | `clipboard.files`  | 6.8     |
+| `0x0112` | CLIPBOARD\_FILE\_READ    | both      | `clipboard.files`  | 6.8     |
+| `0x0113` | CLIPBOARD\_FILE\_DATA    | both      | `clipboard.files`  | 6.8     |
+| `0x0200` | DISPLAY\_LAYOUT          | G→H       | `display.layout`   | 7.1     |
+| `0x0201` | DISPLAY\_LAYOUT\_QUERY   | H→G       | `display.layout`   | 7.4     |
+| `0x0210` | GRAPHICS\_INFO           | G→H       | `display.graphics` | 7.5     |
 
 ## Appendix B. Capabilities
 
-| Capability          | Status   | Meaning                                                 |
-| ------------------- | -------- | ------------------------------------------------------- |
-| `clipboard`         | defined  | CLIPBOARD selection sharing (Section 6).                |
-| `clipboard.primary` | defined  | PRIMARY selection sharing; requires `clipboard`.        |
+| Capability          | Status   | Meaning                                                       |
+| ------------------- | -------- | ------------------------------------------------------------- |
+| `clipboard`         | defined  | CLIPBOARD selection sharing (Section 6).                      |
+| `clipboard.primary` | defined  | PRIMARY selection sharing; requires `clipboard`.              |
 | `clipboard.files`   | defined  | File sharing over clipboard (Section 6.8); needs `clipboard`. |
-| `display.layout`    | defined  | Display layout reporting (Section 7).                   |
-| `display.configure` | reserved | Display configuration (Section 9.1).                    |
-| `file.transfer`     | reserved | Dedicated bulk file transfer (Section 9.2).             |
+| `display.layout`    | defined  | Display layout reporting (Sections 7.1–7.4).                  |
+| `display.graphics`  | defined  | Graphics driver reporting (Section 7.5).                      |
+| `display.configure` | reserved | Display configuration (Section 9.1).                          |
+| `file.transfer`     | reserved | Dedicated bulk file transfer (Section 9.2).                   |
 
 ## Appendix C. Error codes
 

@@ -17,11 +17,14 @@
 class ClipboardBackend;
 class ClipboardSync;
 class DisplayLayoutSource;
+class GraphicsProbeRunner;
+class GraphicsReporter;
 class LayoutReporter;
 class SessionWatcher;
 
 // Ties the parts together: holds the port while our session is active,
-// runs the protocol session on it, and lets clipboard and layout use it.
+// runs the protocol session on it, and lets clipboard, layout and graphics
+// use it.
 class Agent : public QObject
 {
     Q_OBJECT
@@ -30,6 +33,7 @@ public:
     struct Options {
         QString portPath;
         int retryMs = 2000;
+        bool graphics = false; // report the guest's graphics driver
     };
 
     // backend and layout may be nullptr; the agent then does without.
@@ -59,6 +63,8 @@ private:
     Session m_session;
     std::unique_ptr<ClipboardSync> m_clipboard;
     std::unique_ptr<LayoutReporter> m_layout;
+    std::unique_ptr<GraphicsReporter> m_graphics;
+    std::unique_ptr<GraphicsProbeRunner> m_graphicsProbe;
     SessionWatcher *m_watcher;
     QTimer m_retry;
     PortConnection::OpenResult m_lastProblem = PortConnection::OpenResult::Ok;

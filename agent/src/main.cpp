@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+#include <QCoreApplication>
 #include <QDBusConnection>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QLoggingCategory>
 #include <QSocketNotifier>
 #include <QSysInfo>
+#include <QTimer>
 
 #include <csignal>
 #include <cstdio>
@@ -21,6 +23,7 @@
 #include "clipboardchoice.h"
 #include "clipboardsync.h"
 #include "datacontrolbackend.h"
+#include "graphicsprobe.h"
 #include "logging.h"
 #include "platformprobe.h"
 #include "protocol.h"
@@ -45,17 +48,38 @@ void printUsage()
         "Usage: kemu-agent [options]\n"
         "\n"
         "Session agent for Linux guests of KEMU: shares the clipboard with the host\n"
-        "and reports the display layout.\n"
+        "and reports the display layout and the graphics driver.\n"
         "\n"
         "Options:\n"
         "  --port <path>    virtio-serial port (default /dev/virtio-ports/%s,\n"
         "                   or $KEMU_AGENT_PORT)\n"
         "  --no-clipboard   do not share the clipboard\n"
         "  --no-layout      do not report the display layout\n"
+        "  --no-graphics    do not report the graphics driver\n"
+        "  --graphics-info  print what the agent reports about the graphics driver\n"
         "  --verbose        log the protocol\n"
         "  --version        print the version\n"
         "  --help           print this help\n",
         Protocol::PortName.data());
+}
+// kemu-agent --graphics-info: what GRAPHICS_INFO would carry, found the way
+// the agent finds it. Its log, which says why something is missing, goes to
+// stderr.
+int printGraphicsInfo(int &argc, char **argv)
+{
+    QCoreApplication app(argc, argv);
+    QLoggingCategory::setFilterRules(u"org.kde.kemu.agent.debug=true"_s);
+    GraphicsProbeRunner runner;
+    QObject::connect(&runner, &GraphicsProbeRunner::finished, &app, [&app](const GraphicsInfo &info) {
+        std::printf("Capability sets: %s\n", info.capsets ? qPrintable(GraphicsQuery::capsetNames(*info.capsets)) : "unknown");
+        std::printf("OpenGL renderer: %s\n", info.glRenderer.isEmpty() ? "none" : qPrintable(info.glRenderer));
+        if (!info.glVersion.isEmpty())
+            std::printf("OpenGL version: %s\n", qPrintable(info.glVersion));
+        app.quit();
+    });
+    // From within the event loop, which a synchronous finish() can then end.
+    QTimer::singleShot(0, &runner, &GraphicsProbeRunner::start);
+    return app.exec();
 }
 } // namespace
 
@@ -64,6 +88,7 @@ int main(int argc, char **argv)
     QString portPath = qEnvironmentVariable("KEMU_AGENT_PORT", u"/dev/virtio-ports/"_s + Protocol::PortName);
     bool clipboardWanted = true;
     bool layoutWanted = true;
+    bool graphicsWanted = true;
     bool verbose = false;
     for (int i = 1; i < argc; ++i) {
         const char *arg = argv[i];
@@ -79,6 +104,13 @@ int main(int argc, char **argv)
             clipboardWanted = false;
         } else if (std::strcmp(arg, "--no-layout") == 0) {
             layoutWanted = false;
+        } else if (std::strcmp(arg, "--no-graphics") == 0) {
+            graphicsWanted = false;
+        } else if (std::strcmp(arg, "--graphics-info") == 0) {
+            return printGraphicsInfo(argc, argv);
+        } else if (std::strcmp(arg, "--graphics-probe") == 0) {
+            // Internal: the agent runs itself this way (section 11.8).
+            return runGraphicsProbe();
         } else if (std::strcmp(arg, "--verbose") == 0) {
             verbose = true;
         } else {
@@ -164,6 +196,8 @@ int main(int argc, char **argv)
     }
     if (layout)
         identity.capabilities.append(Protocol::Capability::DisplayLayout);
+    if (graphicsWanted)
+        identity.capabilities.append(Protocol::Capability::DisplayGraphics);
     identity.osId = QSysInfo::productType();
     identity.osVersionId = QSysInfo::productVersion();
     identity.osPrettyName = QSysInfo::prettyProductName();
@@ -176,7 +210,10 @@ int main(int argc, char **argv)
                                  << "- layout:" << (layout ? layout->sourceName() : u"none"_s);
 
     SessionWatcher watcher;
-    Agent agent(Agent::Options{portPath}, identity, backend, layout, &watcher);
+    Agent::Options options;
+    options.portPath = portPath;
+    options.graphics = graphicsWanted;
+    Agent agent(options, identity, backend, layout, &watcher);
 
     // SIGTERM and friends: say goodbye, then quit.
     if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, s_signalPipe) == 0) {

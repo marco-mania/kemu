@@ -13,6 +13,7 @@
 
 #include <algorithm>
 
+#include "drmdevice.h"
 #include "protocol.h"
 
 HeadMapper::HeadMapper(const QString &sysfsDrm)
@@ -30,8 +31,7 @@ QHash<QString, uint> HeadMapper::heads() const
     for (const QString &entry : entries) {
         if (!cardPattern.match(entry).hasMatch())
             continue;
-        const QFileInfo driver(root.filePath(entry + u"/device/driver"_s));
-        if (QFileInfo(driver.symLinkTarget()).fileName() == u"virtio_gpu"_s)
+        if (DrmDevice::isVirtioGpu(root.filePath(entry)))
             virtioCards.append(entry);
     }
     // With several virtio-gpu devices, nothing tells which one QEMU means.

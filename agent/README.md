@@ -4,12 +4,13 @@ Guest agent for KEMU Linux virtual machines. Running inside the user's graphical
 
 - Shares the clipboard and primary selection with the host in all application-provided formats (text, HTML, images, and custom formats)
 - Reports the guest's monitor layout so the host can map the pointer accurately across displays regardless of per-monitor scaling
+- Reports which graphics driver the guest uses (virgl, a DRM native context, or software rendering), so KEMU's viewer can show whether 3D acceleration takes effect
 
 The agent communicates with KEMU over a dedicated virtio-serial port (`org.kde.kemu.agent.0`) using the protocol specified in [docs/kemu-agent-protocol.md](../docs/kemu-agent-protocol.md). It replaces `spice-vdagent` and runs alongside `qemu-guest-agent`.
 
 ## Requirements
 
-- **Runtime:** Qt ≥ 6.5 (Core, Gui, DBus) with the `xcb` and `offscreen` platform plugins (Qt Wayland support is not needed), and `libwayland-client` ≥ 1.20
+- **Runtime:** Qt ≥ 6.5 (Core, Gui, DBus) with the `xcb` and `offscreen` platform plugins (Qt Wayland support is not needed), and `libwayland-client` ≥ 1.20; `libEGL.so.1` (Mesa) is loaded at run time for the graphics report if present
 - **Build:** Extra CMake Modules (ECM), `wayland-scanner`, and `wayland-protocols`
 
 No KDE libraries are required at runtime, so the agent works in GNOME, Xfce, and other desktop environments as well as Plasma.
@@ -109,7 +110,7 @@ python3 tests/e2e/hostsim.py /tmp/kemu-agent.sock
 
 The simulator prints anything copied in the guest and offers each line typed into its console back to the guest clipboard.
 
-## Known limitations (v0.3)
+## Known limitations (v0.4)
 
 - **Clipboard size:** Host clipboard content is fetched immediately upon offer (up to 32 MiB per copy) and cached in the guest to serve pasting applications; larger payloads remain on the host.
 - **File transfers:** Files and folders transfer only when *Share Files* is enabled in KEMU's viewer (disabled by default), up to the configured limit (256 MiB per copy by default). Items are copied into `~/.cache/kemu-agent/clipboard` upon copy and cleaned up when the agent exits. Symlinks are skipped, and "cut" operations behave like "copy".

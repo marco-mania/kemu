@@ -60,6 +60,16 @@ void makeCard(const QDir &root, const QString &card, const QString &driver)
     root.mkpath(u"drivers/"_s + driver);
     QFile::link(root.absoluteFilePath(u"drivers/"_s + driver), root.absoluteFilePath(card + u"/device/driver"_s));
 }
+
+// virtio-gpu over PCI: the card's device is the PCI device (virtio-pci),
+// and its virtio child is bound to virtio_gpu.
+void makePciCard(const QDir &root, const QString &card, const QString &virtioDriver)
+{
+    makeCard(root, card, u"virtio-pci"_s);
+    root.mkpath(card + u"/device/virtio3"_s);
+    root.mkpath(u"drivers/"_s + virtioDriver);
+    QFile::link(root.absoluteFilePath(u"drivers/"_s + virtioDriver), root.absoluteFilePath(card + u"/device/virtio3/driver"_s));
+}
 } // namespace
 
 class LayoutTest : public QObject
@@ -90,6 +100,23 @@ private Q_SLOTS:
         makeCard(root, u"card2"_s, u"virtio_gpu"_s);
         QVERIFY(HeadMapper(dir.path()).heads().isEmpty());
         QVERIFY(HeadMapper(dir.path() + u"/missing"_s).heads().isEmpty());
+    }
+
+    void headsBehindPciDevice()
+    {
+        QTemporaryDir dir;
+        const QDir root(dir.path());
+        makePciCard(root, u"card0"_s, u"virtio_gpu"_s);
+        root.mkpath(u"card0-Virtual-1"_s);
+        root.mkpath(u"card0-Virtual-2"_s);
+        // Another virtio device on PCI is no GPU.
+        makePciCard(root, u"card1"_s, u"virtio_net"_s);
+        root.mkpath(u"card1-Virtual-1"_s);
+
+        const QHash<QString, uint> heads = HeadMapper(dir.path()).heads();
+        QCOMPARE(heads.size(), 2);
+        QCOMPARE(heads.value(u"Virtual-1"_s), 0u);
+        QCOMPARE(heads.value(u"Virtual-2"_s), 1u);
     }
 
     void messageMatchesSpec()

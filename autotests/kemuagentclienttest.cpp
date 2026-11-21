@@ -8,6 +8,7 @@
 // socketpair, the way QEMU connects the two (docs/kemu-agent-protocol.md,
 // section 5).
 
+#include <QCborArray>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -106,7 +107,7 @@ private Q_SLOTS:
         QCOMPARE(Fields::uint(welcome.body, "version"_L1), std::optional<quint64>(1));
         QCOMPARE(Fields::text(Fields::map(welcome.body, "host"_L1).value(), "name"_L1), std::optional(u"KEMU"_s));
         QCOMPARE(Fields::textList(welcome.body, "capabilities"_L1),
-                 std::optional(QStringList{u"clipboard"_s, u"clipboard.primary"_s, u"clipboard.files"_s, u"display.layout"_s}));
+                 std::optional(QStringList{u"clipboard"_s, u"clipboard.primary"_s, u"clipboard.files"_s, u"display.layout"_s, u"display.graphics"_s}));
         QCOMPARE(Fields::uint(Fields::map(welcome.body, "limits"_L1).value(), "max_transfer"_L1), std::optional<quint64>(KemuAgentClient::kMaxTransfer));
 
         const QCborMap clipboard = Fields::map(pair.agent->frames.at(1).body, "clipboard"_L1).value();
@@ -369,6 +370,47 @@ private Q_SLOTS:
         QTRY_VERIFY(pair.agent->has(Pong));
         QCOMPARE(changed.size(), 0);
         QVERIFY(!pair.client->layout());
+    }
+
+    void keepsGuestGraphics()
+    {
+        Pair pair = makePair(fastTiming());
+        pair.agent->hello({u"display.graphics"_s});
+        QTRY_VERIFY(pair.agent->has(Policy));
+        QSignalSpy changed(pair.client.get(), &KemuAgentClient::guestGraphicsChanged);
+        const QCborMap body{{u"capsets"_s, QCborArray{1, 2, 6}}, {u"gl"_s, QCborMap{{u"renderer"_s, u"virgl (Mesa Intel(R) Graphics)"_s}}}};
+
+        pair.agent->send(GraphicsInfo, body);
+        QTRY_COMPARE(changed.size(), 1);
+        QVERIFY(pair.client->guestGraphics());
+        QVERIFY(pair.client->guestGraphics()->hasCapset(Capset::Drm));
+        QCOMPARE(pair.client->guestGraphics()->glRenderer, u"virgl (Mesa Intel(R) Graphics)"_s);
+
+        // The same report again changes nothing; a broken one is answered
+        // and the last good one stays.
+        pair.agent->send(GraphicsInfo, body);
+        pair.agent->send(GraphicsInfo, QCborMap{{u"capsets"_s, u"drm"_s}});
+        QTRY_VERIFY(pair.agent->has(Error));
+        QCOMPARE(changed.size(), 1);
+        QVERIFY(pair.client->guestGraphics());
+
+        // Without the agent, nothing is known.
+        pair.client->setPortOpen(false);
+        QVERIFY(!pair.client->guestGraphics());
+        QCOMPARE(changed.size(), 2);
+    }
+
+    void guestGraphicsNeedsCapability()
+    {
+        Pair pair = makePair(fastTiming());
+        pair.agent->hello({u"clipboard"_s});
+        QTRY_VERIFY(pair.agent->has(Policy));
+        QSignalSpy changed(pair.client.get(), &KemuAgentClient::guestGraphicsChanged);
+        pair.agent->send(GraphicsInfo, QCborMap{{u"gl"_s, QCborMap{{u"renderer"_s, u"llvmpipe"_s}}}});
+        pair.agent->send(Ping, QCborMap{{u"id"_s, 1}});
+        QTRY_VERIFY(pair.agent->has(Pong));
+        QCOMPARE(changed.size(), 0);
+        QVERIFY(!pair.client->guestGraphics());
     }
 
     void portClosedEndsEverything()

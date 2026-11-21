@@ -58,6 +58,8 @@ QLatin1StringView messageName(quint16 type)
         return "DISPLAY_LAYOUT"_L1;
     case DisplayLayoutQuery:
         return "DISPLAY_LAYOUT_QUERY"_L1;
+    case GraphicsInfo:
+        return "GRAPHICS_INFO"_L1;
     }
     return "unknown"_L1;
 }
@@ -519,6 +521,37 @@ std::optional<Layout> parseLayout(const QCborMap &body)
         layout.outputs.append(output);
     }
     return layout;
+}
+
+// =============================================================================
+// Graphics
+// =============================================================================
+
+std::optional<GuestGraphics> parseGraphicsInfo(const QCborMap &body)
+{
+    GuestGraphics graphics;
+    if (body.contains("capsets"_L1) && !body.value("capsets"_L1).isNull()) {
+        const auto ids = Fields::uintList(body, "capsets"_L1);
+        if (!ids || ids->size() > MaxCapsets)
+            return std::nullopt;
+        QList<uint> capsets;
+        for (const quint64 id : *ids) {
+            if (id > MaxCapsetId)
+                return std::nullopt;
+            capsets.append(uint(id));
+        }
+        graphics.capsets = capsets;
+    }
+    if (body.contains("gl"_L1) && !body.value("gl"_L1).isNull()) {
+        const auto gl = Fields::map(body, "gl"_L1);
+        const auto renderer = gl ? Fields::text(*gl, "renderer"_L1) : std::nullopt;
+        if (!renderer || renderer->isEmpty() || renderer->size() > MaxGraphicsTextSize)
+            return std::nullopt;
+        graphics.glRenderer = *renderer;
+        graphics.glVendor = Fields::text(*gl, "vendor"_L1).value_or(QString()).left(MaxGraphicsTextSize);
+        graphics.glVersion = Fields::text(*gl, "version"_L1).value_or(QString()).left(MaxGraphicsTextSize);
+    }
+    return graphics;
 }
 
 // =============================================================================

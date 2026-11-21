@@ -11,6 +11,7 @@ ecm_add_tests(
     agentclipboardchoicetest.cpp
     agentclipboardfilestest.cpp
     agentframetest.cpp
+    agentgraphicstest.cpp
     agentsessiontest.cpp
     agentclipboardsynctest.cpp
     agentlayouttest.cpp
