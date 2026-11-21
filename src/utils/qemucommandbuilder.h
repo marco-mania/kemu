@@ -150,10 +150,11 @@ public:
      * host memory window of VMConfig::gpuHostmemMb(); it only applies
      * together with @p gl. @p viewer: for the integrated viewer, which shows
      * several heads, rather than an exported script's SDL window. @p venus
-     * adds Vulkan; it only applies together with @p blob. As with
-     * sandboxArgs(), the caller checks QemuCapabilities first.
+     * adds Vulkan and @p nativeContext a DRM native context; both only apply
+     * together with @p blob. As with sandboxArgs(), the caller checks
+     * QemuCapabilities first.
      */
-    static QString virtioGpuDevice(const VMConfig &config, bool gl, bool blob, bool viewer = true, bool venus = false);
+    static QString virtioGpuDevice(const VMConfig &config, bool gl, bool blob, bool viewer = true, bool venus = false, bool nativeContext = false);
 
     /**
      * @brief Whether host blobs can be used on this host: QEMU 9.2+ and a
@@ -168,6 +169,14 @@ public:
     static bool venusAvailable();
 
     /**
+     * @brief Whether a DRM native context can be used on this host: host
+     * blobs and a QEMU with drm_native_context (11.0+). Whether
+     * virglrenderer supports the host GPU is not checked; without support
+     * the guest keeps virgl.
+     */
+    static bool nativeContextAvailable();
+
+    /**
      * @brief Whether @p config gets host blobs (blob=on) when started for the
      * integrated viewer: 3D and direct GPU memory access are on, and the host
      * has what they need. Exported scripts never use them.
@@ -180,6 +189,14 @@ public:
      * what they need. Exported scripts never use it.
      */
     static bool usesVenus(const VMConfig &config);
+
+    /**
+     * @brief Whether @p config gets a DRM native context
+     * (drm_native_context=on) when started for the integrated viewer: 3D,
+     * host blobs and the native context are on, and the host has what they
+     * need. Exported scripts never use it.
+     */
+    static bool usesNativeContext(const VMConfig &config);
 
     /**
      * @brief Formats the QEMU argument list into a readable multi-line string.

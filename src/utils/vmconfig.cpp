@@ -1813,6 +1813,7 @@ QJsonObject VMConfig::toJson() const
     j[u"gpu_3d_acceleration"_s] = m_gpu3dAcceleration;
     j[u"gpu_host_blobs"_s] = m_gpuHostBlobs;
     j[u"gpu_vulkan"_s] = m_gpuVulkan;
+    j[u"gpu_native_context"_s] = m_gpuNativeContext;
     j[u"gpu_hostmem"_s] = m_gpuHostmemMb;
 
     j[u"audio_device"_s] = toString(m_audioDevice);
@@ -1945,6 +1946,7 @@ VMConfig VMConfig::fromJson(const QJsonObject &j)
     c.m_gpu3dAcceleration = j[u"gpu_3d_acceleration"_s].toBool(GlobalDefaults.gpu3dAcceleration);
     c.m_gpuHostBlobs = j[u"gpu_host_blobs"_s].toBool(GlobalDefaults.gpuHostBlobs);
     c.m_gpuVulkan = j[u"gpu_vulkan"_s].toBool(GlobalDefaults.gpuVulkan);
+    c.m_gpuNativeContext = j[u"gpu_native_context"_s].toBool(GlobalDefaults.gpuNativeContext);
     c.setGpuHostmemMb(j[u"gpu_hostmem"_s].toInt(GlobalDefaults.gpuHostmemMb));
     c.m_gpuMemMb = j[u"gpu_mem"_s].toInt(GlobalDefaults.gpuMemMb);
     c.setMonitorCount(j[u"monitor_count"_s].toInt(GlobalDefaults.monitorCount));

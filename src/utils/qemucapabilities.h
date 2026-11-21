@@ -62,6 +62,16 @@ public:
         return m_virtioGpuBlob;
     }
 
+    // Whether virtio-vga-gl takes drm_native_context=on next to host blobs
+    // (QEMU 11.0+). The guest then runs the Mesa driver of the host GPU
+    // itself. Whether virglrenderer supports that GPU does not show here:
+    // without support, QEMU leaves the native context out and the guest
+    // keeps virgl.
+    [[nodiscard]] bool hasVirtioGpuNativeContext() const
+    {
+        return m_virtioGpuNativeContext;
+    }
+
     // The render server of virglrenderer, or an empty string. Vulkan (Venus,
     // venus=on) runs in this separate program, which virglrenderer starts for
     // every such VM; without it the guest gets no Vulkan device. venus=on
@@ -114,6 +124,10 @@ public:
     // Whether the property listing of virtio-vga-gl allows blob=on with virgl.
     [[nodiscard]] static bool allowsVirglBlob(const QSet<QString> &properties);
 
+    // Whether the property listing of virtio-vga-gl allows a DRM native
+    // context, which builds on host blobs.
+    [[nodiscard]] static bool allowsNativeContext(const QSet<QString> &properties);
+
     // False when neither probe produced a listing. The Settings page can use
     // this to say "capabilities unknown" instead of silently offering
     // everything.
@@ -149,6 +163,7 @@ private:
     bool m_seccompSandbox = false;
     bool m_monitorObject = false;
     bool m_virtioGpuBlob = false;
+    bool m_virtioGpuNativeContext = false;
     QString m_virglRenderServer;
     bool m_kvmHonorGuestPat = false;
     bool m_probeSucceeded = false;

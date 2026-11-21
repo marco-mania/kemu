@@ -232,6 +232,28 @@ private Q_SLOTS:
         }
     }
 
+    void nativeContextProbe_data()
+    {
+        QTest::addColumn<QStringList>("properties");
+        QTest::addColumn<bool>("expected");
+
+        const QStringList blob{u"blob"_s, u"hostmem"_s, u"venus"_s};
+        QTest::newRow("qemu-10.2") << blob << false;
+        QTest::newRow("qemu-11.0") << blob + QStringList{u"drm_native_context"_s} << true;
+        // Without virgl blob support, the property alone does not count.
+        QTest::newRow("no-blob") << QStringList{u"hostmem"_s, u"drm_native_context"_s} << false;
+        QTest::newRow("empty") << QStringList() << false;
+    }
+
+    void nativeContextProbe()
+    {
+        QFETCH(QStringList, properties);
+        QFETCH(bool, expected);
+
+        const QSet<QString> set(properties.cbegin(), properties.cend());
+        QCOMPARE(QemuCapabilities::allowsNativeContext(set), expected);
+    }
+
     void virglRenderServer()
     {
         QTemporaryDir root;
@@ -285,6 +307,7 @@ private Q_SLOTS:
         QTest::addColumn<bool>("gl");
         QTest::addColumn<bool>("blob");
         QTest::addColumn<bool>("venus");
+        QTest::addColumn<bool>("nativeContext");
         QTest::addColumn<bool>("viewer");
         QTest::addColumn<int>("monitors");
         QTest::addColumn<QString>("expected");
@@ -292,14 +315,18 @@ private Q_SLOTS:
         const QSize size = KEMUConst::DefaultDisplaySize;
         const QString base = u"xres=%1,yres=%2,max_hostmem=64M"_s.arg(size.width()).arg(size.height());
         const QString blob = u",blob=on,hostmem=4096M"_s;
-        QTest::newRow("2d") << false << false << false << true << 1 << u"virtio-vga,"_s + base;
-        QTest::newRow("2d-blob-ignored") << false << true << false << true << 1 << u"virtio-vga,"_s + base;
-        QTest::newRow("3d") << true << false << false << true << 1 << u"virtio-vga-gl,"_s + base;
-        QTest::newRow("3d-blob") << true << true << false << true << 1 << u"virtio-vga-gl,"_s + base + blob;
-        QTest::newRow("3d-blob-venus") << true << true << true << true << 1 << u"virtio-vga-gl,"_s + base + blob + u",venus=on"_s;
-        QTest::newRow("venus-needs-blob") << true << false << true << true << 1 << u"virtio-vga-gl,"_s + base;
-        QTest::newRow("3d-blob-multihead") << true << true << false << true << 2 << u"virtio-vga-gl,"_s + base + blob + u",max_outputs=2"_s;
-        QTest::newRow("script-single-head") << true << false << false << false << 2 << u"virtio-vga-gl,"_s + base;
+        QTest::newRow("2d") << false << false << false << false << true << 1 << u"virtio-vga,"_s + base;
+        QTest::newRow("2d-blob-ignored") << false << true << false << false << true << 1 << u"virtio-vga,"_s + base;
+        QTest::newRow("3d") << true << false << false << false << true << 1 << u"virtio-vga-gl,"_s + base;
+        QTest::newRow("3d-blob") << true << true << false << false << true << 1 << u"virtio-vga-gl,"_s + base + blob;
+        QTest::newRow("3d-blob-venus") << true << true << true << false << true << 1 << u"virtio-vga-gl,"_s + base + blob + u",venus=on"_s;
+        QTest::newRow("venus-needs-blob") << true << false << true << false << true << 1 << u"virtio-vga-gl,"_s + base;
+        QTest::newRow("3d-blob-native") << true << true << false << true << true << 1 << u"virtio-vga-gl,"_s + base + blob + u",drm_native_context=on"_s;
+        QTest::newRow("3d-blob-venus-native") << true << true << true << true << true << 1
+                                              << u"virtio-vga-gl,"_s + base + blob + u",venus=on,drm_native_context=on"_s;
+        QTest::newRow("native-needs-blob") << true << false << false << true << true << 1 << u"virtio-vga-gl,"_s + base;
+        QTest::newRow("3d-blob-multihead") << true << true << false << false << true << 2 << u"virtio-vga-gl,"_s + base + blob + u",max_outputs=2"_s;
+        QTest::newRow("script-single-head") << true << false << false << false << false << 2 << u"virtio-vga-gl,"_s + base;
     }
 
     void virtioGpuDevice()
@@ -307,6 +334,7 @@ private Q_SLOTS:
         QFETCH(bool, gl);
         QFETCH(bool, blob);
         QFETCH(bool, venus);
+        QFETCH(bool, nativeContext);
         QFETCH(bool, viewer);
         QFETCH(int, monitors);
         QFETCH(QString, expected);
@@ -319,7 +347,7 @@ private Q_SLOTS:
         config.setMonitorCount(monitors);
         config.setGpuHostmemMb(4096);
 
-        QCOMPARE(QemuCommandBuilder::virtioGpuDevice(config, gl, blob, viewer, venus), expected);
+        QCOMPARE(QemuCommandBuilder::virtioGpuDevice(config, gl, blob, viewer, venus, nativeContext), expected);
     }
 
     void gpuHostmemIsPowerOfTwo_data()
@@ -348,11 +376,14 @@ private Q_SLOTS:
         json[u"gpu_hostmem"_s] = requested;
         json[u"gpu_host_blobs"_s] = true;
         json[u"gpu_vulkan"_s] = true;
+        json[u"gpu_native_context"_s] = true;
         const VMConfig loaded = VMConfig::fromJson(json);
         QCOMPARE(loaded.gpuHostmemMb(), expected);
         QVERIFY(loaded.gpuHostBlobs());
         QVERIFY(loaded.gpuVulkan());
+        QVERIFY(loaded.gpuNativeContext());
         QVERIFY(!VMConfig::fromJson(VMConfig().toJson()).gpuVulkan());
+        QVERIFY(!VMConfig::fromJson(VMConfig().toJson()).gpuNativeContext());
     }
 
     void hostBlobsNeedProbedCapabilities()
@@ -366,6 +397,7 @@ private Q_SLOTS:
         config.setGpuType(VMSpecs::GpuType::Virtio);
         config.setGpu3dAcceleration(true);
         config.setGpuHostBlobs(true);
+        config.setGpuNativeContext(true);
         config.setPreallocMemory(true);
         config.setUseKvm(true);
 
@@ -374,6 +406,7 @@ private Q_SLOTS:
         QVERIFY(joined.contains(u"virtio-vga-gl,"_s));
         QVERIFY(!joined.contains(u"blob="_s));
         QVERIFY(!joined.contains(u"hostmem=1024M"_s));
+        QVERIFY(!joined.contains(u"drm_native_context"_s));
         QVERIFY(!joined.contains(u"memory-backend"_s));
         QVERIFY(args.contains(u"-mem-prealloc"_s));
         // Nor the memory types for them, which would move the accelerator.

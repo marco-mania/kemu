@@ -52,7 +52,7 @@ Valid `os_family` values are `linux`, `windows`, `bsd`, `dos`, and `other`. Temp
 
 ## Hardware defaults
 
-`global_qemu_defaults` in `data/templates.json` sets the hardware of new VMs, and a template's `qemu_defaults` overrides single keys of it; the new VM dialog starts with RAM, CPU cores, and disk size from the result, which can be changed there. The keys and values are those of a VM's `config.json`. The defaults below are what `data/templates.json` sets, or KEMU's built-in value for keys it leaves out, such as the three for direct GPU memory access and Vulkan:
+`global_qemu_defaults` in `data/templates.json` sets the hardware of new VMs, and a template's `qemu_defaults` overrides single keys of it; the new VM dialog starts with RAM, CPU cores, and disk size from the result, which can be changed there. The keys and values are those of a VM's `config.json`. The defaults below are what `data/templates.json` sets, or KEMU's built-in value for keys it leaves out, such as the four for direct GPU memory access, Vulkan, and native contexts:
 
 | Key                   | Values                                                                                                                                                              | Default      |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
@@ -71,6 +71,7 @@ Valid `os_family` values are `linux`, `windows`, `bsd`, `dos`, and `other`. Temp
 | `gpu_host_blobs`      | `true`, `false` (*Direct GPU memory access*, requires 3D acceleration)                                                                                              | `false`      |
 | `gpu_hostmem`         | MiB (*Memory limit*), a power of two from 256 to 8192; others round up                                                                                              | `1024`       |
 | `gpu_vulkan`          | `true`, `false` (*Vulkan*, requires direct GPU memory access)                                                                                                       | `false`      |
+| `gpu_native_context`  | `true`, `false` (*Native context*, requires direct GPU memory access)                                                                                               | `false`      |
 | `audio_device`        | `hda`, `ac97`, `es1370`, `sb16`, `adlib`, `pcspkr`, `none`                                                                                                          | `hda`        |
 | `disk_interface`      | `virtio`, `nvme`, `sataide`                                                                                                                                         | `virtio`     |
 | `net_card`            | `virtio`, `e1000`, `rtl8139`, `pcnet`, `rtl8029`, `ne2000`, `i82551`, `i82557b`, `i82559er`, `none`                                                                 | `virtio`     |

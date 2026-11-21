@@ -655,6 +655,14 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
                                                     "support is limited to experimental options like vgpu3d. Note that the VM runs "
                                                     "without a seccomp sandbox.")));
 
+    nativeContextCheck = new QCheckBox(i18n("Native context"));
+    accelLayout->addRow({},
+                        ContextualHelp::beside(nativeContextCheck,
+                                               i18n("Linux guests use the host GPU's own Mesa driver instead of virgl, for "
+                                                    "near-native OpenGL. For Intel (i915), AMD and Qualcomm GPUs; the guest needs "
+                                                    "Linux 6.14 and a recent Mesa (26.1 for Intel, 25.0 for AMD). Otherwise it "
+                                                    "keeps using virgl.")));
+
     gpuMessage = createInlineMessage(KMessageWidget::Information);
     accelLayout->addRow(gpuMessage);
 
@@ -1018,6 +1026,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     connect(accel3dGroup, &QGroupBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
     connect(hostBlobsCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
     connect(vulkanCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
+    connect(nativeContextCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
     connect(monitorCountSpin, &QSpinBox::valueChanged, this, &EditVmDialog::onGpuDisplayChanged);
     // The hints depend on the OS family set on the General tab.
     connect(osFamilyCombo, &QComboBox::currentIndexChanged, this, &EditVmDialog::onGpuDisplayChanged);
@@ -1218,6 +1227,7 @@ void EditVmDialog::setConfig(const VMConfig &config)
     hostBlobsCheck->setChecked(config.gpuHostBlobs());
     hostmemSpin->setValue(config.gpuHostmemMb());
     vulkanCheck->setChecked(config.gpuVulkan());
+    nativeContextCheck->setChecked(config.gpuNativeContext());
     setCombo(audioCombo, config.audioDevice());
     m_sb16Config = config.sb16Config();
     setCombo(netCombo, config.networkCard());
@@ -1456,6 +1466,13 @@ void EditVmDialog::onGpuDisplayChanged()
     if (!blobs || !venus)
         vulkanCheck->setChecked(false);
     const bool vulkan = vulkanCheck->isChecked();
+
+    // The rules of QemuCommandBuilder::nativeContextAvailable().
+    const bool nativeContext = QemuCommandBuilder::nativeContextAvailable();
+    nativeContextCheck->setEnabled(blobs && nativeContext);
+    nativeContextCheck->setToolTip(!blobs ? i18n("Requires direct GPU memory access.") : nativeContext ? QString() : hostBlobsMissingText());
+    if (!blobs || !nativeContext)
+        nativeContextCheck->setChecked(false);
 
     showVideoMemory(gpu, with3d);
 
@@ -1706,6 +1723,7 @@ VMConfig EditVmDialog::getResult() const
     c.setGpu3dAcceleration(accel3dGroup->isChecked());
     c.setGpuHostBlobs(hostBlobsCheck->isChecked());
     c.setGpuVulkan(vulkanCheck->isChecked());
+    c.setGpuNativeContext(nativeContextCheck->isChecked());
     c.setGpuMemMb(VMConfig::normalizedVgaMemMb(c.gpuType(), m_vramMb));
     c.setGpuHostmemMb(hostmemSpin->value());
     c.setAudioDevice(static_cast<VMSpecs::AudioDevice>(audioCombo->currentData().toInt()));
@@ -2605,6 +2623,7 @@ void EditVmDialog::resetToFactoryDefaults()
     accel3dGroup->setChecked(GlobalDefaults.gpu3dAcceleration);
     hostBlobsCheck->setChecked(GlobalDefaults.gpuHostBlobs);
     vulkanCheck->setChecked(GlobalDefaults.gpuVulkan);
+    nativeContextCheck->setChecked(GlobalDefaults.gpuNativeContext);
     onGpuDisplayChanged();
 
     uefiCheck->setChecked(GlobalDefaults.useUefi);

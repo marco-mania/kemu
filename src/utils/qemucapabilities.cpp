@@ -36,6 +36,7 @@ void QemuCapabilities::refresh()
     m_seccompSandbox = false;
     m_monitorObject = false;
     m_virtioGpuBlob = false;
+    m_virtioGpuNativeContext = false;
     m_virglRenderServer.clear();
     m_kvmHonorGuestPat = false;
     m_probeSucceeded = false;
@@ -174,6 +175,11 @@ bool QemuCapabilities::allowsVirglBlob(const QSet<QString> &properties)
     return properties.contains(u"blob"_s) && properties.contains(u"hostmem"_s) && properties.contains(u"venus"_s);
 }
 
+bool QemuCapabilities::allowsNativeContext(const QSet<QString> &properties)
+{
+    return allowsVirglBlob(properties) && properties.contains(u"drm_native_context"_s);
+}
+
 bool QemuCapabilities::hasDisplay(const QString &name) const
 {
     // An empty set means the probe failed against a QEMU we do not control;
@@ -244,7 +250,9 @@ bool QemuCapabilities::runProbes(const QString &qemuPath, int timeoutMs)
     m_monitorObject = collectExitStatus(monitorProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
     m_devices = collectDeviceProbe(deviceProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
     m_chardevs = collectProbe(chardevProbe, timeoutMs - static_cast<int>(elapsed.elapsed()));
-    m_virtioGpuBlob = allowsVirglBlob(parsePropertyHelp(collectOutput(gpuGlProbe, timeoutMs - static_cast<int>(elapsed.elapsed()))));
+    const QSet<QString> gpuGlProperties = parsePropertyHelp(collectOutput(gpuGlProbe, timeoutMs - static_cast<int>(elapsed.elapsed())));
+    m_virtioGpuBlob = allowsVirglBlob(gpuGlProperties);
+    m_virtioGpuNativeContext = allowsNativeContext(gpuGlProperties);
     m_kvmHonorGuestPat = parseQomPropertyList(collectOutput(kvmAccelProbe, timeoutMs - static_cast<int>(elapsed.elapsed()))).contains(u"honor-guest-pat"_s);
 
     return !m_displays.isEmpty() && !m_audiodevs.isEmpty();

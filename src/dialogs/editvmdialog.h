@@ -230,6 +230,7 @@ private:
     QSpinBox *hostmemSpin = nullptr; // the memory window of host blobs
     QToolButton *hostmemPresetButton = nullptr;
     QCheckBox *vulkanCheck = nullptr;
+    QCheckBox *nativeContextCheck = nullptr;
     KMessageWidget *gpuMessage = nullptr;
     QComboBox *audioCombo = nullptr;
     QPushButton *sb16ConfigButton = nullptr;

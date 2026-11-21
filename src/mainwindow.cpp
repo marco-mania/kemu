@@ -2016,8 +2016,15 @@ void MainWindow::updateDetails()
     content.hardware << boot;
 
     QString gpuVal = VMConfig::toUIString(currentConfig.gpuType());
-    // Vulkan only where it takes effect, like the video memory below.
-    if (QemuCommandBuilder::usesVenus(currentConfig))
+    // Vulkan and the native context only where they take effect, like the
+    // video memory below.
+    const bool venus = QemuCommandBuilder::usesVenus(currentConfig);
+    const bool nativeContext = QemuCommandBuilder::usesNativeContext(currentConfig);
+    if (venus && nativeContext)
+        gpuVal += i18n(" (3D, native context, Vulkan)");
+    else if (nativeContext)
+        gpuVal += i18n(" (3D, native context)");
+    else if (venus)
         gpuVal += i18n(" (3D, Vulkan)");
     else if (currentConfig.gpu3dAcceleration())
         gpuVal += i18n(" (3D)");

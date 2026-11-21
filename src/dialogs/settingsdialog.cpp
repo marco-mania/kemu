@@ -540,6 +540,8 @@ void SettingsDialog::listCapabilities()
         : i18n(
               "virglrenderer's render server (virgl_render_server) was not found. It comes with virglrenderer built with Venus; "
               "Debian and Ubuntu ship it in the virgl-server package.");
+    const QString nativeContextMissing = !blobs ? i18n("Requires direct GPU memory access, which is not available here.")
+                                                : i18n("This QEMU cannot run DRM native contexts. That takes QEMU 11.0 or later.");
     // KEMU asks for it with Vulkan; AMD CPUs need no such request.
     const QString guestPatMissing = !qemu.hasKvmHonorGuestPat()
         ? i18n("This QEMU cannot pass the guest's memory types to KVM. That takes QEMU 11.0 or later.")
@@ -579,9 +581,16 @@ void SettingsDialog::listCapabilities()
            i18n("Vulkan for Linux guests with 3D acceleration."),
            fromQemu(blobs && renderServer),
            venusMissing},
+          {i18n("Native context"),
+           u"-device virtio-vga-gl,blob=on,hostmem=…,drm_native_context=on"_s,
+           i18n("Linux guests use the Mesa driver of an Intel, AMD or Qualcomm host GPU. Whether virglrenderer supports the GPU "
+                "only shows in the guest."),
+           fromQemu(blobs && qemu.hasVirtioGpuNativeContext()),
+           nativeContextMissing},
           {i18n("Guest memory types"),
            u"-accel kvm,honor-guest-pat=auto"_s,
-           i18n("On Intel CPUs, Vulkan needs it with Meteor Lake or xe graphics and with dedicated GPUs; otherwise it can hang."),
+           i18n("On Intel CPUs, Vulkan and native contexts need it with Meteor Lake or xe graphics and with dedicated GPUs; "
+                "otherwise they can hang."),
            fromQemu(qemu.hasKvmHonorGuestPat() && QemuCapabilities::hostKernelHonorsGuestPat()),
            guestPatMissing},
           {i18n("QXL graphics"),

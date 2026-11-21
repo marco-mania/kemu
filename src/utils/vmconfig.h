@@ -173,6 +173,7 @@ struct Defaults {
     bool gpu3dAcceleration = true;
     bool gpuHostBlobs = false;
     bool gpuVulkan = false;
+    bool gpuNativeContext = false;
     int gpuHostmemMb = 1024;
     AudioDevice audioDevice = AudioDevice::Hda;
     DiskInterface diskInterface = DiskInterface::Virtio;
@@ -417,6 +418,12 @@ public:
     [[nodiscard]] bool gpuVulkan() const
     {
         return m_gpuVulkan;
+    }
+    // The Mesa driver of the host GPU in the guest, on top of host blobs (DRM
+    // native context, drm_native_context=on).
+    [[nodiscard]] bool gpuNativeContext() const
+    {
+        return m_gpuNativeContext;
     }
     // Host memory window for host blobs (hostmem=), in MiB. Always a power of
     // two between KEMUConst::VirglHostmemMinMb and VirglHostmemMaxMb.
@@ -714,6 +721,10 @@ public:
     void setGpuVulkan(bool enabled)
     {
         m_gpuVulkan = enabled;
+    }
+    void setGpuNativeContext(bool enabled)
+    {
+        m_gpuNativeContext = enabled;
     }
     // Rounds up to the next power of two and clamps: QEMU asserts that the
     // window, a PCI BAR, is a power of two.
@@ -1046,6 +1057,7 @@ private:
     bool m_gpu3dAcceleration = GlobalDefaults.gpu3dAcceleration;
     bool m_gpuHostBlobs = GlobalDefaults.gpuHostBlobs;
     bool m_gpuVulkan = GlobalDefaults.gpuVulkan;
+    bool m_gpuNativeContext = GlobalDefaults.gpuNativeContext;
     int m_gpuHostmemMb = GlobalDefaults.gpuHostmemMb;
     int m_gpuMemMb = GlobalDefaults.gpuMemMb;
     int m_monitorCount = GlobalDefaults.monitorCount;

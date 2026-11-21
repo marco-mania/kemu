@@ -89,7 +89,10 @@ QStringList QemuCommandBuilder::buildArgs(const VMConfig &config,
     // cannot be combined with -machine accel=.
     // Only for Vulkan, the case Mesa and QEMU ask for it: OpenGL alone ran
     // without it, and Firefox's GPU compositor stuttered on video with it.
-    const bool honorGuestPat = viewer && config.useKvm() && usesVenus(config) && QemuCapabilities::instance().hasKvmHonorGuestPat();
+    // A native context maps GPU memory the way Vulkan does, so it needs it
+    // as well.
+    const bool honorGuestPat =
+        viewer && config.useKvm() && (usesVenus(config) || usesNativeContext(config)) && QemuCapabilities::instance().hasKvmHonorGuestPat();
     const QString machineAccel = honorGuestPat ? QString() : u",accel=%1"_s.arg(accel);
 
     if (config.machineType() == VMSpecs::MachineType::Q35) {
@@ -359,13 +362,16 @@ QStringList QemuCommandBuilder::buildArgs(const VMConfig &config,
     // Vulkan (Venus) builds on host blobs: the guest's Vulkan memory is host
     // GPU memory in their window. See also sandboxArgs().
     const bool effectiveVenus = viewer && usesVenus(config);
+    // A DRM native context builds on host blobs too. It runs inside QEMU,
+    // so unlike Venus it keeps the sandbox.
+    const bool effectiveNativeContext = viewer && usesNativeContext(config);
 
     const int mem = VMConfig::normalizedVgaMemMb(config.gpuType(), config.gpuMemMb());
 
     if (config.gpuType() == VMSpecs::GpuType::Qxl) {
         args << u"-device"_s << u"qxl-vga,vgamem_mb=%1"_s.arg(mem);
     } else if (config.gpuType() == VMSpecs::GpuType::Virtio) {
-        args << u"-device"_s << virtioGpuDevice(config, effective3d, effectiveBlob, viewer, effectiveVenus);
+        args << u"-device"_s << virtioGpuDevice(config, effective3d, effectiveBlob, viewer, effectiveVenus, effectiveNativeContext);
     } else if (config.gpuType() == VMSpecs::GpuType::CirrusGD5446) {
         args << u"-device"_s << u"cirrus-vga,vgamem_mb=%1"_s.arg(mem);
     } else if (config.gpuType() == VMSpecs::GpuType::CirrusGD5430) {
@@ -744,7 +750,17 @@ bool QemuCommandBuilder::usesVenus(const VMConfig &config)
     return usesHostBlobs(config) && config.gpuVulkan() && venusAvailable();
 }
 
-QString QemuCommandBuilder::virtioGpuDevice(const VMConfig &config, bool gl, bool blob, bool viewer, bool venus)
+bool QemuCommandBuilder::nativeContextAvailable()
+{
+    return hostBlobsAvailable() && QemuCapabilities::instance().hasVirtioGpuNativeContext();
+}
+
+bool QemuCommandBuilder::usesNativeContext(const VMConfig &config)
+{
+    return usesHostBlobs(config) && config.gpuNativeContext() && nativeContextAvailable();
+}
+
+QString QemuCommandBuilder::virtioGpuDevice(const VMConfig &config, bool gl, bool blob, bool viewer, bool venus, bool nativeContext)
 {
     const int mem = VMConfig::normalizedVgaMemMb(VMSpecs::GpuType::Virtio, config.gpuMemMb());
     const QSize res = Utils::defaultDisplayResolution();
@@ -754,6 +770,8 @@ QString QemuCommandBuilder::virtioGpuDevice(const VMConfig &config, bool gl, boo
         device += u",blob=on,hostmem=%1M"_s.arg(config.gpuHostmemMb());
         if (venus)
             device += u",venus=on"_s;
+        if (nativeContext)
+            device += u",drm_native_context=on"_s;
     }
     const int monitors = qMin(config.monitorCount(), KEMUConst::SupportedMonitorCount);
     if (viewer && monitors > 1)
