@@ -27,6 +27,7 @@
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QSlider>
 #include <QSpinBox>
 #include <QStandardItemModel>
@@ -225,12 +226,23 @@ private:
     bool m_updatingMemory = false;
     // Checkable: its title switches 3D on and off.
     QGroupBox *accel3dGroup = nullptr;
+    // The guest's OpenGL driver: virgl, or that of the host GPU.
+    QRadioButton *universalRadio = nullptr;
+    QRadioButton *nativeContextRadio = nullptr;
+    QLabel *nativeContextDescription = nullptr;
+    QCheckBox *vulkanCheck = nullptr;
+    QLabel *vulkanDescription = nullptr;
+    // Shows and hides advanced3dPanel: host blobs and their memory window.
+    QToolButton *advanced3dButton = nullptr;
+    QWidget *advanced3dPanel = nullptr;
     QCheckBox *hostBlobsCheck = nullptr;
+    QLabel *hostBlobsDescription = nullptr;
+    // What hostBlobsCheck shows while neither Vulkan nor the native context
+    // needs it.
+    bool m_hostBlobsChoice = GlobalDefaults.gpuHostBlobs;
     QLabel *hostmemLabel = nullptr;
     QSpinBox *hostmemSpin = nullptr; // the memory window of host blobs
     QToolButton *hostmemPresetButton = nullptr;
-    QCheckBox *vulkanCheck = nullptr;
-    QCheckBox *nativeContextCheck = nullptr;
     KMessageWidget *gpuMessage = nullptr;
     QComboBox *audioCombo = nullptr;
     QPushButton *sb16ConfigButton = nullptr;

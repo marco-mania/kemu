@@ -107,6 +107,14 @@ private Q_SLOTS:
         QCOMPARE(evaluateGraphics(request(vulkan, nativeContext), guest(capsets, renderer)).warning, warning);
     }
 
+    void virglHost()
+    {
+        QCOMPARE(virglHostRenderer(u"virgl (Mesa Intel(R) Graphics (MTL))"_s), u"Mesa Intel(R) Graphics (MTL)"_s);
+        QCOMPARE(virglHostRenderer(u"virgl"_s), QString());
+        QCOMPARE(virglHostRenderer(u"virgl (AMD Radeon"_s), QString()); // cut by plainGuestText()
+        QCOMPARE(virglHostRenderer(u"Mesa Intel(R) Graphics (MTL)"_s), QString());
+    }
+
     void plainText()
     {
         QCOMPARE(plainGuestText(u"  virgl\t(Mesa)\n"_s), u"virgl (Mesa)"_s);

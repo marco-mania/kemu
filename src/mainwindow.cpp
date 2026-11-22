@@ -2022,9 +2022,9 @@ void MainWindow::updateDetails()
     const bool venus = QemuCommandBuilder::usesVenus(currentConfig);
     const bool nativeContext = QemuCommandBuilder::usesNativeContext(currentConfig);
     if (venus && nativeContext)
-        gpuVal += i18n(" (3D, native context, Vulkan)");
+        gpuVal += i18n(" (3D, Native, Vulkan)");
     else if (nativeContext)
-        gpuVal += i18n(" (3D, native context)");
+        gpuVal += i18n(" (3D, Native)");
     else if (venus)
         gpuVal += i18n(" (3D, Vulkan)");
     else if (currentConfig.gpu3dAcceleration())

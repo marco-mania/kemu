@@ -60,6 +60,15 @@ GraphicsStatus evaluateGraphics(const GraphicsRequest &request, const std::optio
     return status;
 }
 
+QString virglHostRenderer(const QString &renderer)
+{
+    const QString text = renderer.trimmed();
+    const QString prefix = u"virgl ("_s;
+    if (!text.startsWith(prefix, Qt::CaseInsensitive) || !text.endsWith(u')'))
+        return {};
+    return text.mid(prefix.size(), text.size() - prefix.size() - 1).trimmed();
+}
+
 QString plainGuestText(const QString &text)
 {
     QString result;

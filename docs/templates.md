@@ -70,8 +70,8 @@ Valid `os_family` values are `linux`, `windows`, `bsd`, `dos`, and `other`. Temp
 | `gpu_3d_acceleration` | `true`, `false` (*3D acceleration*, VirtIO only)                                                                                                                    | `true`       |
 | `gpu_host_blobs`      | `true`, `false` (*Direct GPU memory access*, requires 3D acceleration)                                                                                              | `false`      |
 | `gpu_hostmem`         | MiB (*Memory limit*), a power of two from 256 to 8192; others round up                                                                                              | `1024`       |
-| `gpu_vulkan`          | `true`, `false` (*Vulkan*, requires direct GPU memory access)                                                                                                       | `false`      |
-| `gpu_native_context`  | `true`, `false` (*Native context*, requires direct GPU memory access)                                                                                               | `false`      |
+| `gpu_vulkan`          | `true`, `false` (*Vulkan (Venus)*, needs `gpu_host_blobs`)                                                                                                          | `false`      |
+| `gpu_native_context`  | `true`, `false` (*Native* OpenGL driver, needs `gpu_host_blobs`)                                                                                                    | `false`      |
 | `audio_device`        | `hda`, `ac97`, `es1370`, `sb16`, `adlib`, `pcspkr`, `none`                                                                                                          | `hda`        |
 | `disk_interface`      | `virtio`, `nvme`, `sataide`                                                                                                                                         | `virtio`     |
 | `net_card`            | `virtio`, `e1000`, `rtl8139`, `pcnet`, `rtl8029`, `ne2000`, `i82551`, `i82557b`, `i82559er`, `none`                                                                 | `virtio`     |

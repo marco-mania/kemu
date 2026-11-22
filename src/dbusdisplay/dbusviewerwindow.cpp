@@ -1238,7 +1238,8 @@ void DbusViewerWindow::updateGraphicsIndicator()
     if (guest) {
         switch (status.openGl) {
         case OpenGl::NativeContext:
-            lines << i18nc("@info:tooltip %1 is the guest's OpenGL renderer", "OpenGL: native context (%1)", status.renderer);
+            // The names of the edit dialog.
+            lines << i18nc("@info:tooltip %1 is the guest's OpenGL renderer", "OpenGL: Native (%1)", status.renderer);
             break;
         case OpenGl::Zink:
             lines << i18nc("@info:tooltip %1 is the guest's OpenGL renderer", "OpenGL: on Vulkan (%1)", status.renderer);
@@ -1246,9 +1247,13 @@ void DbusViewerWindow::updateGraphicsIndicator()
         case OpenGl::Software:
             lines << i18nc("@info:tooltip %1 is the guest's OpenGL renderer", "OpenGL: software rendering (%1), the host GPU is not used", status.renderer);
             break;
-        case OpenGl::Virgl:
+        case OpenGl::Virgl: {
+            // "virgl (Mesa Intel(R) …)" names the host GPU in brackets.
+            const QString host = virglHostRenderer(status.renderer);
+            lines << i18nc("@info:tooltip %1 is the host GPU's OpenGL renderer", "OpenGL: Universal (%1)", host.isEmpty() ? status.renderer : host);
+            break;
+        }
         case OpenGl::Other:
-            // The renderer says it: "virgl (Mesa Intel(R) …)".
             lines << i18nc("@info:tooltip %1 is the guest's OpenGL renderer", "OpenGL: %1", status.renderer);
             break;
         case OpenGl::Unknown:
@@ -1272,11 +1277,12 @@ void DbusViewerWindow::updateGraphicsIndicator()
     }
     if (request.nativeContext && status.openGl != OpenGl::NativeContext) {
         if (status.nativeContextOffered == false)
-            lines << i18nc("@info:tooltip", "Native context: not offered by the host (virglrenderer or the host GPU lacks support)");
+            lines << i18nc("@info:tooltip", "Native: not offered by host (unsupported by virglrenderer or host GPU)");
         else if (status.nativeContextOffered == true && status.openGl == OpenGl::Virgl)
-            lines << i18nc("@info:tooltip", "Native context: offered, but the guest uses virgl (it needs Linux 6.14 and a recent Mesa)");
+            lines << i18nc("@info:tooltip",
+                           "Native: offered, but guest uses Universal (requires Linux 6.14+ and Mesa with native context support)");
         else
-            lines << i18nc("@info:tooltip", "Native context: requested");
+            lines << i18nc("@info:tooltip", "Native: requested");
     }
 
     // Only kemu-agent can tell what the guest does with it.

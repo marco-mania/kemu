@@ -25,6 +25,8 @@
 #include <KMessageBox>
 #include <KMessageWidget>
 
+#include <QButtonGroup>
+#include <QFontDatabase>
 #include <QMenu>
 #include <QScopeGuard>
 #include <QScopedValueRollback>
@@ -36,6 +38,10 @@
 
 namespace
 {
+// Marks a button that shows or hides part of the dialog, which makeReadOnly()
+// leaves working.
+constexpr char DisclosureProperty[] = "kemuDisclosure";
+
 // Select the combo entry whose userData matches the given enum value.
 template<typename E>
 void setCombo(QComboBox *combo, E enumValue)
@@ -113,6 +119,8 @@ void makeReadOnly(QWidget *widget)
         return; // explains, changes nothing
     if (qobject_cast<QTabBar *>(widget) || qobject_cast<QScrollBar *>(widget))
         return; // moves around, changes nothing
+    if (widget->property(DisclosureProperty).toBool())
+        return; // shows and hides, changes nothing
     if (auto *button = qobject_cast<QAbstractButton *>(widget)) {
         // A check box shows a setting; any other button starts an action.
         if (button->isCheckable())
@@ -218,9 +226,149 @@ QWidget *withSizeMenu(QSpinBox *spin, QToolButton **button)
     return field;
 }
 
-QString hostBlobsToolTip()
+// A line under an option, smaller and dimmer than the option, as in System
+// Settings.
+QLabel *createDescription()
 {
-    return i18n("Lets the guest use the host's GPU memory directly: faster 3D, and OpenGL 4.6 in Linux guests.");
+    auto *label = new QLabel();
+    label->setWordWrap(true);
+    label->setTextFormat(Qt::PlainText);
+    label->setFont(QFontDatabase::systemFont(QFontDatabase::SmallestReadableFont));
+    // Secondary information, and setForegroundRole() follows colour scheme
+    // changes.
+    label->setForegroundRole(QPalette::PlaceholderText);
+    return label;
+}
+
+// Sets the line under @p option, which screen readers announce with it, and
+// hides it while empty. Only for lines already in the dialog: a line without
+// a parent would show as a window of its own.
+void describe(QAbstractButton *option, QLabel *description, const QStringList &sentences)
+{
+    const QString text = sentences.join(u' ').trimmed();
+    description->setText(text);
+    description->setHidden(text.isEmpty());
+    option->setAccessibleDescription(text);
+}
+
+// Help in paragraphs: how an option works, what it needs, and what it does
+// not do.
+QString helpParagraphs(const QStringList &paragraphs)
+{
+    QString html;
+    for (const QString &paragraph : paragraphs)
+        html += u"<p>"_s + paragraph.toHtmlEscaped() + u"</p>"_s;
+    return html;
+}
+
+// Where the text of @p option starts: after its box or circle.
+int optionTextIndent(const QAbstractButton *option)
+{
+    const QStyle *style = option->style();
+    if (qobject_cast<const QRadioButton *>(option))
+        return style->pixelMetric(QStyle::PM_ExclusiveIndicatorWidth, nullptr, option)
+            + style->pixelMetric(QStyle::PM_RadioButtonLabelSpacing, nullptr, option);
+    return style->pixelMetric(QStyle::PM_IndicatorWidth, nullptr, option) + style->pixelMetric(QStyle::PM_CheckBoxLabelSpacing, nullptr, option);
+}
+
+// @p content moved in by @p indent, on the right in right-to-left layouts.
+QLayout *indented(QWidget *content, int indent)
+{
+    auto *row = new QHBoxLayout();
+    row->setContentsMargins(0, 0, 0, 0);
+    row->addSpacing(indent);
+    row->addWidget(content, 1);
+    return row;
+}
+
+QLayout *indented(QLayout *content, int indent)
+{
+    auto *row = new QHBoxLayout();
+    row->setContentsMargins(0, 0, 0, 0);
+    row->addSpacing(indent);
+    row->addLayout(content, 1);
+    return row;
+}
+
+// @p option with the line saying what it does under it, lined up with its
+// text. @p row: the option with what goes beside it, if anything.
+QLayout *withDescription(QAbstractButton *option, QLayout *row, QLabel *description)
+{
+    auto *block = new QVBoxLayout();
+    block->setSpacing(0);
+    if (row)
+        block->addLayout(row);
+    else
+        block->addWidget(option);
+    block->addLayout(indented(description, optionTextIndent(option)));
+    return block;
+}
+
+void setDisclosed(QToolButton *button, QWidget *panel, bool open)
+{
+    // Drawn by the style, so it needs no icon theme.
+    const Qt::ArrowType closed = button->layoutDirection() == Qt::RightToLeft ? Qt::LeftArrow : Qt::RightArrow;
+    button->setArrowType(open ? Qt::DownArrow : closed);
+    panel->setVisible(open);
+}
+
+// A button that shows and hides @p panel, for settings few need. Not
+// checkable, so that it does not look pressed while the panel shows.
+QToolButton *createDisclosure(const QString &text, QWidget *panel)
+{
+    auto *button = new QToolButton();
+    button->setText(text);
+    button->setAutoRaise(true);
+    button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    button->setProperty(DisclosureProperty, true);
+    QObject::connect(button, &QToolButton::clicked, panel, [button, panel]() {
+        setDisclosed(button, panel, panel->isHidden());
+    });
+    setDisclosed(button, panel, false);
+    return button;
+}
+
+// The help of the 3D options. Each says how its option works, then what it
+// needs on the host and in the guest, then what it does not do. "6.13+":
+// later versions do as well.
+QString universalHelp()
+{
+    return helpParagraphs({i18n("Forwards guest OpenGL calls to the host, which runs them via its own GPU driver."),
+                           i18n("Host requirements: any GPU with an OpenGL driver. Guest: Mesa (includes the virgl driver)."),
+                           i18n("Limitations: forwarding every call reduces performance, especially in games. Without direct GPU "
+                                "memory access, Linux guests are limited to OpenGL 4.3. Windows only has experimental community "
+                                "drivers.")});
+}
+
+QString nativeContextHelp()
+{
+    return helpParagraphs({i18n("Gives the guest direct, low-level access to the host GPU driver for near-native performance. "
+                                "The guest runs the GPU's own Mesa driver."),
+                           i18n("Host requirements: those of direct GPU memory access, plus QEMU 11.0+ and an Intel (i915), AMD, "
+                                "or Qualcomm GPU supported by virglrenderer. Guest: Linux 6.14+ and Mesa 26.1+ (Intel) or 25.0+ "
+                                "(AMD) built with native context support."),
+                           i18n("Limitations: Linux guests only. Debian and Ubuntu currently build Mesa without Intel support. "
+                                "KEMU cannot verify virglrenderer or the guest; if unsupported, the guest falls back to "
+                                "Universal.")});
+}
+
+QString vulkanHelp()
+{
+    return helpParagraphs({i18n("Forwards guest Vulkan calls to the host, just as Universal does for OpenGL."),
+                           i18n("Host requirements: those of direct GPU memory access, plus a Vulkan driver and virglrenderer "
+                                "built with Venus. Guest: Linux 5.16+ and Mesa's Venus driver."),
+                           i18n("Limitations: disables QEMU's seccomp sandbox for this VM. Windows only has experimental drivers "
+                                "(such as vgpu3d), which recommend a 4 GiB memory limit.")});
+}
+
+QString hostBlobsHelp()
+{
+    return helpParagraphs({i18n("Lets the guest access host GPU memory directly instead of copying every change, improving 3D "
+                                "performance and raising Universal to OpenGL 4.6 (from 4.3)."),
+                           i18n("Host requirements: QEMU 9.2+ with virglrenderer 1.0+, and Linux 6.13+ (required to map GPU memory "
+                                "into a VM). Guest: Mesa."),
+                           i18n("Limitations: currently used only by Linux guests. Automatically enabled when Native or Vulkan "
+                                "is selected.")});
 }
 
 QString hostBlobsMissingText()
@@ -600,10 +748,11 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     });
     auto *vgaMemLabel = new QLabel(i18n("Video memory:"));
     vgaMemLabel->setBuddy(gpuMemSpin);
-    graphicsLayout->addRow(vgaMemLabel,
-                           ContextualHelp::beside(withSizeMenu(gpuMemSpin, &gpuMemPresetButton),
-                                                  i18n("How much video memory the graphics adapter has. With 3D acceleration, the host GPU "
-                                                       "provides it as needed.")));
+    graphicsLayout->addRow(
+        vgaMemLabel,
+        ContextualHelp::beside(
+            withSizeMenu(gpuMemSpin, &gpuMemPresetButton),
+            i18n("Video memory for the virtual graphics card. With 3D acceleration, this is automatic: the host GPU allocates memory on demand.")));
 
     monitorCountSpin = new QSpinBox();
     monitorCountSpin->setRange(1, KEMUConst::SupportedMonitorCount);
@@ -620,15 +769,43 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     hwLeftColumn->addWidget(graphicsGroup);
 
     // 3D acceleration in a group of its own, switched by the check box in its
-    // title. Each option in it needs the one above it.
+    // title. Ordered by what the guest gets: its OpenGL driver, and Vulkan on
+    // top. What they need comes along on its own, under "Advanced".
     accel3dGroup = new QGroupBox(i18n("3D acceleration"));
     accel3dGroup->setCheckable(true);
-    auto *accelLayout = new QFormLayout(accel3dGroup);
-    accelLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    auto *accelLayout = new QVBoxLayout(accel3dGroup);
 
+    // One OpenGL driver or the other.
+    accelLayout->addWidget(new QLabel(i18n("Guest OpenGL driver:")));
+    universalRadio = new QRadioButton(i18n("Universal (virgl)"));
+    nativeContextRadio = new QRadioButton(i18n("Native (native context)"));
+    auto *openGlDriver = new QButtonGroup(this);
+    openGlDriver->addButton(universalRadio);
+    openGlDriver->addButton(nativeContextRadio);
+    universalRadio->setChecked(true);
+
+    // Help buttons rather than tool tips: the names alone say little.
+    auto *openGlLayout = new QVBoxLayout();
+    openGlLayout->addLayout(ContextualHelp::beside(universalRadio, universalHelp()));
+    // Only says why, when it cannot be chosen.
+    nativeContextDescription = createDescription();
+    openGlLayout->addLayout(withDescription(nativeContextRadio, ContextualHelp::beside(nativeContextRadio, nativeContextHelp()), nativeContextDescription));
+    // Set in under their heading, which they belong to.
+    accelLayout->addLayout(indented(openGlLayout, optionTextIndent(universalRadio)));
+
+    vulkanCheck = new QCheckBox(i18n("Vulkan (Venus)"));
+    vulkanDescription = createDescription();
+    accelLayout->addLayout(withDescription(vulkanCheck, ContextualHelp::beside(vulkanCheck, vulkanHelp()), vulkanDescription));
+
+    // Rarely changed: Vulkan and the native context switch it on themselves.
+    advanced3dPanel = new QWidget();
+    auto *advancedLayout = new QVBoxLayout(advanced3dPanel);
+    advancedLayout->setContentsMargins(0, 0, 0, 0);
+
+    // Only says why, when it cannot be changed.
     hostBlobsCheck = new QCheckBox(i18n("Direct GPU memory access"));
-    hostBlobsCheck->setToolTip(hostBlobsToolTip());
-    accelLayout->addRow({}, hostBlobsCheck);
+    hostBlobsDescription = createDescription();
+    advancedLayout->addLayout(withDescription(hostBlobsCheck, ContextualHelp::beside(hostBlobsCheck, hostBlobsHelp()), hostBlobsDescription));
 
     // The memory window of host blobs. A PCI BAR, so a power of two.
     hostmemSpin = new PowerOfTwoSpinBox();
@@ -641,30 +818,20 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     });
     hostmemLabel = new QLabel(i18n("Memory limit:"));
     hostmemLabel->setBuddy(hostmemSpin);
-    accelLayout->addRow(hostmemLabel,
-                        ContextualHelp::beside(withSizeMenu(hostmemSpin, &hostmemPresetButton),
-                                               i18n("How much of the host's GPU memory the guest can use at once. Experimental "
-                                                    "Windows drivers suggest 4 GiB.")));
+    auto *hostmemRow = new QHBoxLayout();
+    hostmemRow->addWidget(hostmemLabel);
+    hostmemRow->addLayout(ContextualHelp::beside(withSizeMenu(hostmemSpin, &hostmemPresetButton),
+                                                 i18n("Maximum host GPU memory the guest can access at once. Experimental Windows "
+                                                      "drivers recommend 4 GiB.")),
+                          1);
+    advancedLayout->addLayout(indented(hostmemRow, optionTextIndent(hostBlobsCheck)));
 
-    // A help button rather than a tool tip: the name alone says little.
-    vulkanCheck = new QCheckBox(i18n("Vulkan"));
-    accelLayout->addRow({},
-                        ContextualHelp::beside(vulkanCheck,
-                                               i18n("Enables Vulkan in the VM for modern games and Proton, rendering on the host GPU at "
-                                                    "often near-native speeds. Linux guests use Mesa's Venus driver, while Windows "
-                                                    "support is limited to experimental options like vgpu3d. Note that the VM runs "
-                                                    "without a seccomp sandbox.")));
-
-    nativeContextCheck = new QCheckBox(i18n("Native context"));
-    accelLayout->addRow({},
-                        ContextualHelp::beside(nativeContextCheck,
-                                               i18n("Linux guests use the host GPU's own Mesa driver instead of virgl, for "
-                                                    "near-native OpenGL. For Intel (i915), AMD and Qualcomm GPUs; the guest needs "
-                                                    "Linux 6.14 and a recent Mesa (26.1 for Intel, 25.0 for AMD). Otherwise it "
-                                                    "keeps using virgl.")));
+    advanced3dButton = createDisclosure(i18nc("@action:button settings few need", "Advanced"), advanced3dPanel);
+    accelLayout->addWidget(advanced3dButton, 0, Qt::AlignLeft);
+    accelLayout->addLayout(indented(advanced3dPanel, optionTextIndent(hostBlobsCheck)));
 
     gpuMessage = createInlineMessage(KMessageWidget::Information);
-    accelLayout->addRow(gpuMessage);
+    accelLayout->addWidget(gpuMessage);
 
     hwLeftColumn->addWidget(accel3dGroup);
 
@@ -1024,9 +1191,14 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     connect(machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, updateSecureBootState);
     connect(gpuCombo, &QComboBox::currentIndexChanged, this, &EditVmDialog::onGpuDisplayChanged);
     connect(accel3dGroup, &QGroupBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
-    connect(hostBlobsCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
+    // Only a click is the user's choice; onGpuDisplayChanged() sets it, too.
+    connect(hostBlobsCheck, &QCheckBox::clicked, this, [this](bool checked) {
+        m_hostBlobsChoice = checked;
+        onGpuDisplayChanged();
+    });
     connect(vulkanCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
-    connect(nativeContextCheck, &QCheckBox::toggled, this, &EditVmDialog::onGpuDisplayChanged);
+    // The other one of the pair toggles with it.
+    connect(nativeContextRadio, &QRadioButton::toggled, this, &EditVmDialog::onGpuDisplayChanged);
     connect(monitorCountSpin, &QSpinBox::valueChanged, this, &EditVmDialog::onGpuDisplayChanged);
     // The hints depend on the OS family set on the General tab.
     connect(osFamilyCombo, &QComboBox::currentIndexChanged, this, &EditVmDialog::onGpuDisplayChanged);
@@ -1224,10 +1396,15 @@ void EditVmDialog::setConfig(const VMConfig &config)
     }
     monitorCountSpin->setValue(config.monitorCount());
     accel3dGroup->setChecked(config.gpu3dAcceleration());
-    hostBlobsCheck->setChecked(config.gpuHostBlobs());
+    m_hostBlobsChoice = config.gpuHostBlobs();
     hostmemSpin->setValue(config.gpuHostmemMb());
     vulkanCheck->setChecked(config.gpuVulkan());
-    nativeContextCheck->setChecked(config.gpuNativeContext());
+    (config.gpuNativeContext() ? nativeContextRadio : universalRadio)->setChecked(true);
+    // Open where it holds a choice of the user's own.
+    const bool hostBlobsNeeded = config.gpuVulkan() || config.gpuNativeContext();
+    setDisclosed(advanced3dButton,
+                 advanced3dPanel,
+                 (!hostBlobsNeeded && config.gpuHostBlobs() != GlobalDefaults.gpuHostBlobs) || config.gpuHostmemMb() != GlobalDefaults.gpuHostmemMb);
     setCombo(audioCombo, config.audioDevice());
     m_sb16Config = config.sb16Config();
     setCombo(netCombo, config.networkCard());
@@ -1439,7 +1616,9 @@ void EditVmDialog::onGpuDisplayChanged()
     monitorMessage->setToolTip(monitorToolTip);
     updateInlineMessage(monitorMessage, monitorText, KMessageWidget::Information);
 
-    // Unchecked, the group disables what it holds; the rules below come on top.
+    // Unchecked, the group disables what it holds; the rules below come on
+    // top. They leave the choices alone while 3D is off, so that they return
+    // with it.
     const bool can3d = isVirtio && VMConfig::isGpu3dAvailable();
     accel3dGroup->setEnabled(can3d);
     accel3dGroup->setToolTip(!isVirtio ? i18n("Requires VirtIO graphics.") : VMConfig::isGpu3dAvailable() ? accel3dToolTip() : missingInQemuText());
@@ -1447,48 +1626,70 @@ void EditVmDialog::onGpuDisplayChanged()
         accel3dGroup->setChecked(false);
     const bool with3d = accel3dGroup->isChecked();
 
-    // The rules of QemuCommandBuilder::hostBlobsAvailable().
+    // The rules of QemuCommandBuilder::hostBlobsAvailable(),
+    // nativeContextAvailable() and venusAvailable(). An option that cannot be
+    // changed says why in the line below it.
     const bool hostBlobs = QemuCommandBuilder::hostBlobsAvailable();
-    hostBlobsCheck->setEnabled(with3d && hostBlobs);
-    hostBlobsCheck->setToolTip(!with3d ? i18n("Requires 3D acceleration.") : hostBlobs ? hostBlobsToolTip() : hostBlobsMissingText());
-    if (!with3d || !hostBlobs)
-        hostBlobsCheck->setChecked(false);
+
+    QString nativeContextMissing;
+    if (isWindows)
+        nativeContextMissing = i18n("Linux guests only."); // no Mesa driver to run
+    else if (!hostBlobs)
+        nativeContextMissing = hostBlobsMissingText();
+    else if (!QemuCommandBuilder::nativeContextAvailable())
+        nativeContextMissing = missingInQemuText();
+    nativeContextRadio->setEnabled(nativeContextMissing.isEmpty());
+    if (!nativeContextMissing.isEmpty())
+        universalRadio->setChecked(true);
+    describe(nativeContextRadio, nativeContextDescription, {nativeContextMissing});
+    const bool nativeContext = nativeContextRadio->isChecked();
+
+    const bool venus = QemuCommandBuilder::venusAvailable();
+    vulkanCheck->setEnabled(venus);
+    if (!venus)
+        vulkanCheck->setChecked(false);
+    QStringList vulkanText{i18n("For games and Proton.")};
+    if (!venus) {
+        vulkanText << hostBlobsMissingText();
+    } else if (SettingsDialog::qemuSeccompSandbox() && QemuCapabilities::instance().hasSeccompSandbox()) {
+        // QemuCommandBuilder::sandboxArgs() leaves it out for Venus.
+        vulkanText << i18n("Disables QEMU's seccomp sandbox for this VM.");
+    }
+    describe(vulkanCheck, vulkanDescription, vulkanText);
+    const bool vulkan = vulkanCheck->isChecked();
+
+    // On while Vulkan or the native context needs it, the user's choice
+    // otherwise.
+    const bool hostBlobsNeeded = nativeContext || vulkan;
+    hostBlobsCheck->setEnabled(hostBlobs && !hostBlobsNeeded);
+    hostBlobsCheck->setChecked(hostBlobs && (hostBlobsNeeded || m_hostBlobsChoice));
+    QString hostBlobsLocked;
+    if (!hostBlobs)
+        hostBlobsLocked = hostBlobsMissingText();
+    else if (nativeContext && vulkan)
+        hostBlobsLocked = i18n("Required by Native and Vulkan.");
+    else if (nativeContext)
+        hostBlobsLocked = i18n("Required by Native.");
+    else if (vulkan)
+        hostBlobsLocked = i18n("Required by Vulkan.");
+    describe(hostBlobsCheck, hostBlobsDescription, {hostBlobsLocked});
     const bool blobs = hostBlobsCheck->isChecked();
     hostmemLabel->setEnabled(blobs);
     hostmemSpin->setEnabled(blobs);
     hostmemPresetButton->setEnabled(blobs);
 
-    // The rules of QemuCommandBuilder::venusAvailable().
-    const bool venus = QemuCommandBuilder::venusAvailable();
-    vulkanCheck->setEnabled(blobs && venus);
-    // Only why it is unavailable; the help button explains it.
-    vulkanCheck->setToolTip(!blobs ? i18n("Requires direct GPU memory access.") : venus ? QString() : hostBlobsMissingText());
-    if (!blobs || !venus)
-        vulkanCheck->setChecked(false);
-    const bool vulkan = vulkanCheck->isChecked();
-
-    // The rules of QemuCommandBuilder::nativeContextAvailable().
-    const bool nativeContext = QemuCommandBuilder::nativeContextAvailable();
-    nativeContextCheck->setEnabled(blobs && nativeContext);
-    nativeContextCheck->setToolTip(!blobs ? i18n("Requires direct GPU memory access.") : nativeContext ? QString() : hostBlobsMissingText());
-    if (!blobs || !nativeContext)
-        nativeContextCheck->setChecked(false);
-
     showVideoMemory(gpu, with3d);
 
     // A warning wins over information when both apply.
-    QStringList hints;
+    QString hint;
     auto type = KMessageWidget::Information;
     if (with3d && isWindows) {
-        hints << i18n("No official Windows VirtIO 3D driver exists; only experimental community drivers are available.");
+        hint = i18n("Windows has no official VirtIO 3D driver; only experimental community drivers exist.");
         type = KMessageWidget::Warning;
-    } else if (blobs && osFamily != VMSpecs::OsFamily::Linux) {
-        hints << i18n("Direct GPU memory access only helps Linux guests so far.");
+    } else if (with3d && blobs && !hostBlobsNeeded && osFamily != VMSpecs::OsFamily::Linux) {
+        hint = i18n("Direct GPU memory access currently only benefits Linux guests.");
     }
-    // QemuCommandBuilder::sandboxArgs() leaves it out for Venus.
-    if (vulkan && SettingsDialog::qemuSeccompSandbox() && QemuCapabilities::instance().hasSeccompSandbox())
-        hints << i18n("Vulkan needs a helper program on the host, so this VM runs without QEMU's seccomp sandbox.");
-    updateInlineMessage(gpuMessage, hints.join(u' '), type);
+    updateInlineMessage(gpuMessage, hint, type);
 }
 
 void EditVmDialog::showVideoMemory(VMSpecs::GpuType gpu, bool automatic)
@@ -1723,7 +1924,7 @@ VMConfig EditVmDialog::getResult() const
     c.setGpu3dAcceleration(accel3dGroup->isChecked());
     c.setGpuHostBlobs(hostBlobsCheck->isChecked());
     c.setGpuVulkan(vulkanCheck->isChecked());
-    c.setGpuNativeContext(nativeContextCheck->isChecked());
+    c.setGpuNativeContext(nativeContextRadio->isChecked());
     c.setGpuMemMb(VMConfig::normalizedVgaMemMb(c.gpuType(), m_vramMb));
     c.setGpuHostmemMb(hostmemSpin->value());
     c.setAudioDevice(static_cast<VMSpecs::AudioDevice>(audioCombo->currentData().toInt()));
@@ -2621,9 +2822,9 @@ void EditVmDialog::resetToFactoryDefaults()
     setCombo(keyboardCombo, GlobalDefaults.keyboardDevice);
 
     accel3dGroup->setChecked(GlobalDefaults.gpu3dAcceleration);
-    hostBlobsCheck->setChecked(GlobalDefaults.gpuHostBlobs);
+    m_hostBlobsChoice = GlobalDefaults.gpuHostBlobs;
     vulkanCheck->setChecked(GlobalDefaults.gpuVulkan);
-    nativeContextCheck->setChecked(GlobalDefaults.gpuNativeContext);
+    (GlobalDefaults.gpuNativeContext ? nativeContextRadio : universalRadio)->setChecked(true);
     onGpuDisplayChanged();
 
     uefiCheck->setChecked(GlobalDefaults.useUefi);

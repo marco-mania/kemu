@@ -51,6 +51,11 @@ GraphicsStatus::OpenGl classifyRenderer(const QString &renderer, bool nativeCont
 
 GraphicsStatus evaluateGraphics(const GraphicsRequest &request, const std::optional<KemuAgentProtocol::GuestGraphics> &guest);
 
+// The host GPU that virgl renders on, from its GL_RENDERER: "Mesa Intel(R)
+// Graphics (MTL)" from "virgl (Mesa Intel(R) Graphics (MTL))". Empty when
+// the renderer does not name it.
+QString virglHostRenderer(const QString &renderer);
+
 // A string from the guest, fit for a plain-text tool tip: no control
 // characters, nothing Qt could take for markup, and not too long.
 QString plainGuestText(const QString &text);
