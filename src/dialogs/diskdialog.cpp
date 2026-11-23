@@ -26,13 +26,15 @@
 #include <KMessageWidget>
 #include <KUrlRequester>
 
+#include "widgets/inlinemessage.h"
+
 namespace
 {
 KMessageWidget *inlineMessage(KMessageWidget::MessageType type, QWidget *parent)
 {
     // As in the VM settings: no close button, it goes when its reason does.
     auto *message = new KMessageWidget(parent);
-    message->setMessageType(type);
+    InlineMessage::setType(message, type);
     message->setCloseButtonVisible(false);
     message->setWordWrap(true);
     message->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
@@ -337,7 +339,7 @@ void DiskDialog::updateInterfaceHint()
         hint = i18n("Windows requires the VirtIO driver ISO during setup. Otherwise, the installer won't detect any drives.");
         type = KMessageWidget::Warning;
     }
-    m_interfaceHint->setMessageType(type);
+    InlineMessage::setType(m_interfaceHint, type);
     if (!hint.isEmpty())
         m_interfaceHint->setText(hint);
     showMessage(m_interfaceHint, !hint.isEmpty());

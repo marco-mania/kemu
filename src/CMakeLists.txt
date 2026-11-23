@@ -248,6 +248,8 @@ target_sources(
           widgets/vmoverview.h
           widgets/contextualhelp.cpp
           widgets/contextualhelp.h
+          widgets/inlinemessage.cpp
+          widgets/inlinemessage.h
           widgets/ramspinbox.h
           widgets/steppedspinbox.h
           dbusdisplay/dbusviewerwindow.cpp

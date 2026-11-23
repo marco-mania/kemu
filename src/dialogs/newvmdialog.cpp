@@ -31,6 +31,7 @@
 #include "dialogs/newdiskpassworddialog.h"
 #include "dialogs/settingsdialog.h"
 #include "utils/utils.h"
+#include "widgets/inlinemessage.h"
 
 using namespace Qt::StringLiterals;
 
@@ -113,7 +114,7 @@ void NewVmDialog::buildUi()
     nameLayout->addRow(i18n("Name:"), nameEdit);
 
     errorMessage = new KMessageWidget(this);
-    errorMessage->setMessageType(KMessageWidget::Error);
+    InlineMessage::setType(errorMessage, KMessageWidget::Error);
     errorMessage->setCloseButtonVisible(false);
     errorMessage->setWordWrap(true);
     errorMessage->setFocusPolicy(Qt::NoFocus);
@@ -195,7 +196,7 @@ void NewVmDialog::buildUi()
     cloudOptionsLayout->addLayout(deployLayout);
 
     deployWarningMessage = new KMessageWidget();
-    deployWarningMessage->setMessageType(KMessageWidget::Warning);
+    InlineMessage::setType(deployWarningMessage, KMessageWidget::Warning);
     deployWarningMessage->setCloseButtonVisible(false);
     deployWarningMessage->setWordWrap(true);
     deployWarningMessage->setFocusPolicy(Qt::NoFocus);

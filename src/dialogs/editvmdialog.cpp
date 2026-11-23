@@ -20,6 +20,7 @@
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
 #include "widgets/contextualhelp.h"
+#include "widgets/inlinemessage.h"
 
 #include <KContextualHelpButton>
 #include <KMessageBox>
@@ -143,7 +144,7 @@ void makeReadOnly(QWidget *widget)
 KMessageWidget *createInlineMessage(KMessageWidget::MessageType type)
 {
     auto *message = new KMessageWidget();
-    message->setMessageType(type);
+    InlineMessage::setType(message, type);
     message->setCloseButtonVisible(false);
     message->setWordWrap(true);
     message->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
@@ -164,7 +165,7 @@ void updateInlineMessage(KMessageWidget *message, const QString &text, KMessageW
         return;
     }
 
-    message->setMessageType(type);
+    InlineMessage::setType(message, type);
     if (message->text() != text)
         message->setText(text);
     if (message->isHidden() || message->isHideAnimationRunning())
@@ -748,11 +749,10 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     });
     auto *vgaMemLabel = new QLabel(i18n("Video memory:"));
     vgaMemLabel->setBuddy(gpuMemSpin);
-    graphicsLayout->addRow(
-        vgaMemLabel,
-        ContextualHelp::beside(
-            withSizeMenu(gpuMemSpin, &gpuMemPresetButton),
-            i18n("Video memory for the virtual graphics card. With 3D acceleration, this is automatic: the host GPU allocates memory on demand.")));
+    graphicsLayout->addRow(vgaMemLabel,
+                           ContextualHelp::beside(withSizeMenu(gpuMemSpin, &gpuMemPresetButton),
+                                                  i18n("Specifies the amount of video memory for the virtual graphics adapter. If 3D acceleration is active, "
+                                                       "this setting is ignored and the host GPU allocates memory dynamically.")));
 
     monitorCountSpin = new QSpinBox();
     monitorCountSpin->setRange(1, KEMUConst::SupportedMonitorCount);

@@ -30,6 +30,7 @@
 
 #include "utils/templatestore.h"
 #include "widgets/contextualhelp.h"
+#include "widgets/inlinemessage.h"
 
 using namespace Qt::StringLiterals;
 
@@ -146,12 +147,12 @@ CloudInitEditDialog::CloudInitEditDialog(Mode mode,
     splitter->setStretchFactor(0, 1);
 
     m_error = new KMessageWidget(this);
-    m_error->setMessageType(KMessageWidget::Error);
+    InlineMessage::setType(m_error, KMessageWidget::Error);
     m_error->setCloseButtonVisible(false);
     m_error->setWordWrap(true);
     m_error->hide();
     m_warning = new KMessageWidget(this);
-    m_warning->setMessageType(KMessageWidget::Warning);
+    InlineMessage::setType(m_warning, KMessageWidget::Warning);
     m_warning->setCloseButtonVisible(false);
     m_warning->setWordWrap(true);
     m_warning->hide();

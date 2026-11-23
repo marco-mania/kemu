@@ -20,6 +20,7 @@
 #include <KMessageWidget>
 
 #include "utils/templatestore.h"
+#include "widgets/inlinemessage.h"
 
 using namespace Qt::StringLiterals;
 
@@ -54,7 +55,7 @@ TemplateEditDialog::TemplateEditDialog(Mode mode, const QJsonObject &tpl, const 
     m_editor->setPlainText(QString::fromUtf8(QJsonDocument(tpl).toJson(QJsonDocument::Indented)));
 
     m_message = new KMessageWidget(this);
-    m_message->setMessageType(KMessageWidget::Error);
+    InlineMessage::setType(m_message, KMessageWidget::Error);
     m_message->setCloseButtonVisible(false);
     m_message->setWordWrap(true);
     m_message->hide();

@@ -27,6 +27,7 @@
 #include "utils/utils.h"
 #include "utils/vmconfig.h"
 #include "widgets/contextualhelp.h"
+#include "widgets/inlinemessage.h"
 #include "widgets/statuslist.h"
 
 SettingsDialog::SettingsDialog(QWidget *parent)
@@ -465,7 +466,7 @@ QWidget *SettingsDialog::createCapabilitiesTab()
     layout->addLayout(headerRow);
 
     m_capabilityWarning = new KMessageWidget(i18n("KEMU could not determine what this QEMU provides, so it offers every feature."));
-    m_capabilityWarning->setMessageType(KMessageWidget::Warning);
+    InlineMessage::setType(m_capabilityWarning, KMessageWidget::Warning);
     m_capabilityWarning->setWordWrap(true);
     m_capabilityWarning->setCloseButtonVisible(false);
     layout->addWidget(m_capabilityWarning);
@@ -1131,7 +1132,7 @@ static bool showNetworkForm(QWidget *parent, VirtualNetwork &net, const QString 
     form->setSizeConstraint(QLayout::SetFixedSize);
 
     auto *errorMessage = new KMessageWidget(&dlg);
-    errorMessage->setMessageType(KMessageWidget::Error);
+    InlineMessage::setType(errorMessage, KMessageWidget::Error);
     errorMessage->setCloseButtonVisible(false);
     errorMessage->setWordWrap(true);
     errorMessage->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);

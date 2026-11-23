@@ -9,6 +9,7 @@
 #include "dialogs/takesnapshotdialog.h"
 #include "utils/diskencryption.h"
 #include "utils/utils.h"
+#include "widgets/inlinemessage.h"
 
 #include <QFileInfo>
 
@@ -485,7 +486,7 @@ void SnapshotDialog::updateHint(const QString &listError)
 
 void SnapshotDialog::showHint(KMessageWidget::MessageType type, const QString &text)
 {
-    m_hint->setMessageType(type);
+    InlineMessage::setType(m_hint, type);
     m_hint->setText(text);
     m_hint->show();
 }
