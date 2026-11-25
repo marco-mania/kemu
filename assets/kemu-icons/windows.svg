@@ -1,1 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 48 48"><path fill="#fff" fill-opacity=".01" d="M0 0h48v48H0z"/><rect width="40" height="32" x="4" y="8" fill="#f9f9f9" stroke="#000" stroke-linejoin="round" stroke-width="4" rx="2"/><path fill="#0055d4" stroke-width=".004" d="M13.324 13.803h10.122v9.663H13.324zm11.23 0h10.122v9.663H24.554zm-11.23 10.726h10.122v9.668H13.324zm11.23 0h10.122v9.668H24.554"/></svg>
+<?xml version='1.0' encoding='UTF-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <g fill="#4d545b">
+    <rect width="20" height="116" x="54" y="6" rx="4"/>
+    <rect width="20" height="116" x="54" y="6" rx="4" transform="rotate(45 64 64)"/>
+    <rect width="20" height="116" x="54" y="6" rx="4" transform="rotate(90 64 64)"/>
+    <rect width="20" height="116" x="54" y="6" rx="4" transform="rotate(135 64 64)"/>
+  </g>
+  <circle cx="64" cy="64" r="48" fill="#4d545b"/>
+  <circle cx="64" cy="64" r="38" fill="#1d99f3"/>
+  <rect x="38" y="38" width="52" height="52" rx="7" fill="#ffffff" stroke="#d9dee5" stroke-width="1"/>
+  <path d="M13.324 13.803h10.122v9.663H13.324zm11.23 0h10.122v9.663H24.554zm-11.23 10.726h10.122v9.668H13.324zm11.23 0h10.122v9.668H24.554" fill="#0055d4" transform="translate(64 64) scale(1.65) translate(-24 -24)"/>
+</svg>

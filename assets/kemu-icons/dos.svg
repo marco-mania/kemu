@@ -1,1 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 48 48"><path fill="#fff" fill-opacity=".01" d="M0 0h48v48H0z"/><path fill="#4d4d4d" stroke="#000" stroke-linejoin="round" stroke-width="4" d="M6 8h36c1.108 0 2 .892 2 2v28c0 1.108-.892 2-2 2H6c-1.108 0-2-.892-2-2V10c0-1.108.892-2 2-2z"/><g fill="#f9f9f9" stroke-width=".06"><g stroke="#000"><circle cx="9.654" cy="19.006" r=".001"/><circle cx="9.453" cy="19.24" r=".001"/><circle cx="9.453" cy="19.24" r=".001"/></g><path d="M11.25 20.25h-1.5V21H9v4.5h.75v.75h1.5v-.75H12v-.75h.75v1.5H12V27H9v-.75h-.75v-.75H7.5V21h.75v-.75H9v-.75h3v.75h.75v1.5H12V21h-.75zm5.25 4.5H18v1.5h-1.5zm0-3.75H18v1.5h-1.5zm9 5.25h-.75v-.75H24v-.75h-.75V24h-.75v-.75h-.75v-.75H21v-2.25h.75V21h.75v.75h.75v.75H24v.75h.75V24h.75v.75h.75V27h-.75zm3-6H30V21h.75v.75h.75v.75h.75v.75H33V24h-.75v.75h-.75v.75h-.75v.75H30V27h-1.5v-.75h.75v-.75H30v-.75h.75V24h.75v-.75h-.75v-.75H30v-.75h-.75V21h-.75zm6 7.5h6v.75h-6z"/></g></svg>
+<?xml version='1.0' encoding='UTF-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <g fill="#4d545b">
+    <rect width="20" height="116" x="54" y="6" rx="4"/>
+    <rect width="20" height="116" x="54" y="6" rx="4" transform="rotate(45 64 64)"/>
+    <rect width="20" height="116" x="54" y="6" rx="4" transform="rotate(90 64 64)"/>
+    <rect width="20" height="116" x="54" y="6" rx="4" transform="rotate(135 64 64)"/>
+  </g>
+  <circle cx="64" cy="64" r="48" fill="#4d545b"/>
+  <circle cx="64" cy="64" r="38" fill="#1d99f3"/>
+  <path fill="#ffffff" d="M44 48h8v4h4v4h4v4h4v8h-4v4h-4v4h-4v4h-8v-8h4v-4h4v-4h4v-4h-4v-4h-4v-4h-4z M68 72h20v6H68z"/>
+</svg>
