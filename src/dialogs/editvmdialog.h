@@ -76,6 +76,7 @@ public:
     void setReadOnly(bool readOnly, bool frozen = false);
     // Where a card in the details view of the main window leads.
     enum class Setting {
+        General, // the first page
         Cores,
         Memory,
         Chipset,

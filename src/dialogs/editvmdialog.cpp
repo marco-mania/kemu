@@ -1445,6 +1445,9 @@ void EditVmDialog::showSetting(Setting setting, int diskIndex)
 {
     QWidget *field = nullptr;
     switch (setting) {
+    case Setting::General:
+        field = nameEdit;
+        break;
     case Setting::Cores:
         field = cpuSpin;
         break;

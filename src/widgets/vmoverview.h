@@ -14,6 +14,7 @@
 class QLabel;
 class QVBoxLayout;
 class VmOverviewBadge;
+class VmOverviewFrame;
 class VmOverviewGrid;
 
 /**
@@ -95,12 +96,14 @@ Q_SIGNALS:
     /// A link in the header, such as copy-pid: or copy-ip:.
     void linkActivated(const QString &link);
     /// A card with an id was clicked; @p anchor is its lower left corner, for a menu.
+    /// The header is the card "general".
     void cardActivated(const QString &id, const QPoint &anchor);
     /// A file was dropped on the card @p id.
     void fileDropped(const QString &id, const QString &path);
 
 protected:
     void changeEvent(QEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void applyColors();
@@ -108,6 +111,11 @@ private:
     QWidget *m_placeholder = nullptr;
     QLabel *m_placeholderText = nullptr;
     QWidget *m_content = nullptr;
+    VmOverviewFrame *m_header = nullptr;
+    // The link under the mouse in a header label, empty elsewhere.
+    QString m_hoveredLink;
+    // Where a click on a header label began, to tell it from selecting text.
+    QPoint m_pressPos;
     QLabel *m_icon = nullptr;
     QLabel *m_name = nullptr;
     VmOverviewBadge *m_status = nullptr;

@@ -531,7 +531,7 @@ void MainWindow::setupUi()
     });
 
     // The media cards offer what the media icons in the list do; every other
-    // card leads to its setting in the VM settings.
+    // card, and the header, leads to its setting in the VM settings.
     connect(vmOverview, &VmOverview::cardActivated, this, [this](const QString &id, const QPoint &anchor) {
         const bool cd = id == u"cdrom"_s;
         if (cd || id == u"floppy"_s) {
@@ -548,6 +548,7 @@ void MainWindow::setupUi()
 
         using Setting = EditVmDialog::Setting;
         static const QHash<QString, Setting> settings{
+            {u"general"_s, Setting::General},
             {u"cpu"_s, Setting::Cores},
             {u"memory"_s, Setting::Memory},
             {u"chipset"_s, Setting::Chipset},
