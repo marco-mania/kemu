@@ -34,7 +34,7 @@
         "cpu_cores": 1,
         "disk_size_gb": 1,
         "machine_type": "pc_isa",
-        "gpu_type": "isa-vga",
+        "gpu_type": "vga_isa",
         "gpu_3d_acceleration": false,
         "gpu_mem": 1,
         "audio_device": "sb16",

@@ -7,6 +7,8 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QMetaEnum>
 #include <QProcess>
@@ -881,6 +883,40 @@ private Q_SLOTS:
         QCOMPARE(VMConfig::fromJson(invalid).monitorCount(), 1);
         invalid[u"monitor_count"_s] = 99;
         QCOMPARE(VMConfig::fromJson(invalid).monitorCount(), KEMUConst::MaxMonitorCount);
+    }
+
+    // A misspelled choice in a template falls back silently, "isa-vga" to
+    // the PCI "vga", so every one must be a name VMConfig reads back as is.
+    void shippedTemplateChoicesAreKnown()
+    {
+        const QStringList keys{u"gpu_type"_s,
+                               u"machine_type"_s,
+                               u"cpu_model"_s,
+                               u"audio_device"_s,
+                               u"disk_interface"_s,
+                               u"net_card"_s,
+                               u"usb_controller"_s,
+                               u"pointer_device"_s,
+                               u"keyboard_device"_s};
+        const QDir dir(QFINDTESTDATA(u"../data/templates.d"_s));
+        QVERIFY(dir.exists());
+        int checked = 0;
+        for (const QString &file : dir.entryList({u"*.json"_s}, QDir::Files)) {
+            QFile f(dir.filePath(file));
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            for (const QJsonValue &value : QJsonDocument::fromJson(f.readAll()).object().value(u"templates"_s).toArray()) {
+                const QJsonObject defaults = value.toObject().value(u"qemu_defaults"_s).toObject();
+                const QJsonObject readBack = VMConfig::fromJson(defaults).toJson();
+                for (const QString &key : keys) {
+                    if (!defaults.contains(key))
+                        continue;
+                    const QString choice = defaults.value(key).toString();
+                    QVERIFY2(readBack.value(key).toString() == choice, qPrintable(file + u": "_s + key + u" \""_s + choice + u"\""_s));
+                    ++checked;
+                }
+            }
+        }
+        QVERIFY(checked > 10);
     }
 };
 
