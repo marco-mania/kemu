@@ -1694,9 +1694,9 @@ void EditVmDialog::onGpuDisplayChanged()
             }
         }
         if (capabilities)
-            hints << i18n("Settings → System → Capabilities shows why.");
+            hints << i18n("See Settings → System → Capabilities.");
         if (blobs && !hostBlobsNeeded && !isWindows && osFamily != VMSpecs::OsFamily::Linux)
-            hints << i18n("Direct GPU memory access currently only benefits Linux guests.");
+            hints << i18n("Direct GPU memory access benefits Linux guests only.");
     }
     updateInlineMessage(gpuMessage, hints.join(u' '), type);
 }
