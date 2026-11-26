@@ -372,12 +372,6 @@ QString hostBlobsHelp()
                                 "is selected.")});
 }
 
-QString hostBlobsMissingText()
-{
-    // The capability overview names the missing piece.
-    return i18n("Not supported on this system. Settings → System → Capabilities shows why.");
-}
-
 QString missingInQemuText()
 {
     return i18n("The QEMU in use does not provide this. Settings → System → Capabilities lists what it lacks.");
@@ -787,9 +781,7 @@ EditVmDialog::EditVmDialog(Mode mode, QWidget *parent)
     // Help buttons rather than tool tips: the names alone say little.
     auto *openGlLayout = new QVBoxLayout();
     openGlLayout->addLayout(ContextualHelp::beside(universalRadio, universalHelp()));
-    // Only says why, when it cannot be chosen.
-    nativeContextDescription = createDescription();
-    openGlLayout->addLayout(withDescription(nativeContextRadio, ContextualHelp::beside(nativeContextRadio, nativeContextHelp()), nativeContextDescription));
+    openGlLayout->addLayout(ContextualHelp::beside(nativeContextRadio, nativeContextHelp()));
     // Set in under their heading, which they belong to.
     accelLayout->addLayout(indented(openGlLayout, optionTextIndent(universalRadio)));
 
@@ -1630,31 +1622,24 @@ void EditVmDialog::onGpuDisplayChanged()
     const bool with3d = accel3dGroup->isChecked();
 
     // The rules of QemuCommandBuilder::hostBlobsAvailable(),
-    // nativeContextAvailable() and venusAvailable(). An option that cannot be
-    // changed says why in the line below it.
+    // nativeContextAvailable() and venusAvailable(). What is unavailable, and
+    // why, goes to gpuMessage below.
     const bool hostBlobs = QemuCommandBuilder::hostBlobsAvailable();
+    const bool nativeContextInQemu = QemuCommandBuilder::nativeContextAvailable();
+    const bool venus = QemuCommandBuilder::venusAvailable();
 
-    QString nativeContextMissing;
-    if (isWindows)
-        nativeContextMissing = i18n("Linux guests only."); // no Mesa driver to run
-    else if (!hostBlobs)
-        nativeContextMissing = hostBlobsMissingText();
-    else if (!QemuCommandBuilder::nativeContextAvailable())
-        nativeContextMissing = missingInQemuText();
-    nativeContextRadio->setEnabled(nativeContextMissing.isEmpty());
-    if (!nativeContextMissing.isEmpty())
+    // Windows has no Mesa driver to run in a native context.
+    const bool nativeContextUsable = hostBlobs && nativeContextInQemu && !isWindows;
+    nativeContextRadio->setEnabled(nativeContextUsable);
+    if (!nativeContextUsable)
         universalRadio->setChecked(true);
-    describe(nativeContextRadio, nativeContextDescription, {nativeContextMissing});
     const bool nativeContext = nativeContextRadio->isChecked();
 
-    const bool venus = QemuCommandBuilder::venusAvailable();
     vulkanCheck->setEnabled(venus);
     if (!venus)
         vulkanCheck->setChecked(false);
     QStringList vulkanText{i18n("For games and Proton.")};
-    if (!venus) {
-        vulkanText << hostBlobsMissingText();
-    } else if (SettingsDialog::qemuSeccompSandbox() && QemuCapabilities::instance().hasSeccompSandbox()) {
+    if (venus && SettingsDialog::qemuSeccompSandbox() && QemuCapabilities::instance().hasSeccompSandbox()) {
         // QemuCommandBuilder::sandboxArgs() leaves it out for Venus.
         vulkanText << i18n("Disables QEMU's seccomp sandbox for this VM.");
     }
@@ -1666,14 +1651,13 @@ void EditVmDialog::onGpuDisplayChanged()
     const bool hostBlobsNeeded = nativeContext || vulkan;
     hostBlobsCheck->setEnabled(hostBlobs && !hostBlobsNeeded);
     hostBlobsCheck->setChecked(hostBlobs && (hostBlobsNeeded || m_hostBlobsChoice));
+    // Only why it is locked on; why it is unavailable goes to gpuMessage.
     QString hostBlobsLocked;
-    if (!hostBlobs)
-        hostBlobsLocked = hostBlobsMissingText();
-    else if (nativeContext && vulkan)
+    if (hostBlobs && nativeContext && vulkan)
         hostBlobsLocked = i18n("Required by Native and Vulkan.");
-    else if (nativeContext)
+    else if (hostBlobs && nativeContext)
         hostBlobsLocked = i18n("Required by Native.");
-    else if (vulkan)
+    else if (hostBlobs && vulkan)
         hostBlobsLocked = i18n("Required by Vulkan.");
     describe(hostBlobsCheck, hostBlobsDescription, {hostBlobsLocked});
     const bool blobs = hostBlobsCheck->isChecked();
@@ -1683,16 +1667,38 @@ void EditVmDialog::onGpuDisplayChanged()
 
     showVideoMemory(gpu, with3d);
 
-    // A warning wins over information when both apply.
-    QString hint;
+    // One message for the group, while 3D is on: a warning wins over
+    // information, and what is unavailable comes with where to look.
+    QStringList hints;
     auto type = KMessageWidget::Information;
-    if (with3d && isWindows) {
-        hint = i18n("Windows has no official VirtIO 3D driver; only experimental community drivers exist.");
-        type = KMessageWidget::Warning;
-    } else if (with3d && blobs && !hostBlobsNeeded && osFamily != VMSpecs::OsFamily::Linux) {
-        hint = i18n("Direct GPU memory access currently only benefits Linux guests.");
+    if (with3d) {
+        if (isWindows) {
+            hints << i18n("Windows has no official VirtIO 3D driver; only experimental community drivers exist.");
+            type = KMessageWidget::Warning;
+        }
+        // Native and Vulkan need host blobs, so all three go together.
+        bool capabilities = false;
+        if (!hostBlobs) {
+            hints << i18n("Native, Vulkan and direct GPU memory access are not supported on this system.");
+            capabilities = true;
+        } else {
+            if (!nativeContextInQemu) {
+                hints << i18n("The QEMU in use does not provide Native.");
+                capabilities = true;
+            } else if (isWindows) {
+                hints << i18n("Native is for Linux guests only.");
+            }
+            if (!venus) {
+                hints << i18n("Vulkan is not supported on this system.");
+                capabilities = true;
+            }
+        }
+        if (capabilities)
+            hints << i18n("Settings → System → Capabilities shows why.");
+        if (blobs && !hostBlobsNeeded && !isWindows && osFamily != VMSpecs::OsFamily::Linux)
+            hints << i18n("Direct GPU memory access currently only benefits Linux guests.");
     }
-    updateInlineMessage(gpuMessage, hint, type);
+    updateInlineMessage(gpuMessage, hints.join(u' '), type);
 }
 
 void EditVmDialog::showVideoMemory(VMSpecs::GpuType gpu, bool automatic)

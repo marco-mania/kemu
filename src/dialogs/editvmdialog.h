@@ -230,7 +230,6 @@ private:
     // The guest's OpenGL driver: virgl, or that of the host GPU.
     QRadioButton *universalRadio = nullptr;
     QRadioButton *nativeContextRadio = nullptr;
-    QLabel *nativeContextDescription = nullptr;
     QCheckBox *vulkanCheck = nullptr;
     QLabel *vulkanDescription = nullptr;
     // Shows and hides advanced3dPanel: host blobs and their memory window.

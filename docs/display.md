@@ -23,7 +23,7 @@ KEMU launches QEMU with `-display dbus,p2p=on` and passes one end of a Unix `soc
 
 ## Graphics: acceleration and video memory
 
-*Edit… → Hardware* contains two groups for this. *Graphics* configures the adapter, its *Video memory*, and the number of monitors. Below it, *3D acceleration* is toggled by the checkbox in its title. Inside, it asks what the guest gets: which OpenGL driver, and whether Vulkan comes on top. What these need comes along on its own, under *Advanced*. Each option has a help button saying how it works, what it needs, and what it does not do. An option that cannot be chosen or changed is greyed out, with the reason in a line below it.
+*Edit… → Hardware* provides two settings groups. Graphics configures the adapter, Video memory, and monitor count. Below it, the 3D acceleration group is enabled via its header checkbox and sets the guest's OpenGL driver and optional Vulkan support, automatically adjusting required dependencies under Advanced. Each option includes a help button detailing its functionality, requirements, and limitations. Unsupported options are greyed out, with a status message at the bottom explaining why. When Native or Vulkan forces direct GPU memory access, a note appears directly below that setting.
 
 - **3D acceleration** (the checkbox in the group title): Launches QEMU with `virtio-vga-gl`, running guest OpenGL on the host GPU via `virglrenderer` (requires VirtIO graphics). The host GPU allocates video memory dynamically, so *Video memory* displays *Automatic*. Switching it off keeps the choices below for when it is switched on again.
 - **OpenGL driver in the guest**, one of two:
