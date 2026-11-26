@@ -62,29 +62,39 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </recommends>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.8.0" date="2026-11-09">
+      <description>
+        <p>KEMU dropped X11 host support in favor of native Wayland, refactored the VM overview into framed detail cards alongside improved UEFI/Secure Boot firmware detection and QEMU capability probing, and added experimental dual-monitor support in a separate window.</p>
+      </description>
+    </release>
+    <release version="0.7.0" date="2026-10-27">
+      <description>
+        <p>KEMU replaced external networking helpers with an in-process virtual L2 switch, DHCP/DNS servers, libslirp backend using secure socketpairs and seccomp sandboxing, while adding LUKS system disk encryption with KWallet support, QEMU guest agent integration, multiple disks, linked clones, cloud-init/OS template management, desktop notifications, system tray/CLI launching, and dropping GTK display support.</p>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-10-05">
       <description>
-        <p>Security hardening (seccomp sandbox), use socket pairs and implement virtual networks without namespaces/external processes</p>
+        <p>KEMU migrated its integrated D-Bus viewer to peer-to-peer connections while removing the external dbus-daemon and SPICE viewer dependencies, centralized VM lifecycle management in VmRuntimeManager, added native Wayland pointer capture, logind power management integration, a virtual network link toggle, and non-blocking cloud-image deployments, and improved audio buffering, DMA-BUF rendering, and archive import/export handling.</p>
       </description>
     </release>
     <release version="0.5.0" date="2026-09-03">
       <description>
-        <p>Split VM creation into compact and editor dialogs, parallel capability probing, and GPU cursor performance optimizations.</p>
+        <p>KEMU split VM creation into a compact new-VM dialog and a full hardware editor, added Flatpak sandbox detection and QEMU capability probing alongside an optional SLIRP user-mode network fallback, introduced VSync-driven rendering, dirty-rect uploads, and cursor/audio optimizations in the integrated D-Bus viewer, and implemented fully asynchronous VM startup, power-off save-state handling, and VM name path-traversal protection.</p>
       </description>
     </release>
     <release version="0.4.0" date="2026-08-18">
       <description>
-        <p>Flatpak sandbox support, SLIRP networking fallback, viewer media controls, and improved OVA imports.</p>
+        <p>KEMU promoted the integrated D-Bus viewer out of experimental status by adding relative pointer support, mouse capture mode, live CD/DVD and floppy media controls, USB device passthrough, and per-VM persisted viewer settings, alongside live QMP snapshot management, selectable input devices, persisted VM architecture metadata, and reliable OVA/OVF bootable defaults.</p>
       </description>
     </release>
     <release version="0.3.0" date="2026-06-15">
       <description>
-        <p>Introduced integrated D-Bus viewer, QMP live snapshots, and power-off save-state support.</p>
+        <p>KEMU introduced the integrated D-Bus display viewer with HiDPI cursor scaling, clipboard sharing, and on-demand frame updates, added floppy disk image support, MS-DOS/FreeDOS templates, and Intel PRO/100 network device emulation, refactored its details view and snapshot/QEMU command management, and improved startup reliability, error handling, and single-instance enforcement.</p>
       </description>
     </release>
     <release version="0.2.0" date="2026-04-20">
       <description>
-        <p>Floppy disk image support, MS-DOS/FreeDOS templates, ISA-PC chipset constraints, and new network devices.</p>
+        <p>KEMU gets Floppy disk image support, MS-DOS/FreeDOS templates, ISA-PC chipset constraints and new network devices.</p>
       </description>
     </release>
     <release version="0.1.0" date="2026-03-31">
